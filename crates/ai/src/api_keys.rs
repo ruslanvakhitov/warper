@@ -22,6 +22,7 @@ pub struct ApiKeys {
     pub anthropic: Option<String>,
     pub openai: Option<String>,
     pub open_router: Option<String>,
+    pub open_router_model: Option<String>,
 }
 
 impl ApiKeys {
@@ -89,6 +90,12 @@ impl ApiKeyManager {
 
     pub fn set_open_router_key(&mut self, key: Option<String>, ctx: &mut ModelContext<Self>) {
         self.keys.open_router = key;
+        ctx.emit(ApiKeyManagerEvent::KeysUpdated);
+        self.write_keys_to_secure_storage(ctx);
+    }
+
+    pub fn set_open_router_model(&mut self, model: Option<String>, ctx: &mut ModelContext<Self>) {
+        self.keys.open_router_model = model;
         ctx.emit(ApiKeyManagerEvent::KeysUpdated);
         self.write_keys_to_secure_storage(ctx);
     }
@@ -174,23 +181,35 @@ impl ApiKeyManager {
     }
 
     fn load_keys_from_secure_storage(ctx: &mut ModelContext<Self>) -> ApiKeys {
-        let key_json = match ctx.secure_storage().read_value(SECURE_STORAGE_KEY) {
-            Ok(json) => json,
+        let mut keys = match ctx.secure_storage().read_value(SECURE_STORAGE_KEY) {
+            Ok(json) => match serde_json::from_str(&json) {
+                Ok(keys) => keys,
+                Err(e) => {
+                    log::error!("Failed to deserialize API keys: {e:#}");
+                    ApiKeys::default()
+                }
+            },
             Err(e) => {
                 if !matches!(e, secure_storage::Error::NotFound) {
                     log::error!("Failed to read API keys from secure storage: {e:#}");
                 }
-                return ApiKeys::default();
-            }
-        };
-
-        let keys = match serde_json::from_str(&key_json) {
-            Ok(keys) => keys,
-            Err(e) => {
-                log::error!("Failed to deserialize API keys: {e:#}");
                 ApiKeys::default()
             }
         };
+
+        if keys.open_router.is_none() {
+            keys.open_router = std::env::var("OPENROUTER_API_KEY")
+                .or_else(|_| std::env::var("OPEN_ROUTER_API_KEY"))
+                .ok()
+                .filter(|key| !key.is_empty());
+        }
+
+        if keys.open_router_model.is_none() {
+            keys.open_router_model = std::env::var("OPENROUTER_MODEL")
+                .or_else(|_| std::env::var("OPEN_ROUTER_MODEL"))
+                .ok()
+                .filter(|model| !model.is_empty());
+        }
 
         keys
     }

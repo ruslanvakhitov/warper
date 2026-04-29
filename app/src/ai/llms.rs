@@ -3,9 +3,13 @@ use serde::{de, Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
     sync::{Arc, OnceLock},
+    time::Duration,
 };
-use warp_core::ui::icons::Icon;
 use warp_core::user_preferences::GetUserPreferences;
+use warp_core::{
+    channel::{Channel, ChannelState},
+    ui::icons::Icon,
+};
 use warpui::{AppContext, Entity, EntityId, ModelContext, SingletonEntity};
 
 use crate::{
@@ -21,6 +25,7 @@ use crate::{
 
 use super::execution_profiles::profiles::AIExecutionProfilesModel;
 
+use ai::api_keys::{ApiKeyManager, ApiKeyManagerEvent};
 pub use ai::LLMId;
 
 /// Checks if a user's' API key is being used for the given provider.
@@ -36,6 +41,7 @@ pub fn is_using_api_key_for_provider(provider: &LLMProvider, app: &AppContext) -
         LLMProvider::OpenAI => api_keys.is_some_and(|keys| keys.openai.is_some()),
         LLMProvider::Anthropic => api_keys.is_some_and(|keys| keys.anthropic.is_some()),
         LLMProvider::Google => api_keys.is_some_and(|keys| keys.google.is_some()),
+        LLMProvider::OpenRouter => api_keys.is_some_and(|keys| keys.open_router.is_some()),
         _ => false,
     }
 }
@@ -89,6 +95,8 @@ pub enum LLMProvider {
     Anthropic,
     Google,
     Xai,
+    #[serde(alias = "Openrouter", alias = "OPENROUTER", alias = "openrouter")]
+    OpenRouter,
     Unknown,
 }
 
@@ -99,6 +107,7 @@ impl LLMProvider {
             LLMProvider::OpenAI => Some(Icon::OpenAILogo),
             LLMProvider::Anthropic => Some(Icon::ClaudeLogo),
             LLMProvider::Google => Some(Icon::GeminiLogo),
+            LLMProvider::OpenRouter => Some(Icon::Globe),
             LLMProvider::Xai => None,
             LLMProvider::Unknown => None,
         }
@@ -341,6 +350,19 @@ impl AvailableLLMs {
             .expect("Default LLM ID must be present in choices")
     }
 
+    fn upsert_choice(&mut self, llm: LLMInfo) -> bool {
+        if let Some(existing) = self.choices.iter_mut().find(|choice| choice.id == llm.id) {
+            if *existing != llm {
+                *existing = llm;
+                return true;
+            }
+            false
+        } else {
+            self.choices.push(llm);
+            true
+        }
+    }
+
     #[cfg(feature = "integration_tests")]
     pub fn new_for_test(llm_name: &str) -> Self {
         Self {
@@ -383,6 +405,50 @@ impl ModelsByFeature {
     fn info_for_id(&self, id: &LLMId) -> Option<&LLMInfo> {
         self.agent_mode.info_for_id(id)
     }
+
+    fn ensure_openrouter_custom_model(&mut self, model_id: Option<&str>) -> bool {
+        let Some(llm) = model_id.and_then(openrouter_custom_llm) else {
+            return false;
+        };
+
+        self.upsert_openrouter_model(llm)
+    }
+
+    fn upsert_openrouter_model(&mut self, llm: LLMInfo) -> bool {
+        let mut changed = false;
+        changed |= self.agent_mode.upsert_choice(llm.clone());
+        changed |= self.coding.upsert_choice(llm.clone());
+        if let Some(cli_agent) = &mut self.cli_agent {
+            changed |= cli_agent.upsert_choice(llm.clone());
+        }
+        if let Some(computer_use) = &mut self.computer_use {
+            changed |= computer_use.upsert_choice(llm);
+        }
+        changed
+    }
+
+    fn upsert_openrouter_models(&mut self, models: Vec<LLMInfo>) -> bool {
+        models.into_iter().fold(false, |changed, llm| {
+            self.upsert_openrouter_model(llm) || changed
+        })
+    }
+
+    fn configured_openrouter_llm<'a>(
+        &'a self,
+        app: &AppContext,
+        available: &'a AvailableLLMs,
+    ) -> Option<&'a LLMInfo> {
+        if ChannelState::channel() != Channel::Oss {
+            return None;
+        }
+
+        let model_id = ApiKeyManager::as_ref(app)
+            .keys()
+            .open_router_model
+            .as_deref()
+            .and_then(normalize_openrouter_model_id)?;
+        available.info_for_id(&model_id.into())
+    }
 }
 
 /// Returns the default AvailableLLMs for computer use.
@@ -408,6 +474,193 @@ fn default_computer_use_llms() -> AvailableLLMs {
             discount_percentage: None,
         }],
         preferred_codex_model_id: None,
+    }
+}
+
+pub const DEFAULT_OPENROUTER_MODEL_ID: &str = "openrouter/auto";
+const OPENROUTER_MODELS_URL: &str = "https://openrouter.ai/api/v1/models";
+const OPENROUTER_MODELS_TIMEOUT: Duration = Duration::from_secs(15);
+
+fn normalize_openrouter_model_id(model_id: &str) -> Option<&str> {
+    let model_id = model_id.trim();
+    (!model_id.is_empty()).then_some(model_id)
+}
+
+pub fn is_openrouter_custom_model_query(query: &str) -> bool {
+    normalize_openrouter_model_id(query).is_some_and(|model_id| {
+        model_id != DEFAULT_OPENROUTER_MODEL_ID
+            && model_id.contains('/')
+            && !model_id.chars().any(char::is_whitespace)
+    })
+}
+
+fn openrouter_custom_llm(model_id: &str) -> Option<LLMInfo> {
+    let model_id = normalize_openrouter_model_id(model_id)?;
+    (model_id != DEFAULT_OPENROUTER_MODEL_ID).then(|| openrouter_llm(model_id, model_id, true))
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenRouterModelsResponse {
+    #[serde(default)]
+    data: Vec<OpenRouterModel>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenRouterModel {
+    id: String,
+    name: Option<String>,
+    description: Option<String>,
+    architecture: Option<OpenRouterModelArchitecture>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct OpenRouterModelArchitecture {
+    #[serde(default)]
+    input_modalities: Vec<String>,
+}
+
+impl OpenRouterModel {
+    fn into_llm(self) -> Option<LLMInfo> {
+        let id = normalize_openrouter_model_id(&self.id)?.to_owned();
+        let display_name = self
+            .name
+            .as_deref()
+            .and_then(normalize_openrouter_model_id)
+            .unwrap_or(&id)
+            .to_owned();
+        let vision_supported = self.architecture.is_some_and(|architecture| {
+            architecture
+                .input_modalities
+                .iter()
+                .any(|modality| modality.eq_ignore_ascii_case("image"))
+        });
+
+        Some(LLMInfo {
+            display_name: display_name.clone(),
+            base_model_name: display_name,
+            id: id.into(),
+            reasoning_level: None,
+            usage_metadata: LLMUsageMetadata {
+                request_multiplier: 1,
+                credit_multiplier: None,
+            },
+            description: self.description,
+            disable_reason: None,
+            vision_supported,
+            spec: None,
+            provider: LLMProvider::OpenRouter,
+            host_configs: HashMap::from([(
+                LLMModelHost::DirectApi,
+                RoutingHostConfig {
+                    enabled: true,
+                    model_routing_host: LLMModelHost::DirectApi,
+                },
+            )]),
+            discount_percentage: None,
+        })
+    }
+}
+
+async fn fetch_openrouter_models() -> Result<Vec<LLMInfo>, anyhow::Error> {
+    let response = http_client::Client::new()
+        .get(OPENROUTER_MODELS_URL)
+        .timeout(OPENROUTER_MODELS_TIMEOUT)
+        .header("HTTP-Referer", "https://warper.dev")
+        .header("X-Title", "Warper")
+        .send()
+        .await?
+        .error_for_status()?
+        .json::<OpenRouterModelsResponse>()
+        .await?;
+
+    let mut seen = HashSet::new();
+    let mut models = response
+        .data
+        .into_iter()
+        .filter_map(OpenRouterModel::into_llm)
+        .filter(|llm| seen.insert(llm.id.clone()))
+        .collect::<Vec<_>>();
+    models.sort_by_cached_key(|llm| llm.display_name.to_lowercase());
+    Ok(models)
+}
+
+fn openrouter_llm(display_name: &str, id: &str, vision_supported: bool) -> LLMInfo {
+    LLMInfo {
+        display_name: display_name.to_owned(),
+        base_model_name: display_name.to_owned(),
+        id: id.into(),
+        reasoning_level: None,
+        usage_metadata: LLMUsageMetadata {
+            request_multiplier: 1,
+            credit_multiplier: None,
+        },
+        description: None,
+        disable_reason: None,
+        vision_supported,
+        spec: None,
+        provider: LLMProvider::OpenRouter,
+        host_configs: HashMap::from([(
+            LLMModelHost::DirectApi,
+            RoutingHostConfig {
+                enabled: true,
+                model_routing_host: LLMModelHost::DirectApi,
+            },
+        )]),
+        discount_percentage: None,
+    }
+}
+
+fn openrouter_models_by_feature() -> ModelsByFeature {
+    let choices = vec![
+        openrouter_llm("OpenRouter Auto", DEFAULT_OPENROUTER_MODEL_ID, true),
+        openrouter_llm("GPT-4o mini", "openai/gpt-4o-mini", true),
+        openrouter_llm("GPT-4o", "openai/gpt-4o", true),
+        openrouter_llm("Claude 3.5 Sonnet", "anthropic/claude-3.5-sonnet", true),
+        openrouter_llm("Gemini Flash 1.5", "google/gemini-flash-1.5", true),
+        openrouter_llm(
+            "Llama 3.1 70B Instruct",
+            "meta-llama/llama-3.1-70b-instruct",
+            false,
+        ),
+    ];
+
+    let agent_mode = AvailableLLMs::new(
+        DEFAULT_OPENROUTER_MODEL_ID.into(),
+        choices.clone(),
+        Some(DEFAULT_OPENROUTER_MODEL_ID.into()),
+    )
+    .expect("OpenRouter default model list should not be empty");
+
+    let coding = AvailableLLMs::new(
+        DEFAULT_OPENROUTER_MODEL_ID.into(),
+        choices.clone(),
+        Some(DEFAULT_OPENROUTER_MODEL_ID.into()),
+    )
+    .expect("OpenRouter coding model list should not be empty");
+
+    let cli_agent = Some(
+        AvailableLLMs::new(
+            DEFAULT_OPENROUTER_MODEL_ID.into(),
+            choices.clone(),
+            Some(DEFAULT_OPENROUTER_MODEL_ID.into()),
+        )
+        .expect("OpenRouter CLI agent model list should not be empty"),
+    );
+
+    let computer_use = Some(
+        AvailableLLMs::new(
+            DEFAULT_OPENROUTER_MODEL_ID.into(),
+            choices,
+            Some(DEFAULT_OPENROUTER_MODEL_ID.into()),
+        )
+        .expect("OpenRouter computer use model list should not be empty"),
+    );
+
+    ModelsByFeature {
+        agent_mode,
+        coding,
+        cli_agent,
+        computer_use,
     }
 }
 
@@ -507,7 +760,16 @@ pub struct LLMPreferences {
 
 impl LLMPreferences {
     pub fn new(ctx: &mut ModelContext<Self>) -> Self {
-        let models_by_feature = get_cached_models(ctx).unwrap_or_default();
+        let mut models_by_feature = if ChannelState::channel() == Channel::Oss {
+            openrouter_models_by_feature()
+        } else {
+            get_cached_models(ctx).unwrap_or_default()
+        };
+
+        if ChannelState::channel() == Channel::Oss {
+            let configured_model = ApiKeyManager::as_ref(ctx).keys().open_router_model.clone();
+            models_by_feature.ensure_openrouter_custom_model(configured_model.as_deref());
+        }
 
         ctx.subscribe_to_model(&NetworkStatus::handle(ctx), |me, event, ctx| {
             if let NetworkStatusEvent::NetworkStatusChanged {
@@ -534,6 +796,25 @@ impl LLMPreferences {
             }
         });
 
+        ctx.subscribe_to_model(&ApiKeyManager::handle(ctx), |me, event, ctx| {
+            if ChannelState::channel() != Channel::Oss
+                || !matches!(event, ApiKeyManagerEvent::KeysUpdated)
+            {
+                return;
+            }
+
+            let configured_model = ApiKeyManager::as_ref(ctx).keys().open_router_model.clone();
+            if me
+                .models_by_feature
+                .ensure_openrouter_custom_model(configured_model.as_deref())
+            {
+                ctx.emit(LLMPreferencesEvent::UpdatedAvailableLLMs);
+            }
+            me.refresh_openrouter_models(ctx);
+            ctx.emit(LLMPreferencesEvent::UpdatedActiveAgentModeLLM);
+            ctx.emit(LLMPreferencesEvent::UpdatedActiveCodingLLM);
+        });
+
         let base_llm_for_terminal_view = HashMap::new();
 
         let me = Self {
@@ -541,6 +822,10 @@ impl LLMPreferences {
             last_update: None,
             base_llm_for_terminal_view,
         };
+
+        if ChannelState::channel() == Channel::Oss {
+            me.refresh_openrouter_models(ctx);
+        }
 
         // In agent mode eval builds, eagerly kick off a fetch of the model list from the server
         // so that it's available by the time test steps like `set_preferred_agent_mode_llm` run.
@@ -567,6 +852,13 @@ impl LLMPreferences {
         app: &AppContext,
         terminal_view_id: Option<EntityId>,
     ) -> &LLMInfo {
+        if let Some(llm_info) = self
+            .models_by_feature
+            .configured_openrouter_llm(app, &self.models_by_feature.agent_mode)
+        {
+            return llm_info;
+        }
+
         if let Some(terminal_view_id) = terminal_view_id {
             let raw_override = self.base_llm_for_terminal_view.get(&terminal_view_id);
             if let Some(llm_id) = raw_override {
@@ -600,6 +892,13 @@ impl LLMPreferences {
         app: &AppContext,
         terminal_view_id: Option<EntityId>,
     ) -> &LLMInfo {
+        if let Some(llm_info) = self
+            .models_by_feature
+            .configured_openrouter_llm(app, &self.models_by_feature.coding)
+        {
+            return llm_info;
+        }
+
         let profile = AIExecutionProfilesModel::as_ref(app).active_profile(terminal_view_id, app);
 
         profile
@@ -641,9 +940,15 @@ impl LLMPreferences {
         app: &'a AppContext,
         terminal_view_id: Option<EntityId>,
     ) -> &'a LLMInfo {
-        let profile = AIExecutionProfilesModel::as_ref(app).active_profile(terminal_view_id, app);
-
         let available = self.get_cli_agent_available();
+        if let Some(llm_info) = self
+            .models_by_feature
+            .configured_openrouter_llm(app, available)
+        {
+            return llm_info;
+        }
+
+        let profile = AIExecutionProfilesModel::as_ref(app).active_profile(terminal_view_id, app);
         profile
             .data()
             .cli_agent_model
@@ -676,9 +981,15 @@ impl LLMPreferences {
         app: &'a AppContext,
         terminal_view_id: Option<EntityId>,
     ) -> &'a LLMInfo {
-        let profile = AIExecutionProfilesModel::as_ref(app).active_profile(terminal_view_id, app);
-
         let available = self.get_computer_use_available();
+        if let Some(llm_info) = self
+            .models_by_feature
+            .configured_openrouter_llm(app, available)
+        {
+            return llm_info;
+        }
+
+        let profile = AIExecutionProfilesModel::as_ref(app).active_profile(terminal_view_id, app);
         profile
             .data()
             .computer_use_model
@@ -848,6 +1159,10 @@ impl LLMPreferences {
 
     /// Fetches the latest set of models from the server for the currently logged in user, and updates the model.
     pub fn refresh_authed_models(&self, ctx: &mut ModelContext<Self>) {
+        if ChannelState::channel() == Channel::Oss {
+            return;
+        }
+
         // Don't try to fetch auth'd models if the user is not logged in yet.
         if !AuthStateProvider::as_ref(ctx).get().is_logged_in() {
             return;
@@ -871,6 +1186,10 @@ impl LLMPreferences {
 
     /// No auth required (i.e. to populate the pre-login onboarding picker).
     fn refresh_public_models(&self, ctx: &mut ModelContext<Self>) {
+        if ChannelState::channel() == Channel::Oss {
+            return;
+        }
+
         let ai_api_client = ServerApiProvider::as_ref(ctx).get_ai_client();
         ctx.spawn(
             async move { ai_api_client.get_free_available_models(None).await },
@@ -888,11 +1207,35 @@ impl LLMPreferences {
     }
 
     pub fn refresh_available_models(&self, ctx: &mut ModelContext<Self>) {
+        if ChannelState::channel() == Channel::Oss {
+            return;
+        }
+
         if AuthStateProvider::as_ref(ctx).get().is_logged_in() {
             self.refresh_authed_models(ctx);
         } else {
             self.refresh_public_models(ctx);
         }
+    }
+
+    fn refresh_openrouter_models(&self, ctx: &mut ModelContext<Self>) {
+        if ChannelState::channel() != Channel::Oss {
+            return;
+        }
+
+        ctx.spawn(
+            async { fetch_openrouter_models().await },
+            |me, result, ctx| match result {
+                Ok(models) => {
+                    if me.models_by_feature.upsert_openrouter_models(models) {
+                        ctx.emit(LLMPreferencesEvent::UpdatedAvailableLLMs);
+                    }
+                }
+                Err(error) => {
+                    log::warn!("Failed to fetch OpenRouter models: {error}");
+                }
+            },
+        );
     }
 
     pub fn update_feature_model_choices(

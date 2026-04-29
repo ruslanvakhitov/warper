@@ -11,6 +11,7 @@ fn request_params_with_ask_user_question_enabled(ask_user_question_enabled: bool
 
     RequestParams {
         input: vec![],
+        primary_task_id: "test-task".to_owned(),
         conversation_token: None,
         forked_from_conversation_token: None,
         ambient_agent_task_id: None,
@@ -28,6 +29,7 @@ fn request_params_with_ask_user_question_enabled(ask_user_question_enabled: bool
         planning_enabled: true,
         should_redact_secrets: false,
         api_keys: None,
+        open_router_model: None,
         allow_use_of_warp_credits_with_byok: false,
         autonomy_level: api::AutonomyLevel::Supervised,
         isolation_level: api::IsolationLevel::None,

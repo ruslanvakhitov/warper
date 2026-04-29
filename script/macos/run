@@ -25,8 +25,9 @@ if [ "$WARP_CHANNEL" = "local" ]; then
     WARP_APP_PATH="target/debug/bundle/osx/WarpLocal.app"
     WARP_SCHEME_NAME="warplocal"
 else
-    WARP_APP_PATH="target/debug/bundle/osx/WarpOss.app"
-    WARP_SCHEME_NAME="warposs"
+    WARP_APP_PATH="target/debug/bundle/osx/Warper.app"
+    WARP_SCHEME_NAME="warper"
+    WARP_DISPLAY_NAME="Warper"
 fi
 DONT_OPEN=false
 # Launches the binary with "open", meaning the Warp process is
@@ -62,7 +63,7 @@ while (( "$#" )); do
       if [ "$WARP_CHANNEL" = "local" ]; then
           WARP_APP_PATH="target/release/bundle/osx/WarpLocal.app"
       else
-          WARP_APP_PATH="target/release/bundle/osx/WarpOss.app"
+          WARP_APP_PATH="target/release/bundle/osx/Warper.app"
       fi
       PARAMS="$PARAMS $1"
       shift
@@ -73,7 +74,7 @@ while (( "$#" )); do
       if [ "$WARP_CHANNEL" = "local" ]; then
           WARP_APP_PATH="target/${PROFILE}/bundle/osx/WarpLocal.app"
       else
-          WARP_APP_PATH="target/${PROFILE}/bundle/osx/WarpOss.app"
+          WARP_APP_PATH="target/${PROFILE}/bundle/osx/Warper.app"
       fi
       PARAMS="$PARAMS --profile $PROFILE"
       ;;
@@ -109,6 +110,7 @@ echo "Adding rpath to support mac frameworks (e.g. Sentry)"
 install_name_tool -add_rpath "@executable_path/../Frameworks" "$WARP_APP_PATH/Contents/MacOS/$WARP_BIN_NAME"
 
 export WARP_SCHEME_NAME
+export WARP_DISPLAY_NAME
 export WARP_PLIST_PATH="$WARP_APP_PATH/Contents/Info.plist"
 ./script/update_plist
 
@@ -127,7 +129,11 @@ if [[ ",$FEATURES," =~ ",heap_usage_tracking," ]]; then
 fi
 
 echo "Codesigning app..."
-SIGNING_CERT="$(security find-identity -p codesigning -v | grep "Apple Development" | awk '{print $2}' | head -1)"
+if [ "$WARP_CHANNEL" = "oss" ]; then
+  SIGNING_CERT="-"
+else
+  SIGNING_CERT="$(security find-identity -p codesigning -v | grep "Apple Development" | awk '{print $2}' | head -1)"
+fi
 codesign --force --deep --options runtime --sign "${SIGNING_CERT:--}" "$WARP_APP_PATH" --entitlements script/Debug-Entitlements.plist
 
 if [ "$DONT_OPEN" = false ] ; then

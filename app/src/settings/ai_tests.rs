@@ -1,8 +1,11 @@
 use super::*;
 use crate::{
     ai::request_usage_model::{RequestLimitInfo, RequestLimitRefreshDuration},
+    auth::AuthStateProvider,
     test_util::settings::initialize_settings_for_tests,
+    workspaces::user_workspaces::UserWorkspaces,
 };
+use ai::api_keys::ApiKeyManager;
 use chrono::Utc;
 use warp_graphql::scalars::time::ServerTimestamp;
 use warpui::{App, SingletonEntity};
@@ -379,6 +382,33 @@ fn test_toolbar_command_map_matched_agent() {
             let agent =
                 CompiledCommandsForCodingAgentToolbar::matched_agent(ctx, "unmatched-command");
             assert_eq!(agent, None);
+        });
+    });
+}
+
+#[test]
+fn test_openrouter_key_enables_agent_default_for_logged_out_oss_users() {
+    App::test((), |mut app| async move {
+        app.add_singleton_model(|_| AuthStateProvider::new_logged_out_for_test());
+        app.add_singleton_model(UserWorkspaces::default_mock);
+        initialize_settings_for_tests(&mut app);
+
+        app.update(|ctx| {
+            ApiKeyManager::handle(ctx).update(ctx, |manager, ctx| {
+                manager.set_open_router_key(Some("sk-or-v1-test".into()), ctx);
+            });
+        });
+
+        app.read(|ctx| {
+            let settings = AISettings::as_ref(ctx);
+            assert!(AuthStateProvider::as_ref(ctx)
+                .get()
+                .is_anonymous_or_logged_out());
+            assert!(settings.is_any_ai_enabled(ctx));
+            assert_eq!(
+                settings.default_session_mode(ctx),
+                DefaultSessionMode::Agent
+            );
         });
     });
 }

@@ -184,7 +184,7 @@ use session_sharing_protocol::common::LongRunningCommandAgentInteractionState;
 use session_sharing_protocol::sharer::{RoleUpdateReason, SessionEndedReason, SessionSourceType};
 use ssh_file_upload::{FileUpload, FileUploadEvent};
 use uuid::Uuid;
-use warp_core::channel::ChannelState;
+use warp_core::channel::{Channel, ChannelState};
 use warpui::elements::{shimmering_text::ShimmeringTextStateHandle, Border, ChildView};
 use warpui::fonts::Properties;
 use warpui::{ViewHandle, WeakModelHandle};
@@ -4607,7 +4607,8 @@ impl TerminalView {
         if matches!(
             event,
             BlocklistAIControllerEvent::FreeTierLimitCheckTriggered
-        ) {
+        ) && ChannelState::channel() != Channel::Oss
+        {
             ctx.emit(Event::FreeTierLimitCheckTriggered);
         }
         if let BlocklistAIControllerEvent::SentRequest { model_id, .. } = event {
@@ -8749,7 +8750,9 @@ impl TerminalView {
         };
 
         // Return early if we've run out of AI usage.
-        if !AIRequestUsageModel::as_ref(ctx).has_any_ai_remaining(ctx) {
+        if ChannelState::channel() != Channel::Oss
+            && !AIRequestUsageModel::as_ref(ctx).has_any_ai_remaining(ctx)
+        {
             return false;
         }
 
@@ -11829,6 +11832,7 @@ impl TerminalView {
         self.hide_slow_bootstrap_banner(ctx);
 
         if self.auth_state.is_anonymous_or_logged_out()
+            && ChannelState::channel() != Channel::Oss
             && !FeatureFlag::OpenWarpNewSettingsModes.is_enabled()
         {
             self.insert_anonymous_user_ai_sign_up_banner(ctx);
@@ -11922,6 +11926,7 @@ impl TerminalView {
         let is_onboarded = auth_state.is_onboarded().unwrap_or(true);
         let is_anonymous_or_logged_out = auth_state.is_anonymous_or_logged_out();
         let should_show_onboarding = FeatureFlag::AgentOnboarding.is_enabled()
+            && ChannelState::channel() != Channel::Oss
             && !is_onboarded
             && !is_anonymous_or_logged_out;
         let is_launch_modal_open = OneTimeModalModel::as_ref(ctx).is_oz_launch_modal_open();
@@ -24776,6 +24781,10 @@ impl TypedActionView for TerminalView {
             }
             VimModeBanner(action) => self.handle_vim_banner_action(*action, ctx),
             OnboardingFlow(version) => {
+                if ChannelState::channel() == Channel::Oss {
+                    return;
+                }
+
                 // Don't show onboarding if it's already active or if this is a shared session or if user is anonymous
                 if self
                     .model
@@ -24964,6 +24973,9 @@ impl TypedActionView for TerminalView {
                 ctx.open_url(&hyperlink.url);
             }
             AttemptLoginGatedFeature => {
+                if ChannelState::channel() == Channel::Oss {
+                    return;
+                }
                 AuthManager::handle(ctx).update(ctx, |auth_manager, ctx| {
                     auth_manager.attempt_login_gated_feature(
                         "Upgrade AI Usage",

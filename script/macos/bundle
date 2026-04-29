@@ -306,9 +306,9 @@ elif [[ $RELEASE_CHANNEL = "stable" ]]; then
     WARP_SCHEME_NAME="warp"
 elif [[ $RELEASE_CHANNEL = "oss" ]]; then
     WARP_BIN="warp-oss"
-    BUNDLE_ID="dev.warp.WarpOss"
-    WARP_APP_NAME="WarpOss"
-    WARP_SCHEME_NAME="warposs"
+    BUNDLE_ID="dev.warper.Warper"
+    WARP_APP_NAME="Warper"
+    WARP_SCHEME_NAME="warper"
     # The OSS channel does not ship Sentry, so drop the cocoa_sentry feature
     # (which would otherwise pull in the Sentry framework dependency).
     FEATURES="release_bundle,extern_plist"
@@ -401,6 +401,7 @@ if [[ "$ARTIFACT" == "app" ]]; then
   install_name_tool -add_rpath "@executable_path/../Frameworks" "$BUNDLE_DIR/$WARP_APP_NAME.app/Contents/MacOS/$WARP_BIN"
 
   export WARP_SCHEME_NAME
+  export WARP_DISPLAY_NAME="$WARP_APP_NAME"
   export WARP_PLIST_PATH="$BUNDLE_DIR/$WARP_APP_NAME.app/Contents/Info.plist"
   ./script/update_plist
 
@@ -564,6 +565,7 @@ elif [[ "$ARTIFACT" == "cli" ]]; then
     cp app/assets/resources/mac/CLI-Info.plist "$WARP_PLIST_PATH"
 
     export WARP_PLIST_NO_FILE_TYPES=true
+    export WARP_DISPLAY_NAME="$WARP_APP_NAME"
     ./script/update_plist
     plutil -insert CFBundleIdentifier -string "$BUNDLE_ID" "$WARP_PLIST_PATH"
     plutil -insert CFBundleName -string "$WARP_BIN" "$WARP_PLIST_PATH"

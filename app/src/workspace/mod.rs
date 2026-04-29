@@ -24,7 +24,7 @@ pub mod view;
 use crate::ai::blocklist::NEW_AGENT_PANE_LABEL;
 use crate::ai::skills::SkillManager;
 use crate::ai::AIRequestUsageModel;
-use crate::channel::Channel;
+use crate::channel::{Channel, ChannelState};
 use crate::code;
 use crate::features::FeatureFlag;
 use crate::modal;
@@ -37,8 +37,6 @@ use crate::settings_view::{self, flags, SettingsSection};
 use crate::tab::uses_vertical_tabs;
 use crate::tab_configs;
 use warpui::SingletonEntity;
-
-use crate::channel::ChannelState;
 
 use crate::util::bindings::{self, cmd_or_ctrl_shift, is_binding_pty_compliant, CustomAction};
 
@@ -78,7 +76,8 @@ pub fn panel_header_corner_radius() -> warpui::elements::CornerRadius {
 /// the command palette label and the menu item behavior never diverge.
 pub fn is_feedback_skill_available(ctx: &AppContext) -> bool {
     AISettings::as_ref(ctx).is_any_ai_enabled(ctx)
-        && AIRequestUsageModel::as_ref(ctx).has_any_ai_remaining(ctx)
+        && (ChannelState::channel() == Channel::Oss
+            || AIRequestUsageModel::as_ref(ctx).has_any_ai_remaining(ctx))
         && SkillManager::as_ref(ctx)
             .active_bundled_skill("feedback", ctx)
             .is_some()

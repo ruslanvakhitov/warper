@@ -474,6 +474,10 @@ impl UserWorkspaces {
     /// Note that the value may be incorrect if called before the team's billing metadata has been fetched.
     /// For solo users (no workspace), this is controlled by the `SoloUserByok` feature flag.
     pub fn is_byo_api_key_enabled(&self) -> bool {
+        if ChannelState::channel() == warp_core::channel::Channel::Oss {
+            return true;
+        }
+
         self.current_workspace()
             .map(|workspace| workspace.is_byo_api_key_enabled())
             .unwrap_or(FeatureFlag::SoloUserByok.is_enabled())

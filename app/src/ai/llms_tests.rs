@@ -81,3 +81,68 @@ fn llm_info_round_trip_serializes_and_deserializes() {
 
     assert_eq!(info, round_tripped);
 }
+
+#[test]
+fn openrouter_custom_model_query_accepts_model_ids() {
+    assert!(is_openrouter_custom_model_query(
+        "anthropic/claude-sonnet-4"
+    ));
+    assert!(is_openrouter_custom_model_query(
+        "google/gemini-2.5-pro:thinking"
+    ));
+}
+
+#[test]
+fn openrouter_custom_model_query_rejects_empty_auto_and_text() {
+    assert!(!is_openrouter_custom_model_query(""));
+    assert!(!is_openrouter_custom_model_query(
+        DEFAULT_OPENROUTER_MODEL_ID
+    ));
+    assert!(!is_openrouter_custom_model_query("claude sonnet"));
+}
+
+#[test]
+fn openrouter_custom_model_is_added_to_all_model_groups() {
+    let mut models = openrouter_models_by_feature();
+    let model_id = "deepseek/deepseek-chat-v3.1";
+
+    assert!(models.ensure_openrouter_custom_model(Some(model_id)));
+    let llm_id = LLMId::from(model_id);
+
+    assert_eq!(
+        models
+            .agent_mode
+            .info_for_id(&llm_id)
+            .map(|llm| &llm.provider),
+        Some(&LLMProvider::OpenRouter)
+    );
+    assert!(models.coding.info_for_id(&llm_id).is_some());
+    assert!(models
+        .cli_agent
+        .as_ref()
+        .is_some_and(|choices| choices.info_for_id(&llm_id).is_some()));
+    assert!(models
+        .computer_use
+        .as_ref()
+        .is_some_and(|choices| choices.info_for_id(&llm_id).is_some()));
+}
+
+#[test]
+fn openrouter_model_metadata_maps_to_llm_info() {
+    let raw = r#"{
+        "id": "openai/gpt-4.1",
+        "name": "OpenAI: GPT-4.1",
+        "description": "Flagship OpenAI model",
+        "architecture": {
+            "input_modalities": ["text", "image"]
+        }
+    }"#;
+
+    let model: OpenRouterModel = serde_json::from_str(raw).expect("should deserialize");
+    let llm = model.into_llm().expect("should convert");
+
+    assert_eq!(llm.id.as_str(), "openai/gpt-4.1");
+    assert_eq!(llm.display_name, "OpenAI: GPT-4.1");
+    assert_eq!(llm.provider, LLMProvider::OpenRouter);
+    assert!(llm.vision_supported);
+}

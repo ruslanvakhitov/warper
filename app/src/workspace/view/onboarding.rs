@@ -10,6 +10,7 @@ use onboarding::{ProjectOnboardingSettings, SelectedSettings};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use warp_core::channel::{Channel, ChannelState};
 use warpui::{SingletonEntity as _, ViewContext};
 
 /// Configuration for starting the agent onboarding tutorial.
@@ -238,6 +239,6 @@ impl Workspace {
     }
 
     pub(crate) fn should_show_agent_onboarding(&self, _ctx: &mut ViewContext<Self>) -> bool {
-        FeatureFlag::AgentOnboarding.is_enabled()
+        ChannelState::channel() != Channel::Oss && FeatureFlag::AgentOnboarding.is_enabled()
     }
 }

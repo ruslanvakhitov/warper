@@ -44,7 +44,7 @@ use crate::view_components::{Dropdown, DropdownItem};
 use crate::{
     appearance::Appearance,
     auth::auth_manager::AuthManager,
-    channel::ChannelState,
+    channel::{Channel, ChannelState},
     report_if_error, send_telemetry_from_ctx,
     server::telemetry::TelemetryEvent,
     settings::{AISettings, PrivacySettings},
@@ -1560,7 +1560,7 @@ impl SettingsWidget for AppAnalyticsWidget {
         );
 
         // Show free tier note only for non-paid users
-        if !is_on_paid_plan {
+        if !is_on_paid_plan && ChannelState::channel() != Channel::Oss {
             column.add_child(
                 ui_builder
                     .paragraph(TELEMETRY_FREE_TIER_NOTE)

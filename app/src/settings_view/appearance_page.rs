@@ -50,7 +50,8 @@ use crate::user_config::WarpConfig;
 use crate::util::bindings;
 use crate::window_settings::{
     BackgroundBlurRadius, BackgroundBlurTexture, BackgroundOpacity, LeftPanelVisibilityAcrossTabs,
-    OpenWindowsAtCustomSize, WindowSettings, WindowSettingsChangedEvent, ZoomLevel,
+    OpenWindowsAtCustomSize, TerminalBackgroundImagePath, WindowSettings,
+    WindowSettingsChangedEvent, ZoomLevel,
 };
 use crate::workspace::header_toolbar_editor::HeaderToolbarInlineEditor;
 use crate::workspace::tab_settings::{
@@ -81,7 +82,7 @@ use warpui::elements::{
 };
 use warpui::fonts::{FamilyId, FontInfo, Weight};
 use warpui::keymap::{ContextPredicate, FixedBinding};
-use warpui::platform::{Cursor, FilePickerConfiguration, GraphicsBackend};
+use warpui::platform::{Cursor, FilePickerConfiguration, FileType, GraphicsBackend};
 use warpui::ui_components::button::ButtonVariant;
 use warpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
 use warpui::ui_components::radio_buttons::{
@@ -424,6 +425,9 @@ pub enum AppearancePageAction {
     SetLineHeight,
     SetOpacity(f32),
     SetBlur(f32),
+    OpenTerminalBackgroundImagePicker,
+    SetTerminalBackgroundImagePath(PathBuf),
+    ClearTerminalBackgroundImagePath,
     OpacitySliderDragged(f32),
     BlurSliderDragged(f32),
     SetFontFamily(String),
@@ -487,6 +491,8 @@ pub struct AppearanceSettingsPageView {
     valid_new_window_rows: bool,
     opacity_state: SliderStateHandle,
     blur_state: SliderStateHandle,
+    terminal_background_image_choose_button_mouse_state: MouseStateHandle,
+    terminal_background_image_clear_button_mouse_state: MouseStateHandle,
     font_family_dropdown: ViewHandle<FilterableDropdown<AppearancePageAction>>,
     font_weight_dropdown: ViewHandle<Dropdown<AppearancePageAction>>,
     #[allow(dead_code)]
@@ -543,6 +549,11 @@ impl TypedActionView for AppearanceSettingsPageView {
             SetLineHeight => self.set_line_height_ratio(ctx),
             SetOpacity(value) => self.set_opacity(*value, true, ctx),
             SetBlur(value) => self.set_blur(*value, true, ctx),
+            OpenTerminalBackgroundImagePicker => self.open_terminal_background_image_picker(ctx),
+            SetTerminalBackgroundImagePath(path) => {
+                self.set_terminal_background_image_path(path.clone(), ctx)
+            }
+            ClearTerminalBackgroundImagePath => self.clear_terminal_background_image_path(ctx),
             SetFontFamily(name) => self.set_font_family(name, ctx),
             SetAIFontFamily(name) => {
                 self.set_ai_font_family(name, ctx);
@@ -1202,6 +1213,8 @@ impl AppearanceSettingsPageView {
             valid_new_window_rows: true,
             opacity_state: Default::default(),
             blur_state: Default::default(),
+            terminal_background_image_choose_button_mouse_state: MouseStateHandle::default(),
+            terminal_background_image_clear_button_mouse_state: MouseStateHandle::default(),
             font_family_dropdown,
             font_weight_dropdown,
             thin_strokes_dropdown,
@@ -1261,6 +1274,12 @@ impl AppearanceSettingsPageView {
             .is_supported_on_current_platform()
         {
             window_settings_widgets.push(Box::new(WindowOpacityWidget::default()));
+        }
+        if window_settings
+            .terminal_background_image_path
+            .is_supported_on_current_platform()
+        {
+            window_settings_widgets.push(Box::new(TerminalBackgroundImageWidget::default()));
         }
         if window_settings
             .background_blur_radius
@@ -1779,6 +1798,47 @@ impl AppearanceSettingsPageView {
                 .set_value(blur_value as u8, ctx));
         });
         ctx.notify()
+    }
+
+    fn open_terminal_background_image_picker(&mut self, ctx: &mut ViewContext<Self>) {
+        let file_picker_config =
+            FilePickerConfiguration::new().set_allowed_file_types(vec![FileType::Image]);
+        ctx.open_file_picker(
+            move |result, ctx| match result {
+                Ok(paths) => {
+                    if let Some(path) = paths.first() {
+                        ctx.dispatch_typed_action(
+                            &AppearancePageAction::SetTerminalBackgroundImagePath(PathBuf::from(
+                                path,
+                            )),
+                        );
+                    }
+                }
+                Err(err) => {
+                    log::warn!("Failed to pick terminal background image: {err}");
+                }
+            },
+            file_picker_config,
+        );
+    }
+
+    fn set_terminal_background_image_path(&mut self, path: PathBuf, ctx: &mut ViewContext<Self>) {
+        let path = path.canonicalize().unwrap_or(path);
+        WindowSettings::handle(ctx).update(ctx, |window_settings, ctx| {
+            report_if_error!(window_settings
+                .terminal_background_image_path
+                .set_value(Some(path.to_string_lossy().to_string()), ctx));
+        });
+        ctx.notify();
+    }
+
+    fn clear_terminal_background_image_path(&mut self, ctx: &mut ViewContext<Self>) {
+        WindowSettings::handle(ctx).update(ctx, |window_settings, ctx| {
+            report_if_error!(window_settings
+                .terminal_background_image_path
+                .set_value(None, ctx));
+        });
+        ctx.notify();
     }
 
     fn reset_line_height_ratio(&mut self, ctx: &mut ViewContext<Self>) {
@@ -3112,6 +3172,107 @@ impl SettingsWidget for WindowOpacityWidget {
             }
         }
         col.finish()
+    }
+}
+
+#[derive(Default)]
+struct TerminalBackgroundImageWidget;
+
+impl SettingsWidget for TerminalBackgroundImageWidget {
+    type View = AppearanceSettingsPageView;
+
+    fn search_terms(&self) -> &str {
+        "terminal window background image wallpaper picture png jpg jpeg"
+    }
+
+    fn render(
+        &self,
+        view: &Self::View,
+        appearance: &Appearance,
+        app: &AppContext,
+    ) -> Box<dyn Element> {
+        let selected_path = WindowSettings::as_ref(app)
+            .terminal_background_image_path
+            .value()
+            .as_deref()
+            .map(str::trim)
+            .filter(|path| !path.is_empty());
+
+        let choose_label = if selected_path.is_some() {
+            "Change image"
+        } else {
+            "Choose image"
+        };
+        let choose_button = appearance
+            .ui_builder()
+            .button(
+                ButtonVariant::Secondary,
+                view.terminal_background_image_choose_button_mouse_state
+                    .clone(),
+            )
+            .with_style(UiComponentStyles {
+                font_size: Some(appearance.ui_font_size()),
+                ..Default::default()
+            })
+            .with_centered_text_label(choose_label.to_owned())
+            .build()
+            .on_click(move |ctx, _, _| {
+                ctx.dispatch_typed_action(AppearancePageAction::OpenTerminalBackgroundImagePicker);
+            })
+            .finish();
+
+        let mut actions = Flex::row()
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_child(choose_button);
+
+        if selected_path.is_some() {
+            let clear_button = appearance
+                .ui_builder()
+                .button(
+                    ButtonVariant::Text,
+                    view.terminal_background_image_clear_button_mouse_state
+                        .clone(),
+                )
+                .with_style(UiComponentStyles {
+                    font_size: Some(appearance.ui_font_size()),
+                    margin: Some(Coords::default().left(8.)),
+                    ..Default::default()
+                })
+                .with_centered_text_label("Clear".to_owned())
+                .build()
+                .on_click(move |ctx, _, _| {
+                    ctx.dispatch_typed_action(
+                        AppearancePageAction::ClearTerminalBackgroundImagePath,
+                    );
+                })
+                .finish();
+            actions.add_child(clear_button);
+        }
+
+        let home_dir = dirs::home_dir().and_then(|path| path.to_str().map(ToOwned::to_owned));
+        let description = selected_path
+            .map(|path| {
+                format!(
+                    "Selected: {}",
+                    user_friendly_path(path, home_dir.as_deref())
+                )
+            })
+            .or_else(|| Some("No image selected. PNG and JPEG files are supported.".to_owned()));
+
+        render_body_item::<AppearancePageAction>(
+            "Terminal Background Image".to_owned(),
+            None,
+            LocalOnlyIconState::for_setting(
+                TerminalBackgroundImagePath::storage_key(),
+                TerminalBackgroundImagePath::sync_to_cloud(),
+                &mut view.local_only_icon_tooltip_states.borrow_mut(),
+                app,
+            ),
+            ToggleState::Enabled,
+            appearance,
+            actions.finish(),
+            description,
+        )
     }
 }
 

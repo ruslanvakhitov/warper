@@ -1,4 +1,8 @@
 use serde::{Deserialize, Serialize};
+use settings::Setting;
+use std::path::Path;
+use warp_core::ui::theme::Image as ThemeImage;
+use warpui::assets::asset_cache::AssetSource;
 use warpui::{
     elements::MouseStateHandle, AppContext, EntityId, SingletonEntity, ViewContext, ViewHandle,
     WindowId,
@@ -9,6 +13,8 @@ use crate::window_settings::WindowSettings;
 use crate::{
     appearance::Appearance, pane_group::PaneId, terminal::TerminalView, workspace::Workspace,
 };
+
+const CUSTOM_TERMINAL_BACKGROUND_IMAGE_OPACITY: u8 = 30;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 /// What composes a pane (i.e. the pane group and the pane itself).
@@ -370,13 +376,28 @@ pub fn get_terminal_background_fill(
     theme.background().with_opacity(terminal_opacity).into()
 }
 
+pub fn get_terminal_background_image(app: &AppContext) -> Option<ThemeImage> {
+    WindowSettings::as_ref(app)
+        .terminal_background_image_path
+        .value()
+        .as_ref()
+        .map(|path| path.trim())
+        .filter(|path| !path.is_empty() && Path::new(path).is_file())
+        .map(|path| ThemeImage {
+            source: AssetSource::LocalFile {
+                path: path.to_owned(),
+            },
+            opacity: CUSTOM_TERMINAL_BACKGROUND_IMAGE_OPACITY,
+        })
+        .or_else(|| Appearance::as_ref(app).theme().background_image())
+}
+
 fn get_terminal_background_opacity(window_id: WindowId, app: &AppContext) -> u8 {
-    let theme = Appearance::as_ref(app).theme();
     let background_opacity = WindowSettings::as_ref(app)
         .background_opacity
         .effective_opacity(window_id, app);
 
-    if let Some(img) = theme.background_image() {
+    if let Some(img) = get_terminal_background_image(app) {
         let opacity_ratio = background_opacity as f32 / 100.;
         // Scale the overlay opacity with the background opacity ratio.
         (((100 - img.opacity) as f32) * opacity_ratio) as u8

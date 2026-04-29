@@ -1,3 +1,31 @@
+> [!IMPORTANT]
+> # Warper fork changes from the original Warp repository
+>
+> This repository is a Warper build of Warp focused on a local, subscription-free OpenRouter workflow.
+> The original Warp product branding, account-gated agent flow, and Warp-credit/subscription assumptions have been replaced where they blocked local OpenRouter use.
+>
+> **What changed:**
+>
+> - **Product identity:** the OSS app now builds and launches as **Warper** with the bundle identifier `dev.warper.Warper`, Warper desktop/app metadata, Warper prompts, and Warper-specific build outputs.
+> - **No required Warp account or subscription:** the onboarding/account gates, sign-up prompts, plan comparison affordances, request-limit checks, and paid-credit banners were removed or bypassed for the OSS Warper flow.
+> - **OpenRouter-first agent:** the built-in agent routes directly to OpenRouter when an OpenRouter key is configured. Agent requests use Warper headers and a terminal-aware Warper system prompt.
+> - **Local API key storage:** OpenRouter API keys and the selected OpenRouter model are stored locally in secure storage under `dev.warper.Warper / AiApiKeys`. They are not written to this repository, `settings.toml`, logs, or cloud sync.
+> - **Model selection:** `/model` now includes the public OpenRouter model catalog, supports typing any `provider/model` OpenRouter id manually, remembers the selected model, and uses that selected model by default for Warper agent requests.
+> - **Agent enabled by default:** OSS Warper starts in the main terminal/agent experience without the commercial onboarding screen and without requiring subscription state.
+> - **OpenRouter settings UI:** Settings includes OpenRouter API key and model controls, with explanatory text that Warper sends requests directly to OpenRouter.
+> - **Diagnostics:** OpenRouter agent requests emit useful local logs for request start, status, errors, task creation, and response parsing so hangs are easier to debug.
+> - **Terminal background image:** Appearance settings now include a terminal background image picker. The selected image path is saved in `~/.warp-oss/settings.toml` at `appearance.window.background_image`.
+> - **Build packaging:** macOS, Linux, and Windows bundling scripts were updated to produce Warper-branded artifacts; the current macOS bundle is `target/debug/bundle/osx/Warper.app`.
+>
+> **Local user data locations:**
+>
+> - OpenRouter key and selected model: macOS Keychain service `dev.warper.Warper`, account `AiApiKeys`.
+> - User-visible settings: `~/.warp-oss/settings.toml`.
+> - Runtime state/cache/database: `~/Library/Application Support/dev.warper.Warper/`.
+> - Logs: `~/Library/Logs/warper.log`.
+>
+> The upstream Warp README continues below for original project context, licensing, and contribution guidance.
+
 <a href="https://www.warp.dev">
     <img width="1024" alt="Warp Agentic Development Environment product preview" src="https://github.com/user-attachments/assets/9976b2da-2edd-4604-a36c-8fd53719c6d4" />
 </a>

@@ -34,6 +34,15 @@ define_settings_group!(WindowSettings, settings: [
         toml_path: "appearance.window.override_opacity",
         description: "The opacity of the window background, from 1 to 100 percent.",
     },
+    terminal_background_image_path: TerminalBackgroundImagePath {
+        type: Option<String>,
+        default: None,
+        supported_platforms: SupportedPlatforms::DESKTOP,
+        sync_to_cloud: SyncToCloud::Never,
+        private: false,
+        toml_path: "appearance.window.background_image",
+        description: "The local image file to use as the terminal window background.",
+    },
     open_windows_at_custom_size: OpenWindowsAtCustomSize {
         type: bool,
         default: false,

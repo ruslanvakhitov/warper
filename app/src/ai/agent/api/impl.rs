@@ -2,18 +2,33 @@ use std::{collections::HashMap, sync::Arc};
 
 use crate::{ai::agent::redaction, terminal::model::session::SessionType};
 use futures_util::StreamExt;
-use warp_core::features::FeatureFlag;
+use warp_core::{
+    channel::{Channel, ChannelState},
+    features::FeatureFlag,
+};
 use warp_multi_agent_api as api;
 
 use crate::server::server_api::ServerApi;
 
-use super::{convert_to::convert_input, ConvertToAPITypeError, RequestParams, ResponseStream};
+use super::{
+    convert_to::convert_input, openrouter, ConvertToAPITypeError, RequestParams, ResponseStream,
+};
 
 pub async fn generate_multi_agent_output(
     server_api: Arc<ServerApi>,
     mut params: RequestParams,
     cancellation_rx: futures::channel::oneshot::Receiver<()>,
 ) -> Result<ResponseStream, ConvertToAPITypeError> {
+    if params.should_redact_secrets {
+        redaction::redact_inputs(&mut params.input);
+    }
+
+    if ChannelState::channel() == Channel::Oss {
+        let output_stream =
+            openrouter::generate_openrouter_output(params).take_until(cancellation_rx);
+        return Ok(Box::pin(output_stream));
+    }
+
     let supported_tools = params
         .supported_tools_override
         .take()
@@ -45,10 +60,6 @@ pub async fn generate_multi_agent_output(
                 )),
             },
         );
-    }
-
-    if params.should_redact_secrets {
-        redaction::redact_inputs(&mut params.input);
     }
 
     let mut api_keys = params.api_keys;

@@ -9,6 +9,9 @@ use super::{
 };
 use crate::auth::{AuthStateProvider, UserUid};
 use crate::autoupdate::{self, AutoupdateStage, AutoupdateState};
+use crate::editor::{
+    EditorView, Event as EditorEvent, SingleLineEditorOptions, TextColors, TextOptions,
+};
 use crate::send_telemetry_from_ctx;
 use crate::workspaces::user_workspaces::UserWorkspaces;
 use crate::{
@@ -21,6 +24,7 @@ use crate::{
 use crate::{auth::auth_manager::AuthManager, server::ids::ServerId};
 use crate::{auth::auth_manager::LoginGatedFeature, workspaces::workspace::CustomerType};
 use crate::{workspace::WorkspaceAction, workspaces::update_manager::TeamUpdateManager};
+use ::ai::api_keys::{ApiKeyManager, ApiKeys};
 use ::settings::{Setting, ToggleableSetting};
 use lazy_static::lazy_static;
 use pathfinder_color::ColorU;
@@ -28,7 +32,10 @@ use pathfinder_geometry::vector::vec2f;
 use std::sync::{Arc, Mutex};
 use warp_core::features::FeatureFlag;
 use warp_core::ui::icons::Icon;
-use warp_core::{channel::ChannelState, context_flag::ContextFlag};
+use warp_core::{
+    channel::{Channel, ChannelState},
+    context_flag::ContextFlag,
+};
 use warpui::{
     assets::asset_cache::AssetSource,
     elements::{Border, Empty, MainAxisAlignment, MainAxisSize},
@@ -256,6 +263,7 @@ impl View for MainSettingsPageView {
 impl MainSettingsPageView {
     pub fn new(ctx: &mut ViewContext<MainSettingsPageView>) -> Self {
         let auth_state = AuthStateProvider::as_ref(ctx).get().clone();
+        let is_oss = ChannelState::channel() == Channel::Oss;
 
         let autoupdate_state_handle = AutoupdateState::handle(ctx);
         ctx.observe(
@@ -272,22 +280,30 @@ impl MainSettingsPageView {
             ctx.notify();
         });
 
-        let mut widgets: Vec<Box<dyn SettingsWidget<View = Self>>> = vec![
-            Box::new(AccountWidget::default()),
-            Box::new(DividerWidget {}),
-        ];
-
-        widgets.push(Box::new(SettingsSyncWidget::default()));
-
-        widgets.push(Box::new(EarnRewardsWidget::default()));
+        let mut widgets: Vec<Box<dyn SettingsWidget<View = Self>>> = if is_oss {
+            vec![
+                Box::new(OpenRouterSettingsWidget::new(ctx)),
+                Box::new(DividerWidget {}),
+            ]
+        } else {
+            vec![
+                Box::new(AccountWidget::default()),
+                Box::new(DividerWidget {}),
+                Box::new(SettingsSyncWidget::default()),
+                Box::new(EarnRewardsWidget::default()),
+            ]
+        };
 
         if ChannelState::app_version().is_some() {
             widgets.push(Box::new(VersionInfoWidget::default()));
         }
 
-        widgets.push(Box::new(LogoutWidget::default()));
+        if !is_oss {
+            widgets.push(Box::new(LogoutWidget::default()));
+        }
 
-        let page = PageType::new_uncategorized(widgets, Some("Account"));
+        let title = if is_oss { "OpenRouter" } else { "Account" };
+        let page = PageType::new_uncategorized(widgets, Some(title));
 
         MainSettingsPageView { page, auth_state }
     }
@@ -298,6 +314,178 @@ impl MainSettingsPageView {
         ctx: &mut ViewContext<Self>,
     ) {
         ctx.notify();
+    }
+}
+
+struct OpenRouterSettingsWidget {
+    api_key_editor: ViewHandle<EditorView>,
+    model_editor: ViewHandle<EditorView>,
+}
+
+impl OpenRouterSettingsWidget {
+    fn new(ctx: &mut ViewContext<MainSettingsPageView>) -> Self {
+        let ApiKeys {
+            open_router,
+            open_router_model,
+            ..
+        } = ApiKeyManager::as_ref(ctx).keys().clone();
+
+        let api_key_editor = Self::create_editor(ctx, open_router, "sk-or-v1-...", true);
+        ctx.subscribe_to_view(&api_key_editor, |_, editor, event, ctx| {
+            if matches!(event, EditorEvent::Blurred | EditorEvent::Enter) {
+                let buffer_text = editor.as_ref(ctx).buffer_text(ctx);
+                let value = if buffer_text.is_empty() {
+                    None
+                } else {
+                    Some(buffer_text)
+                };
+                ApiKeyManager::handle(ctx).update(ctx, |model, ctx| {
+                    model.set_open_router_key(value, ctx);
+                });
+            }
+        });
+
+        let model_editor = Self::create_editor(ctx, open_router_model, "openrouter/auto", false);
+        ctx.subscribe_to_view(&model_editor, |_, editor, event, ctx| {
+            if matches!(event, EditorEvent::Blurred | EditorEvent::Enter) {
+                let buffer_text = editor.as_ref(ctx).buffer_text(ctx);
+                let value = if buffer_text.is_empty() {
+                    None
+                } else {
+                    Some(buffer_text)
+                };
+                ApiKeyManager::handle(ctx).update(ctx, |model, ctx| {
+                    model.set_open_router_model(value, ctx);
+                });
+            }
+        });
+
+        Self {
+            api_key_editor,
+            model_editor,
+        }
+    }
+
+    fn create_editor(
+        ctx: &mut ViewContext<MainSettingsPageView>,
+        value: Option<String>,
+        placeholder: &'static str,
+        is_password: bool,
+    ) -> ViewHandle<EditorView> {
+        ctx.add_typed_action_view(move |ctx| {
+            let appearance = Appearance::handle(ctx).as_ref(ctx);
+            let options = SingleLineEditorOptions {
+                is_password,
+                text: TextOptions {
+                    font_size_override: Some(appearance.ui_font_size()),
+                    font_family_override: Some(appearance.monospace_font_family()),
+                    text_colors_override: Some(TextColors {
+                        default_color: appearance.theme().active_ui_text_color(),
+                        disabled_color: appearance.theme().disabled_ui_text_color(),
+                        hint_color: appearance.theme().disabled_ui_text_color(),
+                    }),
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            let mut editor = EditorView::single_line(options, ctx);
+            editor.set_placeholder_text(placeholder, ctx);
+            if let Some(value) = value.as_ref() {
+                editor.set_buffer_text(value, ctx);
+            }
+            editor
+        })
+    }
+
+    fn render_input(
+        label: &'static str,
+        editor: ViewHandle<EditorView>,
+        appearance: &Appearance,
+    ) -> Box<dyn Element> {
+        let label = Text::new_inline(label, appearance.ui_font_family(), REGULAR_TEXT_FONT_SIZE)
+            .with_color(appearance.theme().active_ui_text_color().into())
+            .finish();
+
+        let input = appearance
+            .ui_builder()
+            .text_input(editor)
+            .with_style(UiComponentStyles {
+                padding: Some(Coords {
+                    top: 10.,
+                    bottom: 10.,
+                    left: 16.,
+                    right: 16.,
+                }),
+                background: Some(appearance.theme().surface_2().into()),
+                ..Default::default()
+            })
+            .build()
+            .finish();
+
+        Flex::column()
+            .with_spacing(8.)
+            .with_child(label)
+            .with_child(input)
+            .finish()
+    }
+}
+
+impl SettingsWidget for OpenRouterSettingsWidget {
+    type View = MainSettingsPageView;
+
+    fn search_terms(&self) -> &str {
+        "openrouter open router api key model agent free"
+    }
+
+    fn render(
+        &self,
+        _view: &Self::View,
+        appearance: &Appearance,
+        _app: &AppContext,
+    ) -> Box<dyn Element> {
+        let description = appearance
+            .ui_builder()
+            .paragraph(
+                "Warper runs the agent directly through OpenRouter. No Warp account, plan, or Warp credits are required.",
+            )
+            .with_style(UiComponentStyles {
+                font_color: Some(
+                    appearance
+                        .theme()
+                        .active_ui_text_color()
+                        .with_opacity(60)
+                        .into(),
+                ),
+                font_size: Some(REGULAR_TEXT_FONT_SIZE),
+                margin: Some(Coords {
+                    top: 0.,
+                    bottom: 0.,
+                    left: 0.,
+                    right: 0.,
+                }),
+                ..Default::default()
+            })
+            .build()
+            .finish();
+
+        Container::new(
+            Flex::column()
+                .with_spacing(16.)
+                .with_child(description)
+                .with_child(Self::render_input(
+                    "OpenRouter API Key",
+                    self.api_key_editor.clone(),
+                    appearance,
+                ))
+                .with_child(Self::render_input(
+                    "OpenRouter Model",
+                    self.model_editor.clone(),
+                    appearance,
+                ))
+                .finish(),
+        )
+        .with_margin_top(VERTICAL_MARGIN)
+        .finish()
     }
 }
 

@@ -1,5 +1,8 @@
 use markdown_parser::{FormattedText, FormattedTextFragment, FormattedTextLine};
-use warp_core::ui::appearance::Appearance;
+use warp_core::{
+    channel::{Channel, ChannelState},
+    ui::appearance::Appearance,
+};
 use warpui::{
     elements::{
         ConstrainedBox, Container, CrossAxisAlignment, Flex, FormattedTextElement,
@@ -134,6 +137,10 @@ impl PromptAlertView {
         // First, if the user is offline, no AI features will work.
         if !NetworkStatus::as_ref(app).is_online() {
             return PromptAlertState::NoConnection;
+        }
+
+        if ChannelState::channel() == Channel::Oss {
+            return PromptAlertState::NoAlert;
         }
 
         // Check if telemetry is disabled for free tier users.

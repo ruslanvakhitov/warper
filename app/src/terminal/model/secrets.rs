@@ -489,6 +489,9 @@ pub mod regexes {
     /// Based on current observed format lengths (~96 chars), but allows 80–120 as buffer.
     pub const ANTHROPIC_API_KEY: &str = r"\bsk-ant-api\d{0,2}-[a-zA-Z0-9\-]{80,120}\b";
 
+    /// Identifies an OpenRouter API Key.
+    pub const OPENROUTER_API_KEY: &str = r"\bsk-or-v1-[a-zA-Z0-9_-]{20,}\b";
+
     /// Identifies a general `sk-` style API key (e.g., OpenAI, Anthropic).
     /// Accepts a wide range of formats with alphanumeric and hyphen characters,
     /// with a length buffer between 10–100 characters.
@@ -599,6 +602,10 @@ pub mod regexes {
         DefaultRegex {
             pattern: ANTHROPIC_API_KEY,
             name: "Anthropic API Key",
+        },
+        DefaultRegex {
+            pattern: OPENROUTER_API_KEY,
+            name: "OpenRouter API Key",
         },
         DefaultRegex {
             pattern: GENERIC_SK_API_KEY,

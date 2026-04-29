@@ -9,6 +9,7 @@ use crate::terminal::cli_agent_sessions::{
 };
 use std::collections::HashMap;
 use std::sync::Arc;
+use warp_core::channel::{Channel, ChannelState};
 use warp_graphql::ai::{AgentTaskState, PlatformErrorCode};
 use warpui::{Entity, EntityId, ModelContext, SingletonEntity};
 
@@ -184,6 +185,13 @@ impl TaskStatusSyncModel {
         status_message: Option<TaskStatusUpdate>,
         ctx: &mut ModelContext<Self>,
     ) {
+        if ChannelState::channel() == Channel::Oss {
+            log::debug!(
+                "TaskStatusSyncModel: skipping server task status update in OSS build for task {task_id}"
+            );
+            return;
+        }
+
         let ai_client = self.ai_client.clone();
         ctx.spawn(
             async move {

@@ -12,6 +12,7 @@ use chrono::{DateTime, Utc};
 use instant::Instant;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use warp_core::channel::{Channel, ChannelState};
 use warp_core::user_preferences::GetUserPreferences as _;
 use warp_graphql::scalars::time::ServerTimestamp;
 use warpui::{AppContext, Entity, ModelContext, SingletonEntity};
@@ -379,6 +380,10 @@ impl AIRequestUsageModel {
     /// 6. user has BYOK enabled and has provided at least one API key
     /// Use this method as the starting point for AI availability checking.
     pub fn has_any_ai_remaining(&self, ctx: &AppContext) -> bool {
+        if ChannelState::channel() == Channel::Oss {
+            return true;
+        }
+
         let current_workspace = UserWorkspaces::as_ref(ctx).current_workspace();
 
         let has_base_plan_ai_requests = self.has_requests_remaining();

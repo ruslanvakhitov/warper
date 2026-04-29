@@ -18,10 +18,11 @@ use warpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
 use warpui::{AppContext, Element, Entity, EntityId, SingletonEntity as _};
 
 use crate::ai::llms::{
-    is_using_api_key_for_provider, DisableReason, LLMId, LLMInfo, LLMPreferences, LLMProvider,
-    LLMSpec,
+    is_openrouter_custom_model_query, is_using_api_key_for_provider, DisableReason, LLMId, LLMInfo,
+    LLMPreferences, LLMProvider, LLMSpec,
 };
 use crate::auth::AuthStateProvider;
+use crate::channel::{Channel, ChannelState};
 use crate::features::FeatureFlag;
 use crate::search::data_source::{Query, QueryFilter, QueryResult};
 use crate::search::mixer::DataSourceRunErrorWrapper;
@@ -169,35 +170,61 @@ impl SyncDataSource for ModelSelectorDataSource {
                 .collect_vec()
         };
 
-        let query_text = query.text.trim().to_lowercase();
+        let raw_query_text = query.text.trim();
+        let query_text = raw_query_text.to_lowercase();
 
         if query_text.is_empty() {
             return Ok(choices
-                .into_iter()
+                .iter()
                 .map(|llm| QueryResult::from(ModelSearchItem::new(llm, &active_llm_id, app)))
                 .collect());
         }
 
-        Ok(choices
-            .into_iter()
+        let mut results: Vec<QueryResult<Self::Action>> = choices
+            .iter()
             .filter_map(|llm| {
-                let match_result = match_indices_case_insensitive(
-                    llm.display_name.to_lowercase().as_str(),
-                    query_text.as_str(),
-                )?;
+                let display_name = llm.display_name.to_lowercase();
+                let id = llm.id.as_str().to_lowercase();
+                let display_match =
+                    match_indices_case_insensitive(display_name.as_str(), query_text.as_str());
+                let id_match = match_indices_case_insensitive(id.as_str(), query_text.as_str());
+
+                let (score, name_match_result) = match (display_match, id_match) {
+                    (Some(display_match), Some(id_match))
+                        if id_match.score > display_match.score =>
+                    {
+                        (id_match.score, Some(display_match))
+                    }
+                    (Some(display_match), _) => (display_match.score, Some(display_match)),
+                    (None, Some(id_match)) => (id_match.score, None),
+                    (None, None) => return None,
+                };
 
                 // Avoid spamming results with extremely weak matches.
-                if query_text.len() > 1 && match_result.score < 10 {
+                if query_text.len() > 1 && score < 10 {
                     return None;
                 }
 
                 Some(QueryResult::from(
                     ModelSearchItem::new(llm, &active_llm_id, app)
-                        .with_name_match_result(Some(match_result.clone()))
-                        .with_score(OrderedFloat(match_result.score as f64)),
+                        .with_name_match_result(name_match_result)
+                        .with_score(OrderedFloat(score as f64)),
                 ))
             })
-            .collect())
+            .collect();
+
+        let has_exact_existing_choice = choices.iter().any(|llm| llm.id.as_str() == raw_query_text);
+        if ChannelState::channel() == Channel::Oss
+            && !has_exact_existing_choice
+            && is_openrouter_custom_model_query(raw_query_text)
+        {
+            results.push(QueryResult::from(
+                ModelSearchItem::new_openrouter_custom(raw_query_text, &active_llm_id)
+                    .with_score(OrderedFloat(f64::MAX)),
+            ));
+        }
+
+        Ok(results)
     }
 }
 
@@ -245,6 +272,23 @@ impl ModelSearchItem {
             manage_api_key_mouse_state: Default::default(),
             reasoning_level: llm.reasoning_level(),
             discount_percentage: llm.discount_percentage,
+        }
+    }
+
+    fn new_openrouter_custom(model_id: &str, active_llm_id: &LLMId) -> Self {
+        Self {
+            id: model_id.to_owned().into(),
+            provider: LLMProvider::OpenRouter,
+            spec: None,
+            provider_icon: LLMProvider::OpenRouter.icon(),
+            display_text: model_id.to_owned(),
+            is_selected: active_llm_id.as_str() == model_id,
+            disable_reason: None,
+            name_match_result: None,
+            score: OrderedFloat(f64::MIN),
+            manage_api_key_mouse_state: Default::default(),
+            reasoning_level: None,
+            discount_percentage: None,
         }
     }
 
@@ -496,7 +540,10 @@ impl SearchItem for ModelSearchItem {
             let byok_available = UserWorkspaces::as_ref(app).is_byo_api_key_enabled()
                 && matches!(
                     self.provider,
-                    LLMProvider::OpenAI | LLMProvider::Anthropic | LLMProvider::Google
+                    LLMProvider::OpenAI
+                        | LLMProvider::Anthropic
+                        | LLMProvider::Google
+                        | LLMProvider::OpenRouter
                 );
 
             let mut text_fragments = vec![

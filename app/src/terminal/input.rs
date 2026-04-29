@@ -116,7 +116,7 @@ use crate::{
             BLOCK_CONTEXT_ATTACHMENT_REGEX, DIFF_HUNK_ATTACHMENT_REGEX,
             DRIVE_OBJECT_ATTACHMENT_REGEX,
         },
-        llms::{LLMPreferences, LLMPreferencesEvent},
+        llms::{LLMPreferences, LLMPreferencesEvent, DEFAULT_OPENROUTER_MODEL_ID},
         predict::{
             next_command_model::{
                 is_command_valid, is_next_command_enabled, NextCommandModel, NextCommandModelEvent,
@@ -223,6 +223,7 @@ use crate::{
     workspaces::user_workspaces::UserWorkspaces,
     AgentModeEntrypoint, ServerApiProvider,
 };
+use ai::api_keys::ApiKeyManager;
 
 use ai::skills::SkillReference;
 use base64::Engine as _;
@@ -414,26 +415,26 @@ const AGENT_MODE_AI_DISABLED_AUTODETECTION_DISABLED_HINT_TEXT: &str = "Run comma
 
 // Rotating hint text options for new Agent Mode conversations
 const AGENT_MODE_HINT_OPTIONS: &[&str] = &[
-    "Warp anything e.g. Deploy my React app to Vercel and set up environment variables",
-    "Warp anything e.g. Help me debug why my Python tests are failing in CI",
-    "Warp anything e.g. Set up a new microservice with Docker and create the deployment pipeline",
-    "Warp anything e.g. Find and fix the memory leak in my Node.js application",
-    "Warp anything e.g. Create a backup script for my PostgreSQL database and schedule it",
-    "Warp anything e.g. Help me migrate my data from MySQL to PostgreSQL",
-    "Warp anything e.g. Set up monitoring and alerts for my AWS infrastructure",
-    "Warp anything e.g. Build a REST API for my mobile app using FastAPI",
-    "Warp anything e.g. Help me optimize my SQL queries that are running slowly",
-    "Warp anything e.g. Create a GitHub Actions workflow to automatically deploy on merge",
-    "Warp anything e.g. Set up Redis caching for my web application",
-    "Warp anything e.g. Help me troubleshoot why my Kubernetes pods keep crashing",
-    "Warp anything e.g. Build a data pipeline to process CSV files and load them into BigQuery",
-    "Warp anything e.g. Set up SSL certificates and configure HTTPS for my domain",
-    "Warp anything e.g. Help me refactor this legacy code to use modern design patterns",
-    "Warp anything e.g. Create unit tests for my authentication service",
-    "Warp anything e.g. Set up log aggregation with ELK stack for my distributed system",
-    "Warp anything e.g. Help me implement OAuth2 authentication in my Express.js app",
-    "Warp anything e.g. Optimize my Docker images to reduce build times and size",
-    "Warp anything e.g. Set up A/B testing infrastructure for my web application",
+    "Ask Warper e.g. Deploy my React app to Vercel and set up environment variables",
+    "Ask Warper e.g. Help me debug why my Python tests are failing in CI",
+    "Ask Warper e.g. Set up a new microservice with Docker and create the deployment pipeline",
+    "Ask Warper e.g. Find and fix the memory leak in my Node.js application",
+    "Ask Warper e.g. Create a backup script for my PostgreSQL database and schedule it",
+    "Ask Warper e.g. Help me migrate my data from MySQL to PostgreSQL",
+    "Ask Warper e.g. Set up monitoring and alerts for my AWS infrastructure",
+    "Ask Warper e.g. Build a REST API for my mobile app using FastAPI",
+    "Ask Warper e.g. Help me optimize my SQL queries that are running slowly",
+    "Ask Warper e.g. Create a GitHub Actions workflow to automatically deploy on merge",
+    "Ask Warper e.g. Set up Redis caching for my web application",
+    "Ask Warper e.g. Help me troubleshoot why my Kubernetes pods keep crashing",
+    "Ask Warper e.g. Build a data pipeline to process CSV files and load them into BigQuery",
+    "Ask Warper e.g. Set up SSL certificates and configure HTTPS for my domain",
+    "Ask Warper e.g. Help me refactor this legacy code to use modern design patterns",
+    "Ask Warper e.g. Create unit tests for my authentication service",
+    "Ask Warper e.g. Set up log aggregation with ELK stack for my distributed system",
+    "Ask Warper e.g. Help me implement OAuth2 authentication in my Express.js app",
+    "Ask Warper e.g. Optimize my Docker images to reduce build times and size",
+    "Ask Warper e.g. Set up A/B testing infrastructure for my web application",
 ];
 
 fn get_agent_mode_new_conversation_hint_text() -> &'static str {
@@ -3748,6 +3749,17 @@ impl Input {
                 selected_tab,
                 set_as_default,
             } => {
+                if ChannelState::channel() == Channel::Oss {
+                    let openrouter_model = if id.as_str() == DEFAULT_OPENROUTER_MODEL_ID {
+                        None
+                    } else {
+                        Some(id.as_str().to_owned())
+                    };
+                    ApiKeyManager::handle(ctx).update(ctx, |manager, ctx| {
+                        manager.set_open_router_model(openrouter_model, ctx);
+                    });
+                }
+
                 let profile_id = *AIExecutionProfilesModel::as_ref(ctx)
                     .active_profile(Some(self.terminal_view_id), ctx)
                     .id();
@@ -4847,7 +4859,9 @@ impl Input {
         triggered_from: ZeroStatePromptSuggestionTriggeredFrom,
         ctx: &mut ViewContext<Self>,
     ) {
-        if !AIRequestUsageModel::as_ref(ctx).has_any_ai_remaining(ctx) {
+        if ChannelState::channel() != Channel::Oss
+            && !AIRequestUsageModel::as_ref(ctx).has_any_ai_remaining(ctx)
+        {
             return;
         }
 
@@ -5141,7 +5155,7 @@ impl Input {
             }
             (InputType::AI, _) => {
                 // Follow the `agent_indicator` pattern (see `app/src/tab.rs`):
-                //  * `None` (no conversation, empty, passive, or untitled) => new conversation => "Warp anything"
+                //  * `None` (no conversation, empty, passive, or untitled) => new conversation => "Ask Warper"
                 //  * `InProgress`                                           => agent running    => "Steer"
                 //  * Any other status                                       => finished         => "Ask a follow up"
                 match self
@@ -12404,7 +12418,7 @@ impl Input {
         let has_requests_remaining = AIRequestUsageModel::as_ref(ctx).has_requests_remaining();
 
         let has_any_ai = AIRequestUsageModel::as_ref(ctx).has_any_ai_remaining(ctx);
-        if !has_any_ai {
+        if ChannelState::channel() != Channel::Oss && !has_any_ai {
             AIRequestUsageModel::handle(ctx).update(ctx, |model, ctx| {
                 model.enable_buy_credits_banner(ctx);
             });

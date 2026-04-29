@@ -8298,7 +8298,9 @@ impl Workspace {
             MenuItem::Separator,
         ]);
 
-        if self.auth_state.is_anonymous_or_logged_out() {
+        let is_oss = ChannelState::channel() == Channel::Oss;
+
+        if self.auth_state.is_anonymous_or_logged_out() && !is_oss {
             items.push(
                 MenuItemFields::new("Sign up")
                     .with_on_select_action(WorkspaceAction::SignupAnonymousUser)
@@ -8306,33 +8308,31 @@ impl Workspace {
             );
         }
 
-        // Check if the user is on any paid plan to determine whether to show "Billing and Usage" or "Upgrade"
-        let is_on_paid_plan = UserWorkspaces::as_ref(app)
-            .current_workspace()
-            .map(|workspace| workspace.billing_metadata.is_user_on_paid_plan())
-            .unwrap_or(false);
+        if !is_oss {
+            // Check if the user is on any paid plan to determine whether to show "Billing and Usage" or "Upgrade"
+            let is_on_paid_plan = UserWorkspaces::as_ref(app)
+                .current_workspace()
+                .map(|workspace| workspace.billing_metadata.is_user_on_paid_plan())
+                .unwrap_or(false);
 
-        if is_on_paid_plan {
             items.push(
-                MenuItemFields::new("Billing and usage")
-                    .with_on_select_action(WorkspaceAction::ShowSettingsPage(
-                        SettingsSection::BillingAndUsage,
-                    ))
-                    .into_item(),
+                if is_on_paid_plan {
+                    MenuItemFields::new("Billing and usage").with_on_select_action(
+                        WorkspaceAction::ShowSettingsPage(SettingsSection::BillingAndUsage),
+                    )
+                } else {
+                    MenuItemFields::new("Upgrade")
+                        .with_on_select_action(WorkspaceAction::ShowUpgrade)
+                }
+                .into_item(),
             );
-        } else {
+
             items.push(
-                MenuItemFields::new("Upgrade")
-                    .with_on_select_action(WorkspaceAction::ShowUpgrade)
+                MenuItemFields::new("Invite a friend")
+                    .with_on_select_action(WorkspaceAction::ShowReferralSettingsPage)
                     .into_item(),
             );
         }
-
-        items.push(
-            MenuItemFields::new("Invite a friend")
-                .with_on_select_action(WorkspaceAction::ShowReferralSettingsPage)
-                .into_item(),
-        );
 
         if !self.auth_state.is_anonymous_or_logged_out() {
             items.push(
@@ -12750,6 +12750,9 @@ impl Workspace {
                 ctx.notify();
             }
             SettingsViewEvent::SignupAnonymousUser => {
+                if ChannelState::channel() == Channel::Oss {
+                    return;
+                }
                 self.initiate_user_signup(AnonymousUserSignupEntrypoint::SignUpButton, ctx);
             }
             SettingsViewEvent::Pane(_) | SettingsViewEvent::StartResize => {}
@@ -13857,6 +13860,9 @@ impl Workspace {
                 });
             }
             pane_group::Event::SignupAnonymousUser { entrypoint } => {
+                if ChannelState::channel() == Channel::Oss {
+                    return;
+                }
                 self.initiate_user_signup(*entrypoint, ctx);
             }
             pane_group::Event::OpenThemeChooser => {
@@ -14685,6 +14691,7 @@ impl Workspace {
         }
         if self.auth_state.is_anonymous_or_logged_out()
             && workflow.as_workflow().is_agent_mode_workflow()
+            && ChannelState::channel() != Channel::Oss
         {
             AuthManager::handle(ctx).update(ctx, |auth_manager, ctx| {
                 auth_manager.attempt_login_gated_feature(
@@ -14958,7 +14965,8 @@ impl Workspace {
         ctx: &mut ViewContext<Self>,
     ) {
         match event {
-            WindowSettingsChangedEvent::BackgroundOpacity { .. } => {
+            WindowSettingsChangedEvent::BackgroundOpacity { .. }
+            | WindowSettingsChangedEvent::TerminalBackgroundImagePath { .. } => {
                 ctx.notify();
             }
             WindowSettingsChangedEvent::LeftPanelVisibilityAcrossTabs { .. } => {
@@ -16118,6 +16126,10 @@ impl Workspace {
     }
 
     pub fn check_and_open_free_tier_limit_modal(&mut self, ctx: &mut ViewContext<Self>) -> bool {
+        if ChannelState::channel() == Channel::Oss {
+            return false;
+        }
+
         let is_free_tier = !UserWorkspaces::as_ref(ctx)
             .current_workspace()
             .is_some_and(|workspace| workspace.billing_metadata.is_user_on_paid_plan());
@@ -17364,6 +17376,7 @@ impl Workspace {
 
         if self.auth_state.is_anonymous_or_logged_out()
             && !FeatureFlag::OpenWarpNewSettingsModes.is_enabled()
+            && ChannelState::channel() != Channel::Oss
         {
             if is_web_anonymous_user {
                 target.add_child(
@@ -19726,6 +19739,9 @@ impl TypedActionView for Workspace {
                     }
                     // Terminal and Agent are handled by the existing path
                     // (add_terminal_tab applies DefaultSessionMode::Agent internally).
+                    DefaultSessionMode::Agent if ChannelState::channel() == Channel::Oss => {
+                        self.add_terminal_tab(false, ctx);
+                    }
                     DefaultSessionMode::Terminal | DefaultSessionMode::Agent => {
                         if FeatureFlag::WelcomeTab.is_enabled() {
                             self.add_welcome_tab(ctx);
@@ -19986,6 +20002,10 @@ impl TypedActionView for Workspace {
                 source,
             } => self.toggle_palette(*palette_mode, *source, ctx),
             ShowUpgrade => {
+                if ChannelState::channel() == Channel::Oss {
+                    self.show_settings_with_section(Some(SettingsSection::Account), ctx);
+                    return;
+                }
                 send_telemetry_from_ctx!(TelemetryEvent::UserMenuUpgradeClicked, ctx);
 
                 let auth_state = AuthStateProvider::as_ref(ctx).get();
@@ -20001,6 +20021,10 @@ impl TypedActionView for Workspace {
                 ctx.open_url(&upgrade_url);
             }
             ShowReferralSettingsPage => {
+                if ChannelState::channel() == Channel::Oss {
+                    self.show_settings_with_section(Some(SettingsSection::Account), ctx);
+                    return;
+                }
                 self.show_settings_with_section(Some(SettingsSection::Referrals), ctx);
             }
             JoinSlack => self.join_slack(ctx),
@@ -20812,6 +20836,10 @@ impl TypedActionView for Workspace {
                 ctx.notify();
             }
             AttemptLoginGatedAIUpgrade => {
+                if ChannelState::channel() == Channel::Oss {
+                    self.show_settings_with_section(Some(SettingsSection::Account), ctx);
+                    return;
+                }
                 AuthManager::handle(ctx).update(ctx, |auth_manager, ctx| {
                     auth_manager.attempt_login_gated_feature(
                         "Upgrade AI Usage",
@@ -22775,7 +22803,7 @@ impl View for Workspace {
             .background_opacity
             .effective_opacity(self.window_id, app);
 
-        if let Some(img) = theme.background_image() {
+        if let Some(img) = util::get_terminal_background_image(app) {
             let opacity_ratio = background_opacity as f32 / 100.;
             stack.add_child(
                 Shrinkable::new(

@@ -3,7 +3,12 @@ use markdown_parser::{parse_markdown, FormattedText, FormattedTextFragment, Form
 use parking_lot::FairMutex;
 use settings::Setting;
 use std::{borrow::Cow, cmp::Reverse, path::Path, sync::Arc};
-use warp_core::{features::FeatureFlag, report_if_error, ui::Icon};
+use warp_core::{
+    channel::{Channel, ChannelState},
+    features::FeatureFlag,
+    report_if_error,
+    ui::Icon,
+};
 use warpui::{
     elements::{
         Clipped, Container, CornerRadius, CrossAxisAlignment, Flex, FormattedTextElement,
@@ -383,9 +388,14 @@ impl View for AgentViewZeroStateBlock {
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
 
+        let is_oss = ChannelState::channel() == Channel::Oss;
         let header_props = if self.origin.is_cloud_agent() {
             HeaderProps {
-                title: "New Oz cloud agent conversation".into(),
+                title: if is_oss {
+                    "New cloud agent conversation".into()
+                } else {
+                    "New Oz cloud agent conversation".into()
+                },
                 description: AgentViewDescription::CloudModeWithDocsLink,
                 icon: Icon::OzCloud,
             }
@@ -401,7 +411,11 @@ impl View for AgentViewZeroStateBlock {
             }
 
             HeaderProps {
-                title: "New Oz agent conversation".into(),
+                title: if is_oss {
+                    "New agent conversation".into()
+                } else {
+                    "New Oz agent conversation".into()
+                },
                 description: AgentViewDescription::PlainText(vec![local_description.into()]),
                 icon: Icon::Oz,
             }
@@ -411,7 +425,7 @@ impl View for AgentViewZeroStateBlock {
             .with_main_axis_size(MainAxisSize::Min)
             .with_children(render_title_and_description(header_props, app));
 
-        if !self.origin.is_cloud_agent() {
+        if !is_oss && !self.origin.is_cloud_agent() {
             if let Some(oz_updates_section) = render_oz_updates(
                 OzUpdatesProps {
                     is_expanded: self.is_oz_updates_expanded,
@@ -709,21 +723,23 @@ fn render_body(props: ZeroStateBodyProps<'_>, app: &AppContext) -> Vec<Box<dyn E
         ) {
         vec![recent_conversations_section]
     } else {
-        let mut body_items = vec![
-            render_standard_message(
-                Message::new(vec![MessageItem::clickable(
-                    vec![
-                        MessageItem::keystroke(ENTER_AGENT_VIEW_NEW_CONVERSATION_KEYSTROKE.clone()),
-                        MessageItem::text("start a new agent conversation"),
-                    ],
-                    |ctx| {
-                        ctx.dispatch_typed_action(TerminalAction::StartNewAgentConversation);
-                    },
-                    state_handles.start_new_conversation.clone(),
-                )]),
-                app,
-            ),
-            render_standard_message(
+        let is_oss = ChannelState::channel() == Channel::Oss;
+        let mut body_items = vec![render_standard_message(
+            Message::new(vec![MessageItem::clickable(
+                vec![
+                    MessageItem::keystroke(ENTER_AGENT_VIEW_NEW_CONVERSATION_KEYSTROKE.clone()),
+                    MessageItem::text("start a new agent conversation"),
+                ],
+                |ctx| {
+                    ctx.dispatch_typed_action(TerminalAction::StartNewAgentConversation);
+                },
+                state_handles.start_new_conversation.clone(),
+            )]),
+            app,
+        )];
+
+        if !is_oss {
+            body_items.push(render_standard_message(
                 Message::new(vec![MessageItem::clickable(
                     vec![
                         MessageItem::keystroke(
@@ -737,24 +753,25 @@ fn render_body(props: ZeroStateBodyProps<'_>, app: &AppContext) -> Vec<Box<dyn E
                     state_handles.start_cloud_conversation.clone(),
                 )]),
                 app,
-            ),
-            render_standard_message(
-                Message::new(vec![MessageItem::clickable(
-                    vec![
-                        MessageItem::keystroke(Keystroke {
-                            key: "/model".to_owned(),
-                            ..Default::default()
-                        }),
-                        MessageItem::text("switch model"),
-                    ],
-                    |ctx| {
-                        ctx.dispatch_typed_action(TerminalAction::OpenModelSelector);
-                    },
-                    state_handles.switch_model.clone(),
-                )]),
-                app,
-            ),
-        ];
+            ));
+        }
+
+        body_items.push(render_standard_message(
+            Message::new(vec![MessageItem::clickable(
+                vec![
+                    MessageItem::keystroke(Keystroke {
+                        key: "/model".to_owned(),
+                        ..Default::default()
+                    }),
+                    MessageItem::text("switch model"),
+                ],
+                |ctx| {
+                    ctx.dispatch_typed_action(TerminalAction::OpenModelSelector);
+                },
+                state_handles.switch_model.clone(),
+            )]),
+            app,
+        ));
 
         // Only show "escape to go back" if there's a parent terminal
         if has_parent_terminal {

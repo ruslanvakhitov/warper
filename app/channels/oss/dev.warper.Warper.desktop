@@ -4,20 +4,20 @@ Version=1.0
 
 Type=Application
 
-Name=WarpOss
+Name=Warper
 GenericName=TerminalEmulator
 
 Exec=warp-oss %U
-StartupWMClass=dev.warp.WarpOss
+StartupWMClass=dev.warper.Warper
 
 Keywords=shell;prompt;command;commandline;cmd;
 
-Icon=dev.warp.WarpOss
+Icon=dev.warper.Warper
 
 Categories=System;TerminalEmulator;
 
 # Don't run this application within a terminal.
 Terminal=false
 
-# Register ourselves as the handler for warposs:// URLs.
-MimeType=x-scheme-handler/warposs;
+# Register ourselves as the handler for warper:// URLs.
+MimeType=x-scheme-handler/warper;

@@ -78,6 +78,12 @@ fn test_anthropic_api_key() {
 }
 
 #[test]
+fn test_openrouter_api_key() {
+    let openrouter_key = "sk-or-v1-abcdefghijklmnopqrstuvwxyzABCDE12345";
+    assert_regex_match_found(regexes::OPENROUTER_API_KEY, openrouter_key);
+}
+
+#[test]
 fn test_generic_sk_api_key() {
     let generic_sk_key = "sk-prod-super-secret-key-XYZ123abc-987654";
     assert_regex_match_found(regexes::GENERIC_SK_API_KEY, generic_sk_key);

@@ -6,6 +6,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+use ai::api_keys::ApiKeyManager;
 use indexmap::IndexMap;
 
 use crate::ai::request_usage_model::RequestLimitInfo;
@@ -25,6 +26,7 @@ use warpui::{
 use settings::{
     define_settings_group, RespectUserSyncSetting, Setting, SupportedPlatforms, SyncToCloud,
 };
+use warp_core::channel::{Channel, ChannelState};
 use warp_core::execution_mode::AppExecutionMode;
 use warp_core::features::FeatureFlag;
 
@@ -1497,6 +1499,11 @@ impl AISettings {
     }
 
     pub fn is_any_ai_enabled(&self, app: &AppContext) -> bool {
+        if Self::is_oss_openrouter_configured(app) {
+            return *self.is_any_ai_enabled
+                && !self.is_ai_disabled_due_to_remote_session_org_policy(app);
+        }
+
         // Disable AI for anonymous and logged-out users.
         let is_anonymous_or_logged_out = AuthStateProvider::as_ref(app)
             .get()
@@ -1508,6 +1515,10 @@ impl AISettings {
     }
 
     pub fn default_session_mode(&self, app: &AppContext) -> DefaultSessionMode {
+        if Self::is_oss_openrouter_configured(app) {
+            return DefaultSessionMode::Agent;
+        }
+
         let mode = *self.default_session_mode_internal.value();
         match mode {
             // Terminal and TabConfig don't require AI.
@@ -1530,6 +1541,16 @@ impl AISettings {
                 }
             }
         }
+    }
+
+    fn is_oss_openrouter_configured(app: &AppContext) -> bool {
+        ChannelState::channel() == Channel::Oss
+            && app.has_singleton_model::<ApiKeyManager>()
+            && ApiKeyManager::as_ref(app)
+                .keys()
+                .open_router
+                .as_deref()
+                .is_some_and(|key| !key.trim().is_empty())
     }
 
     /// Returns the stored default tab config path (only meaningful when mode is `TabConfig`).

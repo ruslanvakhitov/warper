@@ -93,6 +93,7 @@ use std::sync::mpsc::SyncSender;
 use std::sync::Arc;
 use std::{collections::HashMap, path::PathBuf};
 use url::Url;
+use warp_core::channel::Channel;
 use warp_core::context_flag::ContextFlag;
 use warp_core::user_preferences::GetUserPreferences as _;
 use warpui::clipboard::ClipboardContent;
@@ -1751,7 +1752,9 @@ impl RootView {
             workspace_setting,
         };
 
-        let auth_onboarding_state = if auth_state.is_logged_in() {
+        let auth_onboarding_state = if auth_state.is_logged_in()
+            || Self::should_skip_agent_onboarding_for_channel()
+        {
             AuthOnboardingState::Terminal(workspace_args.create_workspace(ctx))
         } else {
             cfg_if! {
@@ -1764,6 +1767,7 @@ impl RootView {
                         && has_completed_local_onboarding(ctx);
                     let should_show_pre_login_onboarding = FeatureFlag::OpenWarpNewSettingsModes.is_enabled()
                         && FeatureFlag::AgentOnboarding.is_enabled()
+                        && !Self::should_skip_agent_onboarding_for_channel()
                         && !has_completed_local_onboarding;
                     if FeatureFlag::ForceLogin.is_enabled() {
                         // ForceLogin is true for Preview
@@ -2127,6 +2131,11 @@ impl RootView {
 
     /// Debug method to enter the onboarding state.
     fn debug_enter_onboarding_state(&mut self, _: &(), ctx: &mut ViewContext<Self>) -> bool {
+        if Self::should_skip_agent_onboarding_for_channel() {
+            log::warn!("Attempted to enter onboarding state in OSS channel");
+            return false;
+        }
+
         if !ChannelState::enable_debug_features() {
             log::warn!("Attempted to enter onboarding state in release build");
             return false;
@@ -2142,6 +2151,10 @@ impl RootView {
         ctx.emit(RootViewEvent::AuthOnboardingStateChanged);
         ctx.notify();
         true
+    }
+
+    fn should_skip_agent_onboarding_for_channel() -> bool {
+        ChannelState::channel() == Channel::Oss
     }
 
     fn onboarding_theme_kind(theme_name: &str) -> Option<ThemeKind> {
@@ -3507,6 +3520,7 @@ impl AuthOnboardingState {
         if !is_onboarded
             && !is_anonymous
             && !has_completed_local_onboarding
+            && !RootView::should_skip_agent_onboarding_for_channel()
             && FeatureFlag::AgentOnboarding.is_enabled()
         {
             self.try_open_onboarding_slides(ctx);
@@ -3529,6 +3543,10 @@ impl AuthOnboardingState {
     }
 
     fn try_open_onboarding_slides(&mut self, ctx: &mut ViewContext<RootView>) {
+        if RootView::should_skip_agent_onboarding_for_channel() {
+            return;
+        }
+
         let target = match self {
             AuthOnboardingState::Auth(args) | AuthOnboardingState::ConfirmIncomingAuth(args) => {
                 AuthOnboardingTarget::Workspace(args.clone())

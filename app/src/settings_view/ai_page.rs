@@ -48,7 +48,7 @@ use itertools::Itertools;
 use regex::Regex;
 use settings::{Setting, ToggleableSetting};
 use strum::IntoEnumIterator;
-use warp_core::channel::ChannelState;
+use warp_core::channel::{Channel, ChannelState};
 use warp_core::context_flag::ContextFlag;
 use warp_core::features::FeatureFlag;
 use warp_core::ui::theme::color::internal_colors;
@@ -1418,6 +1418,7 @@ impl AISettingsPageView {
 
     fn build_page(subpage: Option<AISubpage>, ctx: &mut ViewContext<Self>) -> PageType<Self> {
         let ai_settings = AISettings::as_ref(ctx);
+        let is_oss = ChannelState::channel() == Channel::Oss;
 
         let mut widgets: Vec<Box<dyn SettingsWidget<View = AISettingsPageView>>> = Vec::new();
 
@@ -1427,7 +1428,7 @@ impl AISettingsPageView {
             None => {
                 // Full page: all widgets (legacy behavior)
                 widgets.push(Box::new(GlobalAIWidget::default()));
-                if !FeatureFlag::UsageBasedPricing.is_enabled() {
+                if !is_oss && !FeatureFlag::UsageBasedPricing.is_enabled() {
                     widgets.push(Box::new(UsageWidget::default()));
                 }
                 if ai_settings
@@ -1468,10 +1469,12 @@ impl AISettingsPageView {
                 }
                 widgets.push(Box::new(CLIAgentWidget::default()));
                 widgets.push(Box::new(ApiKeysWidget::new(ctx)));
-                widgets.push(Box::new(AwsBedrockWidget::new(ctx)));
+                if !is_oss {
+                    widgets.push(Box::new(AwsBedrockWidget::new(ctx)));
+                }
                 widgets.push(Box::new(AgentAttributionWidget::default()));
                 widgets.push(Box::new(OtherAIWidget::default()));
-                if FeatureFlag::AgentModeComputerUse.is_enabled() {
+                if !is_oss && FeatureFlag::AgentModeComputerUse.is_enabled() {
                     widgets.push(Box::new(CloudAgentComputerUseWidget::default()));
                 }
             }
@@ -1508,15 +1511,17 @@ impl AISettingsPageView {
                     widgets.push(Box::new(VoiceWidget::default()));
                 }
                 widgets.push(Box::new(ApiKeysWidget::new(ctx)));
-                widgets.push(Box::new(AwsBedrockWidget::new(ctx)));
+                if !is_oss {
+                    widgets.push(Box::new(AwsBedrockWidget::new(ctx)));
+                }
                 widgets.push(Box::new(AgentAttributionWidget::default()));
                 widgets.push(Box::new(OtherAIWidget::default()));
-                if FeatureFlag::AgentModeComputerUse.is_enabled() {
+                if !is_oss && FeatureFlag::AgentModeComputerUse.is_enabled() {
                     widgets.push(Box::new(CloudAgentComputerUseWidget::default()));
                 }
             }
             Some(AISubpage::Profiles) => {
-                if !FeatureFlag::UsageBasedPricing.is_enabled() {
+                if !is_oss && !FeatureFlag::UsageBasedPricing.is_enabled() {
                     widgets.push(Box::new(UsageWidget::default()));
                 }
                 widgets.push(Box::new(AgentsWidget::default()));
@@ -3083,6 +3088,8 @@ impl SettingsWidget for GlobalAIWidget {
         let is_anonymous = AuthStateProvider::as_ref(app)
             .get()
             .is_anonymous_or_logged_out();
+        let is_oss = ChannelState::channel() == Channel::Oss;
+        let agent_title = if is_oss { "Warper Agent" } else { "Warp Agent" };
 
         let mut row = Flex::row()
             .with_main_axis_size(MainAxisSize::Max)
@@ -3090,7 +3097,7 @@ impl SettingsWidget for GlobalAIWidget {
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_child(
                 Text::new_inline(
-                    "Warp Agent",
+                    agent_title,
                     appearance.ui_font_family(),
                     PRIMARY_HEADER_FONT_SIZE,
                 )
@@ -3116,8 +3123,8 @@ impl SettingsWidget for GlobalAIWidget {
             );
         }
 
-        // Show sign-up button for anonymous users, toggle for logged-in users
-        if is_anonymous {
+        // OSS builds use a local OpenRouter key instead of a Warp account.
+        if is_anonymous && !is_oss {
             row.add_child(
                 Flex::row()
                     .with_cross_axis_alignment(CrossAxisAlignment::Center)
@@ -5966,6 +5973,8 @@ impl SettingsWidget for CloudAgentComputerUseWidget {
 
 struct ApiKeysWidget {
     openai_api_key_editor: ViewHandle<EditorView>,
+    open_router_api_key_editor: ViewHandle<EditorView>,
+    open_router_model_editor: ViewHandle<EditorView>,
     anthropic_api_key_editor: ViewHandle<EditorView>,
     google_api_key_editor: ViewHandle<EditorView>,
 
@@ -5982,19 +5991,20 @@ impl ApiKeysWidget {
 
         let ApiKeys {
             openai: openai_key,
+            open_router: open_router_key,
+            open_router_model,
             anthropic: anthropic_key,
             google: google_key,
-            ..
         } = ApiKeyManager::as_ref(ctx).keys().clone();
 
-        // A helper macro to create and configure an API key editor.  This avoids a lot
+        // A helper macro to create and configure local provider setting editors. This avoids a lot
         // of code duplication and ensures consistency between the editors.
-        macro_rules! create_api_key_editor {
-            ($editor:ident, $key:ident, $set_func:ident, $placeholder:literal) => {
+        macro_rules! create_provider_setting_editor {
+            ($editor:ident, $value:ident, $set_func:ident, $placeholder:literal, $is_password:literal) => {
                 let $editor = ctx.add_typed_action_view(move |ctx| {
                     let appearance = Appearance::handle(ctx).as_ref(ctx);
                     let options = SingleLineEditorOptions {
-                        is_password: true,
+                        is_password: $is_password,
                         text: TextOptions {
                             font_size_override: Some(appearance.ui_font_size()),
                             font_family_override: Some(appearance.monospace_font_family()),
@@ -6009,8 +6019,8 @@ impl ApiKeysWidget {
                     };
                     let mut editor = EditorView::single_line(options, ctx);
                     editor.set_placeholder_text($placeholder, ctx);
-                    if let Some(key) = &$key {
-                        editor.set_buffer_text(key, ctx);
+                    if let Some(value) = &$value {
+                        editor.set_buffer_text(value, ctx);
                     }
                     editor
                 });
@@ -6022,9 +6032,9 @@ impl ApiKeysWidget {
                 ctx.subscribe_to_view(&$editor, |_, $editor, event, ctx| {
                     if matches!(event, EditorEvent::Blurred | EditorEvent::Enter) {
                         let buffer_text = $editor.as_ref(ctx).buffer_text(ctx);
-                        let key = buffer_text.is_empty().not().then_some(buffer_text);
+                        let value = buffer_text.is_empty().not().then_some(buffer_text);
                         ApiKeyManager::handle(ctx).update(ctx, |model, ctx| {
-                            model.$set_func(key, ctx);
+                            model.$set_func(value, ctx);
                         });
                     }
                 });
@@ -6058,22 +6068,46 @@ impl ApiKeysWidget {
             };
         }
 
-        create_api_key_editor!(openai_api_key_editor, openai_key, set_openai_key, "sk-...");
-        create_api_key_editor!(
+        create_provider_setting_editor!(
+            openai_api_key_editor,
+            openai_key,
+            set_openai_key,
+            "sk-...",
+            true
+        );
+        create_provider_setting_editor!(
+            open_router_api_key_editor,
+            open_router_key,
+            set_open_router_key,
+            "sk-or-v1-...",
+            true
+        );
+        create_provider_setting_editor!(
+            open_router_model_editor,
+            open_router_model,
+            set_open_router_model,
+            "openrouter/auto",
+            false
+        );
+        create_provider_setting_editor!(
             anthropic_api_key_editor,
             anthropic_key,
             set_anthropic_key,
-            "sk-ant-..."
+            "sk-ant-...",
+            true
         );
-        create_api_key_editor!(
+        create_provider_setting_editor!(
             google_api_key_editor,
             google_key,
             set_google_key,
-            "AIzaSy..."
+            "AIzaSy...",
+            true
         );
 
         Self {
             openai_api_key_editor,
+            open_router_api_key_editor,
+            open_router_model_editor,
             anthropic_api_key_editor,
             google_api_key_editor,
 
@@ -6090,21 +6124,22 @@ impl ApiKeysWidget {
     ) -> Box<dyn Element> {
         let ai_settings = AISettings::as_ref(app);
         let is_any_ai_enabled = ai_settings.is_any_ai_enabled(app);
-        let is_enabled = is_any_ai_enabled && is_byo_enabled;
+        let is_oss = ChannelState::channel() == Channel::Oss;
+        let is_enabled = is_any_ai_enabled && (is_byo_enabled || is_oss);
 
-        let mut column = Flex::column()
-            .with_spacing(16.)
-            .with_child(
-                Container::new(
-                    render_ai_setting_description(
-                        "Use your own API keys from model providers for the Warp Agent to use. API keys are stored locally and never synced to the cloud. Using auto models or models from providers you have not provided API keys for will consume Warp credits.",
-                        is_enabled,
-                        app,
-                    ))
+        let description = if is_oss {
+            "Warper sends agent requests directly to OpenRouter when an OpenRouter key is set. API keys and the OpenRouter model ID are stored locally and never synced to the cloud."
+        } else {
+            "Use your own API keys from model providers for the Warp Agent to use. API keys are stored locally and never synced to the cloud. Using auto models or models from providers you have not provided API keys for will consume Warp credits."
+        };
+
+        let mut column = Flex::column().with_spacing(16.).with_child(
+            Container::new(render_ai_setting_description(description, is_enabled, app))
                 // Remove the bottom margin of the description so that it doesn't
                 // create extra space between the description and the API key inputs.
-                .with_margin_bottom(-styles::DESCRIPTION_MARGIN_BOTTOM).finish()
-            );
+                .with_margin_bottom(-styles::DESCRIPTION_MARGIN_BOTTOM)
+                .finish(),
+        );
 
         /// Helper function to render the UI for an API key input field.
         fn render_api_key_input(
@@ -6144,30 +6179,48 @@ impl ApiKeysWidget {
                 .finish()
         }
 
+        if !is_oss {
+            column.add_child(render_api_key_input(
+                appearance,
+                "OpenAI API Key",
+                self.openai_api_key_editor.clone(),
+                is_enabled,
+                app,
+            ));
+        }
         column.add_child(render_api_key_input(
             appearance,
-            "OpenAI API Key",
-            self.openai_api_key_editor.clone(),
+            "OpenRouter API Key",
+            self.open_router_api_key_editor.clone(),
             is_enabled,
             app,
         ));
         column.add_child(render_api_key_input(
             appearance,
-            "Anthropic API Key",
-            self.anthropic_api_key_editor.clone(),
+            "OpenRouter Model",
+            self.open_router_model_editor.clone(),
             is_enabled,
             app,
         ));
-        column.add_child(render_api_key_input(
-            appearance,
-            "Google API Key",
-            self.google_api_key_editor.clone(),
-            is_enabled,
-            app,
-        ));
+        if !is_oss {
+            column.add_child(render_api_key_input(
+                appearance,
+                "Anthropic API Key",
+                self.anthropic_api_key_editor.clone(),
+                is_enabled,
+                app,
+            ));
+            column.add_child(render_api_key_input(
+                appearance,
+                "Google API Key",
+                self.google_api_key_editor.clone(),
+                is_enabled,
+                app,
+            ));
+        }
 
         // Show upgrade CTA if BYOK is not enabled
-        if !is_byo_enabled {
+        if !is_byo_enabled && !is_oss {
             let auth_state = AuthStateProvider::as_ref(app).get();
             let upgrade_text_fragments = if let Some(team) =
                 UserWorkspaces::as_ref(app).current_team()
@@ -6261,7 +6314,7 @@ impl SettingsWidget for ApiKeysWidget {
     type View = AISettingsPageView;
 
     fn search_terms(&self) -> &str {
-        "api keys bring your own byo openai anthropic google claude gemini gpt"
+        "api keys bring your own byo openai openrouter open router model anthropic google claude gemini gpt"
     }
 
     fn render(
@@ -6287,7 +6340,7 @@ impl SettingsWidget for ApiKeysWidget {
             )
             .with_child(self.render_api_keys_section(appearance, app, is_byo_enabled));
 
-        if is_byo_enabled {
+        if is_byo_enabled && ChannelState::channel() != Channel::Oss {
             column.add_child(
                 Container::new(self.render_can_use_warp_credits_with_byok_toggle(view, app))
                     .with_margin_top(16.)

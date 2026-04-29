@@ -1,5 +1,9 @@
 use settings::Setting;
-use warp_core::{report_if_error, ui::Icon};
+use warp_core::{
+    channel::{Channel, ChannelState},
+    report_if_error,
+    ui::Icon,
+};
 use warpui::{
     elements::{
         ChildAnchor, Container, CrossAxisAlignment, Flex, MainAxisSize, OffsetPositioning,
@@ -185,21 +189,23 @@ impl View for TerminalViewZeroStateBlock {
                     .finish(),
             );
 
-        let mut items = vec![
-            render_standard_message(
-                Message::new(vec![MessageItem::clickable(
-                    vec![
-                        MessageItem::keystroke(ENTER_AGENT_VIEW_NEW_CONVERSATION_KEYSTROKE.clone()),
-                        MessageItem::text("start a new agent conversation"),
-                    ],
-                    |ctx| {
-                        ctx.dispatch_typed_action(TerminalAction::StartNewAgentConversation);
-                    },
-                    self.state_handles.start_new_conversation.clone(),
-                )]),
-                app,
-            ),
-            render_standard_message(
+        let is_oss = ChannelState::channel() == Channel::Oss;
+        let mut items = vec![render_standard_message(
+            Message::new(vec![MessageItem::clickable(
+                vec![
+                    MessageItem::keystroke(ENTER_AGENT_VIEW_NEW_CONVERSATION_KEYSTROKE.clone()),
+                    MessageItem::text("start a new agent conversation"),
+                ],
+                |ctx| {
+                    ctx.dispatch_typed_action(TerminalAction::StartNewAgentConversation);
+                },
+                self.state_handles.start_new_conversation.clone(),
+            )]),
+            app,
+        )];
+
+        if !is_oss {
+            items.push(render_standard_message(
                 Message::new(vec![MessageItem::clickable(
                     vec![
                         MessageItem::keystroke(
@@ -213,24 +219,25 @@ impl View for TerminalViewZeroStateBlock {
                     self.state_handles.start_cloud_conversation.clone(),
                 )]),
                 app,
-            ),
-            render_standard_message(
-                Message::new(vec![MessageItem::clickable(
-                    vec![
-                        MessageItem::keystroke(Keystroke {
-                            key: "up".to_owned(),
-                            ..Default::default()
-                        }),
-                        MessageItem::text("cycle past commands and conversations"),
-                    ],
-                    |ctx| {
-                        ctx.dispatch_typed_action(TerminalAction::OpenInlineHistoryMenu);
-                    },
-                    self.state_handles.open_history_menu.clone(),
-                )]),
-                app,
-            ),
-        ];
+            ));
+        }
+
+        items.push(render_standard_message(
+            Message::new(vec![MessageItem::clickable(
+                vec![
+                    MessageItem::keystroke(Keystroke {
+                        key: "up".to_owned(),
+                        ..Default::default()
+                    }),
+                    MessageItem::text("cycle past commands and conversations"),
+                ],
+                |ctx| {
+                    ctx.dispatch_typed_action(TerminalAction::OpenInlineHistoryMenu);
+                },
+                self.state_handles.open_history_menu.clone(),
+            )]),
+            app,
+        ));
 
         if *TabSettings::as_ref(app).show_code_review_button {
             if let Some(keystroke) =

@@ -75,6 +75,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 use warp_core::assertions::safe_assert;
+use warp_core::channel::{Channel, ChannelState};
 use warp_multi_agent_api::{message, Task, ToolType};
 use warpui::r#async::{SpawnedFutureHandle, Timer};
 
@@ -2739,7 +2740,9 @@ impl BlocklistAIController {
             LLMPreferences::handle(ctx).update(ctx, |llm_preferences, ctx| {
                 llm_preferences.refresh_authed_models(ctx);
             });
-            ctx.emit(BlocklistAIControllerEvent::FreeTierLimitCheckTriggered);
+            if ChannelState::channel() != Channel::Oss {
+                ctx.emit(BlocklistAIControllerEvent::FreeTierLimitCheckTriggered);
+            }
         }
     }
 }
