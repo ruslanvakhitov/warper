@@ -2,10 +2,11 @@ pub(crate) mod convert_conversation;
 mod convert_from;
 mod convert_to;
 mod r#impl;
+mod ollama;
 mod openrouter;
 
 pub use ai::agent::convert::ConvertToAPITypeError;
-use ai::api_keys::ApiKeyManager;
+use ai::api_keys::{AiProvider, ApiKeyManager};
 pub use convert_from::{
     user_inputs_from_messages, ConversionParams, ConvertAPIMessageToClientOutputMessage,
     MaybeAIAgentOutputMessage, MessageToAIAgentOutputMessageError,
@@ -118,6 +119,10 @@ pub struct RequestParams {
     /// User-provided API keys for AI providers (BYO API Key).
     pub api_keys: Option<warp_multi_agent_api::request::settings::ApiKeys>,
     pub open_router_model: Option<String>,
+    pub ollama_base_url: Option<String>,
+    pub ollama_api_key: Option<String>,
+    pub ollama_model: Option<String>,
+    pub active_provider: AiProvider,
     pub allow_use_of_warp_credits_with_byok: bool,
     pub autonomy_level: warp_multi_agent_api::AutonomyLevel,
     pub isolation_level: warp_multi_agent_api::IsolationLevel,
@@ -247,6 +252,25 @@ impl RequestParams {
             .as_ref()
             .map(|model| model.trim().to_owned())
             .filter(|model| !model.is_empty());
+        let ollama_base_url = api_key_manager
+            .keys()
+            .ollama_base_url
+            .as_ref()
+            .map(|url| url.trim().to_owned())
+            .filter(|url| !url.is_empty());
+        let ollama_api_key = api_key_manager
+            .keys()
+            .ollama_api_key
+            .as_ref()
+            .map(|key| key.trim().to_owned())
+            .filter(|key| !key.is_empty());
+        let ollama_model = api_key_manager
+            .keys()
+            .ollama_model
+            .as_ref()
+            .map(|model| model.trim().to_owned())
+            .filter(|model| !model.is_empty());
+        let active_provider = api_key_manager.keys().active_provider;
         let allow_use_of_warp_credits_with_byok =
             *AISettings::as_ref(app).can_use_warp_credits_with_byok;
 
@@ -318,6 +342,10 @@ impl RequestParams {
             should_redact_secrets,
             api_keys,
             open_router_model,
+            ollama_base_url,
+            ollama_api_key,
+            ollama_model,
+            active_provider,
             allow_use_of_warp_credits_with_byok,
             autonomy_level,
             isolation_level,

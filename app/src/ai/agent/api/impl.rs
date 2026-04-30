@@ -10,8 +10,11 @@ use warp_multi_agent_api as api;
 
 use crate::server::server_api::ServerApi;
 
+use ::ai::api_keys::AiProvider;
+
 use super::{
-    convert_to::convert_input, openrouter, ConvertToAPITypeError, RequestParams, ResponseStream,
+    convert_to::convert_input, ollama, openrouter, ConvertToAPITypeError, RequestParams,
+    ResponseStream,
 };
 
 pub async fn generate_multi_agent_output(
@@ -24,9 +27,11 @@ pub async fn generate_multi_agent_output(
     }
 
     if ChannelState::channel() == Channel::Oss {
-        let output_stream =
-            openrouter::generate_openrouter_output(params).take_until(cancellation_rx);
-        return Ok(Box::pin(output_stream));
+        let output_stream = match params.active_provider {
+            AiProvider::OpenRouter => openrouter::generate_openrouter_output(params),
+            AiProvider::Ollama => ollama::generate_ollama_output(params),
+        };
+        return Ok(Box::pin(output_stream.take_until(cancellation_rx)));
     }
 
     let supported_tools = params

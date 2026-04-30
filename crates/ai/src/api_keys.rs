@@ -12,6 +12,19 @@ pub enum ApiKeyManagerEvent {
     KeysUpdated,
 }
 
+/// The OSS-mode AI provider that should service agent requests.
+///
+/// Persisted alongside [`ApiKeys`] in secure storage so the user's choice
+/// survives restarts. Only consulted in OSS builds; non-OSS builds always
+/// route through the Warp server.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AiProvider {
+    #[default]
+    OpenRouter,
+    Ollama,
+}
+
 /// User-provided API keys for AI providers.
 ///
 /// These are used for "Bring Your Own API Key" functionality, allowing
@@ -23,6 +36,14 @@ pub struct ApiKeys {
     pub openai: Option<String>,
     pub open_router: Option<String>,
     pub open_router_model: Option<String>,
+    #[serde(default)]
+    pub ollama_base_url: Option<String>,
+    #[serde(default)]
+    pub ollama_api_key: Option<String>,
+    #[serde(default)]
+    pub ollama_model: Option<String>,
+    #[serde(default)]
+    pub active_provider: AiProvider,
 }
 
 impl ApiKeys {
@@ -96,6 +117,30 @@ impl ApiKeyManager {
 
     pub fn set_open_router_model(&mut self, model: Option<String>, ctx: &mut ModelContext<Self>) {
         self.keys.open_router_model = model;
+        ctx.emit(ApiKeyManagerEvent::KeysUpdated);
+        self.write_keys_to_secure_storage(ctx);
+    }
+
+    pub fn set_ollama_base_url(&mut self, base_url: Option<String>, ctx: &mut ModelContext<Self>) {
+        self.keys.ollama_base_url = base_url;
+        ctx.emit(ApiKeyManagerEvent::KeysUpdated);
+        self.write_keys_to_secure_storage(ctx);
+    }
+
+    pub fn set_ollama_api_key(&mut self, key: Option<String>, ctx: &mut ModelContext<Self>) {
+        self.keys.ollama_api_key = key;
+        ctx.emit(ApiKeyManagerEvent::KeysUpdated);
+        self.write_keys_to_secure_storage(ctx);
+    }
+
+    pub fn set_ollama_model(&mut self, model: Option<String>, ctx: &mut ModelContext<Self>) {
+        self.keys.ollama_model = model;
+        ctx.emit(ApiKeyManagerEvent::KeysUpdated);
+        self.write_keys_to_secure_storage(ctx);
+    }
+
+    pub fn set_active_provider(&mut self, provider: AiProvider, ctx: &mut ModelContext<Self>) {
+        self.keys.active_provider = provider;
         ctx.emit(ApiKeyManagerEvent::KeysUpdated);
         self.write_keys_to_secure_storage(ctx);
     }
@@ -207,6 +252,25 @@ impl ApiKeyManager {
         if keys.open_router_model.is_none() {
             keys.open_router_model = std::env::var("OPENROUTER_MODEL")
                 .or_else(|_| std::env::var("OPEN_ROUTER_MODEL"))
+                .ok()
+                .filter(|model| !model.is_empty());
+        }
+
+        if keys.ollama_base_url.is_none() {
+            keys.ollama_base_url = std::env::var("OLLAMA_HOST")
+                .or_else(|_| std::env::var("OLLAMA_BASE_URL"))
+                .ok()
+                .filter(|url| !url.is_empty());
+        }
+
+        if keys.ollama_api_key.is_none() {
+            keys.ollama_api_key = std::env::var("OLLAMA_API_KEY")
+                .ok()
+                .filter(|key| !key.is_empty());
+        }
+
+        if keys.ollama_model.is_none() {
+            keys.ollama_model = std::env::var("OLLAMA_MODEL")
                 .ok()
                 .filter(|model| !model.is_empty());
         }

@@ -42,7 +42,7 @@ use crate::view_components::{
     FilterableDropdown, SubmittableTextInput, SubmittableTextInputEvent,
 };
 use crate::workspaces::user_workspaces::UserWorkspacesEvent;
-use ::ai::api_keys::{ApiKeyManager, ApiKeys};
+use ::ai::api_keys::{AiProvider, ApiKeyManager, ApiKeyManagerEvent, ApiKeys};
 use enum_iterator::all;
 use itertools::Itertools;
 use regex::Regex;
@@ -2130,6 +2130,7 @@ pub enum AISettingsPageAction {
         pattern: String,
         agent: Option<CLIAgent>,
     },
+    ToggleActiveAiProvider,
 }
 
 impl From<&AISettingsPageAction> for LoginGatedFeature {
@@ -2535,6 +2536,16 @@ impl TypedActionView for AISettingsPageView {
                 AISettings::handle(ctx).update(ctx, |settings, ctx| {
                     settings.set_cli_agent_for_command(pattern, *agent, ctx);
                 });
+            }
+            AISettingsPageAction::ToggleActiveAiProvider => {
+                let next = match ApiKeyManager::as_ref(ctx).keys().active_provider {
+                    AiProvider::OpenRouter => AiProvider::Ollama,
+                    AiProvider::Ollama => AiProvider::OpenRouter,
+                };
+                ApiKeyManager::handle(ctx).update(ctx, |manager, ctx| {
+                    manager.set_active_provider(next, ctx);
+                });
+                ctx.notify();
             }
             AISettingsPageAction::RemoveFromCommandExecutionAllowlist(cmd) => {
                 BlocklistAIPermissions::handle(ctx).update(ctx, |model, ctx| {
@@ -5975,6 +5986,10 @@ struct ApiKeysWidget {
     openai_api_key_editor: ViewHandle<EditorView>,
     open_router_api_key_editor: ViewHandle<EditorView>,
     open_router_model_editor: ViewHandle<EditorView>,
+    ollama_base_url_editor: ViewHandle<EditorView>,
+    ollama_api_key_editor: ViewHandle<EditorView>,
+    ollama_model_editor: ViewHandle<EditorView>,
+    active_provider_button: ViewHandle<ActionButton>,
     anthropic_api_key_editor: ViewHandle<EditorView>,
     google_api_key_editor: ViewHandle<EditorView>,
 
@@ -5993,8 +6008,12 @@ impl ApiKeysWidget {
             openai: openai_key,
             open_router: open_router_key,
             open_router_model,
+            ollama_base_url,
+            ollama_api_key,
+            ollama_model,
             anthropic: anthropic_key,
             google: google_key,
+            active_provider: _,
         } = ApiKeyManager::as_ref(ctx).keys().clone();
 
         // A helper macro to create and configure local provider setting editors. This avoids a lot
@@ -6090,6 +6109,27 @@ impl ApiKeysWidget {
             false
         );
         create_provider_setting_editor!(
+            ollama_base_url_editor,
+            ollama_base_url,
+            set_ollama_base_url,
+            "http://localhost:11434",
+            false
+        );
+        create_provider_setting_editor!(
+            ollama_api_key_editor,
+            ollama_api_key,
+            set_ollama_api_key,
+            "sk-... (optional)",
+            true
+        );
+        create_provider_setting_editor!(
+            ollama_model_editor,
+            ollama_model,
+            set_ollama_model,
+            "llama3.1",
+            false
+        );
+        create_provider_setting_editor!(
             anthropic_api_key_editor,
             anthropic_key,
             set_anthropic_key,
@@ -6104,16 +6144,64 @@ impl ApiKeysWidget {
             true
         );
 
+        let initial_provider = ApiKeyManager::as_ref(ctx).keys().active_provider;
+        let active_provider_button = ctx.add_typed_action_view(move |_| {
+            ActionButton::new(active_provider_button_label(initial_provider), SecondaryTheme)
+                .with_size(ButtonSize::Small)
+                .on_click(|ctx| {
+                    ctx.dispatch_typed_action(AISettingsPageAction::ToggleActiveAiProvider);
+                })
+        });
+
+        let active_provider_button_clone = active_provider_button.clone();
+        ctx.subscribe_to_model(
+            &ApiKeyManager::handle(ctx),
+            move |_, _, _event: &ApiKeyManagerEvent, ctx| {
+                let provider = ApiKeyManager::as_ref(ctx).keys().active_provider;
+                active_provider_button_clone.update(ctx, |button, ctx| {
+                    button.set_label(active_provider_button_label(provider), ctx);
+                });
+                ctx.notify();
+            },
+        );
+
         Self {
             openai_api_key_editor,
             open_router_api_key_editor,
             open_router_model_editor,
+            ollama_base_url_editor,
+            ollama_api_key_editor,
+            ollama_model_editor,
+            active_provider_button,
             anthropic_api_key_editor,
             google_api_key_editor,
 
             can_use_warp_credits_with_byok: Default::default(),
             upgrade_highlight_index: Default::default(),
         }
+    }
+
+    fn render_active_provider_selector(
+        &self,
+        appearance: &Appearance,
+        is_enabled: bool,
+        app: &AppContext,
+    ) -> Box<dyn Element> {
+        let label = Text::new_inline(
+            "Active provider",
+            appearance.ui_font_family(),
+            CONTENT_FONT_SIZE,
+        )
+        .with_color(styles::header_font_color(is_enabled, app).into())
+        .finish();
+
+        let button = ChildView::new(&self.active_provider_button).finish();
+
+        Flex::column()
+            .with_spacing(8.)
+            .with_child(label)
+            .with_child(button)
+            .finish()
     }
 
     fn render_api_keys_section(
@@ -6128,7 +6216,7 @@ impl ApiKeysWidget {
         let is_enabled = is_any_ai_enabled && (is_byo_enabled || is_oss);
 
         let description = if is_oss {
-            "Warper sends agent requests directly to OpenRouter when an OpenRouter key is set. API keys and the OpenRouter model ID are stored locally and never synced to the cloud."
+            "Warper sends agent requests directly to the active provider — OpenRouter or a local Ollama server. API keys, base URL, and model IDs are stored locally and never synced to the cloud."
         } else {
             "Use your own API keys from model providers for the Warp Agent to use. API keys are stored locally and never synced to the cloud. Using auto models or models from providers you have not provided API keys for will consume Warp credits."
         };
@@ -6188,6 +6276,9 @@ impl ApiKeysWidget {
                 app,
             ));
         }
+        if is_oss {
+            column.add_child(self.render_active_provider_selector(appearance, is_enabled, app));
+        }
         column.add_child(render_api_key_input(
             appearance,
             "OpenRouter API Key",
@@ -6202,6 +6293,29 @@ impl ApiKeysWidget {
             is_enabled,
             app,
         ));
+        if is_oss {
+            column.add_child(render_api_key_input(
+                appearance,
+                "Ollama Base URL",
+                self.ollama_base_url_editor.clone(),
+                is_enabled,
+                app,
+            ));
+            column.add_child(render_api_key_input(
+                appearance,
+                "Ollama API Key",
+                self.ollama_api_key_editor.clone(),
+                is_enabled,
+                app,
+            ));
+            column.add_child(render_api_key_input(
+                appearance,
+                "Ollama Model",
+                self.ollama_model_editor.clone(),
+                is_enabled,
+                app,
+            ));
+        }
         if !is_oss {
             column.add_child(render_api_key_input(
                 appearance,
@@ -6310,11 +6424,18 @@ impl ApiKeysWidget {
     }
 }
 
+fn active_provider_button_label(provider: AiProvider) -> &'static str {
+    match provider {
+        AiProvider::OpenRouter => "OpenRouter (click to switch to Ollama)",
+        AiProvider::Ollama => "Ollama (click to switch to OpenRouter)",
+    }
+}
+
 impl SettingsWidget for ApiKeysWidget {
     type View = AISettingsPageView;
 
     fn search_terms(&self) -> &str {
-        "api keys bring your own byo openai openrouter open router model anthropic google claude gemini gpt"
+        "api keys bring your own byo openai openrouter open router model anthropic google claude gemini gpt ollama local llama base url provider"
     }
 
     fn render(

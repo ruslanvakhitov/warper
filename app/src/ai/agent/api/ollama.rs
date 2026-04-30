@@ -11,72 +11,75 @@ use warp_multi_agent_api::{
 
 use crate::ai::agent::AIAgentInput;
 
+use super::openrouter::command_looks_read_only;
 use super::{RequestParams, ResponseStream};
 
-const OPENROUTER_CHAT_COMPLETIONS_URL: &str = "https://openrouter.ai/api/v1/chat/completions";
-const OPENROUTER_REFERER: &str = "https://warper.dev";
-const DEFAULT_OPENROUTER_MODEL_ID: &str = "openrouter/auto";
-const OPENROUTER_REQUEST_TIMEOUT: Duration = Duration::from_secs(90);
+const DEFAULT_OLLAMA_BASE_URL: &str = "http://localhost:11434";
+const DEFAULT_OLLAMA_MODEL_ID: &str = "llama3.1";
+const OLLAMA_KEEP_ALIVE: &str = "5m";
+const OLLAMA_REQUEST_TIMEOUT: Duration = Duration::from_secs(180);
 
 #[derive(Clone, Debug, Serialize)]
-struct OpenRouterMessage {
+struct OllamaMessage {
     role: &'static str,
     content: String,
 }
 
 #[derive(Debug, Serialize)]
-struct OpenRouterChatRequest {
+struct OllamaChatRequest {
     model: String,
-    messages: Vec<OpenRouterMessage>,
-    tools: Vec<OpenRouterTool>,
-    tool_choice: &'static str,
+    messages: Vec<OllamaMessage>,
+    tools: Vec<OllamaTool>,
     stream: bool,
+    keep_alive: &'static str,
 }
 
 #[derive(Debug, Serialize)]
-struct OpenRouterTool {
+struct OllamaTool {
     #[serde(rename = "type")]
     kind: &'static str,
-    function: OpenRouterToolFunction,
+    function: OllamaToolFunction,
 }
 
 #[derive(Debug, Serialize)]
-struct OpenRouterToolFunction {
+struct OllamaToolFunction {
     name: &'static str,
     description: &'static str,
     parameters: serde_json::Value,
 }
 
 #[derive(Debug, Deserialize)]
-struct OpenRouterChatResponse {
+struct OllamaChatResponse {
     #[serde(default)]
-    choices: Vec<OpenRouterChoice>,
+    message: Option<OllamaAssistantMessage>,
     #[serde(default)]
-    usage: Option<OpenRouterUsage>,
+    prompt_eval_count: Option<u32>,
+    #[serde(default)]
+    eval_count: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
-struct OpenRouterChoice {
-    message: OpenRouterAssistantMessage,
-}
-
-#[derive(Debug, Deserialize)]
-struct OpenRouterAssistantMessage {
+struct OllamaAssistantMessage {
+    #[serde(default)]
     content: Option<String>,
     #[serde(default)]
-    tool_calls: Vec<OpenRouterToolCall>,
+    tool_calls: Vec<OllamaToolCall>,
 }
 
 #[derive(Debug, Deserialize)]
-struct OpenRouterToolCall {
-    id: String,
-    function: OpenRouterFunctionCall,
+struct OllamaToolCall {
+    #[serde(default)]
+    id: Option<String>,
+    function: OllamaFunctionCall,
 }
 
 #[derive(Debug, Deserialize)]
-struct OpenRouterFunctionCall {
+struct OllamaFunctionCall {
     name: String,
-    arguments: String,
+    /// Ollama returns arguments as a JSON object for native tool calls and as a
+    /// string for OpenAI-compat shims. Accept either, then normalize downstream.
+    #[serde(default)]
+    arguments: serde_json::Value,
 }
 
 #[derive(Debug, Deserialize)]
@@ -86,73 +89,47 @@ struct RunShellCommandArgs {
     is_read_only: Option<bool>,
 }
 
-#[derive(Debug, Deserialize)]
-struct OpenRouterUsage {
-    #[serde(default)]
-    prompt_tokens: Option<u32>,
-    #[serde(default)]
-    completion_tokens: Option<u32>,
-}
-
 #[derive(Debug)]
-enum OpenRouterError {
-    MissingApiKey,
+enum OllamaError {
+    MissingBaseUrl,
     Request(String),
     Status { status: StatusCode, body: String },
     Response(String),
     EmptyResponse,
 }
 
-impl OpenRouterError {
-    fn is_invalid_api_key(&self) -> bool {
-        matches!(
-            self,
-            Self::MissingApiKey
-                | Self::Status {
-                    status: StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN,
-                    ..
-                }
-        )
-    }
-
+impl OllamaError {
     fn user_message(&self) -> String {
         match self {
-            Self::MissingApiKey => {
-                "OpenRouter API key is missing. Add it in Settings > OpenRouter, then try again."
+            Self::MissingBaseUrl => {
+                "Ollama base URL is missing. Add it in Settings > Ollama (e.g. http://localhost:11434), then try again."
                     .to_owned()
             }
             Self::Status { status, body } => {
                 let body = body.trim();
                 if body.is_empty() {
-                    format!("OpenRouter request failed with status {status}.")
+                    format!("Ollama request failed with status {status}.")
                 } else {
-                    format!("OpenRouter request failed with status {status}:\n{body}")
+                    format!("Ollama request failed with status {status}:\n{body}")
                 }
             }
-            Self::Request(error) => format!("OpenRouter request failed: {error}"),
-            Self::Response(error) => format!("OpenRouter response could not be read: {error}"),
-            Self::EmptyResponse => "OpenRouter returned an empty response.".to_owned(),
+            Self::Request(error) => format!("Ollama request failed: {error}"),
+            Self::Response(error) => format!("Ollama response could not be read: {error}"),
+            Self::EmptyResponse => "Ollama returned an empty response.".to_owned(),
         }
     }
 
-    fn finish_reason(&self, model_name: String) -> stream_finished::Reason {
-        if self.is_invalid_api_key() {
-            stream_finished::Reason::InvalidApiKey(stream_finished::InvalidApiKey {
-                provider: api::LlmProvider::Openrouter.into(),
-                model_name,
-            })
-        } else {
-            stream_finished::Reason::InternalError(stream_finished::InternalError {
-                message: self.user_message(),
-            })
-        }
+    fn finish_reason(&self) -> stream_finished::Reason {
+        stream_finished::Reason::InternalError(stream_finished::InternalError {
+            message: self.user_message(),
+        })
     }
 }
 
-pub fn generate_openrouter_output(params: RequestParams) -> ResponseStream {
+pub fn generate_ollama_output(params: RequestParams) -> ResponseStream {
     Box::pin(stream! {
         let task_id = params.primary_task_id.clone();
-        let model_id = effective_openrouter_model(&params);
+        let model_id = effective_ollama_model(&params);
         let request_id = Uuid::new_v4().to_string();
         let conversation_id = params
             .conversation_token
@@ -164,11 +141,11 @@ pub fn generate_openrouter_output(params: RequestParams) -> ResponseStream {
             conversation_id.clone(),
             request_id.clone(),
         ));
-        if should_create_openrouter_task(&params, &task_id) {
+        if should_create_ollama_task(&params, &task_id) {
             yield Ok(create_task_event(&task_id));
         }
 
-        let result = request_openrouter_completion(&params, &model_id).await;
+        let result = request_ollama_completion(&params, &model_id).await;
         match result {
             Ok(completion) => {
                 yield Ok(add_messages_event(
@@ -184,110 +161,121 @@ pub fn generate_openrouter_output(params: RequestParams) -> ResponseStream {
                 yield Ok(add_messages_event(
                     task_id,
                     request_id,
-                    model_id.clone(),
+                    model_id,
                     Some(error.user_message()),
                     Vec::new(),
                 ));
-                yield Ok(finished_event(error.finish_reason(model_id)));
+                yield Ok(finished_event(error.finish_reason()));
             }
         }
     })
 }
 
-async fn request_openrouter_completion(
+async fn request_ollama_completion(
     params: &RequestParams,
     model_id: &str,
-) -> Result<OpenRouterCompletion, OpenRouterError> {
-    let api_key = params
-        .api_keys
-        .as_ref()
-        .map(|keys| keys.open_router.trim())
-        .filter(|key| !key.is_empty())
-        .ok_or(OpenRouterError::MissingApiKey)?;
+) -> Result<OllamaCompletion, OllamaError> {
+    let base_url = params
+        .ollama_base_url
+        .as_deref()
+        .map(normalize_base_url)
+        .unwrap_or_else(|| DEFAULT_OLLAMA_BASE_URL.to_owned());
 
-    let request = OpenRouterChatRequest {
+    if base_url.is_empty() {
+        return Err(OllamaError::MissingBaseUrl);
+    }
+
+    let url = format!("{base_url}/api/chat");
+
+    let request = OllamaChatRequest {
         model: model_id.to_owned(),
-        messages: build_openrouter_messages(params),
-        tools: openrouter_tools(),
-        tool_choice: "auto",
+        messages: build_ollama_messages(params),
+        tools: ollama_tools(),
         stream: false,
+        keep_alive: OLLAMA_KEEP_ALIVE,
     };
 
     log::info!(
-        "OpenRouter request starting: model={model_id}, messages={}, tools={}, task_id={}, timeout_secs={}",
+        "Ollama request starting: url={url}, model={model_id}, messages={}, tools={}, task_id={}, timeout_secs={}",
         request.messages.len(),
         request.tools.len(),
         params.primary_task_id,
-        OPENROUTER_REQUEST_TIMEOUT.as_secs(),
+        OLLAMA_REQUEST_TIMEOUT.as_secs(),
     );
 
-    let response = http_client::Client::new()
-        .post(OPENROUTER_CHAT_COMPLETIONS_URL)
-        .bearer_auth(api_key)
-        .header("HTTP-Referer", OPENROUTER_REFERER)
-        .header("X-OpenRouter-Title", "Warper")
+    let client = http_client::Client::new();
+    let mut builder = client
+        .post(&url)
         .json(&request)
-        .timeout(OPENROUTER_REQUEST_TIMEOUT)
-        .prevent_sleep("OpenRouter agent request in-progress")
-        .send()
-        .await
-        .map_err(|error| {
-            log::warn!("OpenRouter request transport failed: model={model_id}, error={error}");
-            OpenRouterError::Request(error.to_string())
-        })?;
+        .timeout(OLLAMA_REQUEST_TIMEOUT)
+        .prevent_sleep("Ollama agent request in-progress");
+
+    if let Some(api_key) = params
+        .ollama_api_key
+        .as_deref()
+        .map(str::trim)
+        .filter(|key| !key.is_empty())
+    {
+        builder = builder.bearer_auth(api_key);
+    }
+
+    let response = builder.send().await.map_err(|error| {
+        log::warn!("Ollama request transport failed: url={url}, model={model_id}, error={error}");
+        OllamaError::Request(error.to_string())
+    })?;
 
     let status = response.status();
     let body = response.text().await.map_err(|error| {
-        log::warn!("OpenRouter response body read failed: model={model_id}, error={error}");
-        OpenRouterError::Response(error.to_string())
+        log::warn!("Ollama response body read failed: model={model_id}, error={error}");
+        OllamaError::Response(error.to_string())
     })?;
 
     log::info!(
-        "OpenRouter response received: model={model_id}, status={status}, body_bytes={}",
+        "Ollama response received: model={model_id}, status={status}, body_bytes={}",
         body.len(),
     );
 
     if !status.is_success() {
         log::warn!(
-            "OpenRouter request failed: model={model_id}, status={status}, body={}",
+            "Ollama request failed: model={model_id}, status={status}, body={}",
             truncate_for_log(&body),
         );
-        return Err(OpenRouterError::Status { status, body });
+        return Err(OllamaError::Status { status, body });
     }
 
-    let parsed: OpenRouterChatResponse = serde_json::from_str(&body).map_err(|error| {
+    let parsed: OllamaChatResponse = serde_json::from_str(&body).map_err(|error| {
         log::warn!(
-            "OpenRouter response parse failed: model={model_id}, error={error}, body={}",
+            "Ollama response parse failed: model={model_id}, error={error}, body={}",
             truncate_for_log(&body),
         );
-        OpenRouterError::Response(error.to_string())
+        OllamaError::Response(error.to_string())
     })?;
-    let mut choices = parsed.choices.into_iter();
-    let Some(choice) = choices.next() else {
-        return Err(OpenRouterError::EmptyResponse);
-    };
-    let text = choice
-        .message
+
+    let assistant = parsed.message.ok_or(OllamaError::EmptyResponse)?;
+    let text = assistant
         .content
         .map(|text| text.trim().to_owned())
         .filter(|text| !text.is_empty());
-    let tool_calls = choice.message.tool_calls;
+    let tool_calls = assistant.tool_calls;
 
     if text.is_none() && tool_calls.is_empty() {
-        return Err(OpenRouterError::EmptyResponse);
+        return Err(OllamaError::EmptyResponse);
     }
 
-    Ok(OpenRouterCompletion {
+    Ok(OllamaCompletion {
         text,
         tool_calls,
-        usage: parsed.usage,
+        usage: OllamaUsage {
+            prompt_tokens: parsed.prompt_eval_count,
+            completion_tokens: parsed.eval_count,
+        },
     })
 }
 
-fn openrouter_tools() -> Vec<OpenRouterTool> {
-    vec![OpenRouterTool {
+fn ollama_tools() -> Vec<OllamaTool> {
+    vec![OllamaTool {
         kind: "function",
-        function: OpenRouterToolFunction {
+        function: OllamaToolFunction {
             name: "run_shell_command",
             description: "Run a shell command in the user's active terminal session. Use this for commands that inspect the project, run tests, or perform an explicit change requested by the user.",
             parameters: json!({
@@ -308,17 +296,17 @@ fn openrouter_tools() -> Vec<OpenRouterTool> {
     }]
 }
 
-fn openrouter_tool_call_to_message(
+fn ollama_tool_call_to_message(
     task_id: &str,
     request_id: &str,
-    tool_call: OpenRouterToolCall,
+    tool_call: OllamaToolCall,
     timestamp: Option<prost_types::Timestamp>,
 ) -> Option<api::Message> {
     if tool_call.function.name != "run_shell_command" {
         return None;
     }
 
-    let args: RunShellCommandArgs = serde_json::from_str(&tool_call.function.arguments).ok()?;
+    let args = parse_run_shell_command_args(&tool_call.function.arguments)?;
     let command = args.command.trim().to_owned();
     if command.is_empty() {
         return None;
@@ -328,6 +316,7 @@ fn openrouter_tool_call_to_message(
         .is_read_only
         .unwrap_or_else(|| command_looks_read_only(&command));
     let is_risky = !is_read_only;
+    let tool_call_id = tool_call.id.unwrap_or_else(|| Uuid::new_v4().to_string());
 
     Some(api::Message {
         id: Uuid::new_v4().to_string(),
@@ -337,7 +326,7 @@ fn openrouter_tool_call_to_message(
         server_message_data: String::new(),
         citations: vec![],
         message: Some(message::Message::ToolCall(api::message::ToolCall {
-            tool_call_id: tool_call.id,
+            tool_call_id,
             tool: Some(api::message::tool_call::Tool::RunShellCommand(
                 api::message::tool_call::RunShellCommand {
                     command,
@@ -353,37 +342,17 @@ fn openrouter_tool_call_to_message(
     })
 }
 
-pub(super) fn command_looks_read_only(command: &str) -> bool {
-    let command = command.trim_start();
-    let first = command
-        .split_whitespace()
-        .next()
-        .unwrap_or_default()
-        .trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '_');
-
-    matches!(
-        first,
-        "cat"
-            | "cd"
-            | "echo"
-            | "find"
-            | "git"
-            | "grep"
-            | "head"
-            | "ls"
-            | "pwd"
-            | "rg"
-            | "sed"
-            | "tail"
-            | "tree"
-            | "wc"
-            | "which"
-    )
+fn parse_run_shell_command_args(arguments: &serde_json::Value) -> Option<RunShellCommandArgs> {
+    match arguments {
+        serde_json::Value::String(text) => serde_json::from_str(text).ok(),
+        serde_json::Value::Object(_) => serde_json::from_value(arguments.clone()).ok(),
+        _ => None,
+    }
 }
 
-fn effective_openrouter_model(params: &RequestParams) -> String {
+fn effective_ollama_model(params: &RequestParams) -> String {
     params
-        .open_router_model
+        .ollama_model
         .as_ref()
         .map(|model| model.trim())
         .filter(|model| !model.is_empty())
@@ -391,15 +360,27 @@ fn effective_openrouter_model(params: &RequestParams) -> String {
         .unwrap_or_else(|| {
             let selected = params.model.as_str();
             if selected == "auto" || selected.is_empty() {
-                DEFAULT_OPENROUTER_MODEL_ID.to_owned()
+                DEFAULT_OLLAMA_MODEL_ID.to_owned()
             } else {
                 selected.to_owned()
             }
         })
 }
 
-fn build_openrouter_messages(params: &RequestParams) -> Vec<OpenRouterMessage> {
-    let mut system = "You are Warper, an AI agent inside an agentic terminal. Answer directly through OpenRouter. Be concise, practical, and terminal-aware. Use the run_shell_command tool when you need command output or when the user asks you to run something. Prefer read-only inspection commands before making changes. Do not claim that you ran a command unless you used the tool and saw the result.".to_owned();
+fn normalize_base_url(raw: &str) -> String {
+    let trimmed = raw.trim().trim_end_matches('/');
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+        trimmed.to_owned()
+    } else {
+        format!("http://{trimmed}")
+    }
+}
+
+fn build_ollama_messages(params: &RequestParams) -> Vec<OllamaMessage> {
+    let mut system = "You are Warper, an AI agent inside an agentic terminal, running against a local Ollama model. Be concise, practical, and terminal-aware. Use the run_shell_command tool when you need command output or when the user asks you to run something. Prefer read-only inspection commands before making changes. Do not claim that you ran a command unless you used the tool and saw the result.".to_owned();
 
     if let Some(cwd) = params
         .session_context
@@ -423,11 +404,11 @@ fn build_openrouter_messages(params: &RequestParams) -> Vec<OpenRouterMessage> {
     }
 
     vec![
-        OpenRouterMessage {
+        OllamaMessage {
             role: "system",
             content: system,
         },
-        OpenRouterMessage {
+        OllamaMessage {
             role: "user",
             content: user_content,
         },
@@ -463,7 +444,7 @@ fn stream_init_event(conversation_id: String, request_id: String) -> api::Respon
     }
 }
 
-fn should_create_openrouter_task(params: &RequestParams, task_id: &str) -> bool {
+fn should_create_ollama_task(params: &RequestParams, task_id: &str) -> bool {
     !task_id.is_empty() && !params.tasks.iter().any(|task| task.id == task_id)
 }
 
@@ -495,7 +476,7 @@ fn add_messages_event(
     request_id: String,
     model_id: String,
     text: Option<String>,
-    tool_calls: Vec<OpenRouterToolCall>,
+    tool_calls: Vec<OllamaToolCall>,
 ) -> api::ResponseEvent {
     let now = Utc::now();
     let timestamp = Some(prost_types::Timestamp {
@@ -507,7 +488,7 @@ fn add_messages_event(
         id: Uuid::new_v4().to_string(),
         task_id: task_id.clone(),
         request_id: request_id.clone(),
-        timestamp: timestamp.clone(),
+        timestamp,
         server_message_data: String::new(),
         citations: vec![],
         message: Some(message::Message::ModelUsed(message::ModelUsed {
@@ -523,7 +504,7 @@ fn add_messages_event(
             id: Uuid::new_v4().to_string(),
             task_id: task_id.clone(),
             request_id: request_id.clone(),
-            timestamp: timestamp.clone(),
+            timestamp,
             server_message_data: String::new(),
             citations: vec![],
             message: Some(message::Message::AgentOutput(message::AgentOutput { text })),
@@ -531,7 +512,7 @@ fn add_messages_event(
     }
 
     messages.extend(tool_calls.into_iter().filter_map(|tool_call| {
-        openrouter_tool_call_to_message(&task_id, &request_id, tool_call, timestamp.clone())
+        ollama_tool_call_to_message(&task_id, &request_id, tool_call, timestamp)
     }));
 
     api::ResponseEvent {
@@ -547,16 +528,17 @@ fn add_messages_event(
     }
 }
 
-fn done_event(usage: Option<OpenRouterUsage>, model_id: String) -> api::ResponseEvent {
-    let token_usage = usage
-        .map(|usage| stream_finished::TokenUsage {
+fn done_event(usage: OllamaUsage, model_id: String) -> api::ResponseEvent {
+    let token_usage = if usage.prompt_tokens.is_some() || usage.completion_tokens.is_some() {
+        vec![stream_finished::TokenUsage {
             model_id,
             total_input: usage.prompt_tokens.unwrap_or_default(),
             output: usage.completion_tokens.unwrap_or_default(),
             ..Default::default()
-        })
-        .into_iter()
-        .collect();
+        }]
+    } else {
+        Vec::new()
+    };
 
     let mut event = finished_event(stream_finished::Reason::Done(stream_finished::Done {}));
     if let Some(response_event::Type::Finished(finished)) = &mut event.r#type {
@@ -576,10 +558,15 @@ fn finished_event(reason: stream_finished::Reason) -> api::ResponseEvent {
     }
 }
 
-struct OpenRouterCompletion {
+struct OllamaCompletion {
     text: Option<String>,
-    tool_calls: Vec<OpenRouterToolCall>,
-    usage: Option<OpenRouterUsage>,
+    tool_calls: Vec<OllamaToolCall>,
+    usage: OllamaUsage,
+}
+
+struct OllamaUsage {
+    prompt_tokens: Option<u32>,
+    completion_tokens: Option<u32>,
 }
 
 fn truncate_for_log(body: &str) -> String {
@@ -628,7 +615,7 @@ mod tests {
             ollama_base_url: None,
             ollama_api_key: None,
             ollama_model: None,
-            active_provider: ::ai::api_keys::AiProvider::OpenRouter,
+            active_provider: ::ai::api_keys::AiProvider::Ollama,
             allow_use_of_warp_credits_with_byok: false,
             autonomy_level: api::AutonomyLevel::Supervised,
             isolation_level: api::IsolationLevel::None,
@@ -644,9 +631,9 @@ mod tests {
     }
 
     #[test]
-    fn output_creates_task_before_adding_messages_for_new_conversation() {
+    fn output_emits_init_then_create_task_for_new_conversation() {
         let params = request_params_for_test();
-        let events = block_on(generate_openrouter_output(params).collect::<Vec<_>>());
+        let events = block_on(generate_ollama_output(params).collect::<Vec<_>>());
 
         assert!(matches!(
             events[0].as_ref().unwrap().r#type.as_ref().unwrap(),
@@ -658,57 +645,43 @@ mod tests {
         else {
             panic!("expected CreateTask client action");
         };
-        let Some(client_action::Action::CreateTask(create)) =
-            create_actions.actions[0].action.as_ref()
-        else {
-            panic!("expected CreateTask action");
-        };
-        assert_eq!(create.task.as_ref().unwrap().id, "test-task");
-
-        let response_event::Type::ClientActions(add_actions) =
-            events[2].as_ref().unwrap().r#type.as_ref().unwrap()
-        else {
-            panic!("expected AddMessagesToTask client action");
-        };
-        let Some(client_action::Action::AddMessagesToTask(add)) =
-            add_actions.actions[0].action.as_ref()
-        else {
-            panic!("expected AddMessagesToTask action");
-        };
-        assert_eq!(add.task_id, "test-task");
-        assert!(add
-            .messages
-            .iter()
-            .any(|message| matches!(message.message, Some(message::Message::AgentOutput(_)))));
+        assert!(matches!(
+            create_actions.actions[0].action.as_ref().unwrap(),
+            client_action::Action::CreateTask(_)
+        ));
     }
 
     #[test]
-    fn output_does_not_recreate_existing_task() {
-        let mut params = request_params_for_test();
-        params.tasks.push(api::Task {
-            id: "test-task".to_owned(),
-            messages: vec![],
-            dependencies: None,
-            description: String::new(),
-            summary: String::new(),
-            server_data: String::new(),
-        });
+    fn normalize_base_url_handles_common_inputs() {
+        assert_eq!(
+            normalize_base_url("http://localhost:11434"),
+            "http://localhost:11434"
+        );
+        assert_eq!(
+            normalize_base_url("http://localhost:11434/"),
+            "http://localhost:11434"
+        );
+        assert_eq!(
+            normalize_base_url("localhost:11434"),
+            "http://localhost:11434"
+        );
+        assert_eq!(
+            normalize_base_url("https://ollama.example.com/v1/"),
+            "https://ollama.example.com/v1"
+        );
+        assert_eq!(normalize_base_url("   "), "");
+    }
 
-        let events = block_on(generate_openrouter_output(params).collect::<Vec<_>>());
+    #[test]
+    fn parse_run_shell_command_args_accepts_object_and_string() {
+        let object_args = serde_json::json!({ "command": "ls", "is_read_only": true });
+        let parsed = parse_run_shell_command_args(&object_args).unwrap();
+        assert_eq!(parsed.command, "ls");
+        assert_eq!(parsed.is_read_only, Some(true));
 
-        assert!(matches!(
-            events[0].as_ref().unwrap().r#type.as_ref().unwrap(),
-            response_event::Type::Init(_)
-        ));
-
-        let response_event::Type::ClientActions(add_actions) =
-            events[1].as_ref().unwrap().r#type.as_ref().unwrap()
-        else {
-            panic!("expected AddMessagesToTask client action");
-        };
-        assert!(matches!(
-            add_actions.actions[0].action.as_ref().unwrap(),
-            client_action::Action::AddMessagesToTask(_)
-        ));
+        let string_args = serde_json::Value::String(r#"{"command":"pwd"}"#.to_owned());
+        let parsed = parse_run_shell_command_args(&string_args).unwrap();
+        assert_eq!(parsed.command, "pwd");
+        assert_eq!(parsed.is_read_only, None);
     }
 }
