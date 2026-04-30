@@ -1,0 +1,98 @@
+#!/bin/bash
+
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+TARGET_DIR="${CARGO_TARGET_DIR:-$ROOT/target}"
+MODE="presubmit"
+DRY_RUN=false
+
+usage() {
+    cat <<'EOF'
+Usage: script/prune_target_artifacts [--presubmit|--aggressive] [--dry-run]
+
+Removes bulky Cargo artifacts that are cheap to regenerate.
+
+Modes:
+  --presubmit   Remove incremental state, test executables, examples, and dSYM bundles.
+  --aggressive  Also remove object files from target/debug/deps.
+
+Options:
+  --dry-run     Print what would be removed without deleting anything.
+  -h, --help    Show this help.
+EOF
+}
+
+remove_path() {
+    local path="$1"
+    if [ ! -e "$path" ]; then
+        return
+    fi
+
+    if [ "$DRY_RUN" = true ]; then
+        du -sh "$path" 2>/dev/null || true
+    else
+        rm -rf "$path"
+    fi
+}
+
+print_find_total() {
+    local label="$1"
+    local find_root="$2"
+    shift 2
+
+    local total
+    total="$(find "$find_root" "$@" -exec du -ch {} + 2>/dev/null | tail -n 1 || true)"
+    if [ -n "$total" ]; then
+        printf "%s\t%s\n" "$(printf "%s" "$total" | awk '{print $1}')" "$label"
+    fi
+}
+
+remove_find_matches() {
+    local label="$1"
+    local find_root="$2"
+    shift 2
+
+    if [ ! -d "$find_root" ]; then
+        return
+    fi
+
+    if [ "$DRY_RUN" = true ]; then
+        print_find_total "$label" "$find_root" "$@"
+    else
+        find "$find_root" "$@" -exec rm -rf {} + 2>/dev/null || true
+    fi
+}
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --presubmit)
+            MODE="presubmit"
+            ;;
+        --aggressive)
+            MODE="aggressive"
+            ;;
+        --dry-run)
+            DRY_RUN=true
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1" >&2
+            usage >&2
+            exit 2
+            ;;
+    esac
+    shift
+done
+
+remove_path "$TARGET_DIR/debug/incremental"
+remove_path "$TARGET_DIR/debug/examples"
+remove_find_matches "$TARGET_DIR/debug/deps/*.dSYM" "$TARGET_DIR/debug/deps" -maxdepth 1 -type d -name "*.dSYM"
+remove_find_matches "$TARGET_DIR/debug/deps/test-executables" "$TARGET_DIR/debug/deps" -maxdepth 1 -type f -perm -111 ! -name "*.*"
+
+if [ "$MODE" = "aggressive" ]; then
+    remove_find_matches "$TARGET_DIR/debug/deps/*.o" "$TARGET_DIR/debug/deps" -maxdepth 1 -type f -name "*.o"
+fi
