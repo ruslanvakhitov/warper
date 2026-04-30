@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Builds a Warp binary and bundles it up for distribution.
+# Builds a Warper binary and bundles it up for distribution.
 
 set -e
 
@@ -18,12 +18,11 @@ fi
 WORKSPACE_ROOT_DIR="$(pwd)"
 CARGO_TARGET_DIR="$WORKSPACE_ROOT_DIR/target/wasm32-unknown-unknown"
 
-# By default we build dev bundles.
-RELEASE_CHANNEL="dev"
-# TODO: We should enable crash_reporting and before enabling for trusted testers.
-# https://linear.app/warpdotdev/issue/PLAT-428/crash-reporting-on-web
+# By default we build local-first OSS Warper bundles.
+RELEASE_CHANNEL="oss"
 FEATURES="release_bundle,gui"
 DEBUG=false
+NO_SPLIT="true"
 
 PARAMS=""
 while (( "$#" )); do
@@ -84,6 +83,11 @@ done
 # set positional arguments in their proper place
 eval set -- "$PARAMS"
 
+if [[ "$RELEASE_CHANNEL" != "oss" ]]; then
+  echo "Error: Warper wasm bundles only support the oss channel." >&2
+  exit 1
+fi
+
 if [[ $DEBUG = true ]]; then
   CARGO_PROFILE="dev-wasm"
 elif [[ $RELEASE_CHANNEL = "local" || $RELEASE_CHANNEL = "dev" ]]; then
@@ -143,7 +147,7 @@ if [[ "$CHECK_ONLY" == "true" ]]; then
 fi
 
 # Build the wasm binary.
-echo "Building and bundling Warp for channel $RELEASE_CHANNEL"
+echo "Building and bundling Warper for channel $RELEASE_CHANNEL"
 ASSET_TARGET_DIR="$ASSET_TARGET_DIR" cargo build --target wasm32-unknown-unknown --profile "$CARGO_PROFILE" --bin "$WARP_BIN" --features "$FEATURES"
 
 # Generate linked JS and wasm files that can be run in the browser.
@@ -154,11 +158,6 @@ WASM_BINARY_OUT="${OUT_DIR}/warp_bg.wasm"
 WASM_BINARY_DEBUG="${EXTRAS_DIR}/warp_bg.debug.wasm"
 
 if [[ "$NO_SPLIT" != "true" ]]; then
-  # Run Sentry's wasm-split binary to separate out debug information from the
-  # wasm binary.
-  #
-  # Binary releases of wasm-split can be found here:
-  # https://github.com/getsentry/symbolicator/releases
   wasm-split "$WASM_BINARY_OUT" --debug-out "$WASM_BINARY_DEBUG" --strip --strip-names
 fi
 

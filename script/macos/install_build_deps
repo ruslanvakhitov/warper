@@ -1,5 +1,15 @@
 #!/bin/sh
 #
-# Installs macOS-specific build dependencies required to build Warp.
+# Installs macOS-specific build dependencies required to build Warper.
 
-xcodebuild -downloadComponent MetalToolchain
+set -e
+
+if ! xcrun --find metal >/dev/null 2>&1; then
+    echo "Xcode Metal compiler not found. Install full Xcode and select it with xcode-select." >&2
+    exit 1
+fi
+
+if ! xcrun --find metallib >/dev/null 2>&1; then
+    echo "Xcode metallib not found. Install the Xcode MetalToolchain component for this Xcode build." >&2
+    exit 1
+fi

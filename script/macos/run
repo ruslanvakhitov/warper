@@ -1,16 +1,15 @@
 #!/bin/bash
 #
 # macOS-specific implementation of `./script/run`. Runs a local version of
-# Warp as a real 'app' instead of a bare executable, so macOS can treat it
+# Warper as a real app instead of a bare executable, so macOS can treat it
 # like a real signed app (custom URL schemes, user notifications, etc.).
 #
 # This script is invoked by `./script/run`, which handles cross-platform
-# setup (install_channel_config, binary name detection, feature-to-env-var
-# mapping). The following env vars are expected to be set by the caller:
-#   WARP_BIN_NAME  — "warp" (internal local build) or "warp-oss"
-#   WARP_CHANNEL   — "local" or "oss"
+# setup. The following env vars are expected to be set by the caller:
+#   WARP_BIN_NAME  — "warp-oss"
+#   WARP_CHANNEL   — "oss"
 #   FEATURES       — comma-separated cargo features (already normalized)
-# Must be called from the root directory of the warp repo.
+# Must be called from the root directory of the Warper repo.
 
 set -e
 
@@ -21,14 +20,14 @@ cd "${REPO_ROOT}"
 : "${WARP_CHANNEL:?WARP_CHANNEL must be set (invoke via ./script/run)}"
 : "${FEATURES:?FEATURES must be set (invoke via ./script/run)}"
 
-if [ "$WARP_CHANNEL" = "local" ]; then
-    WARP_APP_PATH="target/debug/bundle/osx/WarpLocal.app"
-    WARP_SCHEME_NAME="warplocal"
-else
-    WARP_APP_PATH="target/debug/bundle/osx/Warper.app"
-    WARP_SCHEME_NAME="warper"
-    WARP_DISPLAY_NAME="Warper"
+if [ "$WARP_CHANNEL" != "oss" ] || [ "$WARP_BIN_NAME" != "warp-oss" ]; then
+    echo "Error: Warper local builds only support WARP_CHANNEL=oss and WARP_BIN_NAME=warp-oss." >&2
+    exit 1
 fi
+
+WARP_APP_PATH="target/debug/bundle/osx/Warper.app"
+WARP_SCHEME_NAME="warper"
+WARP_DISPLAY_NAME="Warper"
 DONT_OPEN=false
 # Launches the binary with "open", meaning the Warp process is
 # launched by the MacOS application launcher instead of a shell session.
@@ -60,22 +59,14 @@ while (( "$#" )); do
       ;;
     --release)
       echo "Detected release build, pointing at release bundle under target/release/bundle"
-      if [ "$WARP_CHANNEL" = "local" ]; then
-          WARP_APP_PATH="target/release/bundle/osx/WarpLocal.app"
-      else
-          WARP_APP_PATH="target/release/bundle/osx/Warper.app"
-      fi
+      WARP_APP_PATH="target/release/bundle/osx/Warper.app"
       PARAMS="$PARAMS $1"
       shift
       ;;
     --profile)
       PROFILE="$2"
       shift 2
-      if [ "$WARP_CHANNEL" = "local" ]; then
-          WARP_APP_PATH="target/${PROFILE}/bundle/osx/WarpLocal.app"
-      else
-          WARP_APP_PATH="target/${PROFILE}/bundle/osx/Warper.app"
-      fi
+      WARP_APP_PATH="target/${PROFILE}/bundle/osx/Warper.app"
       PARAMS="$PARAMS --profile $PROFILE"
       ;;
     --open_with_launchd)
@@ -101,12 +92,12 @@ cargo bundle --bin "$WARP_BIN_NAME" --features "$FEATURES" $PARAMS
 echo "Successfully bundled..."
 popd > /dev/null
 
-if [[ ",$FEATURES," =~ ",cocoa_sentry," ]]; then
-  echo "Copying Sentry framework into app bundle..."
-  SENTRY_FRAMEWORK="app/frameworks/dev/Sentry-Dynamic-WithARM64e.xcframework/macos-arm64_arm64e_x86_64/Sentry.framework"
-  cp -a "$SENTRY_FRAMEWORK" "$WARP_APP_PATH/Contents/Frameworks/"
+DISALLOWED_CRASH_FEATURE="cocoa""_sen""try"
+if [[ ",$FEATURES," =~ ",$DISALLOWED_CRASH_FEATURE," ]]; then
+  echo "Error: hosted crash-reporting features are not supported in Warper local-first builds." >&2
+  exit 1
 fi
-echo "Adding rpath to support mac frameworks (e.g. Sentry)"
+echo "Adding rpath to support bundled mac frameworks"
 install_name_tool -add_rpath "@executable_path/../Frameworks" "$WARP_APP_PATH/Contents/MacOS/$WARP_BIN_NAME"
 
 export WARP_SCHEME_NAME
@@ -129,11 +120,7 @@ if [[ ",$FEATURES," =~ ",heap_usage_tracking," ]]; then
 fi
 
 echo "Codesigning app..."
-if [ "$WARP_CHANNEL" = "oss" ]; then
-  SIGNING_CERT="-"
-else
-  SIGNING_CERT="$(security find-identity -p codesigning -v | grep "Apple Development" | awk '{print $2}' | head -1)"
-fi
+SIGNING_CERT="-"
 codesign --force --deep --options runtime --sign "${SIGNING_CERT:--}" "$WARP_APP_PATH" --entitlements script/Debug-Entitlements.plist
 
 if [ "$DONT_OPEN" = false ] ; then

@@ -1,20 +1,20 @@
 #!/usr/bin/env powershell
 #
-# Bundle the application for release.
+# Bundle Warper for release.
 
 Param (
-    # Build dev bundles by default.
+    # Build local-first OSS Warper bundles by default.
     [Switch]$DEBUG_BUILD = $False,
 
     [Alias('check-only')]
     [Switch]$CHECK_ONLY,
 
     [ValidateSet('local', 'dev', 'preview', 'stable', 'oss')]
-    [String]$CHANNEL = 'dev',
+    [String]$CHANNEL = 'oss',
 
     [Alias('release-tag')]
     [String]$RELEASE_TAG = '',
-    [String]$FEATURES = 'release_bundle,crash_reporting,gui',
+    [String]$FEATURES = 'release_bundle,gui',
 
     # Builds only the Warp binary, skips the installer.
     [Switch]$SKIP_BUILD_INSTALLER = $False,
@@ -35,6 +35,10 @@ Param (
 
 if ($RELEASE_TAG) {
     $env:GIT_RELEASE_TAG = $RELEASE_TAG
+}
+
+if ($CHANNEL -ne 'oss') {
+    throw 'Warper bundles only support the oss channel.'
 }
 
 # Use provided ARCH parameter if set, otherwise detect from system
@@ -79,8 +83,6 @@ if ($CARGO_PROFILE -eq 'dev') {
 } else {
     $CARGO_TARGET_OUTPUT_DIR = "$CARGO_TARGET_DIR" + '\' + $PLATFORM_TARGET + '\' + "$CARGO_PROFILE"
 }
-$BUNDLE_ID = "dev.warp.$app_name"
-
 # Update parameters based on the target release channel.
 #
 # APP_NAME here must match the value used in Rust as the
@@ -113,13 +115,15 @@ if ("$CHANNEL" -eq 'local') {
     $WARP_BIN = 'warp-oss'
     $BINARY_NAME = 'warp-oss.exe'
     $APP_NAME = 'Warper'
-    # The OSS channel does not ship Sentry, so drop the crash_reporting feature
-    # (which would otherwise pull in the Sentry SDK as a dependency).
     $FEATURES = 'release_bundle,gui,nld_improvements'
 }
 
 $BINARY_PATH = "$CARGO_TARGET_OUTPUT_DIR\$BINARY_NAME"
-$BUNDLE_ID = "dev.warp.$APP_NAME"
+if ("$CHANNEL" -eq 'oss') {
+    $BUNDLE_ID = 'dev.warper.Warper'
+} else {
+    $BUNDLE_ID = "dev.warp.$APP_NAME"
+}
 $INSTALLER_OUTPUT_DIR = "$WINDOWS_INSTALLER_DIR\Output"
 $INSTALLER_NAME = "$($APP_NAME)$($FILE_ENDING)"
 $INSTALLER_PATH = "$($INSTALLER_OUTPUT_DIR)\$($INSTALLER_NAME).exe"
@@ -146,12 +150,12 @@ if ($CHECK_ONLY) {
 }
 
 if (-Not $SKIP_BUILD_BINARY) {
-    Write-Output "Building Warp for channel $CHANNEL and bundle id $BUNDLE_ID"
+    Write-Output "Building Warper for channel $CHANNEL and bundle id $BUNDLE_ID"
     $env:CARGO_BIN_NAME = $CHANNEL
     $env:WARP_APP_NAME = $APP_NAME
     cargo build -p warp --profile "$CARGO_PROFILE" --bin "$WARP_BIN" --features "$FEATURES" --target $PLATFORM_TARGET
     if (-Not $?) {
-        Write-Error "Failed to build Warp $WARP_BIN binary with profile $CARGO_PROFILE"
+        Write-Error "Failed to build Warper $WARP_BIN binary with profile $CARGO_PROFILE"
         exit 1
     }
 
