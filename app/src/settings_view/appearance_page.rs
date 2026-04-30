@@ -1279,7 +1279,7 @@ impl AppearanceSettingsPageView {
             .terminal_background_image_path
             .is_supported_on_current_platform()
         {
-            window_settings_widgets.push(Box::new(TerminalBackgroundImageWidget::default()));
+            window_settings_widgets.push(Box::new(TerminalBackgroundImageWidget));
         }
         if window_settings
             .background_blur_radius

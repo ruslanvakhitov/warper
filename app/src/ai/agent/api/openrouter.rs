@@ -507,7 +507,7 @@ fn add_messages_event(
         id: Uuid::new_v4().to_string(),
         task_id: task_id.clone(),
         request_id: request_id.clone(),
-        timestamp: timestamp.clone(),
+        timestamp,
         server_message_data: String::new(),
         citations: vec![],
         message: Some(message::Message::ModelUsed(message::ModelUsed {
@@ -523,7 +523,7 @@ fn add_messages_event(
             id: Uuid::new_v4().to_string(),
             task_id: task_id.clone(),
             request_id: request_id.clone(),
-            timestamp: timestamp.clone(),
+            timestamp,
             server_message_data: String::new(),
             citations: vec![],
             message: Some(message::Message::AgentOutput(message::AgentOutput { text })),
@@ -531,7 +531,7 @@ fn add_messages_event(
     }
 
     messages.extend(tool_calls.into_iter().filter_map(|tool_call| {
-        openrouter_tool_call_to_message(&task_id, &request_id, tool_call, timestamp.clone())
+        openrouter_tool_call_to_message(&task_id, &request_id, tool_call, timestamp)
     }));
 
     api::ResponseEvent {
