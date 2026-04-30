@@ -24,7 +24,8 @@ use crate::{
 use crate::{auth::auth_manager::AuthManager, server::ids::ServerId};
 use crate::{auth::auth_manager::LoginGatedFeature, workspaces::workspace::CustomerType};
 use crate::{workspace::WorkspaceAction, workspaces::update_manager::TeamUpdateManager};
-use ::ai::api_keys::{ApiKeyManager, ApiKeys};
+use crate::view_components::action_button::{ActionButton, ButtonSize, SecondaryTheme};
+use ::ai::api_keys::{AiProvider, ApiKeyManager, ApiKeyManagerEvent, ApiKeys};
 use ::settings::{Setting, ToggleableSetting};
 use lazy_static::lazy_static;
 use pathfinder_color::ColorU;
@@ -45,8 +46,8 @@ use warpui::{
 };
 use warpui::{
     elements::{
-        Align, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Element, Flex,
-        MouseStateHandle, ParentElement, Radius, Shrinkable, Text,
+        Align, ChildView, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Element,
+        Flex, MouseStateHandle, ParentElement, Radius, Shrinkable, Text,
     },
     Action, AppContext,
 };
@@ -139,6 +140,7 @@ pub enum MainPageAction {
     },
     SignupAnonymousUser,
     OpenUrl(String),
+    ToggleActiveAiProvider,
 }
 
 impl MainPageAction {
@@ -246,6 +248,16 @@ impl TypedActionView for MainSettingsPageView {
             MainPageAction::OpenUrl(url) => {
                 ctx.open_url(url);
             }
+            MainPageAction::ToggleActiveAiProvider => {
+                let next = match ApiKeyManager::as_ref(ctx).keys().active_provider {
+                    AiProvider::OpenRouter => AiProvider::Ollama,
+                    AiProvider::Ollama => AiProvider::OpenRouter,
+                };
+                ApiKeyManager::handle(ctx).update(ctx, |manager, ctx| {
+                    manager.set_active_provider(next, ctx);
+                });
+                ctx.notify();
+            }
         }
     }
 }
@@ -302,7 +314,7 @@ impl MainSettingsPageView {
             widgets.push(Box::new(LogoutWidget::default()));
         }
 
-        let title = if is_oss { "OpenRouter" } else { "Account" };
+        let title = if is_oss { "AI Providers" } else { "Account" };
         let page = PageType::new_uncategorized(widgets, Some(title));
 
         MainSettingsPageView { page, auth_state }
@@ -320,6 +332,10 @@ impl MainSettingsPageView {
 struct OpenRouterSettingsWidget {
     api_key_editor: ViewHandle<EditorView>,
     model_editor: ViewHandle<EditorView>,
+    ollama_base_url_editor: ViewHandle<EditorView>,
+    ollama_api_key_editor: ViewHandle<EditorView>,
+    ollama_model_editor: ViewHandle<EditorView>,
+    active_provider_button: ViewHandle<ActionButton>,
 }
 
 impl OpenRouterSettingsWidget {
@@ -327,6 +343,10 @@ impl OpenRouterSettingsWidget {
         let ApiKeys {
             open_router,
             open_router_model,
+            ollama_base_url,
+            ollama_api_key,
+            ollama_model,
+            active_provider,
             ..
         } = ApiKeyManager::as_ref(ctx).keys().clone();
 
@@ -360,9 +380,79 @@ impl OpenRouterSettingsWidget {
             }
         });
 
+        let ollama_base_url_editor =
+            Self::create_editor(ctx, ollama_base_url, "http://localhost:11434", false);
+        ctx.subscribe_to_view(&ollama_base_url_editor, |_, editor, event, ctx| {
+            if matches!(event, EditorEvent::Blurred | EditorEvent::Enter) {
+                let buffer_text = editor.as_ref(ctx).buffer_text(ctx);
+                let value = if buffer_text.is_empty() {
+                    None
+                } else {
+                    Some(buffer_text)
+                };
+                ApiKeyManager::handle(ctx).update(ctx, |model, ctx| {
+                    model.set_ollama_base_url(value, ctx);
+                });
+            }
+        });
+
+        let ollama_api_key_editor =
+            Self::create_editor(ctx, ollama_api_key, "sk-... (optional)", true);
+        ctx.subscribe_to_view(&ollama_api_key_editor, |_, editor, event, ctx| {
+            if matches!(event, EditorEvent::Blurred | EditorEvent::Enter) {
+                let buffer_text = editor.as_ref(ctx).buffer_text(ctx);
+                let value = if buffer_text.is_empty() {
+                    None
+                } else {
+                    Some(buffer_text)
+                };
+                ApiKeyManager::handle(ctx).update(ctx, |model, ctx| {
+                    model.set_ollama_api_key(value, ctx);
+                });
+            }
+        });
+
+        let ollama_model_editor = Self::create_editor(ctx, ollama_model, "llama3.1", false);
+        ctx.subscribe_to_view(&ollama_model_editor, |_, editor, event, ctx| {
+            if matches!(event, EditorEvent::Blurred | EditorEvent::Enter) {
+                let buffer_text = editor.as_ref(ctx).buffer_text(ctx);
+                let value = if buffer_text.is_empty() {
+                    None
+                } else {
+                    Some(buffer_text)
+                };
+                ApiKeyManager::handle(ctx).update(ctx, |model, ctx| {
+                    model.set_ollama_model(value, ctx);
+                });
+            }
+        });
+
+        let active_provider_button = ctx.add_typed_action_view(move |_| {
+            ActionButton::new(active_provider_button_label(active_provider), SecondaryTheme)
+                .with_size(ButtonSize::Small)
+                .on_click(|ctx| {
+                    ctx.dispatch_typed_action(MainPageAction::ToggleActiveAiProvider);
+                })
+        });
+        let active_provider_button_clone = active_provider_button.clone();
+        ctx.subscribe_to_model(
+            &ApiKeyManager::handle(ctx),
+            move |_, _, _event: &ApiKeyManagerEvent, ctx| {
+                let provider = ApiKeyManager::as_ref(ctx).keys().active_provider;
+                active_provider_button_clone.update(ctx, |button, ctx| {
+                    button.set_label(active_provider_button_label(provider), ctx);
+                });
+                ctx.notify();
+            },
+        );
+
         Self {
             api_key_editor,
             model_editor,
+            ollama_base_url_editor,
+            ollama_api_key_editor,
+            ollama_model_editor,
+            active_provider_button,
         }
     }
 
@@ -434,7 +524,7 @@ impl SettingsWidget for OpenRouterSettingsWidget {
     type View = MainSettingsPageView;
 
     fn search_terms(&self) -> &str {
-        "openrouter open router api key model agent free"
+        "openrouter open router api key model agent free ollama local llama base url provider"
     }
 
     fn render(
@@ -446,7 +536,7 @@ impl SettingsWidget for OpenRouterSettingsWidget {
         let description = appearance
             .ui_builder()
             .paragraph(
-                "Warper runs the agent directly through OpenRouter. No Warp account, plan, or Warp credits are required.",
+                "Warper runs the agent directly through the active provider — OpenRouter or a local Ollama server. No Warp account, plan, or Warp credits are required.",
             )
             .with_style(UiComponentStyles {
                 font_color: Some(
@@ -468,10 +558,25 @@ impl SettingsWidget for OpenRouterSettingsWidget {
             .build()
             .finish();
 
+        let active_provider_row = Flex::column()
+            .with_spacing(8.)
+            .with_child(
+                Text::new_inline(
+                    "Active provider",
+                    appearance.ui_font_family(),
+                    REGULAR_TEXT_FONT_SIZE,
+                )
+                .with_color(appearance.theme().active_ui_text_color().into())
+                .finish(),
+            )
+            .with_child(ChildView::new(&self.active_provider_button).finish())
+            .finish();
+
         Container::new(
             Flex::column()
                 .with_spacing(16.)
                 .with_child(description)
+                .with_child(active_provider_row)
                 .with_child(Self::render_input(
                     "OpenRouter API Key",
                     self.api_key_editor.clone(),
@@ -482,10 +587,32 @@ impl SettingsWidget for OpenRouterSettingsWidget {
                     self.model_editor.clone(),
                     appearance,
                 ))
+                .with_child(Self::render_input(
+                    "Ollama Base URL",
+                    self.ollama_base_url_editor.clone(),
+                    appearance,
+                ))
+                .with_child(Self::render_input(
+                    "Ollama API Key",
+                    self.ollama_api_key_editor.clone(),
+                    appearance,
+                ))
+                .with_child(Self::render_input(
+                    "Ollama Model",
+                    self.ollama_model_editor.clone(),
+                    appearance,
+                ))
                 .finish(),
         )
         .with_margin_top(VERTICAL_MARGIN)
         .finish()
+    }
+}
+
+fn active_provider_button_label(provider: AiProvider) -> &'static str {
+    match provider {
+        AiProvider::OpenRouter => "OpenRouter (click to switch to Ollama)",
+        AiProvider::Ollama => "Ollama (click to switch to OpenRouter)",
     }
 }
 

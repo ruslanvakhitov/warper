@@ -252,11 +252,26 @@ async fn request_ollama_completion(
     })?;
 
     let assistant = parsed.message.ok_or(OllamaError::EmptyResponse)?;
-    let text = assistant
+    let raw_text = assistant
         .content
         .map(|text| text.trim().to_owned())
         .filter(|text| !text.is_empty());
-    let tool_calls = assistant.tool_calls;
+    let mut tool_calls = assistant.tool_calls;
+
+    // Some Ollama-served models (Qwen base coder variants, certain Llama 3
+    // quants) emit tool calls as text instead of populating message.tool_calls.
+    // Recover those so they execute as real tool calls.
+    let text = if tool_calls.is_empty() {
+        if let Some(text) = raw_text {
+            let (cleaned, recovered) = extract_text_mode_tool_calls(&text);
+            tool_calls.extend(recovered);
+            cleaned
+        } else {
+            None
+        }
+    } else {
+        raw_text
+    };
 
     if text.is_none() && tool_calls.is_empty() {
         return Err(OllamaError::EmptyResponse);
@@ -270,6 +285,138 @@ async fn request_ollama_completion(
             completion_tokens: parsed.eval_count,
         },
     })
+}
+
+/// Scan assistant text for tool-call JSON the model emitted as plain text
+/// instead of via `message.tool_calls`. Recognizes three shapes, in order:
+///
+/// 1. `<tool_call>{...}</tool_call>` blocks (Qwen-style).
+/// 2. Triple-backtick fenced code blocks (` ```json {...}``` ` or just
+///    ` ```{...}``` `).
+/// 3. The entire trimmed text being a single JSON object.
+///
+/// Returns the cleaned text (with recognized tool-call regions stripped) and
+/// any recovered tool calls.
+fn extract_text_mode_tool_calls(text: &str) -> (Option<String>, Vec<OllamaToolCall>) {
+    let mut tool_calls = Vec::new();
+
+    // (1) <tool_call>...</tool_call> blocks.
+    let stripped = strip_blocks(text, "<tool_call>", "</tool_call>", &mut tool_calls);
+    if !tool_calls.is_empty() {
+        return (non_empty(stripped.trim().to_owned()), tool_calls);
+    }
+
+    // (2) Fenced code blocks.
+    let stripped = strip_fenced_blocks(text, &mut tool_calls);
+    if !tool_calls.is_empty() {
+        return (non_empty(stripped.trim().to_owned()), tool_calls);
+    }
+
+    // (3) The whole trimmed text as a JSON object.
+    if let Some(tc) = parse_text_tool_call(text.trim()) {
+        return (None, vec![tc]);
+    }
+
+    (Some(text.to_owned()), Vec::new())
+}
+
+fn strip_blocks(
+    text: &str,
+    open: &str,
+    close: &str,
+    tool_calls: &mut Vec<OllamaToolCall>,
+) -> String {
+    let mut out = String::new();
+    let mut cursor = 0;
+    while let Some(rel_start) = text[cursor..].find(open) {
+        let abs_start = cursor + rel_start;
+        out.push_str(&text[cursor..abs_start]);
+        let inner_start = abs_start + open.len();
+        match text[inner_start..].find(close) {
+            Some(rel_end) => {
+                let inner = text[inner_start..inner_start + rel_end].trim();
+                if let Some(tc) = parse_text_tool_call(inner) {
+                    tool_calls.push(tc);
+                } else {
+                    // Couldn't parse — preserve the block verbatim so the user
+                    // sees what the model said.
+                    out.push_str(&text[abs_start..inner_start + rel_end + close.len()]);
+                }
+                cursor = inner_start + rel_end + close.len();
+            }
+            None => {
+                // Unterminated open tag — keep the rest as-is.
+                out.push_str(&text[abs_start..]);
+                return out;
+            }
+        }
+    }
+    out.push_str(&text[cursor..]);
+    out
+}
+
+fn strip_fenced_blocks(text: &str, tool_calls: &mut Vec<OllamaToolCall>) -> String {
+    let mut out = String::new();
+    let mut cursor = 0;
+    while let Some(rel_start) = text[cursor..].find("```") {
+        let abs_start = cursor + rel_start;
+        out.push_str(&text[cursor..abs_start]);
+        let after_open = abs_start + 3;
+        // Skip an optional language tag on the same line.
+        let body_start = match text[after_open..].find('\n') {
+            Some(nl) => after_open + nl + 1,
+            None => {
+                out.push_str(&text[abs_start..]);
+                return out;
+            }
+        };
+        match text[body_start..].find("```") {
+            Some(rel_end) => {
+                let inner = text[body_start..body_start + rel_end].trim();
+                if let Some(tc) = parse_text_tool_call(inner) {
+                    tool_calls.push(tc);
+                } else {
+                    out.push_str(&text[abs_start..body_start + rel_end + 3]);
+                }
+                cursor = body_start + rel_end + 3;
+            }
+            None => {
+                out.push_str(&text[abs_start..]);
+                return out;
+            }
+        }
+    }
+    out.push_str(&text[cursor..]);
+    out
+}
+
+fn parse_text_tool_call(candidate: &str) -> Option<OllamaToolCall> {
+    if !candidate.starts_with('{') {
+        return None;
+    }
+    let value: serde_json::Value = serde_json::from_str(candidate).ok()?;
+    let obj = value.as_object()?;
+    let name = obj.get("name")?.as_str()?.to_owned();
+    if name != "run_shell_command" {
+        return None;
+    }
+    let arguments = obj
+        .get("arguments")
+        .or_else(|| obj.get("parameters"))
+        .cloned()
+        .unwrap_or(serde_json::Value::Null);
+    Some(OllamaToolCall {
+        id: None,
+        function: OllamaFunctionCall { name, arguments },
+    })
+}
+
+fn non_empty(s: String) -> Option<String> {
+    if s.is_empty() {
+        None
+    } else {
+        Some(s)
+    }
 }
 
 fn ollama_tools() -> Vec<OllamaTool> {
@@ -670,6 +817,41 @@ mod tests {
             "https://ollama.example.com/v1"
         );
         assert_eq!(normalize_base_url("   "), "");
+    }
+
+    #[test]
+    fn extracts_qwen_style_tool_call_block() {
+        let text = "I'll run a command.\n<tool_call>\n{\"name\": \"run_shell_command\", \"arguments\": {\"command\": \"ls -la\", \"is_read_only\": true}}\n</tool_call>";
+        let (cleaned, calls) = extract_text_mode_tool_calls(text);
+        assert_eq!(cleaned.as_deref(), Some("I'll run a command."));
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].function.name, "run_shell_command");
+        let args = calls[0].function.arguments.as_object().unwrap();
+        assert_eq!(args.get("command").and_then(|v| v.as_str()), Some("ls -la"));
+    }
+
+    #[test]
+    fn extracts_fenced_json_tool_call() {
+        let text = "Here you go:\n```json\n{\"name\": \"run_shell_command\", \"arguments\": {\"command\": \"pwd\"}}\n```\nLet me know.";
+        let (cleaned, calls) = extract_text_mode_tool_calls(text);
+        assert_eq!(calls.len(), 1);
+        assert!(cleaned.as_deref().is_some_and(|t| t.contains("Let me know.")));
+    }
+
+    #[test]
+    fn extracts_naked_json_tool_call() {
+        let text = "{\"name\": \"run_shell_command\", \"arguments\": {\"command\": \"ls\"}}";
+        let (cleaned, calls) = extract_text_mode_tool_calls(text);
+        assert!(cleaned.is_none());
+        assert_eq!(calls.len(), 1);
+    }
+
+    #[test]
+    fn ignores_unknown_tool_name() {
+        let text = "{\"name\": \"some_other_tool\", \"arguments\": {}}";
+        let (cleaned, calls) = extract_text_mode_tool_calls(text);
+        assert_eq!(cleaned.as_deref(), Some(text));
+        assert!(calls.is_empty());
     }
 
     #[test]

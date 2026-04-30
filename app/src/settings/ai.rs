@@ -1544,13 +1544,19 @@ impl AISettings {
     }
 
     fn is_oss_openrouter_configured(app: &AppContext) -> bool {
-        ChannelState::channel() == Channel::Oss
-            && app.has_singleton_model::<ApiKeyManager>()
-            && ApiKeyManager::as_ref(app)
-                .keys()
-                .open_router
-                .as_deref()
-                .is_some_and(|key| !key.trim().is_empty())
+        if ChannelState::channel() != Channel::Oss || !app.has_singleton_model::<ApiKeyManager>() {
+            return false;
+        }
+        let keys = ApiKeyManager::as_ref(app).keys();
+        let openrouter_set = keys
+            .open_router
+            .as_deref()
+            .is_some_and(|key| !key.trim().is_empty());
+        let ollama_set = keys
+            .ollama_base_url
+            .as_deref()
+            .is_some_and(|url| !url.trim().is_empty());
+        openrouter_set || ollama_set
     }
 
     /// Returns the stored default tab config path (only meaningful when mode is `TabConfig`).
