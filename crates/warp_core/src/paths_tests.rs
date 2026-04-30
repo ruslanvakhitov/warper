@@ -5,14 +5,14 @@ use super::*;
 #[test]
 fn test_data_dir_path() {
     let home_dir = home_dir().expect("Should be able to compute home directory");
-    // ChannelState, by default, is configured for Channel::Oss.
+    // ChannelState, by default, is configured for Channel::Local in unit tests.
     cfg_if::cfg_if! {
         if #[cfg(target_os = "macos")] {
-            assert_eq!(data_dir(), home_dir.join(".warp-oss"));
+            assert_eq!(data_dir(), home_dir.join(".warp-local"));
         } else if #[cfg(target_os = "linux")] {
-            assert_eq!(data_dir(), home_dir.join(".local/share/warp-oss"));
+            assert_eq!(data_dir(), home_dir.join(".local/share/Warper"));
         } else if #[cfg(windows)] {
-            assert_eq!(data_dir(), home_dir.join("AppData\\Roaming\\warp\\WarpOss\\data"));
+            assert_eq!(data_dir(), home_dir.join("AppData\\Roaming\\warper\\Warper\\data"));
         } else {
             unimplemented!("Need to update tests for current platform!");
         }
@@ -22,14 +22,14 @@ fn test_data_dir_path() {
 #[test]
 fn test_config_local_dir_path() {
     let home_dir = home_dir().expect("Should be able to compute home directory");
-    // ChannelState, by default, is configured for Channel::Oss.
+    // ChannelState, by default, is configured for Channel::Local in unit tests.
     cfg_if::cfg_if! {
         if #[cfg(target_os = "macos")] {
-            assert_eq!(config_local_dir(), home_dir.join(".warp-oss"));
+            assert_eq!(config_local_dir(), home_dir.join(".warp-local"));
         } else if #[cfg(target_os = "linux")] {
-            assert_eq!(config_local_dir(), home_dir.join(".config/warp-oss"));
+            assert_eq!(config_local_dir(), home_dir.join(".config/Warper"));
         } else if #[cfg(windows)] {
-            assert_eq!(config_local_dir(), home_dir.join("AppData\\Local\\warp\\WarpOss\\config"));
+            assert_eq!(config_local_dir(), home_dir.join("AppData\\Local\\warper\\Warper\\config"));
         } else {
             unimplemented!("Need to update tests for current platform!");
         }
@@ -40,8 +40,8 @@ fn test_config_local_dir_path() {
 fn test_warp_home_config_dir_path() {
     let home_dir = home_dir().expect("Should be able to compute home directory");
     let expected_dir_name = match ChannelState::data_profile() {
-        Some(data_profile) => format!(".warp-oss-{data_profile}"),
-        None => ".warp-oss".to_string(),
+        Some(data_profile) => format!(".warp-local-{data_profile}"),
+        None => ".warp-local".to_string(),
     };
 
     assert_eq!(
@@ -65,14 +65,14 @@ fn test_warp_home_skills_and_mcp_paths() {
 #[test]
 fn test_cache_dir_path() {
     let home_dir = home_dir().expect("Should be able to compute home directory");
-    // ChannelState, by default, is configured for Channel::Oss.
+    // ChannelState, by default, is configured for Channel::Local in unit tests.
     cfg_if::cfg_if! {
         if #[cfg(target_os = "macos")] {
-            assert_eq!(cache_dir(), home_dir.join("Library/Application Support/dev.warp.WarpOss"));
+            assert_eq!(cache_dir(), home_dir.join("Library/Application Support/dev.warper.Warper"));
         } else if #[cfg(target_os = "linux")] {
-            assert_eq!(cache_dir(), home_dir.join(".cache/warp-oss"));
+            assert_eq!(cache_dir(), home_dir.join(".cache/Warper"));
         } else if #[cfg(windows)] {
-            assert_eq!(cache_dir(), home_dir.join("AppData\\Local\\warp\\WarpOss\\cache"));
+            assert_eq!(cache_dir(), home_dir.join("AppData\\Local\\warper\\Warper\\cache"));
         } else {
             unimplemented!("Need to update tests for current platform!");
         }
@@ -83,13 +83,13 @@ fn test_cache_dir_path() {
 fn test_state_dir_path() {
     let home_dir = home_dir().expect("Should be able to compute home directory");
     cfg_if::cfg_if! {
-        // ChannelState, by default, is configured for Channel::Oss.
+        // ChannelState, by default, is configured for Channel::Local in unit tests.
         if #[cfg(target_os = "macos")] {
-            assert_eq!(state_dir(), home_dir.join("Library/Application Support/dev.warp.WarpOss"));
+            assert_eq!(state_dir(), home_dir.join("Library/Application Support/dev.warper.Warper"));
         } else if #[cfg(target_os = "linux")] {
-            assert_eq!(state_dir(), home_dir.join(".local/state/warp-oss"));
+            assert_eq!(state_dir(), home_dir.join(".local/state/Warper"));
         } else if #[cfg(windows)] {
-            assert_eq!(state_dir(), home_dir.join("AppData\\Local\\warp\\WarpOss\\data"));
+            assert_eq!(state_dir(), home_dir.join("AppData\\Local\\warper\\Warper\\data"));
         } else {
             unimplemented!("Need to update tests for current platform!");
         }

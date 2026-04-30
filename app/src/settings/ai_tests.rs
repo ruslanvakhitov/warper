@@ -7,8 +7,39 @@ use crate::{
 };
 use ai::api_keys::ApiKeyManager;
 use chrono::Utc;
+use warp_core::{
+    channel::{Channel, ChannelConfig, ChannelState, OzConfig, WarpServerConfig},
+    AppId,
+};
 use warp_graphql::scalars::time::ServerTimestamp;
 use warpui::{App, SingletonEntity};
+
+struct TestChannelGuard;
+
+impl TestChannelGuard {
+    fn set_oss() -> Self {
+        ChannelState::set(ChannelState::new(
+            Channel::Oss,
+            ChannelConfig {
+                app_id: AppId::new("dev", "warper", "Warper"),
+                logfile_name: "warper.log".into(),
+                server_config: WarpServerConfig::production(),
+                oz_config: OzConfig::production(),
+                telemetry_config: None,
+                crash_reporting_config: None,
+                autoupdate_config: None,
+                mcp_static_config: None,
+            },
+        ));
+        Self
+    }
+}
+
+impl Drop for TestChannelGuard {
+    fn drop(&mut self) {
+        ChannelState::set(ChannelState::init());
+    }
+}
 
 fn create_test_request_limit_info(
     limit: usize,
@@ -387,7 +418,10 @@ fn test_toolbar_command_map_matched_agent() {
 }
 
 #[test]
+#[serial_test::serial]
 fn test_openrouter_key_enables_agent_default_for_logged_out_oss_users() {
+    let _channel_guard = TestChannelGuard::set_oss();
+
     App::test((), |mut app| async move {
         app.add_singleton_model(|_| AuthStateProvider::new_logged_out_for_test());
         app.add_singleton_model(UserWorkspaces::default_mock);

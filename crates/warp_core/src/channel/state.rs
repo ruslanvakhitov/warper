@@ -36,6 +36,9 @@ pub struct ChannelState {
 
 impl ChannelState {
     pub fn init() -> Self {
+        #[cfg(any(test, feature = "test-util"))]
+        let channel = Channel::Local;
+        #[cfg(not(any(test, feature = "test-util")))]
         let channel = Channel::Oss;
         let app_id = AppId::new("dev", "warper", "Warper");
         Self {
