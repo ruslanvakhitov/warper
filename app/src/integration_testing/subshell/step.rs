@@ -1,4 +1,3 @@
-use regex::Regex;
 use std::time::Duration;
 use warpui::{
     async_assert, async_assert_eq,
@@ -8,67 +7,11 @@ use warpui::{
 use crate::{
     integration_testing::{
         step::assert_no_pending_model_events,
-        terminal::{
-            assert_long_running_block_executing_for_single_terminal_in_tab,
-            execute_command_for_single_terminal_in_tab, util::ExpectedExitStatus,
-            validate_block_output, wait_until_bootstrapped_pane,
-        },
+        terminal::wait_until_bootstrapped_pane,
         view_getters::{single_terminal_view, terminal_view},
     },
     terminal::{model::rich_content::RichContentType, view::WithinBlockBanner},
 };
-
-use super::util::{ssh_command, user_host};
-
-/// Sets environment variables needed by the Google Cloud SDK.
-pub fn setup_gcloud_sdk() -> TestStep {
-    execute_command_for_single_terminal_in_tab(
-        0,
-        "export CLOUDSDK_CONFIG=\"$ORIGINAL_HOME/.config/gcloud\"".into(),
-        ExpectedExitStatus::Success,
-        (),
-    )
-}
-
-/// Initiates an SSH connection, executing the necessary command and then
-/// waiting briefly (to avoid any subsequent steps performing assertions about
-/// long-running command state faster than the ssh command can fail).
-pub fn enter_ssh_command(shell: &str) -> TestStep {
-    let ssh_command = ssh_command(shell, true);
-    TestStep::new(&format!("Start ssh connection with remote shell '{shell}'"))
-        .with_typed_characters(&[&ssh_command])
-        .with_keystrokes(&["enter"])
-        .set_post_step_pause(Duration::from_millis(250))
-}
-
-pub fn enter_remote_subshell_command(shell: &str) -> TestStep {
-    let ssh_command = ssh_command(shell, false);
-    TestStep::new(&format!("Start ssh connection with remote shell '{shell}'"))
-        .with_typed_characters(&[&ssh_command])
-        .with_keystrokes(&["enter"])
-        .set_post_step_pause(Duration::from_millis(250))
-}
-
-/// Waits for a password prompt.
-pub fn wait_for_password_prompt(tab_index: usize, shell: &str) -> TestStep {
-    let user_host = user_host(shell);
-    let regex = Regex::new(&format!("{user_host}'s password:[\\s]*$"))
-        .expect("regex should not fail to compile");
-    TestStep::new("Wait for password prompt")
-        // Wait up to 40 seconds for the password prompt to appear.  This is
-        // intended to reduce flakiness due to still-not-understood delays
-        // in the password prompt appearing.
-        .set_timeout(Duration::from_secs(40))
-        .add_assertion(assert_long_running_block_executing_for_single_terminal_in_tab(true, 0))
-        .add_assertion(move |app, window_id| {
-            validate_block_output(&regex, tab_index, 0, window_id, app)
-        })
-}
-
-/// Enters the password for the user in the SSH testing VM.
-pub fn enter_ssh_password() -> TestStep {
-    TestStep::new("Enter ssh password").with_typed_characters(&["password\n"])
-}
 
 pub fn enter_local_subshell_command(shell: &str) -> TestStep {
     TestStep::new(&format!("Enter local subshell command for {shell}"))
