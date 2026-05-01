@@ -35,6 +35,10 @@ impl VoiceTranscriber {
         }
     }
 
+    pub fn disabled() -> Self {
+        Self { transcriber: None }
+    }
+
     /// Returns the transcriber if one is set.
     pub fn transcriber(&self) -> Option<&Arc<dyn Transcriber>> {
         self.transcriber.as_ref()

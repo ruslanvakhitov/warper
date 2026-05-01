@@ -26,6 +26,7 @@ use chrono::{DateTime, Utc};
 use warp_graphql::object_permissions::AccessLevel;
 
 use crate::{
+    auth::UserUid,
     cloud_object::{
         model::{
             actions::{ObjectActionHistory, ObjectActionType},
@@ -101,7 +102,7 @@ impl FakeObjectClient {
             GenericStringObjectId::from(server_id),
             StoredPreference {
                 model,
-                revision: Revision::now(),
+                revision: current_revision(),
                 metadata_ts: Utc::now(),
             },
         );
@@ -148,7 +149,7 @@ impl FakeObjectClient {
                     current_editor_uid: None,
                 };
                 let permissions = ServerPermissions {
-                    space: Owner::mock_current_user(),
+                    space: local_owner(),
                     guests: Vec::new(),
                     anyone_link_sharing: None,
                     permissions_last_updated_ts: stored.metadata_ts.into(),
@@ -177,7 +178,27 @@ impl FakeObjectClient {
 impl FakeCloudState {
     fn alloc_server_id(&mut self) -> ServerId {
         self.next_server_id += 1;
-        ServerId::from(self.next_server_id)
+        ServerId::from_string_lossy(format!("warperlocal{:011}", self.next_server_id))
+    }
+}
+
+fn current_revision() -> Revision {
+    Revision::from_unix_timestamp_micros(Utc::now().timestamp_micros())
+        .expect("current timestamp should be a valid revision")
+}
+
+fn local_owner() -> Owner {
+    Owner::User {
+        user_uid: UserUid::new("warper-local-user"),
+    }
+}
+
+fn local_permissions(now: DateTime<Utc>) -> ServerPermissions {
+    ServerPermissions {
+        space: local_owner(),
+        guests: Vec::new(),
+        anyone_link_sharing: None,
+        permissions_last_updated_ts: now.into(),
     }
 }
 
@@ -214,14 +235,14 @@ impl ObjectClient for FakeObjectClient {
                 GenericStringObjectId::from(server_id),
                 StoredPreference {
                     model,
-                    revision: Revision::now(),
+                    revision: current_revision(),
                     metadata_ts: now,
                 },
             );
             created.push(CreatedCloudObject {
                 client_id: request.id,
                 revision_and_editor: RevisionAndLastEditor {
-                    revision: Revision::now(),
+                    revision: current_revision(),
                     last_editor_uid: None,
                 },
                 metadata_ts: now.into(),
@@ -230,7 +251,7 @@ impl ObjectClient for FakeObjectClient {
                     id_type: ObjectIdType::GenericStringObject,
                 },
                 creator_uid: None,
-                permissions: ServerPermissions::mock_personal(),
+                permissions: local_permissions(now),
             });
         }
         Ok(BulkCreateCloudObjectResult::Success {
@@ -251,7 +272,7 @@ impl ObjectClient for FakeObjectClient {
             .ok_or_else(|| anyhow!("fake cloud: no preference with id {object_id:?}"))?;
         stored.model = CloudPreferenceModel::deserialize_owned(model.model_as_str())
             .map_err(|err| anyhow!("fake cloud failed to deserialize preference: {err}"))?;
-        stored.revision = Revision::now();
+        stored.revision = current_revision();
         stored.metadata_ts = Utc::now();
         Ok(UpdateCloudObjectResult::Success {
             revision_and_editor: RevisionAndLastEditor {

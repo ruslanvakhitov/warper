@@ -379,7 +379,7 @@ pub struct ServerApi {
     telemetry_api: TelemetryApi,
     last_server_time: Arc<Mutex<Option<ServerTime>>>,
     // We technically use OAuth2 for headless device authentication.
-    oauth_client: self::auth::OAuth2Client,
+    oauth_client: Option<self::auth::OAuth2Client>,
     /// Cached ambient workload token for requests from ambient agents.
     ambient_workload_token: Arc<Mutex<Option<warp_isolation_platform::WorkloadToken>>>,
     /// The ambient agent task ID for requests from cloud agents.
@@ -470,9 +470,9 @@ impl ServerApi {
             .collect())
     }
 
-    fn create_oauth_client() -> self::auth::OAuth2Client {
-        let server_root =
-            Url::parse(&ChannelState::server_root_url()).expect("Server root URL must be valid");
+    fn create_oauth_client() -> Option<self::auth::OAuth2Client> {
+        let server_root = ChannelState::maybe_server_root_url()?;
+        let server_root = Url::parse(&server_root).expect("Server root URL must be valid");
 
         let token_url = server_root
             .join("/api/v1/oauth/token")
@@ -482,9 +482,11 @@ impl ServerApi {
             .join("/api/v1/oauth/device/auth")
             .expect("Invalid device URL");
 
-        oauth2::basic::BasicClient::new(oauth2::ClientId::new("warp-cli".to_string()))
-            .set_token_uri(oauth2::TokenUrl::from_url(token_url))
-            .set_device_authorization_url(oauth2::DeviceAuthorizationUrl::from_url(device_url))
+        Some(
+            oauth2::basic::BasicClient::new(oauth2::ClientId::new("warp-cli".to_string()))
+                .set_token_uri(oauth2::TokenUrl::from_url(token_url))
+                .set_device_authorization_url(oauth2::DeviceAuthorizationUrl::from_url(device_url)),
+        )
     }
 
     pub fn send_graphql_request<'a, QF, O: warp_graphql::client::Operation<QF> + Send + 'a>(
@@ -853,9 +855,8 @@ impl ServerApi {
         }
     }
 
-    /// Synchronously sends a [`TelemetryEvent`] to the Rudderstack API. Prefer not to call this
-    /// directly, use the macros defined in crate::server::telemetry::macros. If telemetry is
-    /// disabled, this is a no-op.
+    /// Drops a [`TelemetryEvent`] through the local telemetry API. Prefer not to call this
+    /// directly; use the macros defined in crate::server::telemetry::macros.
     pub async fn send_telemetry_event(
         &self,
         event: impl TelemetryEvent,
@@ -868,10 +869,8 @@ impl ServerApi {
             .await
     }
 
-    /// Drains all queued [`TelemetryEvent`]s into Rudderstack requests containing the corresponding
-    /// batch of events. Events are queued using the [`send_telemetry_from_ctx`] or
-    /// [`send_telemetry_from_app_ctx`] macros. If telemetry is disabled for the user, this flushes
-    /// the UI framework event queue and does nothing with them (no request is made).
+    /// Drains and drops all queued [`TelemetryEvent`]s. Events are queued using the
+    /// [`send_telemetry_from_ctx`] or [`send_telemetry_from_app_ctx`] macros.
     ///
     /// Returns the number of events that were flushed.
     pub async fn flush_telemetry_events(
@@ -881,22 +880,18 @@ impl ServerApi {
         self.telemetry_api.flush_events(settings_snapshot).await
     }
 
-    /// Sends a batched Rudder request containing events written to the file at `path`. This is a
-    /// no-op if telemetry is disabled.
-    pub async fn flush_persisted_events_to_rudder(
+    /// Removes a legacy persisted telemetry queue at `path` without uploading it.
+    pub async fn remove_persisted_telemetry_events(
         &self,
         path: &Path,
         settings_snapshot: PrivacySettingsSnapshot,
     ) -> Result<()> {
         self.telemetry_api
-            .flush_persisted_events_to_rudder(path, settings_snapshot)
+            .remove_persisted_telemetry_events(path, settings_snapshot)
             .await
     }
 
-    /// Writes all queued [`TelemetryEvent`]s to a file, limiting the number of written
-    /// events to `max_events`. Events are queued using the [`send_telemetry_from_ctx`] or
-    /// [`send_telemetry_from_app_ctx`] macros. If telemetry is disabled, no events are written to
-    /// disk.
+    /// Drains all queued [`TelemetryEvent`]s without persisting them.
     pub fn persist_telemetry_events(
         &self,
         max_event_count: usize,

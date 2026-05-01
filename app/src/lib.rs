@@ -136,6 +136,7 @@ use crate::ai::mcp::FileBasedMCPManager;
 use crate::ai::mcp::FileMCPWatcher;
 use crate::uri::web_intent_parser::maybe_rewrite_web_url_to_intent;
 use ::ai::index::full_source_code_embedding::manager::CodebaseIndexManager;
+use ::ai::index::full_source_code_embedding::store_client::MockStoreClient;
 use ::ai::index::full_source_code_embedding::SyncTask;
 use ::ai::index::DEFAULT_SYNC_REQUESTS_PER_MIN;
 use ::ai::project_context::model::ProjectContextModel;
@@ -222,8 +223,11 @@ use crate::notebooks::CloudNotebook;
 use crate::palette::PaletteMode;
 use crate::persistence::PersistenceWriter;
 use crate::projects::ProjectManagementModel;
-use crate::server::cloud_objects::{listener::Listener, update_manager::UpdateManager};
+use crate::server::cloud_objects::{
+    fake_object_client::FakeObjectClient, listener::Listener, update_manager::UpdateManager,
+};
 use crate::server::experiments::ServerExperiments;
+use crate::server::server_api::object::ObjectClient;
 use crate::server::sync_queue::{QueueItem, SyncQueue};
 use crate::session_management::{RunningSessionSummary, SessionNavigationData};
 use crate::settings::cloud_preferences_syncer::initialize_cloud_preferences_syncer;
@@ -974,6 +978,7 @@ fn initialize_app(
     // Sentry. Only the dependencies of crash_reporting should be initialized here. Avoid adding
     // any other stuff here, as failures will be silent. Push them to pre_sentry_errors instead.
     let data_domain = ChannelState::data_domain();
+    let warp_server_available = ChannelState::is_warp_server_available();
 
     // Register an implementation of the secure storage service.
     cfg_if::cfg_if! {
@@ -1013,7 +1018,7 @@ fn initialize_app(
         LaunchMode::App { api_key, .. } if ChannelState::channel().is_dogfood() => api_key.clone(),
         _ => None,
     };
-    let api_key = if FeatureFlag::APIKeyAuthentication.is_enabled() {
+    let api_key = if warp_server_available && FeatureFlag::APIKeyAuthentication.is_enabled() {
         api_key
     } else {
         None
@@ -1024,28 +1029,38 @@ fn initialize_app(
 
     let agent_source = determine_agent_source(launch_mode);
 
-    // NetworkLogModel must be registered before ServerApiProvider so that
-    // `network_logging::init` (invoked from within `ServerApiProvider::new`)
-    // can reach it via `NetworkLogModel::handle(ctx)` when forwarding items
-    // captured by the HTTP client hooks.
     ctx.add_singleton_model(|_ctx| NetworkLogModel::default());
 
-    let server_api_provider = ctx
-        .add_singleton_model(|ctx| ServerApiProvider::new(auth_state.clone(), agent_source, ctx));
-    let server_api = server_api_provider.as_ref(ctx).get();
-    let ai_client = server_api_provider.as_ref(ctx).get_ai_client();
+    let server_api_provider = if warp_server_available {
+        // NetworkLogModel must be registered before ServerApiProvider so that
+        // `network_logging::init` (invoked from within `ServerApiProvider::new`)
+        // can reach it via `NetworkLogModel::handle(ctx)` when forwarding items
+        // captured by the HTTP client hooks.
+        Some(ctx.add_singleton_model(|ctx| {
+            ServerApiProvider::new(auth_state.clone(), agent_source, ctx)
+        }))
+    } else {
+        None
+    };
+    let object_client: Arc<dyn ObjectClient> = server_api_provider
+        .as_ref()
+        .map(|provider| provider.as_ref(ctx).get_cloud_objects_client())
+        .unwrap_or_else(|| Arc::new(FakeObjectClient::default()));
 
     ctx.add_singleton_model(|_ctx| AuthStateProvider::new(auth_state.clone()));
 
     ctx.add_singleton_model(AppTelemetryContextProvider::new_context_provider);
 
-    ctx.add_singleton_model(|ctx| {
-        AuthManager::new(
-            server_api.clone(),
-            server_api_provider.as_ref(ctx).get_auth_client(),
-            ctx,
-        )
-    });
+    if let Some(server_api_provider) = server_api_provider.as_ref() {
+        let server_api = server_api_provider.as_ref(ctx).get();
+        ctx.add_singleton_model(|ctx| {
+            AuthManager::new(
+                server_api.clone(),
+                server_api_provider.as_ref(ctx).get_auth_client(),
+                ctx,
+            )
+        });
+    }
 
     ctx.add_singleton_model(|_ctx| GPUState::new());
 
@@ -1152,22 +1167,27 @@ fn initialize_app(
             )
         });
 
-    // Initialize a global model to track server-side experiment state.
-    // This depends on the [`GlobalResourceHandlesProvider`] and so it must
-    // be initialized after it.
-    ctx.add_singleton_model(|ctx| ServerExperiments::new_from_cache(experiments, ctx));
+    if let Some(server_api_provider) = server_api_provider.as_ref() {
+        // Initialize a global model to track server-side experiment state.
+        // This depends on the [`GlobalResourceHandlesProvider`] and so it must
+        // be initialized after it.
+        ctx.add_singleton_model(|ctx| ServerExperiments::new_from_cache(experiments, ctx));
 
-    ctx.add_singleton_model(|ctx| AIRequestUsageModel::new(ai_client, ctx));
+        let ai_client = server_api_provider.as_ref(ctx).get_ai_client();
+        ctx.add_singleton_model(|ctx| AIRequestUsageModel::new(ai_client, ctx));
 
-    ctx.add_singleton_model(|ctx| {
-        UserWorkspaces::new(
-            server_api_provider.as_ref(ctx).get_team_client(),
-            server_api_provider.as_ref(ctx).get_workspace_client(),
-            cached_workspaces,
-            current_workspace_uid,
-            ctx,
-        )
-    });
+        ctx.add_singleton_model(|ctx| {
+            UserWorkspaces::new(
+                server_api_provider.as_ref(ctx).get_team_client(),
+                server_api_provider.as_ref(ctx).get_workspace_client(),
+                cached_workspaces,
+                current_workspace_uid,
+                ctx,
+            )
+        });
+    } else {
+        ctx.add_singleton_model(UserWorkspaces::local_only);
+    }
 
     // Initialize ApiKeyManager after UserWorkspaces so it can subscribe to workspace/settings changes
     ctx.add_singleton_model(|ctx| {
@@ -1182,19 +1202,25 @@ fn initialize_app(
 
     cfg_if::cfg_if! {
         if #[cfg(feature = "crash_reporting")] {
-            let is_crash_reporting_enabled = crash_reporting::init(ctx);
+            let is_crash_reporting_enabled = if ChannelState::is_crash_reporting_available() {
+                crash_reporting::init(ctx)
+            } else {
+                false
+            };
         } else {
             let is_crash_reporting_enabled = false;
         }
     }
     // Send buffered pre-init errors to Sentry now that the client is ready.
     #[cfg(feature = "crash_reporting")]
-    for err in _pre_sentry_errors {
-        sentry::integrations::anyhow::capture_anyhow(&err);
+    if is_crash_reporting_enabled {
+        for err in _pre_sentry_errors {
+            sentry::integrations::anyhow::capture_anyhow(&err);
+        }
     }
     timer.mark_interval_end("INIT_CRASH_REPORTING");
 
-    if let LaunchMode::App { .. } = launch_mode {
+    if warp_server_available && matches!(launch_mode, LaunchMode::App { .. }) {
         autoupdate::check_and_report_update_errors(ctx);
     }
 
@@ -1202,7 +1228,7 @@ fn initialize_app(
 
     ctx.set_default_binding_validator(is_binding_cross_platform);
 
-    if FeatureFlag::Autoupdate.is_enabled() {
+    if warp_server_available && FeatureFlag::Autoupdate.is_enabled() {
         // Attempt to clean up any old executable, whether or not we were
         // explicitly launched as part of the auto-update process.  We may have
         // failed to remove the executable on a previous launch of the app and
@@ -1222,13 +1248,15 @@ fn initialize_app(
     ctx.add_singleton_model(|_| ExecutionProfileEditorManager::default());
     ctx.add_singleton_model(|_| NetworkLogPaneManager::default());
     ctx.add_singleton_model(|_| pricing::PricingInfoModel::new());
-    ctx.add_singleton_model(|ctx| {
-        // Not using the *Provider types isn't ideal, but it's worth it for the ability to move managed secrets to a separate crate.
-        ManagedSecretManager::new(
-            server_api_provider.as_ref(ctx).get_managed_secrets_client(),
-            auth_state.clone(),
-        )
-    });
+    if let Some(server_api_provider) = server_api_provider.as_ref() {
+        ctx.add_singleton_model(|ctx| {
+            // Not using the *Provider types isn't ideal, but it's worth it for the ability to move managed secrets to a separate crate.
+            ManagedSecretManager::new(
+                server_api_provider.as_ref(ctx).get_managed_secrets_client(),
+                auth_state.clone(),
+            )
+        });
+    }
 
     #[cfg(target_os = "macos")]
     if !launch_mode.is_headless() {
@@ -1287,7 +1315,7 @@ fn initialize_app(
         });
     });
 
-    let user_is_logged_in = auth_state.is_logged_in();
+    let user_is_logged_in = warp_server_available && auth_state.is_logged_in();
 
     if user_is_logged_in {
         // Skip refresh_user for CLI mode — the CLI handles auth refresh in
@@ -1338,7 +1366,7 @@ fn initialize_app(
                 crash_recovery.on_frame_drawn(window_id, ctx);
             });
         })
-    } else {
+    } else if warp_server_available {
         // If the app was opened while logged out, record an event for measuring new users.
         // This is sent immediately in case they quit the app on the signup screen.
         send_telemetry_sync_from_app_ctx!(TelemetryEvent::LoggedOutStartup, ctx);
@@ -1412,13 +1440,15 @@ fn initialize_app(
 
     ctx.add_singleton_model(CustomSecretRegexUpdater::new);
 
-    // Register the `TelemetryCollection` singleton model.
-    let server_api_clone = server_api.clone();
-    ctx.add_singleton_model(|ctx| {
-        let telemetry_collector = TelemetryCollector::new(server_api_clone);
-        telemetry_collector.initialize_telemetry_collection(ctx);
-        telemetry_collector
-    });
+    if let Some(server_api_provider) = server_api_provider.as_ref() {
+        // Register the `TelemetryCollection` singleton model.
+        let server_api_clone = server_api_provider.as_ref(ctx).get();
+        ctx.add_singleton_model(|ctx| {
+            let telemetry_collector = TelemetryCollector::new(server_api_clone);
+            telemetry_collector.initialize_telemetry_collection(ctx);
+            telemetry_collector
+        });
+    }
     timer.mark_interval_end("INITIALIZE_TELEMETRY_COLLECTION");
 
     // Register initial keybindings prior to creating menus
@@ -1475,7 +1505,10 @@ fn initialize_app(
     ctx.add_singleton_model(|_| DisplayCount(display_count));
 
     ctx.add_singleton_model(|_| RelaunchModel::new());
-    ctx.add_singleton_model(|_| ChangelogModel::new(server_api.clone()));
+    if let Some(server_api_provider) = server_api_provider.as_ref() {
+        let server_api = server_api_provider.as_ref(ctx).get();
+        ctx.add_singleton_model(|_| ChangelogModel::new(server_api));
+    }
     ctx.add_singleton_model(|_| GitHubAuthNotifier::new());
     ctx.add_singleton_model(|_| NetworkStatus::new());
     ctx.add_singleton_model(|_| SystemStats::new());
@@ -1486,10 +1519,12 @@ fn initialize_app(
     ctx.add_singleton_model(UndoCloseStack::new);
     ctx.add_singleton_model(|_| ToastStack);
     ctx.add_singleton_model(|_| GlobalCodeReviewModel);
-    ctx.add_singleton_model(workspace::OneTimeModalModel::new);
-    ctx.add_singleton_model(
-        workspace::bonus_grant_notification_model::BonusGrantNotificationModel::new,
-    );
+    if warp_server_available {
+        ctx.add_singleton_model(workspace::OneTimeModalModel::new);
+        ctx.add_singleton_model(
+            workspace::bonus_grant_notification_model::BonusGrantNotificationModel::new,
+        );
+    }
     #[cfg(feature = "local_fs")]
     ctx.add_singleton_model(FileModel::new);
     ctx.add_singleton_model(GlobalBufferModel::new);
@@ -1500,9 +1535,14 @@ fn initialize_app(
 
     #[cfg(feature = "voice_input")]
     ctx.add_singleton_model(voice_input::VoiceInput::new);
-    ctx.add_singleton_model(|_| {
-        VoiceTranscriber::new(Arc::new(ServerVoiceTranscriber::new(server_api.clone())))
-    });
+    if let Some(server_api_provider) = server_api_provider.as_ref() {
+        let server_api = server_api_provider.as_ref(ctx).get();
+        ctx.add_singleton_model(|_| {
+            VoiceTranscriber::new(Arc::new(ServerVoiceTranscriber::new(server_api)))
+        });
+    } else {
+        ctx.add_singleton_model(|_| VoiceTranscriber::disabled());
+    }
 
     let notebooks = cloud_objects
         .iter()
@@ -1519,9 +1559,11 @@ fn initialize_app(
         .filter(|object| object.metadata().has_pending_content_changes())
         .cloned()
         .collect::<Vec<_>>();
-    all_queue_items.extend(QueueItem::from_cached_objects(
-        objects_with_pending_changes.into_iter(),
-    ));
+    if warp_server_available {
+        all_queue_items.extend(QueueItem::from_cached_objects(
+            objects_with_pending_changes.into_iter(),
+        ));
+    }
 
     let cloud_model = ctx.add_singleton_model(|_ctx| {
         CloudModel::new(
@@ -1542,17 +1584,13 @@ fn initialize_app(
         })
         .collect::<Vec<_>>();
 
-    all_queue_items.extend(QueueItem::from_unsynced_actions(
-        unsynced_actions.into_iter(),
-    ));
+    if warp_server_available {
+        all_queue_items.extend(QueueItem::from_unsynced_actions(
+            unsynced_actions.into_iter(),
+        ));
+    }
 
-    ctx.add_singleton_model(|ctx| {
-        SyncQueue::new(
-            all_queue_items,
-            server_api_provider.as_ref(ctx).get_cloud_objects_client(),
-            ctx,
-        )
-    });
+    ctx.add_singleton_model(|ctx| SyncQueue::new(all_queue_items, object_client.clone(), ctx));
 
     {
         let conversations = &multi_agent_conversations;
@@ -1591,29 +1629,27 @@ fn initialize_app(
     ctx.add_singleton_model(TeamTesterStatus::new);
 
     ctx.add_singleton_model(|ctx| {
-        TeamUpdateManager::new(
-            server_api_provider.as_ref(ctx).get_team_client(),
-            persistence_writer.sender(),
-            ctx,
-        )
+        let team_client = server_api_provider
+            .as_ref()
+            .map(|provider| provider.as_ref(ctx).get_team_client())
+            .unwrap_or_else(UserWorkspaces::local_only_team_client);
+        TeamUpdateManager::new(team_client, persistence_writer.sender(), ctx)
     });
 
     ctx.add_singleton_model(|ctx| {
-        UpdateManager::new(
-            persistence_writer.sender(),
-            server_api_provider.as_ref(ctx).get_cloud_objects_client(),
-            ctx,
-        )
+        UpdateManager::new(persistence_writer.sender(), object_client.clone(), ctx)
     });
 
     let toml_file_path = settings::user_preferences_toml_file_path();
-    ctx.add_singleton_model(move |ctx| {
-        initialize_cloud_preferences_syncer(
-            toml_file_path,
-            startup_toml_parse_error_for_syncer.as_deref(),
-            ctx,
-        )
-    });
+    if warp_server_available {
+        ctx.add_singleton_model(move |ctx| {
+            initialize_cloud_preferences_syncer(
+                toml_file_path,
+                startup_toml_parse_error_for_syncer.as_deref(),
+                ctx,
+            )
+        });
+    }
 
     // LogManager must be registered before any subsystem (e.g. MCP, LSP) that creates file-based loggers.
     ctx.add_singleton_model(|_| simple_logger::manager::LogManager::new());
@@ -1665,12 +1701,14 @@ fn initialize_app(
     ctx.add_singleton_model(NotebookKeybindings::new);
     ctx.add_singleton_model(TerminalKeybindings::new);
     ctx.add_singleton_model(|_| ActiveSession::default());
-    ctx.add_singleton_model(|ctx| {
-        Listener::new(
-            server_api_provider.as_ref(ctx).get_cloud_objects_client(),
-            ctx,
-        )
-    });
+    if let Some(server_api_provider) = server_api_provider.as_ref() {
+        ctx.add_singleton_model(|ctx| {
+            Listener::new(
+                server_api_provider.as_ref(ctx).get_cloud_objects_client(),
+                ctx,
+            )
+        });
+    }
 
     #[cfg(all(not(target_family = "wasm"), feature = "local_tty"))]
     {
@@ -1698,11 +1736,15 @@ fn initialize_app(
         ctx.add_singleton_model(ScheduledAgentManager::new);
     }
 
-    AutoupdateState::register(ctx, server_api.clone());
+    if let Some(server_api_provider) = server_api_provider.as_ref() {
+        AutoupdateState::register(ctx, server_api_provider.as_ref(ctx).get());
+    }
 
     ctx.add_singleton_model(LocalWorkflows::new);
 
-    ctx.add_singleton_model(LLMPreferences::new);
+    if warp_server_available {
+        ctx.add_singleton_model(LLMPreferences::new);
+    }
 
     ctx.add_singleton_model(|ctx| {
         ai::agent_tips::AITipModel::<ai::AgentTip>::new_for_agent_tips(ctx)
@@ -1728,22 +1770,42 @@ fn initialize_app(
     ctx.add_singleton_model(DefaultTerminal::new);
 
     ctx.add_singleton_model(|ctx| {
-        let indices_to_restore = if UserWorkspaces::as_ref(ctx).is_codebase_context_enabled(ctx)
-            && launch_mode.supports_indexing()
-        {
-            persisted_workspaces.clone()
-        } else {
-            vec![]
-        };
+        let (indices_to_restore, max_indices_allowed, max_files_per_repo, embedding_batch_size) =
+            if server_api_provider.is_some() {
+                let indices_to_restore = if UserWorkspaces::as_ref(ctx)
+                    .is_codebase_context_enabled(ctx)
+                    && launch_mode.supports_indexing()
+                {
+                    persisted_workspaces.clone()
+                } else {
+                    vec![]
+                };
 
-        let codebase_limits = AIRequestUsageModel::as_ref(ctx).codebase_context_limits();
+                let codebase_limits = AIRequestUsageModel::as_ref(ctx).codebase_context_limits();
+                (
+                    indices_to_restore,
+                    codebase_limits.max_indices_allowed,
+                    codebase_limits.max_files_per_repo,
+                    codebase_limits.embedding_generation_batch_size,
+                )
+            } else {
+                (vec![], None, 0, 100)
+            };
+
+        let store_client: Arc<
+            dyn ::ai::index::full_source_code_embedding::store_client::StoreClient,
+        > = if let Some(server_api_provider) = server_api_provider.as_ref() {
+            server_api_provider.as_ref(ctx).get()
+        } else {
+            Arc::new(MockStoreClient)
+        };
 
         CodebaseIndexManager::new(
             indices_to_restore,
-            codebase_limits.max_indices_allowed,
-            codebase_limits.max_files_per_repo,
-            codebase_limits.embedding_generation_batch_size,
-            server_api_provider.as_ref(ctx).get(),
+            max_indices_allowed,
+            max_files_per_repo,
+            embedding_batch_size,
+            store_client,
             ctx,
         )
     });
@@ -1867,9 +1929,11 @@ fn app_callbacks(is_integration_test: bool) -> warpui::platform::AppCallbacks {
                 auth_state.user_id().map(|uid| uid.as_string()),
                 auth_state.anonymous_id(),
             );
-            TelemetryCollector::handle(ctx).update(ctx, |telemetry_collector, ctx| {
-                telemetry_collector.flush_telemetry_events_for_shutdown(ctx);
-            });
+            if ChannelState::is_warp_server_available() {
+                TelemetryCollector::handle(ctx).update(ctx, |telemetry_collector, ctx| {
+                    telemetry_collector.flush_telemetry_events_for_shutdown(ctx);
+                });
+            }
 
             // Shutdown all LSP servers gracefully before app termination
             lsp::LspManagerModel::handle(ctx).update(ctx, |manager, ctx| {
@@ -2779,6 +2843,45 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         #[cfg(feature = "cloud_mode_input_v2")]
         FeatureFlag::CloudModeInputV2,
     ]);
+
+    if !ChannelState::is_warp_server_available() {
+        for hosted_flag in [
+            FeatureFlag::APIKeyAuthentication,
+            FeatureFlag::APIKeyManagement,
+            FeatureFlag::AgentManagementDetailsView,
+            FeatureFlag::AgentManagementView,
+            FeatureFlag::AgentSharedSessions,
+            FeatureFlag::AmbientAgentsCommandLine,
+            FeatureFlag::AmbientAgentsImageUpload,
+            FeatureFlag::AmbientAgentsRTC,
+            FeatureFlag::Autoupdate,
+            FeatureFlag::Changelog,
+            FeatureFlag::CloudConversations,
+            FeatureFlag::CloudEnvironments,
+            FeatureFlag::CloudMode,
+            FeatureFlag::CloudModeFromLocalSession,
+            FeatureFlag::CloudModeImageContext,
+            FeatureFlag::CreateEnvironmentSlashCommand,
+            FeatureFlag::CreatingSharedSessions,
+            FeatureFlag::GlobalAIAnalyticsCollection,
+            FeatureFlag::OpenWarpLaunchModal,
+            FeatureFlag::OzChangelogUpdates,
+            FeatureFlag::OzHandoff,
+            FeatureFlag::OzIdentityFederation,
+            FeatureFlag::OzLaunchModal,
+            FeatureFlag::OzPlatformSkills,
+            FeatureFlag::ScheduledAmbientAgents,
+            FeatureFlag::SessionSharingAcls,
+            FeatureFlag::SharedWithMe,
+            FeatureFlag::SyncAmbientPlans,
+            FeatureFlag::TeamApiKeys,
+            FeatureFlag::UsageBasedPricing,
+            FeatureFlag::ViewingSharedSessions,
+            FeatureFlag::WarpManagedSecrets,
+        ] {
+            flags.remove(&hosted_flag);
+        }
+    }
 
     flags
 }

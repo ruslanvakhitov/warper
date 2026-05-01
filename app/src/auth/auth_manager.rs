@@ -447,11 +447,9 @@ impl AuthManager {
                 let anonymous_id = self.auth_state.anonymous_id();
                 let _ = ctx.spawn(
                     // Synchronously add the identify and login event to the telemetry event queue and
-                    // then flush the queue to ensure the events get to Rudderstack. We need to do this
-                    // one-off because the login event happens only once for the user and we don't want
-                    // to drop the event if the user quits the app before the next flush of the queue.
+                    // then drain the queue. This auth flow is unavailable in local-only Warper.
                     // TODO(alokedesai): Investigate a more robust way of handling events
-                    // that don't get flushed to Rudderstack outside of this event specifically.
+                    // that don't get flushed outside of this event specifically.
                     async move {
                         warpui::telemetry::record_identify_user_event(
                             user_id.as_string(),
@@ -468,8 +466,6 @@ impl AuthManager {
                         );
 
                         // Note that this snapshot might get overwritten to disabled after the server fetch.
-                        // However, it is still fine to flush to Rudderstack here as the login event is low-risk
-                        // and it is better to err on the side of over-reporting than under-reporting.
                         if let Err(e) = server_api
                             .flush_telemetry_events(privacy_settings_snapshot)
                             .await

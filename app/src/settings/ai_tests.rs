@@ -23,8 +23,15 @@ impl TestChannelGuard {
             ChannelConfig {
                 app_id: AppId::new("dev", "warper", "Warper"),
                 logfile_name: "warper.log".into(),
-                server_config: WarpServerConfig::production(),
-                oz_config: OzConfig::production(),
+                server_config: Some(WarpServerConfig::local_override(
+                    "http://127.0.0.1:9".into(),
+                    "ws://127.0.0.1:9/graphql/v2".into(),
+                    None,
+                )),
+                oz_config: Some(OzConfig {
+                    oz_root_url: "http://127.0.0.1:9".into(),
+                    workload_audience_url: None,
+                }),
                 telemetry_config: None,
                 crash_reporting_config: None,
                 autoupdate_config: None,

@@ -131,6 +131,20 @@ pub struct CreateTeamResponse {
 }
 
 impl UserWorkspaces {
+    pub fn local_only(_ctx: &mut ModelContext<Self>) -> Self {
+        Self {
+            current_workspace_uid: None.into(),
+            workspaces: Vec::new().into(),
+            joinable_teams: Default::default(),
+            team_client: Self::local_only_team_client(),
+            workspace_client: Arc::new(LocalOnlyWorkspaceClient),
+        }
+    }
+
+    pub(crate) fn local_only_team_client() -> Arc<dyn TeamClient> {
+        Arc::new(LocalOnlyTeamClient)
+    }
+
     #[cfg(test)]
     pub fn mock(
         team_client: Arc<dyn TeamClient>,
@@ -1505,6 +1519,186 @@ impl UserWorkspaces {
             .map(|policy| policy.is_enabled)
             .unwrap_or(true);
         FeatureFlag::CreatingSharedSessions.set_enabled(is_session_sharing_enabled_via_tier_policy);
+    }
+}
+
+struct LocalOnlyTeamClient;
+
+fn hosted_workspaces_unavailable() -> anyhow::Error {
+    anyhow::anyhow!("Warp hosted workspaces are unavailable in this channel")
+}
+
+#[cfg_attr(not(target_family = "wasm"), async_trait::async_trait)]
+#[cfg_attr(target_family = "wasm", async_trait::async_trait(?Send))]
+impl TeamClient for LocalOnlyTeamClient {
+    async fn workspaces_metadata(&self) -> Result<WorkspacesMetadataWithPricing> {
+        Ok(WorkspacesMetadataWithPricing {
+            metadata: WorkspacesMetadataResponse {
+                workspaces: Vec::new(),
+                joinable_teams: Vec::new(),
+                experiments: None,
+                feature_model_choices: None,
+            },
+            pricing_info: None,
+        })
+    }
+
+    async fn add_invite_link_domain_restriction(
+        &self,
+        _team_uid: ServerId,
+        _domain: String,
+    ) -> Result<WorkspacesMetadataWithPricing> {
+        Err(hosted_workspaces_unavailable())
+    }
+
+    async fn delete_invite_link_domain_restriction(
+        &self,
+        _team_uid: ServerId,
+        _domain_uid: ServerId,
+    ) -> Result<WorkspacesMetadataWithPricing> {
+        Err(hosted_workspaces_unavailable())
+    }
+
+    async fn create_team(
+        &self,
+        _name: String,
+        _entrypoint: CloudObjectEventEntrypoint,
+        _discoverable: Option<bool>,
+    ) -> Result<CreateTeamResponse> {
+        Err(hosted_workspaces_unavailable())
+    }
+
+    async fn remove_user_from_team(
+        &self,
+        _user_uid: UserUid,
+        _team_uid: ServerId,
+        _entrypoint: CloudObjectEventEntrypoint,
+    ) -> Result<WorkspacesMetadataWithPricing> {
+        Err(hosted_workspaces_unavailable())
+    }
+
+    async fn leave_team(
+        &self,
+        _user_uid: UserUid,
+        _team_uid: ServerId,
+        _entrypoint: CloudObjectEventEntrypoint,
+    ) -> Result<WorkspacesMetadataWithPricing> {
+        Err(hosted_workspaces_unavailable())
+    }
+
+    async fn join_team_with_team_discovery(
+        &self,
+        _team_uid: ServerId,
+    ) -> Result<WorkspacesMetadataWithPricing> {
+        Err(hosted_workspaces_unavailable())
+    }
+
+    async fn send_team_invite_email(
+        &self,
+        _team_uid: ServerId,
+        _email: String,
+    ) -> Result<WorkspacesMetadataWithPricing> {
+        Err(hosted_workspaces_unavailable())
+    }
+
+    async fn delete_team_invite(
+        &self,
+        _team_uid: ServerId,
+        _email: String,
+    ) -> Result<WorkspacesMetadataWithPricing> {
+        Err(hosted_workspaces_unavailable())
+    }
+
+    async fn get_discoverable_teams(&self) -> Result<Vec<DiscoverableTeam>> {
+        Ok(Vec::new())
+    }
+
+    async fn rename_team(
+        &self,
+        _new_name: String,
+        _team_uid: ServerId,
+    ) -> Result<WorkspacesMetadataWithPricing> {
+        Err(hosted_workspaces_unavailable())
+    }
+
+    async fn reset_invite_links(
+        &self,
+        _team_uid: ServerId,
+    ) -> Result<WorkspacesMetadataWithPricing> {
+        Err(hosted_workspaces_unavailable())
+    }
+
+    async fn set_is_invite_link_enabled(
+        &self,
+        _team_uid: ServerId,
+        _new_value: bool,
+    ) -> Result<WorkspacesMetadataWithPricing> {
+        Err(hosted_workspaces_unavailable())
+    }
+
+    async fn set_team_discoverability(
+        &self,
+        _team_uid: ServerId,
+        _discoverable: bool,
+    ) -> Result<WorkspacesMetadataWithPricing> {
+        Err(hosted_workspaces_unavailable())
+    }
+
+    async fn transfer_team_ownership(
+        &self,
+        _new_owner_email: String,
+    ) -> Result<WorkspacesMetadataWithPricing> {
+        Err(hosted_workspaces_unavailable())
+    }
+
+    async fn set_team_member_role(
+        &self,
+        _user_uid: UserUid,
+        _team_uid: ServerId,
+        _role: MembershipRole,
+    ) -> Result<WorkspacesMetadataWithPricing> {
+        Err(hosted_workspaces_unavailable())
+    }
+}
+
+struct LocalOnlyWorkspaceClient;
+
+#[cfg_attr(not(target_family = "wasm"), async_trait::async_trait)]
+#[cfg_attr(target_family = "wasm", async_trait::async_trait(?Send))]
+impl WorkspaceClient for LocalOnlyWorkspaceClient {
+    async fn generate_stripe_billing_portal_link(&self, _team_uid: ServerId) -> Result<String> {
+        Err(hosted_workspaces_unavailable())
+    }
+
+    async fn update_usage_based_pricing_settings(
+        &self,
+        _team_uid: ServerId,
+        _usage_based_pricing_enabled: bool,
+        _max_monthly_spend_cents: Option<u32>,
+    ) -> Result<WorkspacesMetadataResponse> {
+        Err(hosted_workspaces_unavailable())
+    }
+
+    async fn refresh_ai_overages(&self) -> Result<AiOverages> {
+        Err(hosted_workspaces_unavailable())
+    }
+
+    async fn purchase_addon_credits(
+        &self,
+        _team_uid: ServerId,
+        _credits: i32,
+    ) -> Result<WorkspacesMetadataResponse> {
+        Err(hosted_workspaces_unavailable())
+    }
+
+    async fn update_addon_credits_settings(
+        &self,
+        _team_uid: ServerId,
+        _auto_reload_enabled: Option<bool>,
+        _max_monthly_spend_cents: Option<i32>,
+        _selected_auto_reload_credit_denomination: Option<i32>,
+    ) -> Result<WorkspacesMetadataResponse> {
+        Err(hosted_workspaces_unavailable())
     }
 }
 

@@ -548,7 +548,13 @@ impl AuthClient for ServerApi {
     async fn request_device_code(
         &self,
     ) -> StdResult<oauth2::StandardDeviceAuthorizationResponse, UserAuthenticationError> {
-        self.oauth_client
+        let Some(oauth_client) = self.oauth_client.as_ref() else {
+            return Err(UserAuthenticationError::Unexpected(anyhow!(
+                "Warp OAuth is unavailable in this channel"
+            )));
+        };
+
+        oauth_client
             .exchange_device_code()
             .request_async(self.client.as_ref())
             .await
@@ -561,8 +567,13 @@ impl AuthClient for ServerApi {
         details: &oauth2::StandardDeviceAuthorizationResponse,
         timeout: Duration,
     ) -> StdResult<FirebaseToken, UserAuthenticationError> {
-        let result = self
-            .oauth_client
+        let Some(oauth_client) = self.oauth_client.as_ref() else {
+            return Err(UserAuthenticationError::Unexpected(anyhow!(
+                "Warp OAuth is unavailable in this channel"
+            )));
+        };
+
+        let result = oauth_client
             .exchange_device_access_token(details)
             .request_async(
                 self.client.as_ref(),

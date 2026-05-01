@@ -89,6 +89,13 @@ impl AuthState {
             return state;
         }
 
+        if !ChannelState::is_warp_server_available() {
+            let _ = PersistedUser::remove_from_secure_storage(ctx).map_err(|err| {
+                log::info!("Unable to clear persisted Warp auth state: {err:?}");
+            });
+            return state;
+        }
+
         if let Some(api_key_value) = api_key {
             log::info!("Authenticating via API key");
             let formatted = if api_key_value.starts_with(API_KEY_PREFIX) {
