@@ -140,11 +140,7 @@ pub fn all_events() -> impl Iterator<Item = Box<dyn TelemetryEventDesc>> {
     inventory::iter::<&'static dyn AnyTelemetryEventRegistration>().flat_map(|meta| meta.events())
 }
 
-// Sends a telemetry `track` event to Rudderstack asynchronously. It adds events to the static
-// telemetry queue that is periodically flushed to the Rudderstack API.
-// This is the recommended way of recording telemetry events.
-// You should almost always use this, unless the recording is time-sensitive and cannot be lost.
-// To send a telemetry event synchronously, use [`send_telemetry_sync_from_ctx`].
+// Records a telemetry event in the local in-memory queue.
 #[macro_export]
 macro_rules! send_telemetry_from_ctx {
     ($event:expr, $ctx:expr) => {
@@ -169,9 +165,9 @@ macro_rules! send_telemetry_from_ctx {
     };
 }
 
-/// Sends telemetry `track` event to Rudderstack API asynchronously. This is the same as the
-/// [`send_telemetry_from_ctx`], except it can be called in instances where you only have
-/// a `AppContext` rather than a `ViewContext`/`ModelContext`.
+/// Records a telemetry event in the local in-memory queue. This is the same as
+/// [`send_telemetry_from_ctx`], except it can be called in instances where you only have a
+/// `AppContext` rather than a `ViewContext`/`ModelContext`.
 ///
 /// If possible, use [`send_telemetry_from_ctx`].
 #[macro_export]

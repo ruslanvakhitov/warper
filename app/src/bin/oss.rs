@@ -4,7 +4,7 @@
 
 use anyhow::Result;
 use warp_core::{
-    channel::{Channel, ChannelConfig, ChannelState, OzConfig, WarpServerConfig},
+    channel::{Channel, ChannelConfig, ChannelState},
     AppId,
 };
 
@@ -15,8 +15,8 @@ fn main() -> Result<()> {
         ChannelConfig {
             app_id: AppId::new("dev", "warper", "Warper"),
             logfile_name: "warper.log".into(),
-            server_config: WarpServerConfig::production(),
-            oz_config: OzConfig::production(),
+            server_config: None,
+            oz_config: None,
             telemetry_config: None,
             crash_reporting_config: None,
             autoupdate_config: None,

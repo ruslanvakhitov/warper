@@ -1,13 +1,11 @@
 use lazy_static::lazy_static;
 use parking_lot::Mutex;
 use std::{borrow::Cow, collections::HashSet};
-use url::{Origin, ParseError, Url};
+use url::{ParseError, Url};
 
 use crate::AppId;
 use crate::{
-    channel::config::{
-        ChannelConfig, McpOAuthProviderConfig, OzConfig, RudderStackDestination, WarpServerConfig,
-    },
+    channel::config::{ChannelConfig, McpOAuthProviderConfig, WarpServerConfig},
     features::FeatureFlag,
 };
 
@@ -47,8 +45,8 @@ impl ChannelState {
             config: ChannelConfig {
                 app_id,
                 logfile_name: "".into(),
-                server_config: WarpServerConfig::production(),
-                oz_config: OzConfig::production(),
+                server_config: None,
+                oz_config: None,
                 telemetry_config: None,
                 autoupdate_config: None,
                 crash_reporting_config: None,
@@ -88,14 +86,34 @@ impl ChannelState {
     pub fn override_server_root_url(url: impl Into<Cow<'static, str>>) -> Result<(), ParseError> {
         let url = url.into();
         Url::parse(&url)?;
-        CHANNEL_STATE.lock().config.server_config.server_root_url = url;
+        let mut state = CHANNEL_STATE.lock();
+        match state.config.server_config.as_mut() {
+            Some(server_config) => server_config.server_root_url = url,
+            None => {
+                state.config.server_config = Some(WarpServerConfig::local_override(
+                    url,
+                    Cow::Borrowed(""),
+                    None,
+                ));
+            }
+        }
         Ok(())
     }
 
     pub fn override_ws_server_url(url: impl Into<Cow<'static, str>>) -> Result<(), ParseError> {
         let url = url.into();
         Url::parse(&url)?;
-        CHANNEL_STATE.lock().config.server_config.rtc_server_url = url;
+        let mut state = CHANNEL_STATE.lock();
+        match state.config.server_config.as_mut() {
+            Some(server_config) => server_config.rtc_server_url = url,
+            None => {
+                state.config.server_config = Some(WarpServerConfig::local_override(
+                    Cow::Borrowed(""),
+                    url,
+                    None,
+                ));
+            }
+        }
         Ok(())
     }
 
@@ -104,16 +122,25 @@ impl ChannelState {
     ) -> Result<(), ParseError> {
         let url = url.into();
         Url::parse(&url)?;
-        CHANNEL_STATE
-            .lock()
-            .config
-            .server_config
-            .session_sharing_server_url = Some(url);
+        let mut state = CHANNEL_STATE.lock();
+        match state.config.server_config.as_mut() {
+            Some(server_config) => server_config.session_sharing_server_url = Some(url),
+            None => {
+                state.config.server_config = Some(WarpServerConfig::local_override(
+                    Cow::Borrowed(""),
+                    Cow::Borrowed(""),
+                    Some(url),
+                ));
+            }
+        }
         Ok(())
     }
 
     pub fn uses_staging_server() -> bool {
-        let Ok(url) = Url::parse(Self::server_root_url().as_ref()) else {
+        let Some(server_root_url) = Self::maybe_server_root_url() else {
+            return false;
+        };
+        let Ok(url) = Url::parse(server_root_url.as_ref()) else {
             return false;
         };
         url.host_str() == Some("staging.warp.dev")
@@ -200,32 +227,94 @@ impl ChannelState {
         CHANNEL_STATE.lock().config.crash_reporting_config.is_some()
     }
 
+    pub fn is_warp_server_available() -> bool {
+        CHANNEL_STATE.lock().config.server_config.is_some()
+    }
+
+    pub fn is_oz_available() -> bool {
+        CHANNEL_STATE.lock().config.oz_config.is_some()
+    }
+
     pub fn releases_base_url() -> Cow<'static, str> {
+        Self::maybe_releases_base_url().expect("Warp hosted autoupdate config is unavailable")
+    }
+
+    pub fn maybe_releases_base_url() -> Option<Cow<'static, str>> {
         CHANNEL_STATE
             .lock()
             .config
             .autoupdate_config
             .as_ref()
             .map(|ac| ac.releases_base_url.clone())
-            .unwrap_or_default()
+            .filter(|url| !url.is_empty())
     }
 
     pub fn firebase_api_key() -> Cow<'static, str> {
+        Self::maybe_firebase_api_key().expect("Warp Firebase auth config is unavailable")
+    }
+
+    pub fn maybe_firebase_api_key() -> Option<Cow<'static, str>> {
         CHANNEL_STATE
             .lock()
             .config
             .server_config
-            .firebase_auth_api_key
-            .clone()
+            .as_ref()
+            .map(|config| config.firebase_auth_api_key.clone())
+            .filter(|key| !key.is_empty())
+    }
+
+    pub fn maybe_ws_server_url() -> Option<Cow<'static, str>> {
+        CHANNEL_STATE
+            .lock()
+            .config
+            .server_config
+            .as_ref()
+            .map(|config| config.rtc_server_url.clone())
+            .filter(|url| !url.is_empty())
+    }
+
+    pub fn maybe_server_root_url() -> Option<Cow<'static, str>> {
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "test-util")] {
+                Some(Cow::Owned(MOCK_SERVER_URL.clone()))
+            } else {
+                CHANNEL_STATE
+                    .lock()
+                    .config
+                    .server_config
+                    .as_ref()
+                    .map(|config| config.server_root_url.clone())
+                    .filter(|url| !url.is_empty())
+            }
+        }
+    }
+
+    pub fn maybe_oz_root_url() -> Option<Cow<'static, str>> {
+        CHANNEL_STATE
+            .lock()
+            .config
+            .oz_config
+            .as_ref()
+            .map(|config| config.oz_root_url.clone())
+            .filter(|url| !url.is_empty())
+    }
+
+    pub fn maybe_workload_audience_url() -> Option<Cow<'static, str>> {
+        let state = CHANNEL_STATE.lock();
+        match &state.config.oz_config {
+            Some(oz_config) => match &oz_config.workload_audience_url {
+                Some(url) if !url.is_empty() => Some(url.clone()),
+                _ => {
+                    drop(state);
+                    Self::maybe_server_root_url()
+                }
+            },
+            None => None,
+        }
     }
 
     pub fn ws_server_url() -> Cow<'static, str> {
-        CHANNEL_STATE
-            .lock()
-            .config
-            .server_config
-            .rtc_server_url
-            .clone()
+        Self::maybe_ws_server_url().expect("Warp RTC server config is unavailable")
     }
 
     /// Returns the HTTP(S) root URL for the RTC server. Used for HTTP endpoints
@@ -254,67 +343,26 @@ impl ChannelState {
             if #[cfg(feature = "test-util")] {
                 Some(Cow::Borrowed("fake_session_sharing_url"))
             } else {
-                CHANNEL_STATE.lock().config.server_config.session_sharing_server_url.clone()
+                CHANNEL_STATE
+                    .lock()
+                    .config
+                    .server_config
+                    .as_ref()
+                    .and_then(|config| config.session_sharing_server_url.clone())
             }
         }
     }
 
     pub fn oz_root_url() -> Cow<'static, str> {
-        CHANNEL_STATE.lock().config.oz_config.oz_root_url.clone()
+        Self::maybe_oz_root_url().expect("Oz config is unavailable")
     }
 
     pub fn server_root_url() -> Cow<'static, str> {
-        cfg_if::cfg_if! {
-            if #[cfg(feature = "test-util")] {
-                Cow::Owned(MOCK_SERVER_URL.clone())
-            } else {
-                CHANNEL_STATE.lock().config.server_config.server_root_url.clone()
-            }
-        }
+        Self::maybe_server_root_url().expect("Warp server config is unavailable")
     }
 
     pub fn workload_audience_url() -> Cow<'static, str> {
-        let state = CHANNEL_STATE.lock();
-        match &state.config.oz_config.workload_audience_url {
-            Some(url) => url.clone(),
-            None => {
-                drop(state);
-                Self::server_root_url()
-            }
-        }
-    }
-
-    // Returns the origin url, with scheme, domain, and ports (if any)
-    pub fn server_root_domain() -> Origin {
-        Url::parse(&Self::server_root_url())
-            .expect("Server root URL should be valid")
-            .origin()
-    }
-
-    /// Returns the rudderstack destination for all events that don't contain user-generated content.
-    pub fn rudderstack_non_ugc_destination() -> RudderStackDestination {
-        let state = CHANNEL_STATE.lock();
-
-        state
-            .config
-            .telemetry_config
-            .as_ref()
-            .and_then(|tc| tc.rudderstack_config.as_ref())
-            .map(|rs| rs.non_ugc_destination())
-            .unwrap_or_default()
-    }
-
-    /// Returns the rudderstack destination for all events that contain user-generated content.
-    pub fn rudderstack_ugc_destination() -> RudderStackDestination {
-        let state = CHANNEL_STATE.lock();
-
-        state
-            .config
-            .telemetry_config
-            .as_ref()
-            .and_then(|tc| tc.rudderstack_config.as_ref())
-            .map(|rs| rs.ugc_destination())
-            .unwrap_or_default()
+        Self::maybe_workload_audience_url().expect("Workload audience config is unavailable")
     }
 
     pub fn channel() -> Channel {
@@ -339,13 +387,17 @@ impl ChannelState {
     }
 
     pub fn sentry_url() -> Cow<'static, str> {
+        Self::maybe_sentry_url().expect("Warp crash reporting config is unavailable")
+    }
+
+    pub fn maybe_sentry_url() -> Option<Cow<'static, str>> {
         CHANNEL_STATE
             .lock()
             .config
             .crash_reporting_config
             .as_ref()
             .map(|crc| crc.sentry_url.clone())
-            .unwrap_or_default()
+            .filter(|url| !url.is_empty())
     }
 
     pub fn show_autoupdate_menu_items() -> bool {

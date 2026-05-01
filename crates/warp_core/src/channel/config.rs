@@ -12,10 +12,12 @@ pub struct ChannelConfig {
     /// The name of the file to which logs should be written.
     pub logfile_name: Cow<'static, str>,
 
-    /// Configuration for talking to Warp's servers.
-    pub server_config: WarpServerConfig,
-    /// Configuration for Oz/ambient agents.
-    pub oz_config: OzConfig,
+    /// Configuration for talking to Warp's servers, or [`None`] if this channel
+    /// has no hosted Warp server.
+    pub server_config: Option<WarpServerConfig>,
+    /// Configuration for Oz/ambient agents, or [`None`] if this channel has no
+    /// hosted Oz service.
+    pub oz_config: Option<OzConfig>,
     /// Configuration for telemetry sending, or [`None`] if telemetry should be
     /// disabled for this build.
     pub telemetry_config: Option<TelemetryConfig>,
@@ -41,12 +43,16 @@ pub struct WarpServerConfig {
 }
 
 impl WarpServerConfig {
-    pub fn production() -> Self {
+    pub fn local_override(
+        server_root_url: Cow<'static, str>,
+        rtc_server_url: Cow<'static, str>,
+        session_sharing_server_url: Option<Cow<'static, str>>,
+    ) -> Self {
         Self {
-            server_root_url: "https://app.warp.dev".into(),
-            rtc_server_url: "wss://rtc.app.warp.dev/graphql/v2".into(),
-            session_sharing_server_url: Some("wss://sessions.app.warp.dev".into()),
-            firebase_auth_api_key: "AIzaSyBdy3O3S9hrdayLJxJ7mriBR4qgUaUygAs".into(),
+            server_root_url,
+            rtc_server_url,
+            session_sharing_server_url,
+            firebase_auth_api_key: Cow::Borrowed(""),
         }
     }
 }
@@ -62,50 +68,10 @@ pub struct OzConfig {
     pub workload_audience_url: Option<Cow<'static, str>>,
 }
 
-impl OzConfig {
-    pub fn production() -> Self {
-        Self {
-            oz_root_url: "https://oz.warp.dev".into(),
-            workload_audience_url: None,
-        }
-    }
-}
-
 #[derive(Debug, Deserialize, Serialize)]
 pub struct TelemetryConfig {
     /// The name of the file in which not-yet-sent telemetry events will be stored.
     pub telemetry_file_name: Cow<'static, str>,
-    /// Configuration for Rudderstack, for reporting telemetry events.
-    pub rudderstack_config: Option<RudderStackConfig>,
-}
-
-#[derive(Debug, Default, Deserialize, Serialize)]
-pub struct RudderStackConfig {
-    pub write_key: Cow<'static, str>,
-    pub root_url: Cow<'static, str>,
-    pub ugc_write_key: Cow<'static, str>,
-}
-
-impl RudderStackConfig {
-    pub fn non_ugc_destination(&self) -> RudderStackDestination {
-        RudderStackDestination {
-            root_url: self.root_url.clone(),
-            write_key: self.write_key.clone(),
-        }
-    }
-
-    pub fn ugc_destination(&self) -> RudderStackDestination {
-        RudderStackDestination {
-            root_url: self.root_url.clone(),
-            write_key: self.ugc_write_key.clone(),
-        }
-    }
-}
-
-#[derive(Default)]
-pub struct RudderStackDestination {
-    pub root_url: Cow<'static, str>,
-    pub write_key: Cow<'static, str>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
