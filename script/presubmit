@@ -35,6 +35,10 @@ fi
 
 echo "Cargo fmt succeeded..."
 
+echo "Running WARPER-001 static denylist..."
+./script/check_warper_static_denylist
+echo "WARPER-001 static denylist succeeded..."
+
 echo "Running clippy..."
 # Exclude warp_completer because we run clippy on it with default features (rather than all features) below.
 #

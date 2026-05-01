@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+case "${1:-}" in
+    -h|--help)
+        cat <<'USAGE'
+Usage: script/warper_offline_local_smoke
+
+Runs the WARPER-001 startup-scope denylist and focused warp_core channel tests
+that verify the default Warper local config has no hosted service credentials.
+USAGE
+        exit 0
+        ;;
+    "")
+        ;;
+    *)
+        echo "Unknown argument: $1"
+        echo "Run script/warper_offline_local_smoke --help for usage."
+        exit 2
+        ;;
+esac
+
+./script/check_warper_static_denylist
+
+cargo test \
+    -p warp_core \
+    channel::state::tests

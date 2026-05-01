@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+if ! command -v rg >/dev/null 2>&1; then
+    echo "ripgrep is required to run the WARPER-001 static denylist check."
+    exit 1
+fi
+
+scope="${1:-startup}"
+
+case "$scope" in
+    startup)
+        targets=(
+            "app/src/bin/oss.rs"
+            "app/src/lib.rs"
+            "app/src/settings/ai_tests.rs"
+            "crates/integration/src/bin/integration.rs"
+            "crates/warp_core/src/channel"
+        )
+        excluded_globs=()
+        ;;
+    all-runtime)
+        targets=(
+            "app/src"
+            "crates"
+        )
+        excluded_globs=(
+            --glob '!**/*_test.rs'
+            --glob '!**/*_tests.rs'
+            --glob '!**/mod_test.rs'
+            --glob '!**/lib_tests.rs'
+        )
+        ;;
+    -h|--help)
+        cat <<'USAGE'
+Usage: script/check_warper_static_denylist [startup|all-runtime]
+
+Checks WARPER-001 local-only surfaces for removed hosted endpoint literals.
+
+Modes:
+  startup      Check the local startup/channel/config surfaces used by Warper.
+  all-runtime  Check app/src and crates, excluding explicitly scoped test files.
+USAGE
+        exit 0
+        ;;
+    *)
+        echo "Unknown scope: $scope"
+        echo "Run script/check_warper_static_denylist --help for usage."
+        exit 2
+        ;;
+esac
+
+denylist='(app\.warp\.dev|rtc\.app\.warp\.dev|sessions\.app\.warp\.dev|oz\.warp\.dev|AIza[0-9A-Za-z_-]+|identitytoolkit\.googleapis\.com|securetoken\.googleapis\.com|firebaseapp\.com|rudderstack\.com|rudderlabs|sentry\.io|releases\.warp\.dev|warp-releases|channel_versions\.json|warp\.dev/download)'
+
+matches="$(
+    rg \
+        --line-number \
+        --no-heading \
+        --color never \
+        --glob '!script/check_warper_static_denylist' \
+        ${excluded_globs[@]+"${excluded_globs[@]}"} \
+        -e "$denylist" \
+        "${targets[@]}" || true
+)"
+
+if [[ -n "$matches" ]]; then
+    echo "WARPER-001 static denylist failed for scope '$scope'."
+    echo "Remove hosted Warp/Oz/Firebase/RudderStack/Sentry/update endpoint literals from runtime code."
+    echo
+    echo "$matches"
+    exit 1
+fi
+
+echo "WARPER-001 static denylist passed for scope '$scope'."
