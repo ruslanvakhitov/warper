@@ -148,6 +148,29 @@ fn test_cli_sdk_mode_prevents_autoupdate_polling() {
     });
 }
 
+#[test]
+fn test_update_check_is_local_noop() {
+    App::test((), |mut app| async move {
+        app.add_singleton_model(|ctx| AppExecutionMode::new(ExecutionMode::App, false, ctx));
+        let autoupdate_state = initialize_app(&mut app);
+
+        app.update_model(&autoupdate_state, |autoupdate, ctx| {
+            autoupdate.stage = AutoupdateStage::UpdateReady {
+                new_version: make_version_info("v0.2023.05.15.08.04.stable_02", false),
+                update_id: "stale".to_string(),
+            };
+
+            autoupdate.check_for_update(RequestType::ManualCheck, ctx);
+
+            assert_eq!(autoupdate.stage, AutoupdateStage::NoUpdateAvailable);
+            assert!(
+                autoupdate.downloaded_update.is_none(),
+                "hosted update checks must not download or persist update state"
+            );
+        });
+    });
+}
+
 /// Some user interactions like focusing/activating the app may trigger an update check
 /// if the daily check hasn't been performed today. The daily check runs regardless of
 /// login state so the server can track retention for anonymous users.
