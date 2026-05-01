@@ -60,6 +60,10 @@ pub enum ShareSessionModalEvent {
 }
 
 pub fn init(app: &mut AppContext) {
+    if !crate::ChannelState::is_warp_server_available() {
+        return;
+    }
+
     use warpui::keymap::macros::*;
 
     app.register_fixed_bindings([FixedBinding::new(

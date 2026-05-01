@@ -8298,9 +8298,10 @@ impl Workspace {
             MenuItem::Separator,
         ]);
 
+        let hosted_services_available = ChannelState::is_warp_server_available();
         let is_oss = ChannelState::channel() == Channel::Oss;
 
-        if self.auth_state.is_anonymous_or_logged_out() && !is_oss {
+        if hosted_services_available && self.auth_state.is_anonymous_or_logged_out() && !is_oss {
             items.push(
                 MenuItemFields::new("Sign up")
                     .with_on_select_action(WorkspaceAction::SignupAnonymousUser)
@@ -8308,7 +8309,7 @@ impl Workspace {
             );
         }
 
-        if !is_oss {
+        if hosted_services_available && !is_oss {
             // Check if the user is on any paid plan to determine whether to show "Billing and Usage" or "Upgrade"
             let is_on_paid_plan = UserWorkspaces::as_ref(app)
                 .current_workspace()
@@ -8334,7 +8335,7 @@ impl Workspace {
             );
         }
 
-        if !self.auth_state.is_anonymous_or_logged_out() {
+        if hosted_services_available && !self.auth_state.is_anonymous_or_logged_out() {
             items.push(
                 MenuItemFields::new("Log out")
                     .with_on_select_action(WorkspaceAction::LogOut)
@@ -10177,7 +10178,8 @@ impl Workspace {
             return false;
         }
         // TODO: remove session sharing flag check when long-running commands are included
-        FeatureFlag::CreatingSharedSessions.is_enabled()
+        ChannelState::is_warp_server_available()
+            && FeatureFlag::CreatingSharedSessions.is_enabled()
             && ContextFlag::CreateSharedSession.is_enabled()
             && *SessionSettings::as_ref(ctx).should_confirm_close_session
     }
@@ -19660,6 +19662,13 @@ impl TypedActionView for Workspace {
         use WorkspaceAction::*;
         let window_id = ctx.window_id();
 
+        if !ChannelState::is_warp_server_available()
+            && Self::action_requires_hosted_services(action)
+        {
+            log::info!("Ignoring hosted-service workspace action without Warp server config");
+            return;
+        }
+
         if self.auth_state.is_anonymous_or_logged_out() && action.blocked_for_anonymous_user() {
             AuthManager::handle(ctx).update(ctx, |auth_manager, ctx| {
                 auth_manager.attempt_login_gated_feature(
@@ -21682,6 +21691,78 @@ impl TypedActionView for Workspace {
     }
 }
 
+impl Workspace {
+    fn action_requires_hosted_services(action: &WorkspaceAction) -> bool {
+        use WorkspaceAction::*;
+
+        matches!(
+            action,
+            AutoupdateFailureLink
+                | ApplyUpdate
+                | LogOut
+                | DownloadNewVersion
+                | CheckForUpdate
+                | ExportAllWarpDriveObjects
+                | ShowUpgrade
+                | ShowReferralSettingsPage
+                | ImportToPersonalDrive
+                | ImportToTeamDrive
+                | CreatePersonalNotebook
+                | CreateTeamNotebook
+                | CreatePersonalWorkflow
+                | CreateTeamWorkflow
+                | CreatePersonalFolder
+                | CreateTeamFolder
+                | CreateTeamEnvVarCollection
+                | CreatePersonalEnvVarCollection
+                | CreatePersonalAIPrompt
+                | CreateTeamAIPrompt
+                | OpenWarpDrive
+                | ToggleWarpDrive
+                | Reauth
+                | SignupAnonymousUser
+                | SignInAnonymousWebUser
+                | OpenShareSessionModal(_)
+                | StopSharingSessionFromTabMenu { .. }
+                | StopSharingAllSessionsInTab { .. }
+                | CopySharedSessionLinkFromTab { .. }
+                | ViewObjectInWarpDrive(_)
+                | OpenObjectSharingSettings { .. }
+                | UndoTrash(_)
+                | OpenCloudAgentSetupGuide
+                | AttemptLoginGatedAIUpgrade
+                | OpenEnvironmentManagementPane
+                | OpenPalette {
+                    mode: PaletteMode::WarpDrive,
+                    ..
+                }
+                | TogglePalette {
+                    mode: PaletteMode::WarpDrive,
+                    ..
+                }
+                | ShowSettingsPage(SettingsSection::BillingAndUsage)
+                | ShowSettingsPage(SettingsSection::Referrals)
+                | ShowSettingsPage(SettingsSection::SharedBlocks)
+                | ShowSettingsPage(SettingsSection::Teams)
+                | ShowSettingsPage(SettingsSection::WarpDrive)
+                | ShowSettingsPage(SettingsSection::CloudEnvironments)
+                | ShowSettingsPage(SettingsSection::OzCloudAPIKeys)
+                | ShowSettingsPageWithSearch {
+                    section: Some(
+                        SettingsSection::BillingAndUsage
+                            | SettingsSection::Referrals
+                            | SettingsSection::SharedBlocks
+                            | SettingsSection::Teams
+                            | SettingsSection::WarpDrive
+                            | SettingsSection::CloudEnvironments
+                            | SettingsSection::OzCloudAPIKeys,
+                    ),
+                    ..
+                }
+        )
+    }
+}
+
 impl View for Workspace {
     fn ui_name() -> &'static str {
         "Workspace"
@@ -22664,7 +22745,8 @@ impl View for Workspace {
             stack.add_child(ChildView::new(lightbox_view).finish());
         }
 
-        if FeatureFlag::CreatingSharedSessions.is_enabled()
+        if ChannelState::is_warp_server_available()
+            && FeatureFlag::CreatingSharedSessions.is_enabled()
             && ContextFlag::CreateSharedSession.is_enabled()
             && self
                 .current_workspace_state

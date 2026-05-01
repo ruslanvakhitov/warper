@@ -106,7 +106,8 @@ use crate::pricing::{PricingInfoModel, PricingInfoModelEvent};
 use warp_graphql::billing::StripeSubscriptionPlan;
 
 use warpui::elements::{
-    Border, ChildAnchor, OffsetPositioning, ParentAnchor, ParentElement, ParentOffsetBounds, Stack,
+    Border, ChildAnchor, Empty, OffsetPositioning, ParentAnchor, ParentElement, ParentOffsetBounds,
+    Stack,
 };
 use warpui::rendering::OnGPUDeviceSelected;
 use warpui::{id, AddWindowOptions, DisplayId, SingletonEntity};
@@ -334,23 +335,28 @@ pub fn init(app: &mut AppContext) {
         "root_view:maybe_stop_active_voice_input",
         RootView::maybe_stop_active_voice_input,
     );
-    app.add_action("root_view:log_out", RootView::log_out);
-    app.add_action(
-        "root_view:handle_incoming_auth_url",
-        RootView::handle_incoming_auth_url,
-    );
+    let hosted_services_available = ChannelState::is_warp_server_available();
+    if hosted_services_available {
+        app.add_action("root_view:log_out", RootView::log_out);
+        app.add_action(
+            "root_view:handle_incoming_auth_url",
+            RootView::handle_incoming_auth_url,
+        );
+    }
     app.add_action(
         "root_view:add_session_at_path",
         RootView::add_session_at_path,
     );
-    app.add_action(
-        "root_view:handle_team_intent_link_action",
-        RootView::handle_team_intent_link_action,
-    );
-    app.add_action(
-        "root_view:open_team_settings_page",
-        RootView::open_team_settings_page,
-    );
+    if hosted_services_available {
+        app.add_action(
+            "root_view:handle_team_intent_link_action",
+            RootView::handle_team_intent_link_action,
+        );
+        app.add_action(
+            "root_view:open_team_settings_page",
+            RootView::open_team_settings_page,
+        );
+    }
     app.add_action(
         "root_view:handle_notification_click",
         RootView::handle_notification_click,
@@ -367,7 +373,7 @@ pub fn init(app: &mut AppContext) {
     );
     app.add_action("root_view:toggle_fullscreen", RootView::toggle_fullscreen);
 
-    if FeatureFlag::ViewingSharedSessions.is_enabled() {
+    if hosted_services_available && FeatureFlag::ViewingSharedSessions.is_enabled() {
         app.add_global_action(
             "root_view:join_shared_session",
             open_shared_session_as_viewer,
@@ -378,45 +384,47 @@ pub fn init(app: &mut AppContext) {
         );
     }
 
-    app.add_global_action(
-        "root_view:open_conversation_viewer",
-        open_conversation_viewer,
-    );
-    app.add_action(
-        "root_view:open_cloud_conversation_in_existing_window",
-        RootView::open_cloud_conversation_in_existing_window,
-    );
+    if hosted_services_available {
+        app.add_global_action(
+            "root_view:open_conversation_viewer",
+            open_conversation_viewer,
+        );
+        app.add_action(
+            "root_view:open_cloud_conversation_in_existing_window",
+            RootView::open_cloud_conversation_in_existing_window,
+        );
 
-    app.add_global_action("root_view:create_environment", create_environment);
-    app.add_global_action(
-        "root_view:create_environment_and_run",
-        create_environment_and_run,
-    );
-    app.add_action(
-        "root_view:create_environment_in_existing_window",
-        RootView::create_environment_in_existing_window,
-    );
-    app.add_action(
-        "root_view:create_environment_in_existing_window_and_run",
-        RootView::create_environment_in_existing_window_and_run,
-    );
-    app.add_global_action(
-        "root_view:open_drive_object_new_window",
-        open_warp_drive_object,
-    );
-    app.add_action(
-        "root_view:open_drive_object_existing_window",
-        RootView::open_warp_drive_object_in_existing_window,
-    );
+        app.add_global_action("root_view:create_environment", create_environment);
+        app.add_global_action(
+            "root_view:create_environment_and_run",
+            create_environment_and_run,
+        );
+        app.add_action(
+            "root_view:create_environment_in_existing_window",
+            RootView::create_environment_in_existing_window,
+        );
+        app.add_action(
+            "root_view:create_environment_in_existing_window_and_run",
+            RootView::create_environment_in_existing_window_and_run,
+        );
+        app.add_global_action(
+            "root_view:open_drive_object_new_window",
+            open_warp_drive_object,
+        );
+        app.add_action(
+            "root_view:open_drive_object_existing_window",
+            RootView::open_warp_drive_object_in_existing_window,
+        );
 
-    app.add_global_action(
-        "root_view:open_team_settings_with_email_invite_in_new_window",
-        open_team_settings_with_email_invite_in_new_window,
-    );
-    app.add_action(
-        "root_view:open_team_settings_with_email_invite_in_existing_window",
-        RootView::open_team_settings_with_email_invite_in_existing_window,
-    );
+        app.add_global_action(
+            "root_view:open_team_settings_with_email_invite_in_new_window",
+            open_team_settings_with_email_invite_in_new_window,
+        );
+        app.add_action(
+            "root_view:open_team_settings_with_email_invite_in_existing_window",
+            RootView::open_team_settings_with_email_invite_in_existing_window,
+        );
+    }
 
     app.add_global_action(
         "root_view:open_settings_page_in_new_window",
@@ -1043,6 +1051,10 @@ fn open_team_settings_with_email_invite_in_new_window(
     arg: &OpenTeamsSettingsModalArgs,
     ctx: &mut AppContext,
 ) {
+    if !ChannelState::is_warp_server_available() {
+        return;
+    }
+
     let root_handle = open_new_window_get_handles(None, ctx).1;
     root_handle.update(ctx, |root_view, ctx| {
         if let AuthOnboardingState::Terminal(workspace_view_handle) =
@@ -1060,6 +1072,10 @@ fn open_team_settings_with_email_invite_in_new_window(
 }
 
 fn open_settings_page_in_new_window(section: &SettingsSection, ctx: &mut AppContext) {
+    if !ChannelState::is_warp_server_available() && section.requires_hosted_services() {
+        return;
+    }
+
     let root_handle = open_new_window_get_handles(None, ctx).1;
     root_handle.update(ctx, |root_view, ctx| {
         if let AuthOnboardingState::Terminal(workspace_view_handle) =
@@ -1084,15 +1100,21 @@ fn open_mcp_settings_in_new_window(args: &OpenMCPSettingsArgs, ctx: &mut AppCont
         if let AuthOnboardingState::Terminal(workspace_view_handle) =
             &root_view.auth_onboarding_state
         {
-            let initial_load_complete = UpdateManager::as_ref(ctx).initial_load_complete();
             workspace_view_handle.update(ctx, |_, ctx| {
-                let _ = ctx.spawn(initial_load_complete, move |workspace, _, ctx| {
-                    workspace.open_mcp_servers_page(
-                        MCPServersSettingsPage::List,
-                        autoinstall.as_deref(),
-                        ctx,
-                    )
-                });
+                if ChannelState::is_warp_server_available() {
+                    let initial_load_complete = UpdateManager::as_ref(ctx).initial_load_complete();
+                    let _ = ctx.spawn(initial_load_complete, move |workspace, _, ctx| {
+                        workspace.open_mcp_servers_page(
+                            MCPServersSettingsPage::List,
+                            autoinstall.as_deref(),
+                            ctx,
+                        )
+                    });
+                } else {
+                    ctx.dispatch_typed_action(&WorkspaceAction::ShowSettingsPage(
+                        SettingsSection::AgentMCPServers,
+                    ));
+                }
             });
         }
     });
@@ -1131,6 +1153,10 @@ fn open_linear_issue_work_in_new_window(args: &LinearIssueWork, ctx: &mut AppCon
 }
 
 fn open_warp_drive_object(arg: &OpenWarpDriveObjectArgs, ctx: &mut AppContext) {
+    if !ChannelState::is_warp_server_available() {
+        return;
+    }
+
     match arg.object_type {
         ObjectType::Notebook => open_new_workspace_with_notebook_open(
             SyncId::ServerId(arg.server_id),
@@ -1695,12 +1721,12 @@ enum AuthOnboardingState {
 pub struct RootView {
     auth_onboarding_state: AuthOnboardingState,
     server_time: Option<Arc<ServerTime>>,
-    auth_view: ViewHandle<AuthView>,
-    auth_override_view: ViewHandle<AuthOverrideWarningModal>,
-    needs_sso_link_view: ViewHandle<NeedsSsoLinkView>,
+    auth_view: Option<ViewHandle<AuthView>>,
+    auth_override_view: Option<ViewHandle<AuthOverrideWarningModal>>,
+    needs_sso_link_view: Option<ViewHandle<NeedsSsoLinkView>>,
     #[cfg(target_family = "wasm")]
     web_handoff_view: ViewHandle<WebHandoffView>,
-    pub server_api: Arc<ServerApi>,
+    pub server_api: Option<Arc<ServerApi>>,
     pub model_event_sender: Option<SyncSender<ModelEvent>>,
     mouse_states: TrafficLightMouseStates,
     /// The window ID is needed because the "maximize" button needs to change its icon based on
@@ -1722,28 +1748,34 @@ impl RootView {
         workspace_setting: NewWorkspaceSource,
         ctx: &mut ViewContext<Self>,
     ) -> Self {
-        let server_api_provider = ServerApiProvider::as_ref(ctx);
-        let server_api = server_api_provider.get();
+        let hosted_services_available = ChannelState::is_warp_server_available();
+        let server_api = hosted_services_available.then(|| ServerApiProvider::as_ref(ctx).get());
         let auth_state = AuthStateProvider::as_ref(ctx).get().clone();
 
-        ctx.subscribe_to_model(&AuthManager::handle(ctx), |me, _, event, ctx| {
-            me.handle_auth_manager_event(event, ctx);
+        if hosted_services_available {
+            ctx.subscribe_to_model(&AuthManager::handle(ctx), |me, _, event, ctx| {
+                me.handle_auth_manager_event(event, ctx);
+            });
+
+            ctx.subscribe_to_model(&CloudPreferencesSyncer::handle(ctx), |me, _, event, ctx| {
+                me.handle_cloud_preferences_syncer_event(event, ctx);
+            });
+        }
+
+        let auth_view = hosted_services_available
+            .then(|| ctx.add_typed_action_view(|ctx| AuthView::new(AuthViewVariant::Initial, ctx)));
+
+        let auth_override_view: Option<ViewHandle<_>> = hosted_services_available.then(|| {
+            ctx.add_typed_action_view(|ctx| {
+                AuthOverrideWarningModal::new(ctx, AuthOverrideWarningModalVariant::OnboardingView)
+            })
         });
 
-        ctx.subscribe_to_model(&CloudPreferencesSyncer::handle(ctx), |me, _, event, ctx| {
-            me.handle_cloud_preferences_syncer_event(event, ctx);
-        });
-
-        let auth_view =
-            ctx.add_typed_action_view(|ctx| AuthView::new(AuthViewVariant::Initial, ctx));
-
-        let auth_override_view: ViewHandle<_> = ctx.add_typed_action_view(|ctx| {
-            AuthOverrideWarningModal::new(ctx, AuthOverrideWarningModalVariant::OnboardingView)
-        });
-
-        ctx.subscribe_to_view(&auth_override_view, |me, _, event, ctx| {
-            me.handle_auth_override_warning_modal_event(event, ctx);
-        });
+        if let Some(auth_override_view) = &auth_override_view {
+            ctx.subscribe_to_view(auth_override_view, |me, _, event, ctx| {
+                me.handle_auth_override_warning_modal_event(event, ctx);
+            });
+        }
 
         let model_event_sender = global_resource_handles.model_event_sender.clone();
         let workspace_args = WorkspaceArgs {
@@ -1752,7 +1784,8 @@ impl RootView {
             workspace_setting,
         };
 
-        let auth_onboarding_state = if auth_state.is_logged_in()
+        let auth_onboarding_state = if !hosted_services_available
+            || auth_state.is_logged_in()
             || Self::should_skip_agent_onboarding_for_channel()
         {
             AuthOnboardingState::Terminal(workspace_args.create_workspace(ctx))
@@ -1793,7 +1826,8 @@ impl RootView {
             }
         };
 
-        let needs_sso_link_view = ctx.add_typed_action_view(|_| NeedsSsoLinkView::new());
+        let needs_sso_link_view = hosted_services_available
+            .then(|| ctx.add_typed_action_view(|_| NeedsSsoLinkView::new()));
 
         #[cfg(target_family = "wasm")]
         let web_handoff_view = {
@@ -1810,7 +1844,7 @@ impl RootView {
             needs_sso_link_view,
             #[cfg(target_family = "wasm")]
             web_handoff_view,
-            server_api: server_api.clone(),
+            server_api,
             model_event_sender,
             mouse_states: Default::default(),
             window_id: ctx.window_id(),
@@ -1861,16 +1895,18 @@ impl RootView {
             _ => {}
         }
 
-        let autoupdate_handle = AutoupdateState::handle(ctx);
-        ctx.subscribe_to_model(&autoupdate_handle, |root_view, _handle, evt, ctx| {
-            if let AutoupdateStateEvent::CheckComplete {
-                result,
-                request_type: RequestType::Poll,
-            } = evt
-            {
-                root_view.polling_update_check_complete(result, ctx)
-            }
-        });
+        if ChannelState::show_autoupdate_menu_items() {
+            let autoupdate_handle = AutoupdateState::handle(ctx);
+            ctx.subscribe_to_model(&autoupdate_handle, |root_view, _handle, evt, ctx| {
+                if let AutoupdateStateEvent::CheckComplete {
+                    result,
+                    request_type: RequestType::Poll,
+                } = evt
+                {
+                    root_view.polling_update_check_complete(result, ctx)
+                }
+            });
+        }
 
         // Ensure the onboarding view has focus after all views are created.
         // The auth_view's internal editor may have grabbed focus during construction;
@@ -1905,11 +1941,12 @@ impl RootView {
             log::info!("Update ready for channel version {new_version:?}");
             if new_version.update_by.is_some() {
                 log::info!("Update ready, there is an update-by time, checking for server time.");
-                let server_api = self.server_api.clone();
-                let _ = ctx.spawn(
-                    async move { server_api.server_time().await },
-                    Self::server_time_updated,
-                );
+                if let Some(server_api) = self.server_api.clone() {
+                    let _ = ctx.spawn(
+                        async move { server_api.server_time().await },
+                        Self::server_time_updated,
+                    );
+                }
             }
         }
     }
@@ -1943,7 +1980,10 @@ impl RootView {
     }
 
     fn show_needs_sso_link_view(&mut self, email: String, ctx: &mut ViewContext<Self>) -> bool {
-        self.needs_sso_link_view.update(ctx, |view, _| {
+        let Some(needs_sso_link_view) = &self.needs_sso_link_view else {
+            return false;
+        };
+        needs_sso_link_view.update(ctx, |view, _| {
             view.set_email(email);
         });
 
@@ -2154,7 +2194,7 @@ impl RootView {
     }
 
     fn should_skip_agent_onboarding_for_channel() -> bool {
-        ChannelState::channel() == Channel::Oss
+        ChannelState::channel() == Channel::Oss || !ChannelState::is_warp_server_available()
     }
 
     fn onboarding_theme_kind(theme_name: &str) -> Option<ThemeKind> {
@@ -2547,6 +2587,11 @@ impl RootView {
 
     #[allow(clippy::ptr_arg)]
     fn handle_incoming_auth_url(&mut self, url: &Url, ctx: &mut ViewContext<Self>) -> bool {
+        if !ChannelState::is_warp_server_available() {
+            log::info!("Ignoring auth redirect because Warp server config is unavailable");
+            return false;
+        }
+
         match AuthRedirectPayload::from_url(url.clone()) {
             Ok(redirect_payload) => {
                 AuthManager::handle(ctx).update(ctx, |auth_manager, ctx| {
@@ -2555,11 +2600,13 @@ impl RootView {
             }
             Err(error) => {
                 log::error!("Unable to parse AuthResult from url: {error}");
-                self.auth_view.update(ctx, |view, ctx| {
-                    view.last_login_failure_reason =
-                        Some(LoginFailureReason::InvalidRedirectUrl { was_pasted: false });
-                    ctx.notify()
-                });
+                if let Some(auth_view) = &self.auth_view {
+                    auth_view.update(ctx, |view, ctx| {
+                        view.last_login_failure_reason =
+                            Some(LoginFailureReason::InvalidRedirectUrl { was_pasted: false });
+                        ctx.notify()
+                    });
+                }
             }
         }
         true
@@ -2593,6 +2640,10 @@ impl RootView {
         arg: &OpenTeamsSettingsModalArgs,
         ctx: &mut ViewContext<Self>,
     ) -> bool {
+        if !ChannelState::is_warp_server_available() {
+            return false;
+        }
+
         if let AuthOnboardingState::Terminal(handle) = &self.auth_onboarding_state {
             handle.update(ctx, |workspace, ctx| {
                 workspace.show_team_settings_page_with_email_invite(arg.invite_email.as_ref(), ctx)
@@ -2609,6 +2660,10 @@ impl RootView {
         arg: &OpenWarpDriveObjectArgs,
         ctx: &mut ViewContext<Self>,
     ) -> bool {
+        if !ChannelState::is_warp_server_available() {
+            return false;
+        }
+
         if let AuthOnboardingState::Terminal(handle) = &self.auth_onboarding_state {
             let cloud_model = CloudModel::as_ref(ctx);
 
@@ -2863,6 +2918,10 @@ impl RootView {
     /// Shows the user the settings view of their newly joined team
     /// within the app.
     pub fn handle_team_intent_link_action(&mut self, _: &(), ctx: &mut ViewContext<Self>) -> bool {
+        if !ChannelState::is_warp_server_available() {
+            return false;
+        }
+
         // Force-open warp drive.
         let window_id = ctx.window_id();
         if let AuthOnboardingState::Terminal(handle) = &self.auth_onboarding_state {
@@ -2884,6 +2943,10 @@ impl RootView {
     }
 
     pub fn open_team_settings_page(&mut self, _: &(), ctx: &mut ViewContext<Self>) -> bool {
+        if !ChannelState::is_warp_server_available() {
+            return false;
+        }
+
         let window_id = ctx.window_id();
         if let AuthOnboardingState::Terminal(handle) = &self.auth_onboarding_state {
             ctx.dispatch_typed_action_for_view(
@@ -3017,9 +3080,11 @@ impl RootView {
                 | AuthOnboardingState::ConfirmIncomingAuth(_) =
                     &self.auth_onboarding_state
                 {
-                    self.auth_view.update(ctx, |auth_view, ctx| {
-                        auth_view.set_variant(ctx, AuthViewVariant::Initial);
-                    });
+                    if let Some(auth_view) = &self.auth_view {
+                        auth_view.update(ctx, |auth_view, ctx| {
+                            auth_view.set_variant(ctx, AuthViewVariant::Initial);
+                        });
+                    }
                     self.auth_onboarding_state
                         .complete_auth_and_create_workspace(ctx);
                     self.start_pending_tutorial(ctx);
@@ -3143,7 +3208,10 @@ impl RootView {
         auth_payload: AuthRedirectPayload,
         ctx: &mut ViewContext<Self>,
     ) {
-        self.auth_override_view.update(ctx, |modal, _| {
+        let Some(auth_override_view) = &self.auth_override_view else {
+            return;
+        };
+        auth_override_view.update(ctx, |modal, _| {
             modal.set_interrupted_auth_payload(auth_payload);
         });
         self.auth_onboarding_state = AuthOnboardingState::ConfirmIncomingAuth(workspace_args);
@@ -3204,17 +3272,23 @@ impl RootView {
         }
         match &self.auth_onboarding_state {
             AuthOnboardingState::Auth(_) => {
-                ctx.focus(&self.auth_view);
+                if let Some(auth_view) = &self.auth_view {
+                    ctx.focus(auth_view);
+                }
             }
             AuthOnboardingState::ConfirmIncomingAuth(_) => {
-                ctx.focus(&self.auth_override_view);
+                if let Some(auth_override_view) = &self.auth_override_view {
+                    ctx.focus(auth_override_view);
+                }
             }
             #[cfg(target_family = "wasm")]
             AuthOnboardingState::WebImport(_) => {
                 ctx.focus(&self.web_handoff_view);
             }
             AuthOnboardingState::NeedsSsoLink { .. } => {
-                ctx.focus(&self.needs_sso_link_view);
+                if let Some(needs_sso_link_view) = &self.needs_sso_link_view {
+                    ctx.focus(needs_sso_link_view);
+                }
             }
             AuthOnboardingState::Onboarding {
                 onboarding_view, ..
@@ -3384,15 +3458,23 @@ impl View for RootView {
 
     fn render(&self, app: &AppContext) -> Box<dyn Element> {
         let child = match &self.auth_onboarding_state {
-            AuthOnboardingState::Auth(_) => ChildView::new(&self.auth_view).finish(),
-            AuthOnboardingState::ConfirmIncomingAuth(_) => {
-                ChildView::new(&self.auth_override_view).finish()
-            }
+            AuthOnboardingState::Auth(_) => self
+                .auth_view
+                .as_ref()
+                .map(|view| ChildView::new(view).finish())
+                .unwrap_or_else(|| Empty::new().finish()),
+            AuthOnboardingState::ConfirmIncomingAuth(_) => self
+                .auth_override_view
+                .as_ref()
+                .map(|view| ChildView::new(view).finish())
+                .unwrap_or_else(|| Empty::new().finish()),
             #[cfg(target_family = "wasm")]
             AuthOnboardingState::WebImport(_) => ChildView::new(&self.web_handoff_view).finish(),
-            AuthOnboardingState::NeedsSsoLink { .. } => {
-                ChildView::new(&self.needs_sso_link_view).finish()
-            }
+            AuthOnboardingState::NeedsSsoLink { .. } => self
+                .needs_sso_link_view
+                .as_ref()
+                .map(|view| ChildView::new(view).finish())
+                .unwrap_or_else(|| Empty::new().finish()),
             AuthOnboardingState::Onboarding {
                 onboarding_view, ..
             } => ChildView::new(onboarding_view).finish(),

@@ -198,6 +198,10 @@ pub enum SharingDialogAction {
 }
 
 pub fn init(app: &mut AppContext) {
+    if !crate::ChannelState::is_warp_server_available() {
+        return;
+    }
+
     use warpui::keymap::macros::*;
 
     app.register_fixed_bindings([FixedBinding::new(
@@ -310,7 +314,7 @@ impl SharingDialog {
                 CloudModelEvent::ObjectDeleted { .. } => return,
                 CloudModelEvent::ObjectForceExpanded { .. } => return,
                 CloudModelEvent::ObjectSynced { .. } | CloudModelEvent::InitialLoadCompleted => {
-                    return
+                    return;
                 }
             };
 
@@ -1592,7 +1596,9 @@ impl SharingDialog {
             }
             Some(ShareableObject::Session { handle, .. }) => {
                 let Some(handle) = handle.upgrade(ctx) else {
-                    log::error!("Unable to upgrade handle to TerminalView when sending email invitations for session");
+                    log::error!(
+                        "Unable to upgrade handle to TerminalView when sending email invitations for session"
+                    );
                     return;
                 };
 

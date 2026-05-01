@@ -5,7 +5,6 @@ use crate::ai::blocklist::code_block::{
 use crate::appearance::Appearance;
 use crate::completer::SessionAgnosticContext;
 use crate::send_telemetry_from_ctx;
-use crate::view_components::action_button::{ActionButton, SecondaryTheme};
 use crate::workflows::workflow::{Argument, ArgumentType, Workflow};
 use crate::workflows::WorkflowType;
 use serde::Serialize;
@@ -23,16 +22,13 @@ use warpui::elements::{
     MainAxisAlignment, MainAxisSize, MouseStateHandle, ParentElement, Radius, Text,
 };
 use warpui::fonts::{Properties, Weight};
-use warpui::prelude::ChildView;
 use warpui::text_layout::TextStyle;
 use warpui::ui_components::components::{UiComponent, UiComponentStyles};
-use warpui::ViewHandle;
 use warpui::{AppContext, Entity, SingletonEntity, TypedActionView, View, ViewContext};
 
 const DOCS_URL: &str = "https://docs.warp.dev/agent-platform/cloud-agents/overview";
 const ENV_DOCS_URL: &str =
     "https://docs.warp.dev/reference/cli/integration-setup#creating-an-environment";
-const OZ_URL: &str = "https://oz.warp.dev";
 
 const CONTENT_MAX_WIDTH: f32 = 720.;
 
@@ -52,7 +48,6 @@ pub struct CloudSetupGuideView {
     docs_link_mouse_state: MouseStateHandle,
     env_docs_link_mouse_state: MouseStateHandle,
     integration_docs_link_mouse_state: MouseStateHandle,
-    visit_oz_button: ViewHandle<ActionButton>,
     parsed_tokens: HashMap<&'static str, ParsedTokensSnapshot>,
     vertical_scroll_state: ClippedScrollStateHandle,
     horizontal_scroll_state: ClippedScrollStateHandle,
@@ -68,7 +63,6 @@ pub enum CloudSetupGuideAction {
         workflow: Box<WorkflowType>,
         step: SetupGuideStep,
     },
-    VisitOz,
     OpenDocs {
         docs: SetupGuideDocs,
     },
@@ -115,11 +109,6 @@ impl CloudSetupGuideView {
             },
         );
 
-        let visit_oz_button = ctx.add_typed_action_view(|_| {
-            ActionButton::new("Visit Oz", SecondaryTheme)
-                .on_click(|ctx| ctx.dispatch_typed_action(CloudSetupGuideAction::VisitOz))
-        });
-
         Self {
             create_env_code_handles: CodeSnippetButtonHandles::default(),
             create_env_cli_code_handles: CodeSnippetButtonHandles::default(),
@@ -128,7 +117,6 @@ impl CloudSetupGuideView {
             docs_link_mouse_state: MouseStateHandle::default(),
             env_docs_link_mouse_state: MouseStateHandle::default(),
             integration_docs_link_mouse_state: MouseStateHandle::default(),
-            visit_oz_button,
             parsed_tokens: HashMap::new(),
             vertical_scroll_state: ClippedScrollStateHandle::default(),
             horizontal_scroll_state: ClippedScrollStateHandle::default(),
@@ -207,13 +195,13 @@ impl CloudSetupGuideView {
         header_container.finish()
     }
 
-    /// Render the quick start banner with link to oz.warp.dev.
+    /// Render the quick start banner.
     fn render_quick_start_banner(&self, appearance: &Appearance) -> Box<dyn Element> {
         let theme = appearance.theme();
         let font_size = 16.;
 
         let text = Text::new_inline(
-            "Quick start: Visit oz.warp.dev for a UI-based setup experience.",
+            "Quick start: Use the CLI setup below.",
             appearance.ui_font_family(),
             font_size,
         )
@@ -230,7 +218,6 @@ impl CloudSetupGuideView {
                 .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
                 .with_cross_axis_alignment(CrossAxisAlignment::Center)
                 .with_child(text)
-                .with_child(ChildView::new(&self.visit_oz_button).finish())
                 .finish(),
         )
         .with_background(theme.surface_overlay_1())
@@ -650,15 +637,6 @@ impl TypedActionView for CloudSetupGuideView {
                 ctx.emit(CloudSetupGuideEvent::OpenNewTabAndInsertWorkflow(
                     (**workflow).clone(),
                 ));
-            }
-            CloudSetupGuideAction::VisitOz => {
-                ctx.open_url(OZ_URL);
-                send_telemetry_from_ctx!(
-                    AgentManagementTelemetryEvent::SetupGuideStepRun {
-                        step: SetupGuideStep::VisitOz
-                    },
-                    ctx
-                );
             }
             CloudSetupGuideAction::OpenDocs { docs } => {
                 let url = match docs {

@@ -40,7 +40,7 @@ use session_sharing_protocol::common::{
 use session_sharing_protocol::sharer::SessionSourceType;
 use session_sharing_protocol::sharer::{RoleUpdateReason, SessionEndedReason};
 use session_sharing_protocol::viewer::RoleUpdatedReason;
-use warp_core::features::FeatureFlag;
+use warp_core::{channel::ChannelState, features::FeatureFlag};
 use warpui::r#async::Timer;
 
 use settings::Setting as _;
@@ -431,6 +431,11 @@ impl TerminalView {
         bypass_conversation_guard: bool,
         ctx: &mut ViewContext<Self>,
     ) {
+        if !ChannelState::is_warp_server_available() {
+            log::info!("Ignoring shared-session request because Warp server config is unavailable");
+            return;
+        }
+
         // We should only be attempting to share a session
         // if it is bootstrapped.
         //
@@ -454,7 +459,9 @@ impl TerminalView {
                 .any(|conv| conv.exchange_count() > 0);
 
             if has_conversations {
-                log::warn!("Cannot share without scrollback when agent conversations exist. Agent shared sessions require conversation history to be shared.");
+                log::warn!(
+                    "Cannot share without scrollback when agent conversations exist. Agent shared sessions require conversation history to be shared."
+                );
                 return;
             }
         }
@@ -1609,6 +1616,10 @@ impl TerminalView {
         model: &TerminalModel,
         is_share_session_disabled: bool,
     ) -> Vec<MenuItem<TerminalAction>> {
+        if !ChannelState::is_warp_server_available() {
+            return Vec::new();
+        }
+
         let mut items = Vec::new();
 
         if !model.shared_session_status().is_sharer_or_viewer() {

@@ -1,7 +1,7 @@
 use settings::{
     macros::define_settings_group, RespectUserSyncSetting, SupportedPlatforms, SyncToCloud,
 };
-use warp_core::features::FeatureFlag;
+use warp_core::{channel::ChannelState, features::FeatureFlag};
 
 use super::DriveSortOrder;
 
@@ -41,6 +41,10 @@ impl WarpDriveSettings {
     /// Returns `false` when the user is anonymous or fully logged out,
     /// regardless of the user setting.
     pub fn is_warp_drive_enabled(app: &warpui::AppContext) -> bool {
+        if !ChannelState::is_warp_server_available() {
+            return false;
+        }
+
         use warpui::SingletonEntity as _;
         let is_anonymous_or_logged_out = FeatureFlag::SkipFirebaseAnonymousUser.is_enabled()
             && crate::auth::AuthStateProvider::as_ref(app)

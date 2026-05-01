@@ -256,6 +256,19 @@ impl Display for SettingsSection {
 }
 
 impl SettingsSection {
+    pub fn requires_hosted_services(&self) -> bool {
+        matches!(
+            self,
+            Self::BillingAndUsage
+                | Self::Referrals
+                | Self::SharedBlocks
+                | Self::Teams
+                | Self::WarpDrive
+                | Self::CloudEnvironments
+                | Self::OzCloudAPIKeys
+        )
+    }
+
     /// Returns true if this section is a subpage under any umbrella.
     pub fn is_subpage(&self) -> bool {
         self.is_ai_subpage() || self.is_code_subpage() || self.is_cloud_platform_subpage()
@@ -990,7 +1003,7 @@ pub struct SettingsView {
     clipped_scroll_state: ClippedScrollStateHandle,
     context_menu: ViewHandle<Menu<SettingsAction>>,
     context_menu_state: Option<Vector2F>,
-    environments_page_handle: ViewHandle<EnvironmentsPageView>,
+    environments_page_handle: Option<ViewHandle<EnvironmentsPageView>>,
     /// Sidebar navigation items (pages + umbrellas).
     nav_items: Vec<SettingsNavItem>,
     /// Handle to the AI settings page, used to switch subpage modes.
@@ -1015,6 +1028,7 @@ pub struct SettingsView {
 
 impl SettingsView {
     pub fn new(page: Option<SettingsSection>, ctx: &mut ViewContext<Self>) -> Self {
+        let hosted_services_available = ChannelState::is_warp_server_available();
         let pane_configuration = ctx.add_model(|_ctx| PaneConfiguration::new("Settings"));
 
         let global_resource_handles = GlobalResourceHandlesProvider::as_ref(ctx).get().clone();
@@ -1039,19 +1053,21 @@ impl SettingsView {
             me.handle_features_page_event(event, ctx);
         });
 
-        // Shared blocks page
-        let block_client = ServerApiProvider::as_ref(ctx).get_block_client();
-        let show_blocks_view_handle =
-            ctx.add_typed_action_view(|ctx| ShowBlocksView::new(block_client, ctx));
-
-        ctx.subscribe_to_view(&show_blocks_view_handle, |_, _, event, ctx| match event {
-            ShowBlocksEvent::ShowToast { message, flavor } => {
-                ctx.emit(SettingsViewEvent::ShowToast {
-                    message: message.clone(),
-                    flavor: *flavor,
-                })
-            }
-        });
+        let show_blocks_view_handle = if hosted_services_available {
+            let block_client = ServerApiProvider::as_ref(ctx).get_block_client();
+            let handle = ctx.add_typed_action_view(|ctx| ShowBlocksView::new(block_client, ctx));
+            ctx.subscribe_to_view(&handle, |_, _, event, ctx| match event {
+                ShowBlocksEvent::ShowToast { message, flavor } => {
+                    ctx.emit(SettingsViewEvent::ShowToast {
+                        message: message.clone(),
+                        flavor: *flavor,
+                    })
+                }
+            });
+            Some(handle)
+        } else {
+            None
+        };
 
         // About page
         let about_page_handle = ctx.add_view(AboutPageView::new);
@@ -1063,17 +1079,25 @@ impl SettingsView {
             me.handle_ai_page_event(event, ctx);
         });
 
-        // Environments page
-        let environments_page_handle = ctx.add_typed_action_view(EnvironmentsPageView::new);
-        ctx.subscribe_to_view(&environments_page_handle, |me, _, event, ctx| {
-            me.handle_environments_page_event(event, ctx);
-        });
+        let environments_page_handle = if hosted_services_available {
+            let handle = ctx.add_typed_action_view(EnvironmentsPageView::new);
+            ctx.subscribe_to_view(&handle, |me, _, event, ctx| {
+                me.handle_environments_page_event(event, ctx);
+            });
+            Some(handle)
+        } else {
+            None
+        };
 
-        // Billing and usage page
-        let billing_and_usage_page_handle = ctx.add_typed_action_view(BillingAndUsagePageView::new);
-        ctx.subscribe_to_view(&billing_and_usage_page_handle, |me, _, event, ctx| {
-            me.handle_billing_and_usage_page_event(event, ctx);
-        });
+        let billing_and_usage_page_handle = if hosted_services_available {
+            let handle = ctx.add_typed_action_view(BillingAndUsagePageView::new);
+            ctx.subscribe_to_view(&handle, |me, _, event, ctx| {
+                me.handle_billing_and_usage_page_event(event, ctx);
+            });
+            Some(handle)
+        } else {
+            None
+        };
 
         // Keybindings page
         let keybindings_handle = ctx.add_typed_action_view(KeybindingsView::new);
@@ -1085,19 +1109,22 @@ impl SettingsView {
             me.handle_code_page_event(event, ctx);
         });
 
-        // Teams page, adding unconditionally, as `should_render` later on decides whether it
-        // should be shown to the user or not
-        let teams_page_handle = ctx.add_typed_action_view(TeamsPageView::new);
-        ctx.subscribe_to_view(&teams_page_handle, |_, _, event, ctx| match event {
-            TeamsPageViewEvent::TeamsChanged => ctx.notify(),
-            TeamsPageViewEvent::OpenWarpDrive => ctx.emit(SettingsViewEvent::OpenWarpDrive),
-            TeamsPageViewEvent::ShowToast { message, flavor } => {
-                ctx.emit(SettingsViewEvent::ShowToast {
-                    message: message.clone(),
-                    flavor: *flavor,
-                })
-            }
-        });
+        let teams_page_handle = if hosted_services_available {
+            let handle = ctx.add_typed_action_view(TeamsPageView::new);
+            ctx.subscribe_to_view(&handle, |_, _, event, ctx| match event {
+                TeamsPageViewEvent::TeamsChanged => ctx.notify(),
+                TeamsPageViewEvent::OpenWarpDrive => ctx.emit(SettingsViewEvent::OpenWarpDrive),
+                TeamsPageViewEvent::ShowToast { message, flavor } => {
+                    ctx.emit(SettingsViewEvent::ShowToast {
+                        message: message.clone(),
+                        flavor: *flavor,
+                    })
+                }
+            });
+            Some(handle)
+        } else {
+            None
+        };
 
         let warpify_page_handle = ctx.add_typed_action_view(WarpifyPageView::new);
         ctx.subscribe_to_view(&warpify_page_handle, |me, _, event, ctx| {
@@ -1110,24 +1137,37 @@ impl SettingsView {
             me.handle_privacy_page_event(event, ctx);
         });
 
-        let referrals_client = ServerApiProvider::as_ref(ctx).get_referrals_client();
-        let referrals_page_handle =
-            ctx.add_typed_action_view(|ctx| ReferralsPageView::new(referrals_client, ctx));
-        ctx.subscribe_to_view(&referrals_page_handle, |me, _, event, ctx| {
-            me.handle_referrals_page_event(event, ctx);
-        });
+        let referrals_page_handle = if hosted_services_available {
+            let referrals_client = ServerApiProvider::as_ref(ctx).get_referrals_client();
+            let handle =
+                ctx.add_typed_action_view(|ctx| ReferralsPageView::new(referrals_client, ctx));
+            ctx.subscribe_to_view(&handle, |me, _, event, ctx| {
+                me.handle_referrals_page_event(event, ctx);
+            });
+            Some(handle)
+        } else {
+            None
+        };
 
-        // Warp Drive page
-        let warp_drive_page_handle =
-            ctx.add_typed_action_view(warp_drive_page::WarpDriveSettingsPageView::new);
-        ctx.subscribe_to_view(&warp_drive_page_handle, |me, _, event, ctx| {
-            me.handle_warp_drive_page_event(event, ctx);
-        });
+        let warp_drive_page_handle = if hosted_services_available {
+            let handle = ctx.add_typed_action_view(warp_drive_page::WarpDriveSettingsPageView::new);
+            ctx.subscribe_to_view(&handle, |me, _, event, ctx| {
+                me.handle_warp_drive_page_event(event, ctx);
+            });
+            Some(handle)
+        } else {
+            None
+        };
 
-        let platform_page_handle = ctx.add_typed_action_view(platform_page::PlatformPageView::new);
-        ctx.subscribe_to_view(&platform_page_handle, |me, _, event, ctx| {
-            me.handle_platform_page_event(event, ctx);
-        });
+        let platform_page_handle = if hosted_services_available {
+            let handle = ctx.add_typed_action_view(platform_page::PlatformPageView::new);
+            ctx.subscribe_to_view(&handle, |me, _, event, ctx| {
+                me.handle_platform_page_event(event, ctx);
+            });
+            Some(handle)
+        } else {
+            None
+        };
 
         // MCP Servers page
         let mcp_servers_page_handle = ctx.add_typed_action_view(MCPServersSettingsPageView::new);
@@ -1164,7 +1204,7 @@ impl SettingsView {
         });
 
         let is_oss = ChannelState::channel() == Channel::Oss;
-        let settings_pages = if is_oss {
+        let settings_pages = if is_oss || !hosted_services_available {
             vec![
                 SettingsPage::new(main_page_handle),
                 SettingsPage::new(ai_page_handle),
@@ -1181,22 +1221,26 @@ impl SettingsView {
             let mut settings_pages = vec![
                 SettingsPage::new(main_page_handle),
                 SettingsPage::new(ai_page_handle),
-                SettingsPage::new(billing_and_usage_page_handle),
+                SettingsPage::new(billing_and_usage_page_handle.expect("hosted page exists")),
                 SettingsPage::new(code_page_handle),
-                SettingsPage::new(teams_page_handle),
+                SettingsPage::new(teams_page_handle.expect("hosted page exists")),
                 SettingsPage::new(appearance_page_handle),
                 SettingsPage::new(features_page_handle),
                 SettingsPage::new(keybindings_handle),
-                SettingsPage::new(platform_page_handle),
+                SettingsPage::new(platform_page_handle.expect("hosted page exists")),
                 SettingsPage::new(warpify_page_handle),
-                SettingsPage::new(referrals_page_handle),
-                SettingsPage::new(show_blocks_view_handle),
-                SettingsPage::new(warp_drive_page_handle),
+                SettingsPage::new(referrals_page_handle.expect("hosted page exists")),
+                SettingsPage::new(show_blocks_view_handle.expect("hosted page exists")),
+                SettingsPage::new(warp_drive_page_handle.expect("hosted page exists")),
             ];
 
             settings_pages.extend(vec![
                 SettingsPage::new(mcp_servers_page_handle),
-                SettingsPage::new(environments_page_handle.clone()),
+                SettingsPage::new(
+                    environments_page_handle
+                        .clone()
+                        .expect("hosted page exists"),
+                ),
                 SettingsPage::new(privacy_page_handle),
                 SettingsPage::new(about_page_handle),
             ]);
@@ -1205,7 +1249,7 @@ impl SettingsView {
 
         // Build sidebar nav items. AI page is presented as an "Agents" umbrella
         // with subpages; the actual AI SettingsPage is hidden from direct sidebar listing.
-        let mut nav_items = if is_oss {
+        let mut nav_items = if is_oss || !hosted_services_available {
             vec![
                 SettingsNavItem::Page(SettingsSection::Account),
                 SettingsNavItem::Umbrella(SettingsUmbrella::new(
@@ -1262,7 +1306,9 @@ impl SettingsView {
         };
 
         // Resolve the initial page: map internal backing-page sections to their default subpage.
-        let initial_page = match page {
+        let requested_page =
+            page.filter(|section| hosted_services_available || !section.requires_hosted_services());
+        let initial_page = match requested_page {
             Some(SettingsSection::AI) => SettingsSection::WarpAgent,
             Some(SettingsSection::Code) => SettingsSection::CodeIndexing,
             Some(section) if section.is_subpage() => section,
@@ -2538,18 +2584,18 @@ impl View for SettingsView {
         // Render environment setup mode selector overlay when open.
         if let Some(selector_handle) = self
             .environments_page_handle
-            .as_ref(app)
-            .environment_setup_mode_selector_handle()
+            .as_ref()
+            .and_then(|handle| handle.as_ref(app).environment_setup_mode_selector_handle())
         {
             stack.add_child(ChildView::new(selector_handle).finish());
         }
 
         // Render agent-assisted environment modal overlay when open.
-        if let Some(modal_handle) = self
-            .environments_page_handle
-            .as_ref(app)
-            .agent_assisted_environment_modal_handle(app)
-        {
+        if let Some(modal_handle) = self.environments_page_handle.as_ref().and_then(|handle| {
+            handle
+                .as_ref(app)
+                .agent_assisted_environment_modal_handle(app)
+        }) {
             stack.add_child(ChildView::new(modal_handle).finish());
         }
 

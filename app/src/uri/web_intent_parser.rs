@@ -22,7 +22,11 @@ pub enum WebIntent {
 impl WebIntent {
     pub fn try_from_url(url: &Url) -> Result<Self> {
         // Only handle URLs that point at the current channel's web server.
-        let server_root = ChannelState::server_root_url();
+        let Some(server_root) = ChannelState::maybe_server_root_url() else {
+            return Err(anyhow!(
+                "Cannot parse hosted Warp web URL without a server config"
+            ));
+        };
         let server_root_url = Url::parse(&server_root)?;
         if url.scheme() != server_root_url.scheme()
             || url.domain() != server_root_url.domain()

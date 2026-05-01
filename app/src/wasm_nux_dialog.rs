@@ -278,7 +278,6 @@ impl TypedActionView for WasmNUXDialog {
                 }
             }
             WasmNUXDialogAction::OpenDownloadDesktopAppLink => {
-                ctx.open_url("https://app.warp.dev/get_warp");
                 self.requested_download = true;
                 ctx.notify();
             }

@@ -48,7 +48,7 @@ use crate::{
     workspaces::{
         update_manager::TeamUpdateManager, user_workspaces::UserWorkspaces, workspace::WorkspaceUid,
     },
-    ObjectActions,
+    ChannelState, ObjectActions,
 };
 
 use super::{
@@ -575,6 +575,10 @@ pub struct DriveIndex {
 }
 
 pub fn init(app: &mut AppContext) {
+    if !ChannelState::is_warp_server_available() {
+        return;
+    }
+
     use warpui::keymap::macros::*;
 
     app.register_fixed_bindings(vec![
@@ -1263,7 +1267,9 @@ impl DriveIndex {
                     {
                         self.expand_section_for_object(&id.uid().clone(), ctx);
                     } else {
-                        log::warn!("unknown GenericStringObject type found while trying to manually expand drive section. {object_id:?}");
+                        log::warn!(
+                            "unknown GenericStringObject type found while trying to manually expand drive section. {object_id:?}"
+                        );
                     }
                 }
             };
@@ -5403,7 +5409,9 @@ impl TypedActionView for DriveIndex {
                         log::error!("Creation of EnvVarCollections is not yet supported")
                     }
                     DriveObjectType::AIFact | DriveObjectType::AIFactCollection => {
-                        log::error!("Use DriveIndexAction::OpenAIFactCollection to open the pane view instead");
+                        log::error!(
+                            "Use DriveIndexAction::OpenAIFactCollection to open the pane view instead"
+                        );
                     }
                     DriveObjectType::MCPServer | DriveObjectType::MCPServerCollection => {
                         log::error!(
