@@ -210,9 +210,6 @@ impl TerminalView {
                 // Re-render to show the error state in the footer.
                 ctx.notify();
             }
-            AmbientAgentViewModelEvent::ShowCloudAgentCapacityModal => {
-                ctx.notify();
-            }
             AmbientAgentViewModelEvent::ShowAICreditModal => {
                 if FeatureFlag::CloudMode.is_enabled()
                     && self.ambient_agent_view_model.as_ref(ctx).is_ambient_agent()

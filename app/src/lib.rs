@@ -2294,8 +2294,6 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::BundledSkills,
         #[cfg(feature = "oz_launch_modal")]
         FeatureFlag::OzLaunchModal,
-        #[cfg(feature = "open_warp_launch_modal")]
-        FeatureFlag::OpenWarpLaunchModal,
         #[cfg(feature = "new_tab_styling")]
         FeatureFlag::NewTabStyling,
         #[cfg(feature = "skill_arguments")]
@@ -2385,7 +2383,6 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
             FeatureFlag::CreateEnvironmentSlashCommand,
             FeatureFlag::CreatingSharedSessions,
             FeatureFlag::GlobalAIAnalyticsCollection,
-            FeatureFlag::OpenWarpLaunchModal,
             FeatureFlag::OzChangelogUpdates,
             FeatureFlag::OzHandoff,
             FeatureFlag::OzIdentityFederation,

@@ -289,11 +289,11 @@ fn use_agent_footer_renders_for_manual_handoff_when_unfinished_ai_block_remains(
     })
 }
 
-/// During the setup phase of a cloud agent (ambient) shared session — LRCs
+/// During the setup phase of an ambient shared session — LRCs
 /// running before any CLI agent has started — the use-agent footer must stay
 /// hidden.
 #[test]
-fn use_agent_footer_hidden_during_cloud_agent_setup_lrc() {
+fn use_agent_footer_hidden_during_ambient_setup_lrc() {
     App::test((), |mut app| async move {
         initialize_app_for_terminal_view(&mut app);
 
