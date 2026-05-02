@@ -784,11 +784,13 @@ impl LLMPreferences {
         // available LLMs query to the general workspace metadata query which is polled
         // and hooked up to workspace changes. For that to work, each user would need to
         // have a personal workspace. This is a stop-gap.
-        ctx.subscribe_to_model(&AuthManager::handle(ctx), |me, event, ctx| {
-            if let AuthManagerEvent::AuthComplete = event {
-                me.refresh_authed_models(ctx);
-            }
-        });
+        if ChannelState::maybe_server_root_url().is_some() {
+            ctx.subscribe_to_model(&AuthManager::handle(ctx), |me, event, ctx| {
+                if let AuthManagerEvent::AuthComplete = event {
+                    me.refresh_authed_models(ctx);
+                }
+            });
+        }
 
         ctx.subscribe_to_model(&UserWorkspaces::handle(ctx), |me, event, ctx| {
             if let UserWorkspacesEvent::TeamsChanged = event {
@@ -1159,7 +1161,9 @@ impl LLMPreferences {
 
     /// Fetches the latest set of models from the server for the currently logged in user, and updates the model.
     pub fn refresh_authed_models(&self, ctx: &mut ModelContext<Self>) {
-        if ChannelState::channel() == Channel::Oss {
+        if ChannelState::channel() == Channel::Oss
+            || ChannelState::maybe_server_root_url().is_none()
+        {
             return;
         }
 
@@ -1186,7 +1190,9 @@ impl LLMPreferences {
 
     /// No auth required (i.e. to populate the pre-login onboarding picker).
     fn refresh_public_models(&self, ctx: &mut ModelContext<Self>) {
-        if ChannelState::channel() == Channel::Oss {
+        if ChannelState::channel() == Channel::Oss
+            || ChannelState::maybe_server_root_url().is_none()
+        {
             return;
         }
 

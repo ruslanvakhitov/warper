@@ -16,9 +16,9 @@ use onboarding::slides::{layout, slide_content};
 use onboarding::{OnboardingIntention, AI_FEATURES, WARP_DRIVE_FEATURES};
 use pathfinder_color::ColorU;
 use ui_components::{button, Component as _, Options as _};
-use warp_core::features::FeatureFlag;
 use warp_core::ui::theme::color::internal_colors;
 use warp_core::ui::Icon;
+use warp_core::{channel::ChannelState, features::FeatureFlag};
 use warpui::clipboard::ClipboardContent;
 use warpui::elements::{
     Align, Border, CacheOption, ClippedScrollStateHandle, ConstrainedBox, Container, CornerRadius,
@@ -200,6 +200,7 @@ pub struct LoginSlideView {
     scroll_state: ClippedScrollStateHandle,
     close_login_notification_mouse_state: MouseStateHandle,
     highlighted_hyperlink_state: HighlightedHyperlink,
+    hosted_services_available: bool,
 }
 
 /// All image paths used by the login slide visual. These mirror the set in
@@ -268,10 +269,13 @@ impl LoginSlideView {
         source: LoginSlideSource,
         ctx: &mut ViewContext<Self>,
     ) -> Self {
-        let auth_manager = AuthManager::handle(ctx);
-        ctx.subscribe_to_model(&auth_manager, |me, _, event, ctx| {
-            me.handle_auth_manager_event(event, ctx);
-        });
+        let hosted_services_available = ChannelState::is_warp_server_available();
+        if hosted_services_available {
+            let auth_manager = AuthManager::handle(ctx);
+            ctx.subscribe_to_model(&auth_manager, |me, _, event, ctx| {
+                me.handle_auth_manager_event(event, ctx);
+            });
+        }
 
         let auth_token_input = ctx.add_typed_action_view(|ctx| {
             let appearance = Appearance::as_ref(ctx);
@@ -341,6 +345,7 @@ impl LoginSlideView {
             scroll_state: ClippedScrollStateHandle::new(),
             close_login_notification_mouse_state: MouseStateHandle::default(),
             highlighted_hyperlink_state: HighlightedHyperlink::default(),
+            hosted_services_available,
         }
     }
 
@@ -375,6 +380,11 @@ impl LoginSlideView {
     }
 
     fn handle_pasted_auth_url(&mut self, pasted_url: String, ctx: &mut ViewContext<Self>) {
+        if !self.hosted_services_available {
+            log::info!("Ignoring pasted auth URL because Warp server config is unavailable");
+            return;
+        }
+
         match AuthRedirectPayload::from_raw_url(pasted_url) {
             Ok(redirect_payload) => {
                 AuthManager::handle(ctx).update(ctx, |auth_manager, ctx| {
@@ -399,6 +409,11 @@ impl LoginSlideView {
             },
             ctx
         );
+        if !self.hosted_services_available {
+            ctx.emit(LoginSlideEvent::LoginLaterConfirmed);
+            return;
+        }
+
         if FeatureFlag::SkipFirebaseAnonymousUser.is_enabled() {
             AuthManager::handle(ctx).update(ctx, |_, ctx| {
                 ctx.emit(AuthManagerEvent::SkippedLogin);
@@ -599,6 +614,13 @@ impl LoginSlideView {
             },
         );
 
+        if !self.hosted_services_available {
+            return Flex::row()
+                .with_main_axis_size(MainAxisSize::Max)
+                .with_child(back_button)
+                .finish();
+        }
+
         let cmd_enter = Keystroke::parse("cmdorctrl-enter").unwrap_or_default();
         let skip_label = if matches!(self.intention, OnboardingIntention::Terminal) {
             "Disable Warp Drive"
@@ -723,6 +745,16 @@ impl LoginSlideView {
                     .finish(),
             )
             .finish();
+
+        if !self.hosted_services_available {
+            let header = Flex::column()
+                .with_main_axis_size(MainAxisSize::Min)
+                .with_cross_axis_alignment(CrossAxisAlignment::Start)
+                .with_child(title)
+                .finish();
+
+            return vec![header];
+        }
 
         // Auth token: show either the "Click here" link or the input box.
         // When showing the input, we use `editor_rendered` (a Cell<bool> passed
@@ -1174,6 +1206,12 @@ impl TypedActionView for LoginSlideView {
     fn handle_action(&mut self, action: &LoginSlideAction, ctx: &mut ViewContext<Self>) {
         match action {
             LoginSlideAction::Enter => {
+                if !self.hosted_services_available {
+                    log::info!("Ignoring login action because Warp server config is unavailable");
+                    ctx.emit(LoginSlideEvent::BackToOnboarding);
+                    return;
+                }
+
                 // When the skip dialog is open, Enter should confirm skip instead.
                 if self.active_overlay.is_some() {
                     self.active_overlay = None;
@@ -1190,8 +1228,9 @@ impl TypedActionView for LoginSlideView {
                 self.last_login_failure_reason = None;
                 self.step = LoginStep::BrowserOpen;
                 AuthManager::handle(ctx).update(ctx, |auth_manager, ctx| {
-                    let sign_up_url = auth_manager.sign_up_url();
-                    ctx.open_url(&sign_up_url);
+                    if let Some(sign_up_url) = auth_manager.sign_up_url() {
+                        ctx.open_url(&sign_up_url);
+                    }
                 });
                 ctx.notify();
             }
@@ -1268,16 +1307,29 @@ impl TypedActionView for LoginSlideView {
                 }
             },
             LoginSlideAction::CopyLoginUrl => {
+                if !self.hosted_services_available {
+                    log::info!("Ignoring login URL copy because Warp server config is unavailable");
+                    return;
+                }
+
                 AuthManager::handle(ctx).update(ctx, |auth_manager, inner_ctx| {
-                    let sign_in_url = auth_manager.sign_in_url();
-                    inner_ctx.clipboard().write(ClipboardContent {
-                        plain_text: sign_in_url.clone(),
-                        paths: Some(vec![sign_in_url]),
-                        ..Default::default()
-                    });
+                    if let Some(sign_in_url) = auth_manager.sign_in_url() {
+                        inner_ctx.clipboard().write(ClipboardContent {
+                            plain_text: sign_in_url.clone(),
+                            paths: Some(vec![sign_in_url]),
+                            ..Default::default()
+                        });
+                    }
                 });
             }
             LoginSlideAction::EnterToken => {
+                if !self.hosted_services_available {
+                    log::info!(
+                        "Ignoring auth token entry because Warp server config is unavailable"
+                    );
+                    return;
+                }
+
                 self.auth_token_input
                     .update(ctx, |editor, ctx| editor.paste(ctx));
                 self.show_auth_token_input = true;

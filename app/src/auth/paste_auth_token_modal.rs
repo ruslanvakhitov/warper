@@ -19,6 +19,7 @@ use crate::util::bindings::CustomAction;
 
 use pathfinder_color::ColorU;
 use ui_components::{button, Component as _, Options as _};
+use warp_core::channel::ChannelState;
 use warp_core::ui::theme::color::internal_colors;
 use warpui::elements::{
     Align, Border, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Dismiss, Fill,
@@ -140,25 +141,27 @@ impl PasteAuthTokenModalView {
 
         // Handle AuthFailed for attempts that originated from this modal: show
         // an inline error and re-enable the editor so the user can try again.
-        ctx.subscribe_to_model(&AuthManager::handle(ctx), |me, _, event, ctx| {
-            if let AuthManagerEvent::AuthFailed(err) = event {
-                me.last_failure_reason = Some(match err {
-                    UserAuthenticationError::InvalidStateParameter => {
-                        LoginFailureReason::InvalidStateParameter
-                    }
-                    UserAuthenticationError::MissingStateParameter => {
-                        LoginFailureReason::MissingStateParameter
-                    }
-                    UserAuthenticationError::DeniedAccessToken(_)
-                    | UserAuthenticationError::UserAccountDisabled(_)
-                    | UserAuthenticationError::Unexpected(_) => {
-                        LoginFailureReason::FailedUserAuthentication
-                    }
-                });
-                me.set_editor_enabled(true, ctx);
-                ctx.notify();
-            }
-        });
+        if ChannelState::is_warp_server_available() {
+            ctx.subscribe_to_model(&AuthManager::handle(ctx), |me, _, event, ctx| {
+                if let AuthManagerEvent::AuthFailed(err) = event {
+                    me.last_failure_reason = Some(match err {
+                        UserAuthenticationError::InvalidStateParameter => {
+                            LoginFailureReason::InvalidStateParameter
+                        }
+                        UserAuthenticationError::MissingStateParameter => {
+                            LoginFailureReason::MissingStateParameter
+                        }
+                        UserAuthenticationError::DeniedAccessToken(_)
+                        | UserAuthenticationError::UserAccountDisabled(_)
+                        | UserAuthenticationError::Unexpected(_) => {
+                            LoginFailureReason::FailedUserAuthentication
+                        }
+                    });
+                    me.set_editor_enabled(true, ctx);
+                    ctx.notify();
+                }
+            });
+        }
 
         Self {
             auth_token_input,
@@ -184,6 +187,12 @@ impl PasteAuthTokenModalView {
     }
 
     fn submit(&mut self, ctx: &mut ViewContext<Self>) {
+        if !ChannelState::is_warp_server_available() {
+            log::info!("Ignoring pasted auth token because Warp server config is unavailable");
+            ctx.emit(PasteAuthTokenModalEvent::Cancelled);
+            return;
+        }
+
         let text = self.auth_token_input.as_ref(ctx).buffer_text(ctx);
         if text.trim().is_empty() {
             return;

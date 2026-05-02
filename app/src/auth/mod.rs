@@ -35,7 +35,7 @@ pub use login_failure_notification::LoginFailureReason;
 pub use user_uid::UserUid;
 use warpui::modals::{AlertDialogWithCallbacks, ModalButton};
 
-use warp_core::user_preferences::GetUserPreferences as _;
+use warp_core::{channel::ChannelState, user_preferences::GetUserPreferences as _};
 use warpui::{AppContext, SingletonEntity};
 
 use crate::cloud_object::model::persistence::CloudModel;
@@ -60,6 +60,10 @@ use crate::{report_if_error, send_telemetry_sync_from_app_ctx};
 pub const API_KEY_PREFIX: &str = "wk-";
 
 pub fn init(app: &mut AppContext) {
+    if !ChannelState::is_warp_server_available() {
+        return;
+    }
+
     auth_view_modal::init(app);
     auth_view_body::init(app);
     auth_override_warning_body::init(app);
@@ -70,6 +74,11 @@ pub fn init(app: &mut AppContext) {
 /// If the app has running processes or dirty objects, we'll show a confirmation modal before logging out.
 /// If the user aborts, the user will not be logged out.
 pub fn maybe_log_out(app: &mut AppContext) {
+    if !ChannelState::is_warp_server_available() {
+        log::info!("Ignoring logout request because Warp server config is unavailable");
+        return;
+    }
+
     send_telemetry_sync_from_app_ctx!(TelemetryEvent::UserInitiatedLogOut, app);
 
     let sessions = SessionNavigationData::all_sessions(app).collect_vec();
@@ -211,6 +220,11 @@ pub fn maybe_log_out(app: &mut AppContext) {
 
 // Log out the user, clears workspace state, stops running processes, and deletes database.
 pub fn log_out(app: &mut AppContext) {
+    if !ChannelState::is_warp_server_available() {
+        log::info!("Ignoring logout because Warp server config is unavailable");
+        return;
+    }
+
     send_telemetry_sync_from_app_ctx!(TelemetryEvent::LogOut, app);
 
     CodebaseIndexManager::handle(app).update(app, |index_manager, ctx| {

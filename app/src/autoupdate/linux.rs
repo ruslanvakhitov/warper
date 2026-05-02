@@ -147,7 +147,7 @@ mod appimage {
         // Pass a flag to the app to let it know it was restarted as part of the
         // autoupdate process.
         command.arg(warp_cli::finish_update_flag());
-        // If we're testing with a local copy of channel_versions.json, have the
+        // If we're testing with a local copy of release metadata, have the
         // newly-started binary also reference that same file (so we can test
         // displaying an updated changelog after an autoupdate).
         if let Ok(path) = std::env::var("WARP_CHANNEL_VERSIONS_PATH") {
@@ -298,7 +298,7 @@ mod package_manager {
         // Pass a flag to the app to let it know it was restarted as part of the
         // autoupdate process.
         command.arg(finish_update_flag);
-        // If we're testing with a local copy of channel_versions.json, have the
+        // If we're testing with a local copy of release metadata, have the
         // newly-started binary also reference that same file (so we can test
         // displaying an updated changelog after an autoupdate).
         if let Ok(path) = std::env::var("WARP_CHANNEL_VERSIONS_PATH") {
@@ -354,6 +354,7 @@ impl PackageManager {
     pub fn update_command(&self, shell_type: ShellType, update_id: &str) -> String {
         let package_name = Self::package_name();
         let repo_name = Self::repo_name();
+        let pacman_repo_url = Self::pacman_repo_url();
         let and = shell_type.and_combiner();
         let or = shell_type.or_combiner();
 
@@ -398,7 +399,7 @@ impl PackageManager {
                     // Back up the existing pacman.conf file just in case
                     // anything goes wrong, then add the repository config.
                     format!(
-                        "mkdir -p {cache_dir_str}{and}\\\ncp /etc/pacman.conf {cache_dir_str}{and}\\\nsudo sh -c \"echo '\n[{repo_name}]\nServer = https://releases.warp.dev/linux/pacman/\\$repo/\\$arch' >> /etc/pacman.conf\"{and}\\\n"
+                        "mkdir -p {cache_dir_str}{and}\\\ncp /etc/pacman.conf {cache_dir_str}{and}\\\nsudo sh -c \"echo '\n[{repo_name}]\nServer = {pacman_repo_url}/\\$repo/\\$arch' >> /etc/pacman.conf\"{and}\\\n"
                     )
                 } else {
                     String::new()
@@ -430,6 +431,11 @@ impl PackageManager {
 
     fn repo_name() -> String {
         repo_name(ChannelState::channel())
+    }
+
+    fn pacman_repo_url() -> String {
+        let releases_base_url = ChannelState::releases_base_url();
+        format!("{releases_base_url}/linux/pacman")
     }
 
     fn detect() -> Result<Self> {

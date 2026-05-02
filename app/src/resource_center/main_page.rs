@@ -69,7 +69,7 @@ impl ResourceCenterMainView {
     pub fn new(
         ctx: &mut ViewContext<Self>,
         tips_completed: ModelHandle<TipsCompleted>,
-        changelog_model_handle: ModelHandle<ChangelogModel>,
+        changelog_model_handle: Option<ModelHandle<ChangelogModel>>,
     ) -> Self {
         let action_target = ctx.add_model(|_| ActionTarget::None);
         let section_views = Self::initialize_section_views(
@@ -90,7 +90,7 @@ impl ResourceCenterMainView {
         tips_completed: ModelHandle<TipsCompleted>,
         action_target: ModelHandle<ActionTarget>,
         ctx: &mut ViewContext<Self>,
-        changelog_model_handle: ModelHandle<ChangelogModel>,
+        changelog_model_handle: Option<ModelHandle<ChangelogModel>>,
     ) -> Vec<SectionViewHandle> {
         let sections = sections(ctx);
 
@@ -122,7 +122,7 @@ impl ResourceCenterMainView {
 
         sections
             .iter()
-            .map(|section| match section {
+            .filter_map(|section| match section {
                 Section::Feature(data) => {
                     let is_tips_completed = tips_completed.as_ref(ctx).skipped_or_completed;
                     let is_expanded = match data.section_name {
@@ -154,21 +154,23 @@ impl ResourceCenterMainView {
                     // Show tips progress for every section except changelog
                     let show_tips_progress = !matches!(data.section_name, FeatureSection::WhatsNew);
 
-                    SectionViewHandle::Feature(Self::build_feature_section_view(
-                        data,
-                        action_target.clone(),
-                        ctx,
-                        tips_completed.clone(),
-                        show_tips_progress,
-                        is_expanded,
+                    Some(SectionViewHandle::Feature(
+                        Self::build_feature_section_view(
+                            data,
+                            action_target.clone(),
+                            ctx,
+                            tips_completed.clone(),
+                            show_tips_progress,
+                            is_expanded,
+                        ),
                     ))
                 }
-                Section::Content(data) => {
-                    SectionViewHandle::Content(Self::build_content_section_view(data, ctx))
-                }
-                Section::Changelog() => SectionViewHandle::Changelog(
-                    Self::build_changelog_section_view(changelog_model_handle.clone(), ctx),
-                ),
+                Section::Content(data) => Some(SectionViewHandle::Content(
+                    Self::build_content_section_view(data, ctx),
+                )),
+                Section::Changelog() => changelog_model_handle.clone().map(|model| {
+                    SectionViewHandle::Changelog(Self::build_changelog_section_view(model, ctx))
+                }),
             })
             .collect()
     }

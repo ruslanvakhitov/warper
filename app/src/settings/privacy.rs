@@ -11,6 +11,7 @@ use warpui::{AppContext, Entity, ModelContext, SingletonEntity, UpdateModel};
 use crate::ai::blocklist::telemetry_banner::should_collect_ai_ugc_telemetry;
 use crate::auth::auth_state::AuthState;
 use crate::auth::AuthStateProvider;
+use crate::channel::ChannelState;
 use crate::cloud_object::model::persistence::CloudModel;
 use crate::report_error;
 use crate::server::cloud_objects::update_manager::UpdateManager;
@@ -148,7 +149,7 @@ maybe_define_setting!(HasInitializedDefaultSecretRegexes, group: PrivacySettings
 /// reporting and/or telemetry).
 pub struct PrivacySettings {
     auth_state: Arc<AuthState>,
-    auth_client: Arc<dyn AuthClient>,
+    auth_client: Option<Arc<dyn AuthClient>>,
     pub is_telemetry_enabled: bool,
     pub is_crash_reporting_enabled: bool,
     pub is_cloud_conversation_storage_enabled: bool,
@@ -246,28 +247,30 @@ impl PrivacySettings {
     /// `on_user_fetched` after the user's auth state is established.
     fn new(ctx: &mut ModelContext<Self>) -> Self {
         let auth_state = AuthStateProvider::as_ref(ctx).get().clone();
-        let auth_client = ServerApiProvider::as_ref(ctx).get_auth_client();
+        let hosted_services_available = ChannelState::is_warp_server_available();
+        let auth_client =
+            hosted_services_available.then(|| ServerApiProvider::as_ref(ctx).get_auth_client());
 
         let is_telemetry_enabled: bool = ctx
             .private_user_preferences()
             .read_value(TELEMETRY_ENABLED_DEFAULTS_KEY)
             .unwrap_or_default()
             .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or(true);
+            .unwrap_or(hosted_services_available);
 
         let is_crash_reporting_enabled: bool = ctx
             .private_user_preferences()
             .read_value(CRASH_REPORTING_ENABLED_DEFAULTS_KEY)
             .unwrap_or_default()
             .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or(true);
+            .unwrap_or(hosted_services_available);
 
         let is_cloud_conversation_storage_enabled: bool = ctx
             .private_user_preferences()
             .read_value(CLOUD_CONVERSATION_STORAGE_ENABLED_DEFAULTS_KEY)
             .unwrap_or_default()
             .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or(true);
+            .unwrap_or(hosted_services_available);
 
         // Make sure the user-preferences stores match what's in memory.
         // Needed for warp drive preferences to work and no harm in doing in general.
@@ -403,7 +406,10 @@ impl PrivacySettings {
 
     /// Fetch the user's privacy settings from the server if any or update the server settings.
     pub fn fetch_or_update_settings(&self, ctx: &mut ModelContext<Self>) {
-        let auth_client_clone = self.auth_client.clone();
+        let Some(auth_client_clone) = self.auth_client.clone() else {
+            return;
+        };
+
         let _ = ctx.spawn(
             async move { auth_client_clone.get_user_settings().await },
             Self::initialize_from_fetched_settings_or_update_settings,
@@ -485,7 +491,7 @@ impl PrivacySettings {
     pub fn mock(_ctx: &mut ModelContext<Self>) -> Self {
         Self {
             auth_state: Arc::new(AuthState::new_for_test()),
-            auth_client: Arc::new(MockAuthClient::new()),
+            auth_client: Some(Arc::new(MockAuthClient::new())),
             is_crash_reporting_enabled: true,
             is_telemetry_enabled: true,
             is_cloud_conversation_storage_enabled: true,
@@ -537,11 +543,12 @@ impl PrivacySettings {
             });
 
             if self.auth_state.is_logged_in() {
-                let auth_client = self.auth_client.clone();
-                let _ = ctx.spawn(
-                    async move { auth_client.set_is_crash_reporting_enabled(new_value).await },
-                    |_, _, _| (),
-                );
+                if let Some(auth_client) = self.auth_client.clone() {
+                    let _ = ctx.spawn(
+                        async move { auth_client.set_is_crash_reporting_enabled(new_value).await },
+                        |_, _, _| (),
+                    );
+                }
             }
             ctx.emit(PrivacySettingsChangedEvent::UpdateIsCrashReportingEnabled {
                 old_value,
@@ -571,11 +578,12 @@ impl PrivacySettings {
             });
 
             if self.auth_state.is_logged_in() {
-                let auth_client = self.auth_client.clone();
-                let _ = ctx.spawn(
-                    async move { auth_client.set_is_telemetry_enabled(new_value).await },
-                    |_, _, _| (),
-                );
+                if let Some(auth_client) = self.auth_client.clone() {
+                    let _ = ctx.spawn(
+                        async move { auth_client.set_is_telemetry_enabled(new_value).await },
+                        |_, _, _| (),
+                    );
+                }
             }
             ctx.emit(PrivacySettingsChangedEvent::UpdateIsTelemetryEnabled {
                 old_value,
@@ -605,15 +613,16 @@ impl PrivacySettings {
         });
 
         if self.auth_state.is_logged_in() {
-            let auth_client = self.auth_client.clone();
-            let _ = ctx.spawn(
-                async move {
-                    auth_client
-                        .set_is_cloud_conversation_storage_enabled(new_value)
-                        .await
-                },
-                |_, _, _| (),
-            );
+            if let Some(auth_client) = self.auth_client.clone() {
+                let _ = ctx.spawn(
+                    async move {
+                        auth_client
+                            .set_is_cloud_conversation_storage_enabled(new_value)
+                            .await
+                    },
+                    |_, _, _| (),
+                );
+            }
         }
 
         ctx.emit(
@@ -706,19 +715,20 @@ impl PrivacySettings {
     /// Sends request(s) to update server-side user settings with current local values.
     fn update_server_with_local_settings(&self, ctx: &mut ModelContext<Self>) {
         if self.auth_state.is_logged_in() {
-            let auth_client = self.auth_client.clone();
-            let snapshot = self.get_snapshot(ctx);
-            let _ = ctx.spawn(
-                async move {
-                    let result = auth_client.update_user_settings(snapshot).await;
-                    if let Err(err) = result {
-                        report_error!(
-                            err.context("Failed to update server with local privacy settings.")
-                        )
-                    }
-                },
-                |_, _, _| (),
-            );
+            if let Some(auth_client) = self.auth_client.clone() {
+                let snapshot = self.get_snapshot(ctx);
+                let _ = ctx.spawn(
+                    async move {
+                        let result = auth_client.update_user_settings(snapshot).await;
+                        if let Err(err) = result {
+                            report_error!(
+                                err.context("Failed to update server with local privacy settings.")
+                            )
+                        }
+                    },
+                    |_, _, _| (),
+                );
+            }
         }
     }
 
@@ -728,6 +738,11 @@ impl PrivacySettings {
     /// 2) update the warp drive prefs to match the values from the legacy user_settings endpoint so
     ///    that we can use warp drive prefs going forward.
     pub fn maybe_sync_with_warp_drive_prefs(&mut self, ctx: &mut ModelContext<Self>) {
+        if !ChannelState::is_warp_server_available() {
+            self.initialize_default_regexes_once(ctx);
+            return;
+        }
+
         // Wait for cloud objects to load, and, if telemetry & crash reporting are synced to warp drive
         // initialize from the warp drive values.
         let update_manager = UpdateManager::as_ref(ctx);

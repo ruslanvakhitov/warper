@@ -125,18 +125,6 @@ impl AmbientAgentViewModel {
         has_parent_terminal: bool,
         ctx: &mut ModelContext<Self>,
     ) -> Self {
-        ctx.subscribe_to_model(&CloudModel::handle(ctx), |me, event, ctx| {
-            me.handle_cloud_model_event(event, ctx);
-        });
-
-        // Validate the default environment once Warp Drive sync completes.
-        // The environment ID may be restored from settings before environments are synced,
-        // so we need to validate it once the initial load is complete.
-        let initial_load_complete = UpdateManager::as_ref(ctx).initial_load_complete();
-        ctx.spawn(initial_load_complete, |me, _, ctx| {
-            me.validate_environment_after_initial_load(ctx);
-        });
-
         let ui_state = AmbientAgentProgressUIState::new(ctx);
 
         Self {

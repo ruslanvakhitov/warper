@@ -141,38 +141,13 @@ impl AIExecutionProfilesModel {
                 let profile_id_to_sync_id: HashMap<ClientProfileId, SyncId> = HashMap::new();
                 let active_profiles_per_session: HashMap<EntityId, ClientProfileId> = HashMap::new();
             } else {
-                let cloud_model = CloudModel::handle(ctx).as_ref(ctx);
-                let all_profiles_from_cloud: Vec<&super::CloudAIExecutionProfile> = cloud_model
-                    .get_all_objects_of_type::<GenericStringObjectId, CloudAIExecutionProfileModel>()
-                    .collect();
-
-                let default_profile_from_cloud: Option<&super::CloudAIExecutionProfile> = all_profiles_from_cloud
-                    .iter()
-                    .find(|obj| obj.model().string_model.is_default_profile)
-                    .copied();
-
-                let mut profile_id_to_sync_id: HashMap<ClientProfileId, SyncId> = HashMap::new();
+                let profile_id_to_sync_id: HashMap<ClientProfileId, SyncId> = HashMap::new();
                 let active_profiles_per_session: HashMap<EntityId, ClientProfileId> = HashMap::new();
 
-                // Insert all non-default profiles from the cloud
-                for cloud_profile in all_profiles_from_cloud.iter().filter(|p| !p.model().string_model.is_default_profile) {
-                    let profile_id = ClientProfileId::new();
-                    profile_id_to_sync_id.insert(profile_id, cloud_profile.id);
-                }
-
                 let default_profile_state = match launch_mode {
-                    LaunchMode::App { .. } | LaunchMode::Test { .. } => match default_profile_from_cloud {
-                        Some(p) => {
-                            let execution_profile_id = ClientProfileId::new();
-                            profile_id_to_sync_id.insert(execution_profile_id, p.id);
-                            DefaultProfileState::Synced {
-                                id: execution_profile_id,
-                            }
-                        }
-                        None => DefaultProfileState::Unsynced {
-                            id: ClientProfileId::new(),
-                            profile: AIExecutionProfile::create_default_from_legacy_settings(ctx),
-                        },
+                    LaunchMode::App { .. } | LaunchMode::Test { .. } => DefaultProfileState::Unsynced {
+                        id: ClientProfileId::new(),
+                        profile: AIExecutionProfile::create_default_from_legacy_settings(ctx),
                     },
                     // When running as a CLI, we ignore the GUI default and use a more permissive default.
                     LaunchMode::CommandLine { is_sandboxed, computer_use_override, .. } => {
@@ -185,48 +160,12 @@ impl AIExecutionProfilesModel {
             }
         }
 
-        // We have to listen for changes to AIExecutionProfiles for a few reasons:
-        // (1) In case the default profile is unsynced AND a default profile arrives from the cloud
-        // (2) Let views subscribed to us know whenever a backing profile changes.
-        // (3) Keep profile_id_to_sync_id map up to date when profiles are created/deleted remotely
-        if !cfg!(feature = "agent_mode_evals") {
-            ctx.subscribe_to_model(&CloudModel::handle(ctx), |me, event, ctx| {
-                me.handle_cloud_model_event(event, ctx);
-            });
-        }
-
         ctx.subscribe_to_model(
             &TemplatableMCPServerManager::handle(ctx),
             |me, event, ctx| {
                 me.handle_templatable_mcp_server_manager_event(event, ctx);
             },
         );
-
-        // In dev, it's possible the SQLite data read in for the default profile actually comes from a different environment
-        // (say, we switch between local and staging servers). When that happens the default profile starts as synced but
-        // then the profile is deleted when initial load returns. To fix that, we listen for the deletion of the default
-        // profile and reset the model state when that happens.
-        if ChannelState::channel().is_dogfood() {
-            if let DefaultProfileState::Synced { id } = &default_profile_state {
-                let sync_id_of_default_profile = *profile_id_to_sync_id
-                    .get(id)
-                    .expect("default profile is synced but no sync id found");
-                ctx.subscribe_to_model(&CloudModel::handle(ctx), move |me, event, _| {
-                if let CloudModelEvent::ObjectDeleted {
-                    type_and_id: CloudObjectTypeAndId::GenericStringObject {
-                        id: deleted_sync_id,
-                        ..
-                    },
-                    ..
-                } = event {
-                    if *deleted_sync_id == sync_id_of_default_profile {
-                        log::info!("Resetting execution profile model because default profile was deleted.");
-                        me.reset();
-                    }
-                }
-            });
-            }
-        }
 
         log::info!("Initialized execution profile model with state: {default_profile_state}",);
 

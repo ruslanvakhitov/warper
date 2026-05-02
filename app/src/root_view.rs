@@ -9,7 +9,6 @@ use crate::auth::login_slide::{LoginSlideEvent, LoginSlideSource, LoginSlideView
 use crate::auth::needs_sso_link_view::NeedsSsoLinkView;
 use crate::auth::paste_auth_token_modal::{PasteAuthTokenModalEvent, PasteAuthTokenModalView};
 use crate::auth::{AuthStateProvider, LoginFailureReason};
-use crate::autoupdate::{AutoupdateState, AutoupdateStateEvent};
 use crate::cloud_object::model::persistence::CloudModel;
 use crate::cloud_object::{GenericStringObjectFormat, JsonObjectType, ObjectType};
 use crate::drive::export::ExportManager;
@@ -961,6 +960,10 @@ pub(crate) fn open_new_from_path(
 
 /// Opens a new window and tries to join session identified by the session ID.
 fn open_shared_session_as_viewer(session_id: &SessionId, ctx: &mut AppContext) {
+    if !ChannelState::is_warp_server_available() {
+        return;
+    }
+
     open_new_with_workspace_source(
         NewWorkspaceSource::SharedSessionAsViewer {
             session_id: *session_id,
@@ -972,6 +975,10 @@ fn open_shared_session_as_viewer(session_id: &SessionId, ctx: &mut AppContext) {
 /// Opens a new window to view a persisted view-only cloud conversation.
 /// The conversation data is loaded via GraphQL API.
 fn open_conversation_viewer(conversation_id: &ServerConversationToken, ctx: &mut AppContext) {
+    if !ChannelState::is_warp_server_available() {
+        return;
+    }
+
     // Trigger the workspace loading mechanism by dispatching the LoadConversationData event
     // This will open a new window with a loading state, fetch data via GraphQL, and display it
     open_new_with_workspace_source(
@@ -984,6 +991,10 @@ fn open_conversation_viewer(conversation_id: &ServerConversationToken, ctx: &mut
 
 /// Opens a new window and starts the guided `/create-environment` setup flow.
 fn create_environment(arg: &CreateEnvironmentArg, ctx: &mut AppContext) {
+    if !ChannelState::is_warp_server_available() {
+        return;
+    }
+
     let repos = arg.repos.clone();
     let (window_id, root_handle) = open_new_with_workspace_source(
         NewWorkspaceSource::Session {
@@ -1017,6 +1028,10 @@ fn create_environment(arg: &CreateEnvironmentArg, ctx: &mut AppContext) {
 
 /// Opens a new window and starts the guided `/create-environment` setup flow immediately.
 fn create_environment_and_run(arg: &CreateEnvironmentArg, ctx: &mut AppContext) {
+    if !ChannelState::is_warp_server_available() {
+        return;
+    }
+
     let repos = arg.repos.clone();
     let (window_id, root_handle) = open_new_with_workspace_source(
         NewWorkspaceSource::Session {
@@ -1895,19 +1910,6 @@ impl RootView {
             _ => {}
         }
 
-        if ChannelState::show_autoupdate_menu_items() {
-            let autoupdate_handle = AutoupdateState::handle(ctx);
-            ctx.subscribe_to_model(&autoupdate_handle, |root_view, _handle, evt, ctx| {
-                if let AutoupdateStateEvent::CheckComplete {
-                    result,
-                    request_type: RequestType::Poll,
-                } = evt
-                {
-                    root_view.polling_update_check_complete(result, ctx)
-                }
-            });
-        }
-
         // Ensure the onboarding view has focus after all views are created.
         // The auth_view's internal editor may have grabbed focus during construction;
         // this overrides that so keyboard input (Enter, arrow keys) routes to onboarding.
@@ -2401,16 +2403,20 @@ impl RootView {
             AgentOnboardingEvent::UpgradeRequested => {
                 let upgrade_url = AuthManager::handle(ctx)
                     .update(ctx, |auth_manager, _| auth_manager.upgrade_url());
-                ctx.open_url(&upgrade_url);
+                if let Some(upgrade_url) = upgrade_url {
+                    ctx.open_url(&upgrade_url);
+                }
             }
             AgentOnboardingEvent::UpgradeCopyUrlRequested => {
                 let upgrade_url = AuthManager::handle(ctx)
                     .update(ctx, |auth_manager, _| auth_manager.upgrade_url());
-                ctx.clipboard().write(ClipboardContent {
-                    plain_text: upgrade_url.clone(),
-                    paths: Some(vec![upgrade_url]),
-                    ..Default::default()
-                });
+                if let Some(upgrade_url) = upgrade_url {
+                    ctx.clipboard().write(ClipboardContent {
+                        plain_text: upgrade_url.clone(),
+                        paths: Some(vec![upgrade_url]),
+                        ..Default::default()
+                    });
+                }
             }
             AgentOnboardingEvent::UpgradePasteTokenFromClipboardRequested => {
                 let modal = ctx.add_typed_action_view(PasteAuthTokenModalView::new);
@@ -2500,8 +2506,9 @@ impl RootView {
 
                 // Open the sign-in URL in the browser for existing users.
                 AuthManager::handle(ctx).update(ctx, |auth_manager, ctx| {
-                    let sign_in_url = auth_manager.sign_in_url();
-                    ctx.open_url(&sign_in_url);
+                    if let Some(sign_in_url) = auth_manager.sign_in_url() {
+                        ctx.open_url(&sign_in_url);
+                    }
                 });
 
                 let login_slide_view = ctx.add_typed_action_view(|ctx| {
@@ -2756,6 +2763,10 @@ impl RootView {
         session_id: &SessionId,
         ctx: &mut ViewContext<Self>,
     ) -> bool {
+        if !ChannelState::is_warp_server_available() {
+            return false;
+        }
+
         if let AuthOnboardingState::Terminal(handle) = &self.auth_onboarding_state {
             handle.update(ctx, |workspace, ctx| {
                 workspace.add_tab_for_joining_shared_session(*session_id, ctx);
@@ -2778,6 +2789,10 @@ impl RootView {
         conversation_id: &ServerConversationToken,
         ctx: &mut ViewContext<Self>,
     ) -> bool {
+        if !ChannelState::is_warp_server_available() {
+            return false;
+        }
+
         if let AuthOnboardingState::Terminal(handle) = &self.auth_onboarding_state {
             handle.update(ctx, |workspace, ctx| {
                 workspace.open_cloud_conversation_from_server_token(conversation_id.clone(), ctx);
@@ -2798,6 +2813,10 @@ impl RootView {
         arg: &CreateEnvironmentArg,
         ctx: &mut ViewContext<Self>,
     ) -> bool {
+        if !ChannelState::is_warp_server_available() {
+            return false;
+        }
+
         if let AuthOnboardingState::Terminal(handle) = &self.auth_onboarding_state {
             let repos = arg.repos.clone();
 
@@ -2839,6 +2858,10 @@ impl RootView {
         arg: &CreateEnvironmentArg,
         ctx: &mut ViewContext<Self>,
     ) -> bool {
+        if !ChannelState::is_warp_server_available() {
+            return false;
+        }
+
         let AuthOnboardingState::Terminal(handle) = &self.auth_onboarding_state else {
             log::warn!("Auth not complete before trying to create environment");
             return false;
@@ -2966,6 +2989,10 @@ impl RootView {
         section: &SettingsSection,
         ctx: &mut ViewContext<Self>,
     ) -> bool {
+        if !ChannelState::is_warp_server_available() && section.requires_hosted_services() {
+            return false;
+        }
+
         let window_id = ctx.window_id();
         if let AuthOnboardingState::Terminal(handle) = &self.auth_onboarding_state {
             ctx.dispatch_typed_action_for_view(

@@ -8,6 +8,7 @@
 //!   When using Firebase, this is an OAuth2 refresh token.
 //! * [`AuthToken`], which is a short-lived token that's included in all other server requests.
 //!   When using Firebase, this is an OAuth2 access token.
+use anyhow::{bail, Result};
 use warp_graphql::object_permissions::OwnerType;
 
 use super::user::FirebaseAuthTokens;
@@ -162,17 +163,8 @@ pub enum FirebaseToken {
 
 impl FirebaseToken {
     /// Returns the url for trading this long lived token into an access token.
-    pub fn access_token_url(&self, api_key: &str) -> String {
-        // See https://firebase.google.com/docs/reference/rest/auth for info on these
-        // authentication endpoints.
-        match self {
-            FirebaseToken::Refresh(_) => {
-                format!("https://securetoken.googleapis.com/v1/token?key={api_key}")
-            }
-            FirebaseToken::Custom(_) => {
-                format!("https://identitytoolkit.googleapis.com/v1/accounts:signInWithCustomToken?key={api_key}")
-            }
-        }
+    pub fn access_token_url(&self, _api_key: &str) -> Result<String> {
+        bail!("Firebase token exchange is unavailable in Warper")
     }
 
     /// Returns the POST body for to include when trading this long lived token into an access token.

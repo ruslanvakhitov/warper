@@ -78,7 +78,7 @@ use super::cli_agent;
 use super::CLIAgent;
 #[cfg(feature = "local_fs")]
 use crate::ai::agent::{CurrentHead, DiffBase};
-use crate::ai::agent_conversations_model::{AgentConversationsModel, AgentConversationsModelEvent};
+use crate::ai::agent_conversations_model::AgentConversationsModel;
 use crate::ai::ambient_agents::{
     conversation_output_status_from_conversation, AmbientAgentTaskId, AmbientConversationStatus,
 };
@@ -201,6 +201,7 @@ use crate::ai::blocklist::agent_view::agent_input_footer::toolbar_item::AgentToo
 use crate::ai::blocklist::suggested_agent_mode_workflow_modal::SuggestedAgentModeWorkflowAndId;
 use crate::ai::blocklist::suggested_rule_modal::SuggestedRuleAndId;
 use crate::ai::blocklist::{model::AIBlockModelImpl, ClientIdentifiers};
+use crate::ai::AIRequestUsageModel;
 use crate::ai::{
     agent::{
         AIAgentActionId, AIAgentCitation, AIAgentContext, AIAgentExchangeId, AIAgentInput,
@@ -331,10 +332,9 @@ use crate::view_components::{DismissibleToast, ToastFlavor};
 use crate::workflows::workflow::Workflow;
 use crate::workflows::WorkflowSelectionSource;
 use crate::workspace::sync_inputs::SyncedInputState;
-use crate::workspace::{CommandSearchOptions, OneTimeModalModel, ToastStack, WorkspaceAction};
+use crate::workspace::{CommandSearchOptions, ToastStack, WorkspaceAction};
 use crate::workspace::{ForkAIConversationParams, ForkFromExchange, ForkedConversationDestination};
 use crate::workspaces::{user_workspaces::UserWorkspaces, workspace::CustomerType};
-use crate::AIRequestUsageModel;
 use crate::ActiveSession as WindowActiveSession;
 use crate::{report_if_error, AIAgentActionResultType};
 
@@ -2751,10 +2751,11 @@ pub struct TerminalView {
     ambient_agent_cancel_mouse_state: warpui::elements::MouseStateHandle,
 
     /// First-time cloud agent setup view (full-screen overlay for creating initial environment).
-    first_time_cloud_agent_setup_view: ViewHandle<ambient_agent::FirstTimeCloudAgentSetupView>,
+    first_time_cloud_agent_setup_view:
+        Option<ViewHandle<ambient_agent::FirstTimeCloudAgentSetupView>>,
 
     /// Environment setup mode selector modal for /create-environment command.
-    environment_setup_mode_selector: ViewHandle<EnvironmentSetupModeSelector>,
+    environment_setup_mode_selector: Option<ViewHandle<EnvironmentSetupModeSelector>>,
 
     /// Whether the environment setup mode selector is currently visible.
     is_environment_setup_mode_selector_open: bool,
@@ -3479,36 +3480,6 @@ impl TerminalView {
             }
         });
 
-        // Subscribe to agent conversations model for task status updates
-        ctx.subscribe_to_model(
-            &AgentConversationsModel::handle(ctx),
-            |me, _, event, ctx| {
-                let is_task_update = matches!(
-                    event,
-                    AgentConversationsModelEvent::TasksUpdated
-                        | AgentConversationsModelEvent::NewTasksReceived
-                );
-                if is_task_update {
-                    me.maybe_insert_tombstone_for_non_running_shared_ambient_task(ctx);
-                }
-                let should_refresh_details_panel = matches!(
-                    event,
-                    AgentConversationsModelEvent::TasksUpdated
-                        | AgentConversationsModelEvent::NewTasksReceived
-                        | AgentConversationsModelEvent::ConversationUpdated
-                        | AgentConversationsModelEvent::ConversationArtifactsUpdated { .. }
-                );
-                // Only refresh panel if it's currently open (avoids unnecessary work)
-                if should_refresh_details_panel
-                    && me.is_cloud_mode_details_panel_open
-                    && me.ambient_agent_view_model.as_ref(ctx).is_ambient_agent()
-                {
-                    me.fetch_and_update_cloud_mode_details_panel(ctx);
-                    ctx.notify();
-                }
-            },
-        );
-
         let _ = ctx.spawn_stream_local(
             throttle(WAKEUP_THROTTLE_PERIOD, wakeups_rx),
             Self::handle_terminal_wakeup,
@@ -3913,19 +3884,8 @@ impl TerminalView {
             }
         });
 
-        let first_time_cloud_agent_setup_view =
-            ctx.add_typed_action_view(ambient_agent::FirstTimeCloudAgentSetupView::new);
-
-        ctx.subscribe_to_view(&first_time_cloud_agent_setup_view, |me, _, event, ctx| {
-            me.handle_first_time_cloud_agent_setup_event(event, ctx);
-        });
-
-        let environment_setup_mode_selector =
-            ctx.add_typed_action_view(EnvironmentSetupModeSelector::new);
-
-        ctx.subscribe_to_view(&environment_setup_mode_selector, |me, _, event, ctx| {
-            me.handle_environment_setup_mode_selector_event(event, ctx);
-        });
+        let first_time_cloud_agent_setup_view = None;
+        let environment_setup_mode_selector = None;
 
         if FeatureFlag::CodebaseIndexSpeedbump.is_enabled() {
             // Check whether or not to show the codebase index speedbump when the codebase indexing settings change.
@@ -4391,8 +4351,6 @@ impl TerminalView {
         if let Some(restoration) = conversation_restoration {
             terminal_view.restore_conversations_on_view_creation(restoration, ctx);
         }
-
-        send_telemetry_from_ctx!(TelemetryEvent::SessionCreation, ctx);
 
         terminal_view
     }
@@ -11929,7 +11887,7 @@ impl TerminalView {
             && ChannelState::channel() != Channel::Oss
             && !is_onboarded
             && !is_anonymous_or_logged_out;
-        let is_launch_modal_open = OneTimeModalModel::as_ref(ctx).is_oz_launch_modal_open();
+        let is_launch_modal_open = false;
 
         let has_plugin_instructions_block = self.rich_content_views.iter().any(|rc| {
             matches!(
@@ -12588,8 +12546,8 @@ impl TerminalView {
     }
 
     /// Open the Environment Management pane.
-    fn open_environment_management_pane(&mut self, ctx: &mut ViewContext<Self>) {
-        ctx.emit(Event::OpenEnvironmentManagementPane);
+    fn open_environment_management_pane(&mut self, _ctx: &mut ViewContext<Self>) {
+        log::info!("Skipping hosted environment management pane in offline Warper build");
     }
 
     /// Check if completed command was `warp environment create` and emit event if successful
@@ -12637,11 +12595,15 @@ impl TerminalView {
         // from within the input view (e.g., slash command execution), and calling
         // close_overlays would attempt to update the input view while it's already
         // being updated, causing a circular view update panic.
+        let Some(environment_setup_mode_selector) = &self.environment_setup_mode_selector else {
+            log::info!("Skipping hosted environment setup selector in offline Warper build");
+            return;
+        };
         self.is_environment_setup_mode_selector_open = true;
         ctx.emit(Event::EnvironmentSetupModeSelectorToggled { is_open: true });
         ctx.notify();
         // Focus the mode selector so it can receive keyboard events (ESC to dismiss)
-        ctx.focus(&self.environment_setup_mode_selector);
+        ctx.focus(environment_setup_mode_selector);
     }
 
     fn setup_cloud_environment(&mut self, args: Vec<String>, ctx: &mut ViewContext<Self>) {
@@ -19204,10 +19166,6 @@ impl TerminalView {
             return;
         }
 
-        if OneTimeModalModel::as_ref(ctx).is_any_modal_open() {
-            return;
-        }
-
         // If the onboarding callout is active, it should win focus so that its displayed
         // keybindings (enter/delete) actually work.
         if self.focus_onboarding_callout_if_active(ctx) {
@@ -21006,7 +20964,8 @@ impl TerminalView {
         &self,
     ) -> Option<&ViewHandle<EnvironmentSetupModeSelector>> {
         self.is_environment_setup_mode_selector_open
-            .then_some(&self.environment_setup_mode_selector)
+            .then_some(self.environment_setup_mode_selector.as_ref())
+            .flatten()
     }
 
     pub fn summarization_cancel_dialog_handle(
@@ -25891,7 +25850,10 @@ impl View for TerminalView {
 
         // Render first-time cloud agent setup view when in Setup status
         if self.ambient_agent_view_model.as_ref(app).is_in_setup() {
-            stack.add_child(ChildView::new(&self.first_time_cloud_agent_setup_view).finish());
+            if let Some(first_time_cloud_agent_setup_view) = &self.first_time_cloud_agent_setup_view
+            {
+                stack.add_child(ChildView::new(first_time_cloud_agent_setup_view).finish());
+            }
         }
 
         if self.ssh_file_upload.as_ref(app).has_upload() {

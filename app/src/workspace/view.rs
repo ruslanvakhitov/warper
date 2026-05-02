@@ -50,7 +50,6 @@ use crate::ai::conversation_utils;
 use crate::ai::document::ai_document_model::{AIDocumentId, AIDocumentModel};
 use crate::ai::llms::LLMPreferences;
 use crate::ai::persisted_workspace::PersistedWorkspace;
-use crate::ai::AIRequestUsageModel;
 use crate::ai::{
     agent::{api::ServerConversationToken, conversation::AIConversationId, EntrypointType},
     blocklist::{
@@ -280,7 +279,6 @@ use crate::server::telemetry::{
     AddTabWithShellSource, AnonymousUserSignupEntrypoint, CloseTarget, EnvVarTelemetryMetadata,
     FileTreeSource, KnowledgePaneEntrypoint, LaunchConfigUiLocation,
     MCPServerCollectionPaneEntrypoint, OpenedWarpAISource, SharingDialogSource, TierLimitHitEvent,
-    WarpDriveSource,
 };
 use crate::session_management::{SessionNavigationData, SessionSource};
 use crate::settings::{
@@ -601,7 +599,6 @@ pub(crate) const TOGGLE_NOTIFICATION_MAILBOX_BINDING_NAME: &str =
 
 // these won't have to be public after we deprecate the code mode v1 project explorer which is defined in terminal
 pub(crate) const TOGGLE_PROJECT_EXPLORER_BINDING_NAME: &str = "workspace:toggle_project_explorer";
-pub(crate) const TOGGLE_WARP_DRIVE_BINDING_NAME: &str = "workspace:toggle_warp_drive";
 pub(crate) const TOGGLE_RIGHT_PANEL_BINDING_NAME: &str = "workspace:toggle_right_panel";
 pub(crate) const TOGGLE_VERTICAL_TABS_PANEL_BINDING_NAME: &str =
     "workspace:toggle_vertical_tabs_panel";
@@ -618,7 +615,6 @@ pub(crate) const TOGGLE_TAB_CONFIGS_MENU_BINDING_NAME: &str = "workspace:toggle_
 pub(crate) const LEFT_PANEL_PROJECT_EXPLORER_BINDING_NAME: &str =
     "workspace:left_panel_project_explorer";
 pub(crate) const LEFT_PANEL_GLOBAL_SEARCH_BINDING_NAME: &str = "workspace:left_panel_global_search";
-pub(crate) const LEFT_PANEL_WARP_DRIVE_BINDING_NAME: &str = "workspace:left_panel_warp_drive";
 pub(crate) const LEFT_PANEL_AGENT_CONVERSATIONS_BINDING_NAME: &str =
     "workspace:left_panel_agent_conversations";
 
@@ -914,12 +910,12 @@ pub struct Workspace {
     // Same applies to "show_new_session_dropdown_menu"
     new_session_dropdown_menu: ViewHandle<Menu<WorkspaceAction>>,
     show_new_session_dropdown_menu: Option<Vector2F>,
-    changelog_model: ModelHandle<ChangelogModel>,
+    changelog_model: Option<ModelHandle<ChangelogModel>>,
     palette: ViewHandle<CommandPalette>,
     ctrl_tab_palette: ViewHandle<CommandPalette>,
     mouse_states: WorkspaceMouseStates,
     settings_pane: ViewHandle<SettingsView>,
-    import_modal: ViewHandle<ImportModal>,
+    import_modal: Option<ViewHandle<ImportModal>>,
     theme_chooser_view: ViewHandle<ThemeChooser>,
     previous_theme: Option<ThemeKind>,
     reward_modal: ViewHandle<Modal<RewardView>>,
@@ -951,12 +947,12 @@ pub struct Workspace {
     reauth_banner_dismissed: bool,
     settings_file_error: Option<crate::settings::SettingsFileError>,
     settings_error_banner_dismissed: bool,
-    ai_assistant_panel: ViewHandle<AIAssistantPanelView>,
+    ai_assistant_panel: Option<ViewHandle<AIAssistantPanelView>>,
     should_show_ai_assistant_warm_welcome: bool,
     ai_assistant_close_warm_welcome_mouse_state_handle: MouseStateHandle,
-    auth_override_warning_modal: ViewHandle<AuthOverrideWarningModal>,
-    require_login_modal: ViewHandle<AuthView>,
-    workflow_modal: ViewHandle<WorkflowModal>,
+    auth_override_warning_modal: Option<ViewHandle<AuthOverrideWarningModal>>,
+    require_login_modal: Option<ViewHandle<AuthView>>,
+    workflow_modal: Option<ViewHandle<WorkflowModal>>,
     prompt_editor_modal: ViewHandle<PromptEditorModal>,
     agent_toolbar_editor_modal: ViewHandle<AgentToolbarEditorModal>,
     header_toolbar_editor_modal: ViewHandle<HeaderToolbarEditorModal>,
@@ -965,14 +961,14 @@ pub struct Workspace {
     theme_creator_modal: ViewHandle<ThemeCreatorModal>,
     theme_deletion_modal: ViewHandle<ThemeDeletionModal>,
     suggested_agent_mode_workflow_modal: ViewHandle<SuggestedAgentModeWorkflowModal>,
-    suggested_rule_modal: ViewHandle<SuggestedRuleModal>,
-    oz_launch_modal: ModalWithTab<LaunchModal<OzLaunchSlide>>,
-    openwarp_launch_modal: ViewHandle<OpenWarpLaunchModal>,
+    suggested_rule_modal: Option<ViewHandle<SuggestedRuleModal>>,
+    oz_launch_modal: Option<ModalWithTab<LaunchModal<OzLaunchSlide>>>,
+    openwarp_launch_modal: Option<ViewHandle<OpenWarpLaunchModal>>,
     enable_auto_reload_modal: ViewHandle<EnableAutoReloadModal>,
-    build_plan_migration_modal: ViewHandle<BuildPlanMigrationModal>,
+    build_plan_migration_modal: Option<ViewHandle<BuildPlanMigrationModal>>,
     codex_modal: ViewHandle<CodexModal>,
-    cloud_agent_capacity_modal: ViewHandle<CloudAgentCapacityModal>,
-    free_tier_limit_hit_modal: ViewHandle<FreeTierLimitHitModal>,
+    cloud_agent_capacity_modal: Option<ViewHandle<CloudAgentCapacityModal>>,
+    free_tier_limit_hit_modal: Option<ViewHandle<FreeTierLimitHitModal>>,
     free_tier_limit_check_triggered: bool,
     toast_stack: ViewHandle<DismissibleToastStack<WorkspaceAction>>,
     agent_toast_stack: ViewHandle<AgentToastStack>,
@@ -985,7 +981,7 @@ pub struct Workspace {
     tab_bar_pinned_by_popup: bool,
     user_menu: ViewHandle<Menu<WorkspaceAction>>,
     native_modal: ViewHandle<NativeModal>,
-    shared_objects_creation_denied_modal: ViewHandle<SharedObjectsCreationDeniedModal>,
+    shared_objects_creation_denied_modal: Option<ViewHandle<SharedObjectsCreationDeniedModal>>,
     shown_staging_banner_count: u32,
 
     // When user's open WEB for the first time, we ask them to select a preference of
@@ -1004,7 +1000,7 @@ pub struct Workspace {
     transcript_details_panel: ViewHandle<ConversationDetailsPanel>,
 
     file_upload_sessions: FileUploadSessions,
-    ai_fact_view: ViewHandle<AIFactView>,
+    ai_fact_view: Option<ViewHandle<AIFactView>>,
     left_panel_open: bool,
     vertical_tabs_panel_open: bool,
     vertical_tabs_panel: VerticalTabsPanelState,
@@ -1012,7 +1008,7 @@ pub struct Workspace {
     left_panel_views: Vec<ToolPanelView>,
     right_panel_view: ViewHandle<RightPanelView>,
     working_directories_model: ModelHandle<pane_group::WorkingDirectoriesModel>,
-    agent_management_view: ViewHandle<AgentManagementView>,
+    agent_management_view: Option<ViewHandle<AgentManagementView>>,
     notification_mailbox_view: Option<ViewHandle<NotificationMailboxView>>,
     notification_toast_stack: Option<ViewHandle<AgentNotificationToastStack>>,
     lightbox_view: Option<ViewHandle<LightboxView>>,
@@ -1506,7 +1502,7 @@ impl Workspace {
     fn build_resource_center_view(
         ctx: &mut ViewContext<Self>,
         tips_completed: ModelHandle<TipsCompleted>,
-        changelog_model_handle: ModelHandle<ChangelogModel>,
+        changelog_model_handle: Option<ModelHandle<ChangelogModel>>,
     ) -> ViewHandle<ResourceCenterView> {
         let resource_center_view = ctx.add_typed_action_view(|ctx| {
             ResourceCenterView::new(ctx, tips_completed.clone(), changelog_model_handle)
@@ -2353,6 +2349,10 @@ impl Workspace {
 
     /// Subscribe to the [`ServerApiProvider`] model to report status changes.
     fn observe_server_api(ctx: &mut ViewContext<Self>) {
+        if !ChannelState::is_warp_server_available() {
+            return;
+        }
+
         let server_api_events = ServerApiProvider::handle(ctx);
         ctx.subscribe_to_model(&server_api_events, |me, _, event, ctx| {
             if let ServerApiEvent::StagingAccessBlocked = event {
@@ -2522,9 +2522,22 @@ impl Workspace {
             settings_file_error,
         } = global_resource_handles.clone();
 
-        let server_api_provider = ServerApiProvider::as_ref(ctx);
-        let server_api = server_api_provider.get();
-        let ai_client = server_api_provider.get_ai_client();
+        let (server_api, ai_client) = if ChannelState::is_warp_server_available() {
+            let server_api_provider = ServerApiProvider::as_ref(ctx);
+            (
+                server_api_provider.get(),
+                server_api_provider.get_ai_client(),
+            )
+        } else {
+            let auth_state = AuthStateProvider::as_ref(ctx).get().clone();
+            let server_api_provider =
+                ctx.add_model(|ctx| ServerApiProvider::new(auth_state.clone(), None, ctx));
+            let server_api_provider = server_api_provider.as_ref(ctx);
+            (
+                server_api_provider.get(),
+                server_api_provider.get_ai_client(),
+            )
+        };
 
         // Inserting a (window, ModalSizes) pair to the ResizableData singleton. A restored window
         // reads the sizes from the window snapshot. A new window initializes with all default sizes.
@@ -2568,8 +2581,10 @@ impl Workspace {
             me.handle_palette_event(event, ctx);
         });
 
-        let auth_manager = AuthManager::handle(ctx);
-        ctx.subscribe_to_model(&auth_manager, Self::handle_auth_manager_event);
+        if ChannelState::is_warp_server_available() {
+            let auth_manager = AuthManager::handle(ctx);
+            ctx.subscribe_to_model(&auth_manager, Self::handle_auth_manager_event);
+        }
 
         // Handle theme updates when there is a cloud update to themes while the picker is open.
         ctx.subscribe_to_model(&ThemeSettings::handle(ctx), |me, _, _, ctx| {
@@ -2584,11 +2599,13 @@ impl Workspace {
             me.handle_referral_theme_status_event(event, ctx);
         });
 
-        let referrals_client = ServerApiProvider::as_ref(ctx).get_referrals_client();
-        // On startup, check if the user has earned a referral theme by referring other users
-        referral_theme_status.update(ctx, |model, ctx| {
-            model.query_referral_status(referrals_client, ctx);
-        });
+        if ChannelState::is_warp_server_available() {
+            let referrals_client = ServerApiProvider::as_ref(ctx).get_referrals_client();
+            // On startup, check if the user has earned a referral theme by referring other users
+            referral_theme_status.update(ctx, |model, ctx| {
+                model.query_referral_status(referrals_client, ctx);
+            });
+        }
 
         let bindings_notifier = KeybindingChangedNotifier::handle(ctx);
         ctx.subscribe_to_model(&bindings_notifier, |me, _, event, ctx| {
@@ -2600,14 +2617,7 @@ impl Workspace {
             me.handle_window_state_change(event, ctx);
         });
 
-        ctx.observe(&RelaunchModel::handle(ctx), |_, _, ctx| {
-            ctx.notify();
-        });
-
-        let changelog_model = ChangelogModel::handle(ctx);
-        ctx.subscribe_to_model(&changelog_model, |me, _, event, ctx| {
-            me.handle_changelog_event(event, ctx);
-        });
+        let changelog_model = None;
 
         let reward_modal = Self::build_reward_modal(ctx);
         let (welcome_tips_view, welcome_tips_view_state) =
@@ -2623,32 +2633,10 @@ impl Workspace {
             me.handle_enable_auto_reload_modal_event(event, ctx);
         });
 
-        let build_plan_migration_modal = ctx.add_typed_action_view(BuildPlanMigrationModal::new);
-        ctx.subscribe_to_view(&build_plan_migration_modal, |me, _, event, ctx| {
-            me.handle_build_plan_migration_modal_event(event, ctx);
-        });
-
         let codex_modal = ctx.add_typed_action_view(CodexModal::new);
         ctx.subscribe_to_view(&codex_modal, |me, _, event, ctx| {
             me.handle_codex_modal_event(event, ctx);
         });
-
-        let cloud_agent_capacity_modal =
-            ctx.add_typed_action_view(|_| CloudAgentCapacityModal::new());
-        ctx.subscribe_to_view(&cloud_agent_capacity_modal, |me, _, event, ctx| {
-            me.handle_cloud_agent_capacity_modal_event(event, ctx);
-        });
-
-        let free_tier_limit_hit_modal = ctx.add_typed_action_view(FreeTierLimitHitModal::new);
-        ctx.subscribe_to_view(&free_tier_limit_hit_modal, |me, _, event, ctx| {
-            me.handle_free_tier_limit_modal_event(event, ctx);
-        });
-
-        let require_login_modal = Self::build_require_login_modal(ctx);
-
-        let auth_override_warning_modal = Self::build_auth_override_warning_modal(ctx);
-
-        let workflow_modal = Self::build_workflow_modal(ai_client.clone(), ctx);
 
         let theme_creator_modal = Self::build_theme_creator_modal(ctx);
 
@@ -2656,18 +2644,6 @@ impl Workspace {
 
         let suggested_agent_mode_workflow_modal =
             Self::build_suggested_agent_mode_workflow_modal(ctx);
-
-        let suggested_rule_modal = Self::build_suggested_rule_modal(ctx);
-
-        let oz_launch_view = ctx.add_typed_action_view(LaunchModal::<OzLaunchSlide>::new);
-        ctx.subscribe_to_view(&oz_launch_view, |me, _, event, ctx| {
-            me.handle_oz_launch_modal_event(event, ctx);
-        });
-
-        let openwarp_launch_view = ctx.add_typed_action_view(OpenWarpLaunchModal::new);
-        ctx.subscribe_to_view(&openwarp_launch_view, |me, _, event, ctx| {
-            me.handle_openwarp_launch_modal_event(event, ctx);
-        });
 
         let launch_config_save_modal = Self::build_launch_config_save_modal(ctx);
 
@@ -2686,15 +2662,6 @@ impl Workspace {
             ctx.add_typed_action_view(|ctx| CommandSearchView::new(ai_client.clone(), ctx));
         ctx.subscribe_to_view(&command_search_view, |me, _, event, ctx| {
             me.handle_command_search_event(event, ctx);
-        });
-
-        let ai_fact_view = ctx.add_typed_action_view(AIFactView::new);
-        ctx.subscribe_to_view(&ai_fact_view, move |me, _, event, ctx| {
-            me.handle_ai_fact_view_event(event, ctx);
-        });
-
-        AIFactManager::handle(ctx).update(ctx, |manager, _| {
-            manager.register_view(window_id, ai_fact_view.clone());
         });
 
         let working_directories_model =
@@ -2719,20 +2686,6 @@ impl Workspace {
         });
         ctx.subscribe_to_view(&right_panel_view, |me, _, event, ctx| {
             me.handle_right_panel_event(event.clone(), ctx);
-        });
-
-        // Get persisted filters from window snapshot if restoring.
-        let agent_management_filters = match workspace_setting {
-            NewWorkspaceSource::Restored {
-                ref window_snapshot,
-                ..
-            } => window_snapshot.agent_management_filters.clone(),
-            _ => None,
-        };
-        let agent_management_view = ctx
-            .add_typed_action_view(|ctx| AgentManagementView::new(agent_management_filters, ctx));
-        ctx.subscribe_to_view(&agent_management_view, |me, _, event, ctx| {
-            me.handle_agent_management_view_event(event, ctx);
         });
 
         let notification_mailbox_view = if FeatureFlag::HOANotifications.is_enabled() {
@@ -2777,17 +2730,9 @@ impl Workspace {
             None
         };
 
-        let ai_assistant_panel =
-            Self::build_ai_assistant_panel_view(ctx, server_api.clone(), ai_client.clone());
+        let ai_assistant_panel = None;
 
         ctx.observe(&tips_completed, Workspace::on_tips_model_changed);
-
-        let autoupdate_handle = AutoupdateState::handle(ctx);
-        ctx.subscribe_to_model(&autoupdate_handle, |_view, _handle, evt, ctx| {
-            if let AutoupdateStateEvent::UpdateAvailable = evt {
-                ctx.notify();
-            }
-        });
 
         ctx.subscribe_to_model(
             &BlocklistAIHistoryModel::handle(ctx),
@@ -2796,11 +2741,6 @@ impl Workspace {
         ctx.subscribe_to_model(&CLIAgentSessionsModel::handle(ctx), |me, _, event, ctx| {
             me.handle_cli_agent_sessions_event(event, ctx);
         });
-
-        ctx.subscribe_to_model(
-            &AgentNotificationsModel::handle(ctx),
-            Self::handle_agent_management_event,
-        );
 
         ctx.subscribe_to_model(
             &SessionSettings::handle(ctx),
@@ -2865,13 +2805,6 @@ impl Workspace {
             }
         });
 
-        ctx.subscribe_to_model(&WarpDriveSettings::handle(ctx), |me, _, event, ctx| {
-            if let WarpDriveSettingsChangedEvent::EnableWarpDrive { .. } = event {
-                me.update_left_panel_available_views(ctx);
-                ctx.notify();
-            }
-        });
-
         let toast_stack =
             ctx.add_typed_action_view(|_| DismissibleToastStack::new(Duration::from_secs(4)));
 
@@ -2912,11 +2845,6 @@ impl Workspace {
             },
         );
 
-        let update_manager = UpdateManager::handle(ctx);
-        ctx.subscribe_to_model(&update_manager, |me, _handle, event, ctx| {
-            me.handle_update_manager_event(event, ctx);
-        });
-
         let cached_keybindings = KEYBINDINGS_TO_CACHE
             .iter()
             .map(|name| {
@@ -2930,15 +2858,13 @@ impl Workspace {
         let prompt_editor_modal = Self::build_prompt_editor_modal(ctx);
         let agent_toolbar_editor_modal = Self::build_agent_toolbar_editor_modal(ctx);
 
-        let import_modal = Self::build_import_modal(ctx);
+        let import_modal = None;
 
         Self::observe_server_api(ctx);
 
         Self::subscribe_to_workspace_toast_stack(toast_stack.clone(), ctx);
         Self::subscribe_to_tab_config_errors(toast_stack.clone(), ctx);
         Self::subscribe_to_settings_errors(ctx);
-        Self::subscribe_to_shared_session_manager(ctx);
-
         let user_menu = ctx.add_typed_action_view(|_| {
             Menu::new()
                 .with_drop_shadow()
@@ -2952,25 +2878,6 @@ impl Workspace {
         });
 
         let native_modal = Self::build_native_modal_view(ctx);
-
-        let shared_objects_creation_denied_modal =
-            ctx.add_typed_action_view(|ctx| SharedObjectsCreationDeniedModal::new(None, ctx));
-        ctx.subscribe_to_view(
-            &shared_objects_creation_denied_modal,
-            |me, _, event, ctx| match event {
-                SharedObjectsCreationDeniedModalEvent::Close => {
-                    me.current_workspace_state
-                        .is_shared_objects_creation_denied_modal_open = false;
-                    ctx.notify();
-                }
-                SharedObjectsCreationDeniedModalEvent::TeamSettings => {
-                    me.show_settings_with_section(Some(SettingsSection::Teams), ctx);
-                    me.current_workspace_state
-                        .is_shared_objects_creation_denied_modal_open = false;
-                    ctx.notify();
-                }
-            },
-        );
 
         ctx.subscribe_to_model(&AISettings::handle(ctx), |me, _, event, ctx| match event {
             AISettingsChangedEvent::IsAnyAIEnabled { .. }
@@ -2991,40 +2898,6 @@ impl Workspace {
             }
             _ => (),
         });
-
-        ctx.subscribe_to_model(&OneTimeModalModel::handle(ctx), |me, model, event, ctx| {
-            let OneTimeModalEvent::VisibilityChanged { is_open } = event;
-            if *is_open {
-                // Only trigger modal actions if this is the target window.
-                // The model has already determined which window should show the modal.
-                let model_ref = model.as_ref(ctx);
-                if model_ref.target_window_id() == Some(ctx.window_id()) {
-                    if model_ref.is_oz_launch_modal_open() {
-                        me.open_tab_and_focus_oz_launch_modal(ctx);
-                    } else if model_ref.is_openwarp_launch_modal_open() {
-                        me.focus_openwarp_launch_modal(ctx);
-                    } else if model_ref.is_hoa_onboarding_open() {
-                        me.show_hoa_onboarding_flow(ctx);
-                    } else if model_ref.is_build_plan_migration_modal_open() {
-                        me.focus_build_plan_migration_modal(ctx);
-                    }
-                }
-            }
-            ctx.notify();
-        });
-
-        ctx.subscribe_to_model(
-            &crate::workspace::bonus_grant_notification_model::BonusGrantNotificationModel::handle(
-                ctx,
-            ),
-            |me, _, event, ctx| {
-                let BonusGrantNotificationEvent::ShowNotification { message, .. } = event;
-                me.toast_stack.update(ctx, |toast_stack, ctx| {
-                    toast_stack
-                        .add_persistent_toast(DismissibleToast::success(message.clone()), ctx);
-                });
-            },
-        );
 
         let mut ws = Self {
             tabs: Vec::new(),
@@ -3082,12 +2955,12 @@ impl Workspace {
             ai_assistant_panel,
             should_show_ai_assistant_warm_welcome,
             ai_assistant_close_warm_welcome_mouse_state_handle: Default::default(),
-            auth_override_warning_modal,
+            auth_override_warning_modal: None,
             suggested_agent_mode_workflow_modal,
-            suggested_rule_modal,
-            build_plan_migration_modal,
-            require_login_modal,
-            workflow_modal,
+            suggested_rule_modal: None,
+            build_plan_migration_modal: None,
+            require_login_modal: None,
+            workflow_modal: None,
             theme_creator_modal,
             theme_deletion_modal,
             import_modal,
@@ -3105,9 +2978,9 @@ impl Workspace {
             tab_bar_pinned_by_popup: false,
             user_menu,
             native_modal,
-            shared_objects_creation_denied_modal,
+            shared_objects_creation_denied_modal: None,
             file_upload_sessions: Default::default(),
-            ai_fact_view,
+            ai_fact_view: None,
             left_panel_open: false,
             vertical_tabs_panel_open: false,
             vertical_tabs_panel: Default::default(),
@@ -3130,18 +3003,15 @@ impl Workspace {
             #[cfg(target_family = "wasm")]
             transcript_details_panel,
             tab_fixed_width: None,
-            oz_launch_modal: ModalWithTab {
-                view: oz_launch_view,
-                tab_pane_group_id: None,
-            },
-            openwarp_launch_modal: openwarp_launch_view,
+            oz_launch_modal: None,
+            openwarp_launch_modal: None,
             enable_auto_reload_modal,
-            agent_management_view,
+            agent_management_view: None,
             notification_mailbox_view,
             notification_toast_stack,
             codex_modal,
-            cloud_agent_capacity_modal,
-            free_tier_limit_hit_modal,
+            cloud_agent_capacity_modal: None,
+            free_tier_limit_hit_modal: None,
             free_tier_limit_check_triggered: false,
             lightbox_view: None,
             hoa_onboarding_flow: None,
@@ -3184,7 +3054,9 @@ impl Workspace {
 
     #[cfg(any(test, feature = "integration_tests"))]
     pub fn ai_fact_view(&self) -> ViewHandle<AIFactView> {
-        self.ai_fact_view.clone()
+        self.ai_fact_view
+            .clone()
+            .expect("AI fact view is not registered in local-only Warper")
     }
 
     fn handle_task_status_reset(&mut self, pane_group_id: EntityId, ctx: &mut ViewContext<Self>) {
@@ -3769,8 +3641,9 @@ impl Workspace {
                 LeftPanelDisplayedTab::GlobalSearch => ToolPanelView::GlobalSearch {
                     entry_focus: GlobalSearchEntryFocus::Results,
                 },
-                LeftPanelDisplayedTab::WarpDrive => ToolPanelView::WarpDrive,
-                LeftPanelDisplayedTab::ConversationListView => ToolPanelView::ConversationListView,
+                LeftPanelDisplayedTab::WarpDrive | LeftPanelDisplayedTab::ConversationListView => {
+                    ToolPanelView::ProjectExplorer
+                }
             };
             lp.restore_active_view_from_snapshot(active_view, ctx);
             lp.set_active_pane_group(pane_group.clone(), &self.working_directories_model, ctx);
@@ -3813,8 +3686,7 @@ impl Workspace {
         ctx: &mut ViewContext<Self>,
     ) {
         let show_warp_home = !ContextFlag::CreateNewSession.is_enabled();
-        let mut placeholder_pane = None;
-        let open_warp_drive = if !show_warp_home {
+        if !show_warp_home {
             if self.should_trigger_get_started_onboarding(ctx) {
                 self.trigger_get_started_onboarding(ctx);
             } else if FeatureFlag::WelcomeTab.is_enabled() {
@@ -3830,66 +3702,10 @@ impl Workspace {
                 );
                 self.check_and_trigger_onboarding(ctx);
             }
-            false
         } else {
             let home_pane = super::home::create_home_pane(ctx);
-            placeholder_pane = Some(home_pane.as_pane().id());
             self.add_tab_from_existing_pane(home_pane, 0, ctx);
-
-            // If we can't start a terminal session to run the onboarding flow, show the Warp Home
-            // placeholder along with Warp Drive.
-            true
         };
-        let initial_tab = self.active_tab_pane_group().clone();
-
-        if open_warp_drive {
-            // We open Warp Drive automatically in two cases:
-            // * The user is new to Warp, and went through the overall onboarding flow
-            // * The user is on the web, so we can't open a terminal session.
-            let initial_load_complete = UpdateManager::as_ref(ctx).initial_load_complete();
-            ctx.spawn(initial_load_complete, move |me, _, ctx| {
-                // New Warp users can have non-welcome objects if they were directly invited OR if
-                // linked objects were copied over from an anonymous user.
-                if CloudModel::as_ref(ctx).has_non_welcome_objects() {
-                    me.open_or_toggle_warp_drive(false, false, ctx);
-
-                    // After opening Warp Drive, if we rendered the Warp Home placeholder panel, replace it with one of
-                    // the user's own objects.
-                    if show_warp_home {
-                        let cloud_model = CloudModel::as_ref(ctx);
-                        let candidate_objects = cloud_model
-                            .cloud_objects()
-                            .filter(|object| {
-                                !object.is_trashed(cloud_model)
-                                    && object.renders_in_warp_drive()
-                                    && !object.metadata().is_welcome_object
-                            })
-                            .map(|object| object.cloud_object_type_and_id())
-                            .collect_vec();
-                        // Collect into a temporary Vec so that we can create a pane for the first
-                        // supported object.
-                        let target_object_pane = candidate_objects
-                            .into_iter()
-                            .find_map(|object_id| me.create_cloud_object_pane(object_id, ctx));
-
-                        if let Some((target_object_pane, placeholder_pane)) =
-                            target_object_pane.zip(placeholder_pane)
-                        {
-                            initial_tab.update(ctx, |pane_group, ctx| {
-                                pane_group.add_pane_sibling(
-                                    placeholder_pane,
-                                    Direction::Left,
-                                    target_object_pane,
-                                    true,
-                                    ctx,
-                                );
-                                pane_group.close_pane(placeholder_pane, ctx);
-                            });
-                        }
-                    }
-                }
-            });
-        }
     }
 
     pub fn add_tab_for_joining_shared_session(
@@ -3897,6 +3713,11 @@ impl Workspace {
         session_id: SharedSessionId,
         ctx: &mut ViewContext<Self>,
     ) {
+        if !ChannelState::is_warp_server_available() {
+            log::info!("Ignoring shared-session join without Warp server config");
+            return;
+        }
+
         let new_pane_group = ctx.add_typed_action_view(|ctx| {
             PaneGroup::new_for_shared_session_viewer(
                 session_id,
@@ -3925,6 +3746,11 @@ impl Workspace {
         server_token: ServerConversationToken,
         ctx: &mut ViewContext<Self>,
     ) {
+        if !ChannelState::is_warp_server_available() {
+            log::info!("Ignoring cloud conversation intent without Warp server config");
+            return;
+        }
+
         let history = BlocklistAIHistoryModel::as_ref(ctx);
         let Some(conversation_id) = history.find_conversation_id_by_server_token(&server_token)
         else {
@@ -3992,6 +3818,11 @@ impl Workspace {
         conversation_id: ServerConversationToken,
         ctx: &mut ViewContext<Self>,
     ) {
+        if !ChannelState::is_warp_server_available() {
+            log::info!("Ignoring cloud conversation transcript without Warp server config");
+            return;
+        }
+
         // Create the tab immediately with a loading state
         let new_pane_group = ctx.add_typed_action_view(|ctx| {
             PaneGroup::new_for_conversation_transcript_viewer_loading(
@@ -4262,7 +4093,10 @@ impl Workspace {
         request_type: ChangelogRequestType,
         ctx: &mut ViewContext<Self>,
     ) {
-        self.changelog_model.update(ctx, |changelog_model, ctx| {
+        let Some(changelog_model_handle) = &self.changelog_model else {
+            return;
+        };
+        changelog_model_handle.update(ctx, |changelog_model, ctx| {
             changelog_model.check_for_changelog(request_type, ctx);
             ctx.notify();
         });
@@ -4342,6 +4176,12 @@ impl Workspace {
     }
 
     fn toggle_ai_assistant_panel(&mut self, ctx: &mut ViewContext<Self>) {
+        let Some(ai_assistant_panel) = self.ai_assistant_panel.clone() else {
+            self.current_workspace_state.is_ai_assistant_panel_open = false;
+            ctx.notify();
+            return;
+        };
+
         // Now that the user has interacted with the panel, we can close
         // the dialogue and mark it as dismissed.
         if self.should_show_ai_assistant_warm_welcome {
@@ -4362,10 +4202,10 @@ impl Workspace {
         // focusing the Warp AI panel _behind_ the floating modal. Instead, we opt for the normal
         // toggle behavior which will close the current modal view and then toggle Warp AI.
         if self.current_workspace_state.is_ai_assistant_panel_open
-            && !self.ai_assistant_panel.is_self_or_child_focused(ctx)
+            && !ai_assistant_panel.is_self_or_child_focused(ctx)
             && !self.current_workspace_state.is_any_modal_open(ctx)
         {
-            ctx.focus(&self.ai_assistant_panel);
+            ctx.focus(&ai_assistant_panel);
             return;
         }
 
@@ -4379,7 +4219,7 @@ impl Workspace {
         if self.current_workspace_state.is_ai_assistant_panel_open {
             // Close the resource center panel if we open the AI Assistant panel.
             self.current_workspace_state.is_resource_center_open = false;
-            ctx.focus(&self.ai_assistant_panel);
+            ctx.focus(&ai_assistant_panel);
         } else {
             self.focus_active_tab(ctx);
         }
@@ -4392,22 +4232,15 @@ impl Workspace {
         should_scroll: bool,
         ctx: &mut ViewContext<Self>,
     ) {
-        ctx.focus(&self.left_panel_view);
-
-        self.update_warp_drive_view(ctx, |drive_panel, ctx| {
-            drive_panel.reset_focused_index_in_warp_drive(should_scroll, ctx);
-        });
+        let _ = (should_scroll, ctx);
     }
 
     pub fn has_warp_drive_initialized_sections(
         &self,
         app: &AppContext,
     ) -> impl Future<Output = ()> {
-        self.left_panel_view
-            .as_ref(app)
-            .warp_drive_view()
-            .as_ref(app)
-            .has_warp_drive_initialized_sections(app)
+        let _ = app;
+        std::future::ready(())
     }
 
     /// Check if Warp Drive view is focused within.
@@ -4430,7 +4263,10 @@ impl Workspace {
             return FocusRegion::RightPanel;
         }
 
-        if self.ai_assistant_panel.is_self_or_child_focused(app)
+        if self
+            .ai_assistant_panel
+            .as_ref()
+            .is_some_and(|view| view.is_self_or_child_focused(app))
             || self.resource_center_view.is_self_or_child_focused(app)
         {
             return FocusRegion::RightPanel;
@@ -4483,7 +4319,9 @@ impl Workspace {
             return;
         }
         if self.current_workspace_state.is_ai_assistant_panel_open {
-            ctx.focus(&self.ai_assistant_panel);
+            if let Some(ai_assistant_panel) = &self.ai_assistant_panel {
+                ctx.focus(ai_assistant_panel);
+            }
         } else if self.current_workspace_state.is_resource_center_open {
             ctx.focus(&self.resource_center_view);
         }
@@ -4622,13 +4460,18 @@ impl Workspace {
             } else if self.is_theme_chooser_open() {
                 ctx.focus(&self.theme_chooser_view);
             } else if self.current_workspace_state.is_ai_assistant_panel_open {
-                ctx.focus(&self.ai_assistant_panel);
+                if let Some(ai_assistant_panel) = &self.ai_assistant_panel {
+                    ctx.focus(ai_assistant_panel);
+                }
             } else if self.current_workspace_state.is_resource_center_open {
                 ctx.focus(&self.resource_center_view);
             }
         }
         // Starts from a right panel: AI panel, resource center (keyboard shortcuts page only)
-        else if self.ai_assistant_panel.is_self_or_child_focused(ctx)
+        else if self
+            .ai_assistant_panel
+            .as_ref()
+            .is_some_and(|view| view.is_self_or_child_focused(ctx))
             || self.resource_center_view.is_self_or_child_focused(ctx)
         {
             self.focus_active_tab(ctx);
@@ -4638,7 +4481,9 @@ impl Workspace {
             if self.current_workspace_state.is_right_panel_open() {
                 self.set_selected_object(None, ctx);
                 if self.current_workspace_state.is_ai_assistant_panel_open {
-                    ctx.focus(&self.ai_assistant_panel);
+                    if let Some(ai_assistant_panel) = &self.ai_assistant_panel {
+                        ctx.focus(ai_assistant_panel);
+                    }
                 } else if self.current_workspace_state.is_resource_center_open {
                     ctx.focus(&self.resource_center_view);
                 }
@@ -4650,7 +4495,9 @@ impl Workspace {
         else if self.theme_chooser_view.is_self_or_child_focused(ctx) {
             if self.current_workspace_state.is_right_panel_open() {
                 if self.current_workspace_state.is_ai_assistant_panel_open {
-                    ctx.focus(&self.ai_assistant_panel);
+                    if let Some(ai_assistant_panel) = &self.ai_assistant_panel {
+                        ctx.focus(ai_assistant_panel);
+                    }
                 } else if self.current_workspace_state.is_resource_center_open {
                     ctx.focus(&self.resource_center_view);
                 }
@@ -4669,7 +4516,9 @@ impl Workspace {
         // Starts from terminal
         if self.active_tab_pane_group().is_self_or_child_focused(ctx) {
             if self.current_workspace_state.is_ai_assistant_panel_open {
-                ctx.focus(&self.ai_assistant_panel);
+                if let Some(ai_assistant_panel) = &self.ai_assistant_panel {
+                    ctx.focus(ai_assistant_panel);
+                }
             } else if self.current_workspace_state.is_resource_center_open {
                 ctx.focus(&self.resource_center_view);
             } else if self.current_workspace_state.is_warp_drive_open {
@@ -4685,7 +4534,10 @@ impl Workspace {
             self.focus_active_tab(ctx);
         }
         // Starts from a right panel: AI panel, resource center (keyboard shortcuts page only)
-        else if self.ai_assistant_panel.is_self_or_child_focused(ctx)
+        else if self
+            .ai_assistant_panel
+            .as_ref()
+            .is_some_and(|view| view.is_self_or_child_focused(ctx))
             || self.resource_center_view.is_self_or_child_focused(ctx)
         {
             if self.current_workspace_state.is_left_panel_open() {
@@ -5777,9 +5629,6 @@ impl Workspace {
                 let pane_group = self.active_tab_pane_group().clone();
                 self.handle_file_tree_event(pane_group, pane_group_event, ctx);
             }
-            LeftPanelEvent::WarpDrive(drive_event) => {
-                self.handle_warp_drive_event(drive_event, ctx);
-            }
             LeftPanelEvent::OpenFileWithTarget {
                 path,
                 target,
@@ -6068,7 +5917,8 @@ impl Workspace {
         }
 
         // 3. Cloud Oz (if flags enabled)
-        if is_any_ai_enabled
+        if ChannelState::is_warp_server_available()
+            && is_any_ai_enabled
             && FeatureFlag::AgentView.is_enabled()
             && FeatureFlag::CloudMode.is_enabled()
         {
@@ -6508,38 +6358,7 @@ impl Workspace {
             return;
         }
 
-        let mut menu_items = vec![];
-        if FeatureFlag::Autoupdate.is_enabled() && ChannelState::show_autoupdate_menu_items() {
-            if let Some(version) = ChannelState::app_version() {
-                menu_items.push(
-                    MenuItemFields::new(format!("Current version is {version}"))
-                        .with_disabled(true)
-                        .into_item(),
-                );
-                match autoupdate::get_update_state(ctx) {
-                    AutoupdateStage::UpdateReady { new_version, .. }
-                    | AutoupdateStage::UpdatedPendingRestart { new_version } => menu_items.push(
-                        MenuItemFields::new(format!("Install update ({})", new_version.version))
-                            .with_on_select_action(WorkspaceAction::ApplyUpdate)
-                            .into_item(),
-                    ),
-                    AutoupdateStage::Updating { new_version, .. } => menu_items.push(
-                        MenuItemFields::new(format!("Updating to ({})", new_version.version))
-                            .with_disabled(true)
-                            .into_item(),
-                    ),
-                    AutoupdateStage::UnableToUpdateToNewVersion { .. } => menu_items.push(
-                        MenuItemFields::new("Update Warp manually")
-                            .with_on_select_action(WorkspaceAction::DownloadNewVersion)
-                            .into_item(),
-                    ),
-                    AutoupdateStage::NoUpdateAvailable
-                    | AutoupdateStage::CheckingForUpdate
-                    | AutoupdateStage::DownloadingUpdate
-                    | AutoupdateStage::UnableToLaunchNewVersion { .. } => {}
-                }
-            }
-        }
+        let menu_items = vec![];
 
         ctx.update_view(&self.tab_bar_overflow_menu, |context_menu, view_ctx| {
             context_menu.set_items(menu_items, view_ctx);
@@ -6668,9 +6487,11 @@ impl Workspace {
     fn trigger_get_started_onboarding(&mut self, ctx: &mut ViewContext<Self>) {
         self.add_get_started_tab(ctx);
         // After onboarding is triggered, mark the user as onboarded
-        AuthManager::handle(ctx).update(ctx, |auth_manager, ctx| {
-            auth_manager.set_user_onboarded(ctx);
-        });
+        if ChannelState::is_warp_server_available() {
+            AuthManager::handle(ctx).update(ctx, |auth_manager, ctx| {
+                auth_manager.set_user_onboarded(ctx);
+            });
+        }
     }
 
     /// If the user is new and therefore has not seen the in app onboarding,
@@ -6696,9 +6517,11 @@ impl Workspace {
             }
 
             // After onboarding is triggered, mark the user as onboarded
-            AuthManager::handle(ctx).update(ctx, |auth_manager, ctx| {
-                auth_manager.set_user_onboarded(ctx);
-            });
+            if ChannelState::is_warp_server_available() {
+                AuthManager::handle(ctx).update(ctx, |auth_manager, ctx| {
+                    auth_manager.set_user_onboarded(ctx);
+                });
+            }
 
             return true;
         }
@@ -6767,13 +6590,7 @@ impl Workspace {
         rule_and_id: &SuggestedRuleAndId,
         ctx: &mut ViewContext<Self>,
     ) {
-        self.current_workspace_state.is_suggested_rule_modal_open = true;
-        self.suggested_rule_modal
-            .update(ctx, |suggested_rule_modal, ctx| {
-                suggested_rule_modal.set_rule_and_id(rule_and_id, ctx);
-                ctx.notify();
-            });
-        ctx.notify();
+        let _ = (rule_and_id, ctx);
     }
 
     /// Opens the Warp Drive object identified by `uid` in a new pane
@@ -7411,32 +7228,7 @@ impl Workspace {
         page: Option<AIFactPage>,
         ctx: &mut ViewContext<Self>,
     ) {
-        // Ensure there is only one AI Fact Collection pane per window
-        let manager = AIFactManager::handle(ctx);
-
-        // Navigate to and focus existing pane
-        if let Some(locator) = manager.as_ref(ctx).find_pane(ctx.window_id()) {
-            if let Some(page) = page {
-                self.ai_fact_view.update(ctx, |view, ctx| {
-                    view.update_page(page, ctx);
-                });
-            }
-            self.focus_pane(locator, ctx);
-            return;
-        }
-
-        let pane = AIFactPane::from_view(self.ai_fact_view.clone(), ctx);
-        self.ai_fact_view.update(ctx, |view, ctx| {
-            view.update_page(page.unwrap_or_default(), ctx);
-        });
-        let direction = direction.unwrap_or(Direction::Left);
-        self.active_tab_pane_group().update(ctx, |pane_group, ctx| {
-            pane_group
-                .add_pane_with_direction(direction, pane, true /* focus_new_pane */, ctx);
-        });
-
-        // Focus WD index item
-        self.set_selected_object(Some(WarpDriveItemId::AIFactCollection), ctx);
+        let _ = (direction, page, ctx);
     }
 
     /// Open the Execution Profile Editor pane
@@ -7651,15 +7443,11 @@ impl Workspace {
 
     fn open_import_modal(
         &mut self,
-        owner: Owner,
-        initial_folder_id: &Option<SyncId>,
+        _owner: Owner,
+        _initial_folder_id: &Option<SyncId>,
         ctx: &mut ViewContext<Self>,
     ) {
-        // TODO: This should take either an owner OR a folder.
-        self.current_workspace_state.is_import_modal_open = true;
-        self.import_modal.update(ctx, |import_modal, ctx| {
-            import_modal.open_with_target(owner, *initial_folder_id, ctx);
-        });
+        self.current_workspace_state.is_import_modal_open = false;
         ctx.notify();
     }
 
@@ -7669,49 +7457,7 @@ impl Workspace {
         explicit_user_action: bool,
         ctx: &mut ViewContext<Self>,
     ) {
-        // Closing all left panels will also close warp drive so we need to retrieve
-        // whether warp drive was open first, and toggle based on the initial value.
-        let was_warp_drive_open = self.current_workspace_state.is_warp_drive_open;
-        self.current_workspace_state.close_all_left_panels();
-        self.current_workspace_state.is_warp_drive_open =
-            if toggle { !was_warp_drive_open } else { true };
-
-        // Set selected object to None upon toggle close of Warp Drive
-        if !self.current_workspace_state.is_warp_drive_open {
-            self.set_selected_object(None, ctx);
-            self.focus_active_tab(ctx);
-        }
-
-        // Reset focused index when opening/toggling Warp Drive open
-        if self.current_workspace_state.is_warp_drive_open {
-            self.reset_focused_index_in_warp_drive(true, ctx);
-        }
-
-        ctx.notify();
-
-        // Telemetry and welcome tip logic is only for when the user explicitly opens Warp Drive
-        // AND warp drive wasn't open before. There are other scenarios where we open Warp Drive like:
-        // new user onboarding, user joins a team, etc so we want to avoid counting those.
-        if explicit_user_action
-            && !was_warp_drive_open
-            && self.current_workspace_state.is_warp_drive_open
-        {
-            send_telemetry_from_ctx!(
-                TelemetryEvent::WarpDriveOpened {
-                    source: WarpDriveSource::Legacy,
-                    is_code_mode_v2: false
-                },
-                ctx
-            );
-            self.tips_completed.update(ctx, |tips_completed, ctx| {
-                mark_feature_used_and_write_to_user_defaults(
-                    Tip::Action(TipAction::OpenWarpDrive),
-                    tips_completed,
-                    ctx,
-                );
-                ctx.notify();
-            });
-        }
+        let _ = (toggle, explicit_user_action, ctx);
     }
 
     fn open_resource_center_main_page(&mut self, ctx: &mut ViewContext<Self>) {
@@ -7759,40 +7505,7 @@ impl Workspace {
     /// Once we've done this once, we persist a preference so subsequent restarts
     /// will respect the user's visibility preference (restored from workspace state).
     fn maybe_auto_open_conversation_list(&mut self, ctx: &mut ViewContext<Self>) {
-        if !FeatureFlag::AgentViewConversationListView.is_enabled()
-            || !AISettings::as_ref(ctx).is_any_ai_enabled(ctx)
-        {
-            return;
-        }
-
-        let has_auto_opened = *AISettings::as_ref(ctx).has_auto_opened_conversation_list;
-        if has_auto_opened {
-            return;
-        }
-
-        // Only auto-open on terminal tabs, not on settings or other non-terminal tabs
-        let has_terminal = self
-            .active_tab_pane_group()
-            .as_ref(ctx)
-            .has_terminal_panes();
-        if !has_terminal {
-            return;
-        }
-
-        // For first-time-users, auto-open the conversation list for discoverability
-        if !self.active_tab_pane_group().as_ref(ctx).left_panel_open {
-            self.open_left_panel(ctx);
-        }
-        self.left_panel_view.update(ctx, |lp, ctx| {
-            lp.restore_active_view_from_snapshot(ToolPanelView::ConversationListView, ctx);
-        });
-
-        // Mark that we've done the one-time auto-open
-        AISettings::handle(ctx).update(ctx, |settings, ctx| {
-            report_if_error!(settings
-                .has_auto_opened_conversation_list
-                .set_value(true, ctx));
-        });
+        let _ = ctx;
     }
 
     fn close_left_panel(&mut self, ctx: &mut ViewContext<Self>) {
@@ -7823,13 +7536,19 @@ impl Workspace {
     /// Sets the visibility state of the agent management view
     /// and updates the AgentConversationsModel to reflect the new state.
     fn set_is_agent_management_view_open(&mut self, is_open: bool, ctx: &mut ViewContext<Self>) {
+        if self.agent_management_view.is_none() {
+            self.current_workspace_state.is_agent_management_view_open = false;
+            ctx.notify();
+            return;
+        }
+
         let was_open = self.current_workspace_state.is_agent_management_view_open;
         if was_open == is_open {
             return;
         }
         self.current_workspace_state.is_agent_management_view_open = is_open;
         let window_id = self.window_id;
-        let view_id = self.agent_management_view.id();
+        let view_id = self.agent_management_view.as_ref().expect("checked").id();
         AgentConversationsModel::handle(ctx).update(ctx, |model, ctx| {
             if is_open {
                 model.register_view_open(window_id, view_id, ctx);
@@ -8215,54 +7934,6 @@ impl Workspace {
         if !self.auth_state.is_anonymous_or_logged_out() {
             let name = self.auth_state.username_for_display().unwrap_or_default();
             items.push(MenuItemFields::new(name).with_disabled(true).into_item())
-        }
-
-        let appearance = Appearance::as_ref(app);
-
-        // Render the subtle autoupdate UI if autoupdate is ready and there is no incoming prominent update version.
-        if FeatureFlag::Autoupdate.is_enabled()
-            && FeatureFlag::AutoupdateUIRevamp.is_enabled()
-            && ChannelState::show_autoupdate_menu_items()
-        {
-            match autoupdate::get_update_state(app) {
-                AutoupdateStage::UpdateReady { new_version, .. }
-                | AutoupdateStage::UpdatedPendingRestart { new_version }
-                    if !is_incoming_version_past_current(
-                        new_version.last_prominent_update.as_deref(),
-                    ) =>
-                {
-                    items.push(
-                        MenuItemFields::new("Update and relaunch Warp")
-                            .with_on_select_action(WorkspaceAction::ApplyUpdate)
-                            .with_override_text_color(appearance.theme().ansi_fg_red())
-                            .into_item(),
-                    )
-                }
-                AutoupdateStage::Updating { new_version, .. }
-                    if !is_incoming_version_past_current(
-                        new_version.last_prominent_update.as_deref(),
-                    ) =>
-                {
-                    items.push(
-                        MenuItemFields::new(format!("Updating to ({})", new_version.version))
-                            .with_disabled(true)
-                            .into_item(),
-                    )
-                }
-                AutoupdateStage::UnableToUpdateToNewVersion { new_version }
-                    if !is_incoming_version_past_current(
-                        new_version.last_prominent_update.as_deref(),
-                    ) =>
-                {
-                    items.push(
-                        MenuItemFields::new("Update Warp manually")
-                            .with_on_select_action(WorkspaceAction::DownloadNewVersion)
-                            .with_override_text_color(appearance.theme().ansi_fg_red())
-                            .into_item(),
-                    )
-                }
-                _ => {}
-            }
         }
 
         items.extend([
@@ -9858,10 +9529,10 @@ impl Workspace {
                 .unwrap_or(DEFAULT_RIGHT_PANEL_WIDTH)
         });
 
-        let agent_management_filters = Some(
-            self.agent_management_view
-                .read(app, |view, _| view.get_filters()),
-        );
+        let agent_management_filters = self
+            .agent_management_view
+            .as_ref()
+            .map(|view_handle| view_handle.read(app, |view, _| view.get_filters()));
 
         WindowSnapshot {
             tabs,
@@ -10563,7 +10234,10 @@ impl Workspace {
     }
 
     fn add_ambient_agent_tab(&mut self, ctx: &mut ViewContext<Self>) {
-        if !FeatureFlag::AgentView.is_enabled() || !FeatureFlag::CloudMode.is_enabled() {
+        if !ChannelState::is_warp_server_available()
+            || !FeatureFlag::AgentView.is_enabled()
+            || !FeatureFlag::CloudMode.is_enabled()
+        {
             return;
         }
 
@@ -10810,10 +10484,7 @@ impl Workspace {
 
         // If the previous tab's left panel was open, maintain that state with the new tab
         // (unless we're restoring the tab from a persisted snapshot).
-        if FeatureFlag::AgentViewConversationListView.is_enabled()
-            && !is_restoration
-            && left_panel_was_open
-        {
+        if !is_restoration && left_panel_was_open {
             self.active_tab_pane_group().update(ctx, |pg, ctx| {
                 pg.set_left_panel_open(true, ctx);
             });
@@ -12305,13 +11976,18 @@ impl Workspace {
     }
 
     fn open_require_login_modal(&mut self, variant: AuthViewVariant, ctx: &mut ViewContext<Self>) {
-        self.require_login_modal.update(ctx, |modal, ctx| {
+        let Some(require_login_modal) = self.require_login_modal.clone() else {
+            let _ = (variant, ctx);
+            return;
+        };
+
+        require_login_modal.update(ctx, |modal, ctx| {
             modal.set_variant(ctx, variant);
         });
 
         self.close_all_overlays(ctx);
         self.current_workspace_state.is_require_login_modal_open = true;
-        ctx.focus(&self.require_login_modal);
+        ctx.focus(&require_login_modal);
         ctx.notify();
     }
 
@@ -12320,12 +11996,17 @@ impl Workspace {
         auth_payload: AuthRedirectPayload,
         ctx: &mut ViewContext<Self>,
     ) {
+        let Some(auth_override_warning_modal) = self.auth_override_warning_modal.clone() else {
+            let _ = (auth_payload, ctx);
+            return;
+        };
+
         self.close_all_overlays(ctx);
-        self.auth_override_warning_modal.update(ctx, |modal, _| {
+        auth_override_warning_modal.update(ctx, |modal, _| {
             modal.set_interrupted_auth_payload(auth_payload);
         });
         self.current_workspace_state.is_auth_override_modal_open = true;
-        ctx.focus(&self.auth_override_warning_modal);
+        ctx.focus(&auth_override_warning_modal);
         ctx.notify();
     }
 
@@ -12503,21 +12184,7 @@ impl Workspace {
     /// This function is used when we set a selected object, which is an object open in an active pane.
     /// We do not want to focus Warp Drive, instead we want to focus the editor of the open object.
     fn view_in_warp_drive(&mut self, item_id: WarpDriveItemId, ctx: &mut ViewContext<Self>) {
-        self.open_left_panel(ctx);
-        self.left_panel_view.update(ctx, |left_panel, ctx| {
-            left_panel.handle_action(&LeftPanelAction::WarpDrive, ctx);
-        });
-
-        if let WarpDriveItemId::Object(object_id) = item_id {
-            CloudModel::handle(ctx).update(ctx, |model, ctx| {
-                model.force_expand_object_and_ancestors_cloud_id(object_id, ctx);
-            });
-        }
-        self.update_warp_drive_view(ctx, |warp_drive, ctx| {
-            warp_drive.scroll_item_into_view(item_id, ctx);
-            warp_drive.expand_section_for_drive_item_id(item_id, ctx);
-            warp_drive.initialize_drive_section_states(ctx);
-        });
+        let _ = (item_id, ctx);
     }
 
     /// This function is used when we want to view an item in Warp Drive AND focus Warp Drive.
@@ -12540,11 +12207,7 @@ impl Workspace {
     where
         F: FnOnce(&mut DrivePanel, &mut ViewContext<DrivePanel>),
     {
-        self.left_panel_view.update(ctx, |left_panel, ctx| {
-            left_panel.warp_drive_view().update(ctx, |warp_drive, ctx| {
-                update_fn(warp_drive, ctx);
-            });
-        });
+        let _ = (ctx, update_fn);
     }
 
     /// View an object in Warp Drive and open its sharing settings.
@@ -12684,10 +12347,8 @@ impl Workspace {
         }
     }
 
-    fn manual_check_for_update(&self, ctx: &mut ViewContext<Self>) {
-        AutoupdateState::handle(ctx).update(ctx, |autoupdate_state, ctx| {
-            autoupdate_state.manually_check_for_update(ctx);
-        });
+    fn manual_check_for_update(&self, _ctx: &mut ViewContext<Self>) {
+        log::debug!("Hosted autoupdate manual check is disabled.");
     }
 
     pub fn is_theme_creator_modal_open(&self) -> bool {
@@ -14694,6 +14355,7 @@ impl Workspace {
         if self.auth_state.is_anonymous_or_logged_out()
             && workflow.as_workflow().is_agent_mode_workflow()
             && ChannelState::channel() != Channel::Oss
+            && ChannelState::is_warp_server_available()
         {
             AuthManager::handle(ctx).update(ctx, |auth_manager, ctx| {
                 auth_manager.attempt_login_gated_feature(
@@ -15249,7 +14911,9 @@ impl Workspace {
             } else if self.current_workspace_state.is_resource_center_open {
                 ctx.focus(&self.resource_center_view);
             } else if self.current_workspace_state.is_ai_assistant_panel_open {
-                ctx.focus(&self.ai_assistant_panel);
+                if let Some(ai_assistant_panel) = &self.ai_assistant_panel {
+                    ctx.focus(ai_assistant_panel);
+                }
             } else if self
                 .current_workspace_state
                 .is_close_session_confirmation_dialog_open
@@ -15309,14 +14973,10 @@ impl Workspace {
     }
 
     fn apply_update(&mut self, ctx: &mut ViewContext<Self>) {
-        if let Ok(autoupdate::ReadyForRelaunch::Yes) = autoupdate::apply_update(self, ctx) {
-            autoupdate::initiate_relaunch_for_update(ctx);
-        }
         self.close_tab_bar_overflow_menu(ctx);
     }
 
     fn download_new_version(&mut self, ctx: &mut ViewContext<Self>) {
-        autoupdate::manually_download_new_version(ctx);
         self.close_tab_bar_overflow_menu(ctx);
     }
 
@@ -15810,7 +15470,11 @@ impl Workspace {
                 });
 
                 // Clear the "Introducing Oz" custom tab name so normal tab naming rules apply.
-                if let Some(pane_group_id) = self.oz_launch_modal.tab_pane_group_id.take() {
+                if let Some(pane_group_id) = self
+                    .oz_launch_modal
+                    .as_mut()
+                    .and_then(|modal| modal.tab_pane_group_id.take())
+                {
                     if let Some(tab) = self
                         .tabs
                         .iter()
@@ -16083,18 +15747,7 @@ impl Workspace {
         variant: CloudAgentCapacityModalVariant,
         ctx: &mut ViewContext<Self>,
     ) {
-        if !FeatureFlag::CloudMode.is_enabled() {
-            return;
-        }
-        self.cloud_agent_capacity_modal.update(ctx, |modal, ctx| {
-            modal.set_variant(variant);
-            ctx.notify();
-        });
-        self.current_workspace_state
-            .is_cloud_agent_capacity_modal_open = true;
-        ctx.focus(&self.cloud_agent_capacity_modal);
-        ctx.notify();
-        send_telemetry_from_ctx!(TelemetryEvent::CloudAgentCapacityModalOpened, ctx);
+        let _ = (variant, ctx);
     }
 
     fn handle_free_tier_limit_modal_event(
@@ -16127,50 +15780,23 @@ impl Workspace {
         }
     }
 
-    pub fn check_and_open_free_tier_limit_modal(&mut self, ctx: &mut ViewContext<Self>) -> bool {
-        if ChannelState::channel() == Channel::Oss {
-            return false;
-        }
-
-        let is_free_tier = !UserWorkspaces::as_ref(ctx)
-            .current_workspace()
-            .is_some_and(|workspace| workspace.billing_metadata.is_user_on_paid_plan());
-
-        if !is_free_tier {
-            return false;
-        }
-
-        if AIRequestUsageModel::as_ref(ctx).has_any_ai_remaining(ctx) {
-            return false;
-        }
-
-        if self
-            .current_workspace_state
-            .is_free_tier_limit_hit_modal_open
-            || *GeneralSettings::as_ref(ctx).free_tier_limit_hit_modal_dismissed
-        {
-            return false;
-        }
-
-        self.current_workspace_state
-            .is_free_tier_limit_hit_modal_open = true;
-
-        send_telemetry_from_ctx!(TelemetryEvent::FreeTierLimitHitInterstitialDisplayed, ctx);
-
-        ctx.focus(&self.free_tier_limit_hit_modal);
-        ctx.notify();
-
-        true
+    pub fn check_and_open_free_tier_limit_modal(&mut self, _ctx: &mut ViewContext<Self>) -> bool {
+        false
     }
 
     fn ask_ai_assistant(&mut self, ask_type: &AskAIType, ctx: &mut ViewContext<Self>) {
+        let Some(ai_assistant_panel) = self.ai_assistant_panel.clone() else {
+            let _ = (ask_type, ctx);
+            return;
+        };
+
         if !self.current_workspace_state.is_ai_assistant_panel_open {
             self.toggle_ai_assistant_panel(ctx);
         }
 
-        ctx.focus(&self.ai_assistant_panel);
+        ctx.focus(&ai_assistant_panel);
 
-        self.ai_assistant_panel.update(ctx, |ai_assistant, ctx| {
+        ai_assistant_panel.update(ctx, |ai_assistant, ctx| {
             ai_assistant.ask_ai(ask_type, ctx);
         });
 
@@ -16182,7 +15808,10 @@ impl Workspace {
     ///
     fn is_changelog_open_or_pending(&self, ctx: &mut ViewContext<Self>) -> bool {
         self.current_workspace_state.is_resource_center_open
-            || self.changelog_model.as_ref(ctx).is_check_pending()
+            || self
+                .changelog_model
+                .as_ref()
+                .is_some_and(|model| model.as_ref(ctx).is_check_pending())
     }
 
     fn focus_active_tab(&mut self, ctx: &mut ViewContext<Self>) {
@@ -16308,18 +15937,24 @@ impl Workspace {
 
             self.current_workspace_state
                 .is_shared_objects_creation_denied_modal_open = true;
-            self.shared_objects_creation_denied_modal
-                .update(ctx, |modal, ctx| {
-                    modal.update_modal_state(
-                        team_uid,
-                        object_type,
-                        has_admin_permissions,
-                        is_delinquent_due_to_payment_issue,
-                        customer_type,
-                        ctx,
-                    );
-                });
-            ctx.focus(&self.shared_objects_creation_denied_modal);
+            let Some(shared_objects_creation_denied_modal) =
+                &self.shared_objects_creation_denied_modal
+            else {
+                self.current_workspace_state
+                    .is_shared_objects_creation_denied_modal_open = false;
+                return;
+            };
+            shared_objects_creation_denied_modal.update(ctx, |modal, ctx| {
+                modal.update_modal_state(
+                    team_uid,
+                    object_type,
+                    has_admin_permissions,
+                    is_delinquent_due_to_payment_issue,
+                    customer_type,
+                    ctx,
+                );
+            });
+            ctx.focus(shared_objects_creation_denied_modal);
             ctx.notify();
         }
     }
@@ -16363,12 +15998,7 @@ impl Workspace {
                 }
             },
         };
-        self.current_workspace_state.is_workflow_modal_open = true;
-        self.workflow_modal.update(ctx, |workflow_modal, ctx| {
-            workflow_modal.open_with_new(owner, initial_folder_id, ctx);
-        });
-        ctx.focus(&self.workflow_modal);
-        ctx.notify();
+        let _ = (owner, initial_folder_id, ctx);
     }
 
     /// Opens the workflow from a given [`CloudWorkflow`]'s server ID.
@@ -16608,12 +16238,13 @@ impl Workspace {
                         .left_panel_views
                         .first()
                         .copied()
-                        .unwrap_or(ToolPanelView::WarpDrive)
+                        .unwrap_or(ToolPanelView::ProjectExplorer)
                     {
                         ToolPanelView::ProjectExplorer => "Project explorer",
                         ToolPanelView::GlobalSearch { .. } => "Global search",
-                        ToolPanelView::WarpDrive => "Warp Drive",
-                        ToolPanelView::ConversationListView => "Agent conversations",
+                        ToolPanelView::WarpDrive | ToolPanelView::ConversationListView => {
+                            "Project explorer"
+                        }
                     }
                 } else {
                     "Tools panel"
@@ -16662,12 +16293,13 @@ impl Workspace {
                 .left_panel_views
                 .first()
                 .copied()
-                .unwrap_or(ToolPanelView::WarpDrive)
+                .unwrap_or(ToolPanelView::ProjectExplorer)
             {
                 ToolPanelView::ProjectExplorer => "Project explorer",
                 ToolPanelView::GlobalSearch { .. } => "Global search",
-                ToolPanelView::WarpDrive => "Warp Drive",
-                ToolPanelView::ConversationListView => "Agent conversations",
+                ToolPanelView::WarpDrive | ToolPanelView::ConversationListView => {
+                    "Project explorer"
+                }
             }
         } else {
             "Tools panel"
@@ -17702,23 +17334,6 @@ impl Workspace {
             },
         );
 
-        // Render the subtle autoupdate UI if autoupdate is ready and there is no incoming prominent update version.
-        let autoupdate_stage = autoupdate::get_update_state(ctx);
-        if FeatureFlag::AutoupdateUIRevamp.is_enabled()
-            && autoupdate_stage.ready_for_update()
-            && autoupdate_stage
-                .available_new_version()
-                .map(|version| {
-                    !is_incoming_version_past_current(version.last_prominent_update.as_deref())
-                })
-                .unwrap_or(false)
-        {
-            avatar = avatar.with_status_element(
-                StatusElementTypes::Circle,
-                RedNotificationDot::default_styles(appearance),
-            );
-        }
-
         let button = Hoverable::new(self.mouse_states.avatar_icon.clone(), |state| {
             let mut stack = Stack::new();
             let mut container = Container::new(avatar.build().finish())
@@ -18058,69 +17673,10 @@ impl Workspace {
 
     fn render_tab_overflow_menu(
         &self,
-        app: &AppContext,
-        appearance: &Appearance,
+        _app: &AppContext,
+        _appearance: &Appearance,
     ) -> Option<Box<dyn Element>> {
-        if !ContextFlag::PromptForVersionUpdates.is_enabled() {
-            return None;
-        }
-
-        let autoupdate_stage = autoupdate::get_update_state(app);
-        // Render the prominent autoupdate pill if autoupdate is ready and the current version is behind a prominent update version.
-        if autoupdate_stage.ready_for_update()
-            && (!FeatureFlag::AutoupdateUIRevamp.is_enabled()
-                || autoupdate_stage
-                    .available_new_version()
-                    .map(|version| {
-                        is_incoming_version_past_current(version.last_prominent_update.as_deref())
-                    })
-                    .unwrap_or(false))
-        {
-            let pill = ConstrainedBox::new(
-                Container::new(
-                    Flex::row()
-                        .with_child(
-                            Text::new_inline(
-                                UPDATE_READY_TEXT,
-                                appearance.ui_font_family(),
-                                PILL_FONT_SIZE,
-                            )
-                            .with_color(Fill::warn().into())
-                            .finish(),
-                        )
-                        .with_main_axis_size(MainAxisSize::Max)
-                        .with_main_axis_alignment(MainAxisAlignment::Center)
-                        .finish(),
-                )
-                .with_border(Border::all(1.).with_border_color(Fill::warn().into()))
-                .with_corner_radius(CornerRadius::with_all(Radius::Percentage(50.)))
-                .with_uniform_margin(4.)
-                .with_uniform_padding(4.)
-                .with_margin_right(5.)
-                .finish(),
-            )
-            .with_width(TAB_BAR_PILL_WIDTH)
-            .finish();
-
-            let button = if self.show_tab_bar_overflow_menu {
-                pill
-            } else {
-                // Only attach the event handler in the case where the menu isn't already showing
-                // Otherwise we have a race condition in the case that someone clicks on the button
-                // where the menu tries to dismiss itself onclick and the menu gets reshown on mouseup
-                Hoverable::new(self.mouse_states.overflow_button.clone(), |_state| pill)
-                    .on_click(move |ctx, _, _| {
-                        ctx.dispatch_typed_action(WorkspaceAction::ToggleTabBarOverflowMenu);
-                    })
-                    .with_reset_cursor_after_click()
-                    .with_cursor(Cursor::PointingHand)
-                    .finish()
-            };
-
-            Some(Align::new(SavePosition::new(button, "tab_bar_overflow_button").finish()).finish())
-        } else {
-            None
-        }
+        None
     }
 
     fn render_banner_and_active_tab(
@@ -18132,8 +17688,9 @@ impl Workspace {
 
         let active_content = if FeatureFlag::AgentManagementView.is_enabled()
             && self.current_workspace_state.is_agent_management_view_open
+            && self.agent_management_view.is_some()
         {
-            ChildView::new(&self.agent_management_view).finish()
+            ChildView::new(self.agent_management_view.as_ref().expect("checked")).finish()
         } else {
             ChildView::new(&active_tab_data.pane_group).finish()
         };
@@ -18316,111 +17873,8 @@ impl Workspace {
         })
     }
 
-    fn render_autoupdate_banner_element(&self, app: &AppContext) -> Option<WorkspaceBannerFields> {
-        if FeatureFlag::Autoupdate.is_enabled() {
-            match autoupdate::get_update_state(app) {
-                AutoupdateStage::UnableToUpdateToNewVersion { new_version }
-                    if !self.autoupdate_unable_to_update_banner_dismissed =>
-                {
-                    let description =
-                        if is_incoming_version_past_current(new_version.soft_cutoff.as_deref()) {
-                            VERSION_DEPRECATION_WITHOUT_PERMISSIONS_BANNER_TEXT.to_owned()
-                        } else {
-                            "A new version is available but Warp is unable to perform the update."
-                                .to_owned()
-                        };
-
-                    Some(WorkspaceBannerFields {
-                        banner_type: WorkspaceBanner::UnableToUpdateToNewVersion,
-                        severity: BannerSeverity::Error,
-                        heading: None,
-                        description,
-                        secondary_button: None,
-                        button: Some(WorkspaceBannerButtonDetails {
-                            text: "Update Warp manually".to_string(),
-                            action: WorkspaceAction::DownloadNewVersion,
-                            variant: BannerButtonVariant::Outlined,
-                            icon: None,
-                            more_info_button_action: Some(WorkspaceAction::AutoupdateFailureLink),
-                        }),
-                    })
-                }
-                AutoupdateStage::UnableToLaunchNewVersion { new_version }
-                    if !self.autoupdate_unable_to_launch_new_version =>
-                {
-                    let description =
-                        if is_incoming_version_past_current(new_version.soft_cutoff.as_deref()) {
-                            VERSION_DEPRECATION_WITHOUT_PERMISSIONS_BANNER_TEXT.to_owned()
-                        } else {
-                            "Warp was unable to launch the new installed version.".to_owned()
-                        };
-
-                    Some(WorkspaceBannerFields {
-                        banner_type: WorkspaceBanner::UnableToLaunchNewVersion,
-                        severity: BannerSeverity::Error,
-                        heading: None,
-                        description,
-                        secondary_button: None,
-                        button: Some(WorkspaceBannerButtonDetails {
-                            text: "Update Warp manually".to_string(),
-                            action: WorkspaceAction::DownloadNewVersion,
-                            variant: BannerButtonVariant::Outlined,
-                            icon: None,
-                            more_info_button_action: Some(WorkspaceAction::AutoupdateFailureLink),
-                        }),
-                    })
-                }
-                AutoupdateStage::UpdateReady { new_version, .. }
-                | AutoupdateStage::UpdatedPendingRestart { new_version } => {
-                    if is_incoming_version_past_current(new_version.soft_cutoff.as_deref()) {
-                        Some(WorkspaceBannerFields {
-                            banner_type: WorkspaceBanner::VersionDeprecated,
-                            severity: BannerSeverity::Error,
-                            heading: None,
-                            description: VERSION_DEPRECATION_BANNER_TEXT.to_string(),
-                            secondary_button: None,
-                            button: Some(WorkspaceBannerButtonDetails {
-                                text: "Update now".to_string(),
-                                action: WorkspaceAction::ApplyUpdate,
-                                variant: BannerButtonVariant::Outlined,
-                                icon: None,
-                                more_info_button_action: None,
-                            }),
-                        })
-                    } else if let Some(update_by) = new_version.update_by {
-                        self.server_time.as_ref().and_then(|server_time| {
-                            (server_time.current_time() > update_by).then(|| {
-                                WorkspaceBannerFields {
-                                    banner_type: WorkspaceBanner::VersionDeprecated,
-                                    severity: BannerSeverity::Warning,
-                                    heading: None,
-                                    description: "Your app is out of date and needs to update."
-                                        .to_string(),
-                                    secondary_button: None,
-                                    button: Some(WorkspaceBannerButtonDetails {
-                                        text: "Restart app and update now".to_string(),
-                                        action: WorkspaceAction::ApplyUpdate,
-                                        variant: BannerButtonVariant::Outlined,
-                                        icon: None,
-                                        more_info_button_action: None,
-                                    }),
-                                }
-                            })
-                        })
-                    } else {
-                        None
-                    }
-                }
-                AutoupdateStage::NoUpdateAvailable
-                | AutoupdateStage::CheckingForUpdate
-                | AutoupdateStage::DownloadingUpdate
-                | AutoupdateStage::Updating { .. }
-                | AutoupdateStage::UnableToUpdateToNewVersion { .. }
-                | AutoupdateStage::UnableToLaunchNewVersion { .. } => None,
-            }
-        } else {
-            None
-        }
+    fn render_autoupdate_banner_element(&self, _app: &AppContext) -> Option<WorkspaceBannerFields> {
+        None
     }
 
     fn render_workspace_banner(
@@ -18862,9 +18316,12 @@ impl Workspace {
             let right_panel_content = if self.current_workspace_state.is_resource_center_open {
                 Some(self.render_panel(app, self.render_resource_center(), &PanelPosition::Right))
             } else if self.current_workspace_state.is_ai_assistant_panel_open {
+                let Some(ai_assistant_panel) = &self.ai_assistant_panel else {
+                    return Container::new(Empty::new().finish()).finish();
+                };
                 Some(self.render_panel(
                     app,
-                    ChildView::new(&self.ai_assistant_panel).finish(),
+                    ChildView::new(ai_assistant_panel).finish(),
                     &PanelPosition::Right,
                 ))
             } else {
@@ -19458,6 +18915,11 @@ impl Workspace {
         entrypoint: AnonymousUserSignupEntrypoint,
         ctx: &mut ViewContext<Self>,
     ) {
+        if !ChannelState::is_warp_server_available() {
+            log::info!("Ignoring user signup without Warp server config");
+            return;
+        }
+
         if self.auth_state.is_user_anonymous().unwrap_or_default() {
             // User has a Firebase anonymous account — use the linking flow.
             AuthManager::handle(ctx).update(ctx, |auth_manager, ctx| {
@@ -19466,13 +18928,16 @@ impl Workspace {
         } else {
             // User is fully logged out (no Firebase user) — open the regular sign-up page.
             AuthManager::handle(ctx).update(ctx, |auth_manager, ctx| {
-                let sign_up_url = auth_manager.sign_up_url();
-                ctx.open_url(&sign_up_url);
+                if let Some(sign_up_url) = auth_manager.sign_up_url() {
+                    ctx.open_url(&sign_up_url);
+                }
             });
         }
-        self.require_login_modal.update(ctx, |auth_modal, ctx| {
-            auth_modal.skip_to_browser_open_step(ctx);
-        });
+        if let Some(require_login_modal) = &self.require_login_modal {
+            require_login_modal.update(ctx, |auth_modal, ctx| {
+                auth_modal.skip_to_browser_open_step(ctx);
+            });
+        }
         self.open_require_login_modal(AuthViewVariant::RequireLoginCloseable, ctx);
     }
 
@@ -19504,10 +18969,17 @@ impl Workspace {
     }
 
     fn focus_openwarp_launch_modal(&mut self, ctx: &mut ViewContext<Self>) {
-        ctx.focus(&self.openwarp_launch_modal);
+        if let Some(openwarp_launch_modal) = &self.openwarp_launch_modal {
+            ctx.focus(openwarp_launch_modal);
+        }
     }
 
     fn open_tab_and_focus_oz_launch_modal(&mut self, ctx: &mut ViewContext<Self>) {
+        let Some(mut oz_launch_modal) = self.oz_launch_modal.take() else {
+            let _ = ctx;
+            return;
+        };
+
         // Create a new tab with one terminal session titled "Introducing Oz"
         self.add_tab_with_pane_layout(
             PanesLayout::SingleTerminal(Box::new(NewTerminalOptions {
@@ -19520,15 +18992,18 @@ impl Workspace {
             Some("Introducing Oz".to_string()),
             ctx,
         );
-        self.oz_launch_modal.tab_pane_group_id = self
+        oz_launch_modal.tab_pane_group_id = self
             .tabs
             .get(self.active_tab_index)
             .map(|tab| tab.pane_group.id());
-        ctx.focus(&self.oz_launch_modal.view);
+        ctx.focus(&oz_launch_modal.view);
+        self.oz_launch_modal = Some(oz_launch_modal);
     }
 
     fn focus_build_plan_migration_modal(&mut self, ctx: &mut ViewContext<Self>) {
-        ctx.focus(&self.build_plan_migration_modal);
+        if let Some(build_plan_migration_modal) = &self.build_plan_migration_modal {
+            ctx.focus(build_plan_migration_modal);
+        }
     }
 
     fn open_left_panel_view(&mut self, action: &LeftPanelAction, ctx: &mut ViewContext<Self>) {
@@ -19564,13 +19039,6 @@ impl Workspace {
     /// Computes the list of available left panel views based on current AI settings and feature flags.
     fn compute_left_panel_views(ctx: &AppContext) -> Vec<ToolPanelView> {
         let mut views = vec![];
-        if FeatureFlag::AgentViewConversationListView.is_enabled()
-            && AISettings::as_ref(ctx).is_any_ai_enabled(ctx)
-            && *AISettings::as_ref(ctx).show_conversation_history
-        {
-            views.push(ToolPanelView::ConversationListView);
-        }
-
         if cfg!(feature = "local_fs") && *CodeSettings::as_ref(ctx).show_project_explorer.value() {
             views.push(ToolPanelView::ProjectExplorer);
         }
@@ -19581,9 +19049,6 @@ impl Workspace {
             views.push(ToolPanelView::GlobalSearch {
                 entry_focus: GlobalSearchEntryFocus::Results,
             });
-        }
-        if WarpDriveSettings::is_warp_drive_enabled(ctx) {
-            views.push(ToolPanelView::WarpDrive);
         }
         views
     }
@@ -19612,8 +19077,8 @@ impl Workspace {
             == UserAppInstallStatus::Detected;
 
         if !is_app_installed {
-            // App not installed - redirect to download page
-            ctx.open_url("https://warp.dev/download");
+            // App not installed. Warper has no hosted download endpoint, so fail closed.
+            log::info!("Desktop app install was not detected; skipping hosted download redirect");
             // In webapp code we cannot distinguish between
             // the localhost:9277/install_detection endpoint not running (not installed) vs
             // the browser blocking Local Network Access which results in CORS error;
@@ -19662,14 +19127,17 @@ impl TypedActionView for Workspace {
         use WorkspaceAction::*;
         let window_id = ctx.window_id();
 
-        if !ChannelState::is_warp_server_available()
-            && Self::action_requires_hosted_services(action)
-        {
+        if !ChannelState::is_warp_server_available() && action.requires_hosted_services() {
             log::info!("Ignoring hosted-service workspace action without Warp server config");
             return;
         }
 
         if self.auth_state.is_anonymous_or_logged_out() && action.blocked_for_anonymous_user() {
+            if !ChannelState::is_warp_server_available() {
+                log::info!("Ignoring login-gated workspace action without Warp server config");
+                return;
+            }
+
             AuthManager::handle(ctx).update(ctx, |auth_manager, ctx| {
                 auth_manager.attempt_login_gated_feature(
                     action.into(),
@@ -19741,7 +19209,11 @@ impl TypedActionView for Workspace {
                         }
                     }
                     DefaultSessionMode::CloudAgent => {
-                        self.add_ambient_agent_tab(ctx);
+                        if ChannelState::is_warp_server_available() {
+                            self.add_ambient_agent_tab(ctx);
+                        } else {
+                            self.add_terminal_tab(false, ctx);
+                        }
                     }
                     DefaultSessionMode::DockerSandbox => {
                         self.add_docker_sandbox_tab(ctx);
@@ -20221,11 +19693,7 @@ impl TypedActionView for Workspace {
                 self.finish_tab_rename(ctx);
                 self.current_workspace_state.is_tab_being_dragged = true;
             }
-            OpenWarpDrive => {
-                if WarpDriveSettings::is_warp_drive_enabled(ctx) {
-                    self.open_left_panel_view(&LeftPanelAction::WarpDrive, ctx);
-                }
-            }
+            OpenWarpDrive => {}
             ToggleLeftPanel => {
                 let active_pane_group = self.active_tab_pane_group().clone();
                 let was_open = active_pane_group.read(ctx, |pg, _| pg.left_panel_open);
@@ -20238,10 +19706,6 @@ impl TypedActionView for Workspace {
                 let file_tree_active = self
                     .left_panel_view
                     .read(ctx, |lp, _| lp.is_file_tree_active());
-                let warp_drive_active = self
-                    .left_panel_view
-                    .read(ctx, |lp, _| lp.is_warp_drive_active());
-
                 self.toggle_left_panel(ctx);
 
                 let is_open = active_pane_group.read(ctx, |pg, _| pg.left_panel_open);
@@ -20257,15 +19721,6 @@ impl TypedActionView for Workspace {
                                 source: FileTreeSource::LeftPanelToolbelt,
                                 is_code_mode_v2: true,
                                 cli_agent: None,
-                            },
-                            ctx
-                        );
-                    } else if warp_drive_active {
-                        // Tools panel opened with Warp Drive as the active view
-                        send_telemetry_from_ctx!(
-                            TelemetryEvent::WarpDriveOpened {
-                                source: WarpDriveSource::LeftPanelToolbelt,
-                                is_code_mode_v2: true
                             },
                             ctx
                         );
@@ -20490,7 +19945,9 @@ impl TypedActionView for Workspace {
                     );
 
                     if is_open {
-                        ctx.focus(&self.agent_management_view);
+                        if let Some(agent_management_view) = &self.agent_management_view {
+                            ctx.focus(agent_management_view);
+                        }
                     } else {
                         self.focus_active_tab(ctx);
                     }
@@ -20502,13 +19959,15 @@ impl TypedActionView for Workspace {
                 if AISettings::as_ref(ctx).is_any_ai_enabled(ctx)
                     && FeatureFlag::AgentManagementView.is_enabled()
                 {
-                    self.set_is_agent_management_view_open(true, ctx);
-                    ctx.focus(&self.agent_management_view);
+                    if let Some(agent_management_view) = self.agent_management_view.clone() {
+                        self.set_is_agent_management_view_open(true, ctx);
+                        ctx.focus(&agent_management_view);
 
-                    let environment_id = environment_id.clone();
-                    self.agent_management_view.update(ctx, |view, ctx| {
-                        view.apply_environment_filter_from_link(environment_id, ctx);
-                    });
+                        let environment_id = environment_id.clone();
+                        agent_management_view.update(ctx, |view, ctx| {
+                            view.apply_environment_filter_from_link(environment_id, ctx);
+                        });
+                    }
 
                     ctx.notify();
                 }
@@ -20557,11 +20016,13 @@ impl TypedActionView for Workspace {
                 if AISettings::as_ref(ctx).is_any_ai_enabled(ctx)
                     && FeatureFlag::AgentManagementView.is_enabled()
                 {
-                    self.set_is_agent_management_view_open(true, ctx);
-                    ctx.focus(&self.agent_management_view);
-                    self.agent_management_view.update(ctx, |view, ctx| {
-                        view.show_setup_guide_from_link(ctx);
-                    });
+                    if let Some(agent_management_view) = self.agent_management_view.clone() {
+                        self.set_is_agent_management_view_open(true, ctx);
+                        ctx.focus(&agent_management_view);
+                        agent_management_view.update(ctx, |view, ctx| {
+                            view.show_setup_guide_from_link(ctx);
+                        });
+                    }
                     ctx.notify();
                 }
             }
@@ -20714,8 +20175,9 @@ impl TypedActionView for Workspace {
             }
             Reauth => {
                 AuthManager::handle(ctx).update(ctx, |auth_manager, ctx| {
-                    let sign_in_url = auth_manager.sign_in_url();
-                    ctx.open_url(&sign_in_url);
+                    if let Some(sign_in_url) = auth_manager.sign_in_url() {
+                        ctx.open_url(&sign_in_url);
+                    }
                 });
                 send_telemetry_from_ctx!(TelemetryEvent::InitiateReauth, ctx);
             }
@@ -21092,6 +20554,11 @@ impl TypedActionView for Workspace {
                 session_id,
                 task_id,
             } => {
+                if !ChannelState::is_warp_server_available() {
+                    log::info!("Ignoring ambient agent session without Warp server config");
+                    return;
+                }
+
                 // Mark task as manually opened so it appears in the conversation list
                 // even if its source is not user-initiated.
                 AgentConversationsModel::handle(ctx).update(ctx, |model, ctx| {
@@ -21111,6 +20578,11 @@ impl TypedActionView for Workspace {
                 conversation_id,
                 ambient_agent_task_id,
             } => {
+                if !ChannelState::is_warp_server_available() {
+                    log::info!("Ignoring conversation transcript without Warp server config");
+                    return;
+                }
+
                 // Mark task as manually opened so it appears in the conversation list
                 // even if its source is not user-initiated.
                 if let Some(task_id) = ambient_agent_task_id {
@@ -21469,13 +20941,7 @@ impl TypedActionView for Workspace {
                     self.toggle_left_panel_view(&LeftPanelAction::ProjectExplorer, is_showing, ctx);
                 }
             }
-            ToggleWarpDrive => {
-                if WarpDriveSettings::is_warp_drive_enabled(ctx) {
-                    let is_showing =
-                        self.left_panel_view.as_ref(ctx).active_view() == ToolPanelView::WarpDrive;
-                    self.toggle_left_panel_view(&LeftPanelAction::WarpDrive, is_showing, ctx);
-                }
-            }
+            ToggleWarpDrive => {}
             ToggleGlobalSearch => {
                 if FeatureFlag::GlobalSearch.is_enabled()
                     && *CodeSettings::as_ref(ctx).show_global_search
@@ -21518,17 +20984,7 @@ impl TypedActionView for Workspace {
                     );
                 }
             }
-            ToggleConversationListView => {
-                if FeatureFlag::AgentViewConversationListView.is_enabled() {
-                    let is_showing = self.left_panel_view.as_ref(ctx).active_view()
-                        == ToolPanelView::ConversationListView;
-                    self.toggle_left_panel_view(
-                        &LeftPanelAction::ConversationListView,
-                        is_showing,
-                        ctx,
-                    );
-                }
-            }
+            ToggleConversationListView => {}
             ShowRewindConfirmationDialog {
                 ai_block_view_id,
                 exchange_id,
@@ -21691,78 +21147,6 @@ impl TypedActionView for Workspace {
     }
 }
 
-impl Workspace {
-    fn action_requires_hosted_services(action: &WorkspaceAction) -> bool {
-        use WorkspaceAction::*;
-
-        matches!(
-            action,
-            AutoupdateFailureLink
-                | ApplyUpdate
-                | LogOut
-                | DownloadNewVersion
-                | CheckForUpdate
-                | ExportAllWarpDriveObjects
-                | ShowUpgrade
-                | ShowReferralSettingsPage
-                | ImportToPersonalDrive
-                | ImportToTeamDrive
-                | CreatePersonalNotebook
-                | CreateTeamNotebook
-                | CreatePersonalWorkflow
-                | CreateTeamWorkflow
-                | CreatePersonalFolder
-                | CreateTeamFolder
-                | CreateTeamEnvVarCollection
-                | CreatePersonalEnvVarCollection
-                | CreatePersonalAIPrompt
-                | CreateTeamAIPrompt
-                | OpenWarpDrive
-                | ToggleWarpDrive
-                | Reauth
-                | SignupAnonymousUser
-                | SignInAnonymousWebUser
-                | OpenShareSessionModal(_)
-                | StopSharingSessionFromTabMenu { .. }
-                | StopSharingAllSessionsInTab { .. }
-                | CopySharedSessionLinkFromTab { .. }
-                | ViewObjectInWarpDrive(_)
-                | OpenObjectSharingSettings { .. }
-                | UndoTrash(_)
-                | OpenCloudAgentSetupGuide
-                | AttemptLoginGatedAIUpgrade
-                | OpenEnvironmentManagementPane
-                | OpenPalette {
-                    mode: PaletteMode::WarpDrive,
-                    ..
-                }
-                | TogglePalette {
-                    mode: PaletteMode::WarpDrive,
-                    ..
-                }
-                | ShowSettingsPage(SettingsSection::BillingAndUsage)
-                | ShowSettingsPage(SettingsSection::Referrals)
-                | ShowSettingsPage(SettingsSection::SharedBlocks)
-                | ShowSettingsPage(SettingsSection::Teams)
-                | ShowSettingsPage(SettingsSection::WarpDrive)
-                | ShowSettingsPage(SettingsSection::CloudEnvironments)
-                | ShowSettingsPage(SettingsSection::OzCloudAPIKeys)
-                | ShowSettingsPageWithSearch {
-                    section: Some(
-                        SettingsSection::BillingAndUsage
-                            | SettingsSection::Referrals
-                            | SettingsSection::SharedBlocks
-                            | SettingsSection::Teams
-                            | SettingsSection::WarpDrive
-                            | SettingsSection::CloudEnvironments
-                            | SettingsSection::OzCloudAPIKeys,
-                    ),
-                    ..
-                }
-        )
-    }
-}
-
 impl View for Workspace {
     fn ui_name() -> &'static str {
         "Workspace"
@@ -21812,13 +21196,6 @@ impl View for Workspace {
         }
 
         if matches!(
-            autoupdate::get_update_state(app),
-            AutoupdateStage::UpdateReady { .. } | AutoupdateStage::UpdatedPendingRestart { .. }
-        ) {
-            context.set.insert("AutoupdateState_UpdateReady");
-        }
-
-        if matches!(
             *AccessibilitySettings::as_ref(app).a11y_verbosity,
             AccessibilityVerbosity::Verbose
         ) {
@@ -21845,10 +21222,6 @@ impl View for Workspace {
                 }
             }
         };
-
-        if WarpDriveSettings::is_warp_drive_enabled(app) {
-            context.set.insert(flags::ENABLE_WARP_DRIVE);
-        }
 
         if AISettings::as_ref(app).is_any_ai_enabled(app)
             && *AISettings::as_ref(app).show_conversation_history
@@ -22473,11 +21846,15 @@ impl View for Workspace {
         }
 
         if self.current_workspace_state.is_require_login_modal_open {
-            stack.add_child(ChildView::new(&self.require_login_modal).finish());
+            if let Some(require_login_modal) = &self.require_login_modal {
+                stack.add_child(ChildView::new(require_login_modal).finish());
+            }
         }
 
         if self.current_workspace_state.is_auth_override_modal_open {
-            stack.add_child(ChildView::new(&self.auth_override_warning_modal).finish());
+            if let Some(auth_override_warning_modal) = &self.auth_override_warning_modal {
+                stack.add_child(ChildView::new(auth_override_warning_modal).finish());
+            }
         }
 
         if self.current_workspace_state.is_theme_creator_modal_open {
@@ -22485,7 +21862,9 @@ impl View for Workspace {
         }
 
         if self.current_workspace_state.is_import_modal_open {
-            stack.add_child(ChildView::new(&self.import_modal).finish());
+            if let Some(import_modal) = &self.import_modal {
+                stack.add_child(ChildView::new(import_modal).finish());
+            }
         }
 
         if self.current_workspace_state.is_theme_deletion_modal_open {
@@ -22496,7 +21875,11 @@ impl View for Workspace {
             .current_workspace_state
             .is_shared_objects_creation_denied_modal_open
         {
-            stack.add_child(ChildView::new(&self.shared_objects_creation_denied_modal).finish());
+            if let Some(shared_objects_creation_denied_modal) =
+                &self.shared_objects_creation_denied_modal
+            {
+                stack.add_child(ChildView::new(shared_objects_creation_denied_modal).finish());
+            }
         }
 
         if self.current_workspace_state.is_reward_modal_open {
@@ -22555,8 +21938,10 @@ impl View for Workspace {
             stack.add_child(self.new_worktree_modal.render());
         }
 
-        if self.workflow_modal.as_ref(app).is_open() {
-            stack.add_child(ChildView::new(&self.workflow_modal).finish());
+        if let Some(workflow_modal) = &self.workflow_modal {
+            if workflow_modal.as_ref(app).is_open() {
+                stack.add_child(ChildView::new(workflow_modal).finish());
+            }
         }
 
         if self.current_workspace_state.is_prompt_editor_open {
@@ -22581,18 +21966,9 @@ impl View for Workspace {
         }
 
         if self.current_workspace_state.is_suggested_rule_modal_open {
-            stack.add_child(ChildView::new(&self.suggested_rule_modal).finish());
-        }
-
-        let one_time_modal_model = OneTimeModalModel::as_ref(app);
-        let should_show_modal = one_time_modal_model.target_window_id() == Some(self.window_id);
-
-        if should_show_modal && one_time_modal_model.is_oz_launch_modal_open() {
-            stack.add_child(ChildView::new(&self.oz_launch_modal.view).finish());
-        }
-
-        if should_show_modal && one_time_modal_model.is_openwarp_launch_modal_open() {
-            stack.add_child(ChildView::new(&self.openwarp_launch_modal).finish());
+            if let Some(suggested_rule_modal) = &self.suggested_rule_modal {
+                stack.add_child(ChildView::new(suggested_rule_modal).finish());
+            }
         }
 
         if let Some(hoa_flow) = &self.hoa_onboarding_flow {
@@ -22718,27 +22094,26 @@ impl View for Workspace {
             stack.add_child(ChildView::new(&self.enable_auto_reload_modal).finish());
         }
 
-        if should_show_modal && one_time_modal_model.is_build_plan_migration_modal_open() {
-            stack.add_child(ChildView::new(&self.build_plan_migration_modal).finish());
-        }
-
         if self.current_workspace_state.is_codex_modal_open {
             stack.add_child(ChildView::new(&self.codex_modal).finish());
         }
 
-        if FeatureFlag::CloudMode.is_enabled()
-            && self
-                .current_workspace_state
-                .is_cloud_agent_capacity_modal_open
+        if self
+            .current_workspace_state
+            .is_cloud_agent_capacity_modal_open
         {
-            stack.add_child(ChildView::new(&self.cloud_agent_capacity_modal).finish());
+            if let Some(cloud_agent_capacity_modal) = &self.cloud_agent_capacity_modal {
+                stack.add_child(ChildView::new(cloud_agent_capacity_modal).finish());
+            }
         }
 
         if self
             .current_workspace_state
             .is_free_tier_limit_hit_modal_open
         {
-            stack.add_child(ChildView::new(&self.free_tier_limit_hit_modal).finish());
+            if let Some(free_tier_limit_hit_modal) = &self.free_tier_limit_hit_modal {
+                stack.add_child(ChildView::new(free_tier_limit_hit_modal).finish());
+            }
         }
 
         if let Some(lightbox_view) = &self.lightbox_view {

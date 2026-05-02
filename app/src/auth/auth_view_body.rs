@@ -15,6 +15,7 @@ use crate::{
 use anyhow::anyhow;
 use lazy_static::lazy_static;
 use warp_core::{
+    channel::ChannelState,
     features::FeatureFlag,
     ui::{appearance::DEFAULT_COMMAND_PALETTE_FONT_SIZE, builder::UiBuilder},
 };
@@ -110,6 +111,7 @@ pub struct AuthViewBody {
     loginless_step: LoginlessStep,
     copy_url_click_count: u8,
     allow_loginless: bool,
+    hosted_services_available: bool,
 }
 
 /// State for two-step loginless flow for anonymous users
@@ -203,10 +205,16 @@ impl AuthViewBody {
             loginless_step: LoginlessStep::Start,
             copy_url_click_count: 0,
             allow_loginless,
+            hosted_services_available: ChannelState::is_warp_server_available(),
         }
     }
 
     pub fn handle_paste(&mut self, ctx: &mut ViewContext<Self>) {
+        if !self.hosted_services_available {
+            log::info!("Ignoring auth paste because Warp server config is unavailable");
+            return;
+        }
+
         self.show_auth_token_input = true;
         self.auth_token_input
             .update(ctx, |editor, ctx| editor.paste(ctx));
@@ -692,6 +700,11 @@ impl AuthViewBody {
         let logo = Container::new(self.render_logo_row(appearance, ui_builder))
             .with_margin_bottom(AUTH_MODAL_GAP)
             .finish();
+
+        if !self.hosted_services_available {
+            return vec![logo];
+        }
+
         let header = Container::new(self.render_header(appearance, ui_builder))
             .with_margin_bottom(AUTH_MODAL_GAP)
             .finish();
@@ -748,6 +761,10 @@ impl AuthViewBody {
         let logo = Container::new(self.render_logo_row(appearance, ui_builder))
             .with_margin_bottom(AUTH_MODAL_GAP)
             .finish();
+
+        if !self.hosted_services_available {
+            return vec![logo];
+        }
 
         let header_styles = UiComponentStyles {
             font_family_id: Some(appearance.header_font_family()),
@@ -845,6 +862,11 @@ impl TypedActionView for AuthViewBody {
     fn handle_action(&mut self, action: &AuthViewBodyAction, ctx: &mut ViewContext<Self>) {
         match action {
             AuthViewBodyAction::Login => {
+                if !self.hosted_services_available {
+                    log::info!("Ignoring login action because Warp server config is unavailable");
+                    return;
+                }
+
                 send_telemetry_from_ctx!(
                     TelemetryEvent::LoginButtonClicked {
                         source: LoginEventSource::AuthModal,
@@ -854,8 +876,9 @@ impl TypedActionView for AuthViewBody {
                 self.auth_step = AuthStep::BrowserOpen;
 
                 AuthManager::handle(ctx).update(ctx, |auth_manager, ctx| {
-                    let sign_in_url = auth_manager.sign_in_url();
-                    ctx.open_url(&sign_in_url);
+                    if let Some(sign_in_url) = auth_manager.sign_in_url() {
+                        ctx.open_url(&sign_in_url);
+                    }
                 });
             }
             AuthViewBodyAction::InitiateLoginLater => {
@@ -879,6 +902,13 @@ impl TypedActionView for AuthViewBody {
                 ctx.emit(AuthViewBodyEvent::LoginLaterClicked);
             }
             AuthViewBodyAction::EnterToken => {
+                if !self.hosted_services_available {
+                    log::info!(
+                        "Ignoring auth token entry because Warp server config is unavailable"
+                    );
+                    return;
+                }
+
                 self.auth_token_input
                     .update(ctx, |editor, ctx| editor.paste(ctx));
                 self.show_auth_token_input = true;
@@ -886,6 +916,11 @@ impl TypedActionView for AuthViewBody {
                 ctx.notify();
             }
             AuthViewBodyAction::CopyLoginUrl => {
+                if !self.hosted_services_available {
+                    log::info!("Ignoring login URL copy because Warp server config is unavailable");
+                    return;
+                }
+
                 self.copy_url_click_count += 1;
                 if AuthStateProvider::as_ref(ctx)
                     .get()
@@ -897,27 +932,41 @@ impl TypedActionView for AuthViewBody {
                     });
                 } else {
                     AuthManager::handle(ctx).update(ctx, |auth_manager, inner_ctx| {
-                        let sign_in_url = auth_manager.sign_in_url();
-                        inner_ctx.clipboard().write(ClipboardContent {
-                            plain_text: sign_in_url.clone(),
-                            paths: Some(vec![sign_in_url]),
-                            ..Default::default()
-                        });
+                        if let Some(sign_in_url) = auth_manager.sign_in_url() {
+                            inner_ctx.clipboard().write(ClipboardContent {
+                                plain_text: sign_in_url.clone(),
+                                paths: Some(vec![sign_in_url]),
+                                ..Default::default()
+                            });
+                        }
                     });
                 }
             }
             AuthViewBodyAction::Signup => {
+                if !self.hosted_services_available {
+                    log::info!("Ignoring signup action because Warp server config is unavailable");
+                    return;
+                }
+
                 // Send synchronously since this is an important event in the sign up funnel and we
                 // don't want to lose events if the user quits before the event queue is flushed.
                 send_telemetry_sync_from_ctx!(TelemetryEvent::SignUpButtonClicked, ctx);
                 self.auth_step = AuthStep::BrowserOpen;
 
                 AuthManager::handle(ctx).update(ctx, |auth_manager, ctx| {
-                    let sign_up_url = auth_manager.sign_up_url();
-                    ctx.open_url(&sign_up_url);
+                    if let Some(sign_up_url) = auth_manager.sign_up_url() {
+                        ctx.open_url(&sign_up_url);
+                    }
                 });
             }
             AuthViewBodyAction::SignupAnonymousUser => {
+                if !self.hosted_services_available {
+                    log::info!(
+                        "Ignoring anonymous signup action because Warp server config is unavailable"
+                    );
+                    return;
+                }
+
                 let entrypoint = match self.variant {
                     AuthViewVariant::RequireLoginCloseable
                     | AuthViewVariant::ShareRequirementCloseable => {

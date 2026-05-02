@@ -7,6 +7,7 @@ use anyhow::{anyhow, Result};
 use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::vec2f;
 use url::Url;
+use warp_core::channel::ChannelState;
 use warp_core::errors::ErrorExt;
 use warp_core::features::FeatureFlag;
 use warpui::elements::ChildAnchor;
@@ -185,10 +186,12 @@ impl AuthView {
                 })
         });
 
-        let auth_manager = AuthManager::handle(ctx);
-        ctx.subscribe_to_model(&auth_manager, |me, _, event, ctx| {
-            me.handle_auth_manager_event(event, ctx);
-        });
+        if ChannelState::is_warp_server_available() {
+            let auth_manager = AuthManager::handle(ctx);
+            ctx.subscribe_to_model(&auth_manager, |me, _, event, ctx| {
+                me.handle_auth_manager_event(event, ctx);
+            });
+        }
 
         Self {
             auth_screen_modal,
@@ -246,6 +249,11 @@ impl AuthView {
     /// Parses the given 'clipboard_content' string into a URL which is assumed to represent the
     /// OAuth redirect URL containing the user's refresh token after the user authenticated Warp.
     fn handle_pasted_auth_url(&mut self, pasted_url: String, ctx: &mut ViewContext<Self>) {
+        if !ChannelState::is_warp_server_available() {
+            log::info!("Ignoring pasted auth URL because Warp server config is unavailable");
+            return;
+        }
+
         self.set_auth_token_input_editable(false, ctx);
         match AuthRedirectPayload::from_raw_url(pasted_url) {
             Ok(redirect_payload) => {
@@ -275,6 +283,11 @@ impl AuthView {
     }
 
     pub fn handle_login_later(&mut self, ctx: &mut ViewContext<Self>) {
+        if !ChannelState::is_warp_server_available() {
+            self.close(ctx);
+            return;
+        }
+
         if FeatureFlag::SkipFirebaseAnonymousUser.is_enabled() {
             AuthManager::handle(ctx).update(ctx, |_, ctx| {
                 ctx.emit(AuthManagerEvent::SkippedLogin);

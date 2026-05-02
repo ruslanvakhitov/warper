@@ -301,6 +301,10 @@ pub fn join_native_intent(session_id: &SessionId) -> String {
 
 /// Returns the link to join a shared session.
 pub fn join_link(session_id: &SessionId) -> String {
+    if !ChannelState::is_warp_server_available() {
+        return join_native_intent(session_id);
+    }
+
     // For non-bundled builds against the staging server, use the native app intent
     // because the staging web URL won't resolve to a local build.
     let use_web_url = !ChannelState::uses_staging_server() || cfg!(feature = "release_bundle");

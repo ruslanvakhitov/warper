@@ -1,6 +1,6 @@
 use pathfinder_color::ColorU;
 
-use warp_core::ui::appearance::Appearance;
+use warp_core::{channel::ChannelState, ui::appearance::Appearance};
 use warpui::elements::Container;
 use warpui::elements::Fill;
 use warpui::FocusContext;
@@ -39,10 +39,12 @@ impl AuthOverrideWarningModal {
         ctx.subscribe_to_view(&auth_screen_view, |me, _, event, ctx| match event {
             AuthOverrideWarningBodyEvent::Close => me.close(ctx),
             AuthOverrideWarningBodyEvent::AllowLogin => {
-                if let Some(auth_payload) = me.interrupted_auth_payload.clone() {
-                    AuthManager::handle(ctx).update(ctx, |auth_manager, ctx| {
-                        auth_manager.resume_interrupted_auth_payload(auth_payload, ctx);
-                    });
+                if ChannelState::is_warp_server_available() {
+                    if let Some(auth_payload) = me.interrupted_auth_payload.clone() {
+                        AuthManager::handle(ctx).update(ctx, |auth_manager, ctx| {
+                            auth_manager.resume_interrupted_auth_payload(auth_payload, ctx);
+                        });
+                    }
                 }
                 ctx.emit(AuthOverrideWarningModalEvent::Close);
             }
@@ -64,10 +66,12 @@ impl AuthOverrideWarningModal {
                 })
         });
 
-        let auth_manager = AuthManager::handle(ctx);
-        ctx.subscribe_to_model(&auth_manager, |me, _, event, ctx| {
-            me.handle_auth_manager_event(event, ctx);
-        });
+        if ChannelState::is_warp_server_available() {
+            let auth_manager = AuthManager::handle(ctx);
+            ctx.subscribe_to_model(&auth_manager, |me, _, event, ctx| {
+                me.handle_auth_manager_event(event, ctx);
+            });
+        }
 
         Self {
             auth_override_warning_modal,

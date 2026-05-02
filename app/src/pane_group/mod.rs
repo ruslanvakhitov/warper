@@ -34,7 +34,6 @@ use crate::pane_group::pane::ActionOrigin;
 use crate::quit_warning::UnsavedStateSummary;
 #[cfg(target_family = "wasm")]
 use crate::server::cloud_objects::update_manager::UpdateManager;
-use crate::server::server_api::ServerApiProvider;
 use crate::settings::{AISettings, DefaultSessionMode, PaneSettings};
 use crate::settings_view::SettingsSection;
 use crate::shell_indicator::ShellIndicatorType;
@@ -161,7 +160,7 @@ use crate::workspace::{
     self, CommandSearchOptions, PaneViewLocator, TabBarLocation, WorkspaceAction,
 };
 use crate::{
-    server::server_api::ServerApi,
+    server::server_api::{block::BlockClient, ServerApi},
     terminal::{TerminalManager, TerminalModel, TerminalView},
 };
 
@@ -2897,7 +2896,7 @@ impl PaneGroup {
             me.handle_focus_state_event(event, ctx);
         });
 
-        let block_client = ServerApiProvider::as_ref(ctx).get_block_client();
+        let block_client: Arc<dyn BlockClient> = server_api.clone();
         let share_modal =
             ctx.add_typed_action_view(|ctx| ShareBlockModal::new(None, block_client, ctx));
         ctx.subscribe_to_view(&share_modal, move |me, _, event, ctx| {

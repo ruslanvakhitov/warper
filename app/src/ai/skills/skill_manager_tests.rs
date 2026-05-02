@@ -355,7 +355,7 @@ name: test-skill
 description: Test skill with variables
 ---
 
-Run `{{warp_cli_binary_name}}` to connect to {{warp_server_url}}.
+Run `{{warp_cli_binary_name}}` with local settings at {{settings_file_path}}.
 "#,
     )
     .unwrap();
@@ -366,9 +366,11 @@ Run `{{warp_cli_binary_name}}` to connect to {{warp_server_url}}.
     let skill = skills.get("test-skill").unwrap();
 
     let expected_cli = ChannelState::channel().cli_command_name();
-    let expected_url = ChannelState::server_root_url();
+    let expected_settings_file_path = crate::settings::user_preferences_toml_file_path()
+        .display()
+        .to_string();
     assert!(skill.content.contains(&format!(
-        "Run `{expected_cli}` to connect to {expected_url}."
+        "Run `{expected_cli}` with local settings at {expected_settings_file_path}."
     )));
 }
 
@@ -436,18 +438,13 @@ Plain content with no variables.
 fn test_build_bundled_skill_context() {
     let context = build_bundled_skill_context();
 
-    // At least 4 entries: server_url, cli_binary_name, url_scheme, settings_file_path.
+    // At least 3 entries: cli_binary_name, url_scheme, settings_file_path.
     // settings_schema_path is only present when bundled_resources_dir() returns Some.
-    assert!(context.len() >= 4);
-    assert!(context.contains_key("warp_server_url"));
+    assert!(context.len() >= 3);
     assert!(context.contains_key("warp_cli_binary_name"));
     assert!(context.contains_key("warp_url_scheme"));
     assert!(context.contains_key("settings_file_path"));
 
-    assert_eq!(
-        context.get("warp_server_url").unwrap(),
-        &ChannelState::server_root_url().to_string()
-    );
     assert_eq!(
         context.get("warp_cli_binary_name").unwrap(),
         ChannelState::channel().cli_command_name()

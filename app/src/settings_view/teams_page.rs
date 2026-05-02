@@ -4090,7 +4090,7 @@ pub fn test_valid_domains() {
     assert!(!TeamsPageView::is_valid_domain("warp!.dev"));
     assert!(!TeamsPageView::is_valid_domain("warp.dev>"));
     assert!(!TeamsPageView::is_valid_domain("warp.dev."));
-    assert!(TeamsPageView::is_valid_domain("app.warp.dev"));
+    assert!(TeamsPageView::is_valid_domain("app.example.dev"));
     assert!(TeamsPageView::is_valid_domain("warp0.dev0"));
     assert!(TeamsPageView::is_valid_domain("warp.dev"));
     assert!(TeamsPageView::is_valid_domain("miniclip.com"));

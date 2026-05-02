@@ -144,6 +144,11 @@ impl AuthManager {
         enforce_state_validation: bool,
         ctx: &mut ModelContext<Self>,
     ) {
+        if !ChannelState::is_warp_server_available() {
+            log::info!("Ignoring auth payload because Warp server config is unavailable");
+            return;
+        }
+
         let AuthRedirectPayload {
             refresh_token,
             user_uid,
@@ -211,6 +216,13 @@ impl AuthManager {
         auth_payload: AuthRedirectPayload,
         ctx: &mut ModelContext<Self>,
     ) {
+        if !ChannelState::is_warp_server_available() {
+            log::info!(
+                "Ignoring interrupted auth payload because Warp server config is unavailable"
+            );
+            return;
+        }
+
         let AuthRedirectPayload {
             refresh_token,
             user_uid: _,
@@ -235,6 +247,11 @@ impl AuthManager {
 
     #[cfg(target_family = "wasm")]
     pub fn initialize_user_from_session_cookie(&self, ctx: &mut ModelContext<Self>) {
+        if !ChannelState::is_warp_server_available() {
+            log::info!("Ignoring session cookie auth because Warp server config is unavailable");
+            return;
+        }
+
         let auth_client = self.auth_client.clone();
         let _ = ctx.spawn(
             async move {
@@ -248,6 +265,11 @@ impl AuthManager {
 
     /// Refreshes the user's auth state using their existing credentials.
     pub fn refresh_user(&self, ctx: &mut ModelContext<Self>) {
+        if !ChannelState::is_warp_server_available() {
+            log::info!("Skipping user refresh because Warp server config is unavailable");
+            return;
+        }
+
         let Some(credentials) = self.auth_state.credentials() else {
             log::warn!("Attempted to refresh user without credentials");
             return;
@@ -270,6 +292,11 @@ impl AuthManager {
     /// This is only used by the Warp CLI if running on a devic that does not have the Warp app installed.
     #[cfg_attr(target_family = "wasm", allow(dead_code))]
     pub fn authorize_device(&self, ctx: &mut ModelContext<Self>) {
+        if !ChannelState::is_warp_server_available() {
+            log::info!("Skipping device authorization because Warp server config is unavailable");
+            return;
+        }
+
         // Clear any stale user state so old credentials don't interfere
         // with the fresh device auth flow.
         self.auth_state.set_credentials(None);
@@ -571,6 +598,14 @@ impl AuthManager {
         referral_code: Option<String>,
         ctx: &mut ModelContext<Self>,
     ) {
+        if !ChannelState::is_warp_server_available() {
+            log::info!(
+                "Skipping anonymous user creation because Warp server config is unavailable"
+            );
+            ctx.emit(AuthManagerEvent::SkippedLogin);
+            return;
+        }
+
         let anonymous_user_type = AnonymousUserType::NativeClientAnonymousUserFeatureGated;
 
         let auth_client = self.auth_client.clone();
@@ -634,6 +669,13 @@ impl AuthManager {
         auth_view_variant: AuthViewVariant,
         ctx: &mut ModelContext<Self>,
     ) {
+        if !ChannelState::is_warp_server_available() {
+            log::info!(
+                "Ignoring login-gated feature attempt because Warp server config is unavailable: {feature}"
+            );
+            return;
+        }
+
         if self.auth_state.is_anonymous_or_logged_out() {
             send_telemetry_from_ctx!(
                 TelemetryEvent::AnonymousUserAttemptLoginGatedFeature { feature },
@@ -644,6 +686,13 @@ impl AuthManager {
     }
 
     pub fn anonymous_user_hit_drive_object_limit(&self, ctx: &mut ModelContext<Self>) {
+        if !ChannelState::is_warp_server_available() {
+            log::info!(
+                "Ignoring anonymous Drive object limit prompt because Warp server config is unavailable"
+            );
+            return;
+        }
+
         if self.auth_state.is_anonymous_or_logged_out() {
             send_telemetry_from_ctx!(TelemetryEvent::AnonymousUserHitCloudObjectLimit, ctx);
             ctx.emit(AuthManagerEvent::AttemptedLoginGatedFeature {
@@ -657,6 +706,11 @@ impl AuthManager {
         entrypoint: AnonymousUserSignupEntrypoint,
         ctx: &mut ModelContext<Self>,
     ) {
+        if !ChannelState::is_warp_server_available() {
+            log::info!("Skipping anonymous user linking because Warp server config is unavailable");
+            return;
+        }
+
         let auth_client = self.auth_client.clone();
         let _ = ctx.spawn(
             async move { auth_client.fetch_new_custom_token().await },
@@ -671,24 +725,25 @@ impl AuthManager {
                             TelemetryEvent::InitiateAnonymousUserSignup { entrypoint },
                             ctx
                         );
-                        let login_options_url = me.login_options_url(&custom_token);
-                        if cfg!(target_family = "wasm") {
-                            #[cfg(target_family = "wasm")]
-                            if let Some(current_url) = parse_current_url() {
-                                update_browser_url(
-                                    Url::parse(&format!(
-                                        "{}?redirect_to={}",
-                                        login_options_url,
-                                        current_url.path()
-                                    ))
-                                    .ok(),
-                                    true,
-                                );
+                        if let Some(login_options_url) = me.login_options_url(&custom_token) {
+                            if cfg!(target_family = "wasm") {
+                                #[cfg(target_family = "wasm")]
+                                if let Some(current_url) = parse_current_url() {
+                                    update_browser_url(
+                                        Url::parse(&format!(
+                                            "{}?redirect_to={}",
+                                            login_options_url,
+                                            current_url.path()
+                                        ))
+                                        .ok(),
+                                        true,
+                                    );
+                                } else {
+                                    update_browser_url(Url::parse(&login_options_url).ok(), true);
+                                }
                             } else {
-                                update_browser_url(Url::parse(&login_options_url).ok(), true);
+                                ctx.open_url(&login_options_url);
                             }
-                        } else {
-                            ctx.open_url(&login_options_url);
                         }
                     }
                     Err(e) => {
@@ -706,6 +761,11 @@ impl AuthManager {
         ctx: &mut ModelContext<Self>,
         construct_url: URLConstructorCallback,
     ) {
+        if !ChannelState::is_warp_server_available() {
+            log::info!("Not opening hosted URL because Warp server config is unavailable");
+            return;
+        }
+
         if !self.auth_state.is_user_anonymous().unwrap_or_default()
             || !self.auth_state.is_logged_in()
         {
@@ -736,6 +796,11 @@ impl AuthManager {
     }
 
     pub fn copy_anonymous_user_linking_url_to_clipboard(&self, ctx: &mut ModelContext<Self>) {
+        if !ChannelState::is_warp_server_available() {
+            log::info!("Not copying login URL because Warp server config is unavailable");
+            return;
+        }
+
         if !self.auth_state.is_user_anonymous().unwrap_or_default() {
             return;
         }
@@ -747,12 +812,13 @@ impl AuthManager {
 
                 match custom_token {
                     Ok(custom_token) => {
-                        let login_options_url = me.login_options_url(&custom_token);
-                        ctx.clipboard().write(ClipboardContent {
-                            plain_text: login_options_url,
-                            paths: None,
-                            ..Default::default()
-                        });
+                        if let Some(login_options_url) = me.login_options_url(&custom_token) {
+                            ctx.clipboard().write(ClipboardContent {
+                                plain_text: login_options_url,
+                                paths: None,
+                                ..Default::default()
+                            });
+                        }
                     }
                     Err(e) => {
                         ctx.emit(AuthManagerEvent::MintCustomTokenFailed(e));
@@ -769,57 +835,73 @@ impl AuthManager {
         state
     }
 
-    pub fn sign_up_url(&mut self) -> String {
+    pub fn sign_up_url(&mut self) -> Option<String> {
+        if !ChannelState::is_warp_server_available() {
+            return None;
+        }
+        let server_root = ChannelState::maybe_server_root_url()?;
         let state = self.generate_auth_state();
-        format!(
+        Some(format!(
             // TODO: we should probably be able to remove the public_beta flag
             "{}/signup/remote?scheme={}&state={}&public_beta=true",
-            ChannelState::server_root_url(),
+            server_root,
             ChannelState::url_scheme(),
             state,
-        )
+        ))
     }
 
-    pub fn sign_in_url(&mut self) -> String {
+    pub fn sign_in_url(&mut self) -> Option<String> {
+        if !ChannelState::is_warp_server_available() {
+            return None;
+        }
+        let server_root = ChannelState::maybe_server_root_url()?;
         let state = self.generate_auth_state();
-        format!(
+        Some(format!(
             "{}/login/remote?scheme={}&state={}",
-            ChannelState::server_root_url(),
+            server_root,
             ChannelState::url_scheme(),
             state,
-        )
+        ))
     }
 
     /// The upgrade confirmation page will kick the user back to the app with a refresh token
     /// if we send a `state` query param to /upgrade
-    pub fn upgrade_url(&mut self) -> String {
+    pub fn upgrade_url(&mut self) -> Option<String> {
+        if !ChannelState::is_warp_server_available() {
+            return None;
+        }
+        let server_root = ChannelState::maybe_server_root_url()?;
         let state = self.generate_auth_state();
-        format!(
+        Some(format!(
             "{}/upgrade?scheme={}&state={}",
-            ChannelState::server_root_url(),
+            server_root,
             ChannelState::url_scheme(),
             state,
-        )
+        ))
     }
 
-    pub fn login_options_url(&mut self, custom_token: &str) -> String {
+    pub fn login_options_url(&mut self, custom_token: &str) -> Option<String> {
+        if !ChannelState::is_warp_server_available() {
+            return None;
+        }
+        let server_root = ChannelState::maybe_server_root_url()?;
         let state = self.generate_auth_state();
-        format!(
+        Some(format!(
             "{}/login_options/{}?state={}",
-            ChannelState::server_root_url(),
-            custom_token,
-            state,
-        )
+            server_root, custom_token, state,
+        ))
     }
 
-    pub fn link_sso_url(&mut self, email: &str) -> String {
+    pub fn link_sso_url(&mut self, email: &str) -> Option<String> {
+        if !ChannelState::is_warp_server_available() {
+            return None;
+        }
+        let server_root = ChannelState::maybe_server_root_url()?;
         let state = self.generate_auth_state();
-        format!(
+        Some(format!(
             "{}/link_sso?email={}&state={}",
-            ChannelState::server_root_url(),
-            email,
-            state,
-        )
+            server_root, email, state,
+        ))
     }
 
     /// Validates and consumes the pending auth state token. Returns `true` if the

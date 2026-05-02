@@ -528,19 +528,7 @@ impl<P: BackingView> PaneHeader<P> {
                     );
                 }
             }
-            OpenOverlay::SharingDialog => {
-                if self.is_sharing_dialog_enabled(app) {
-                    stack.add_positioned_overlay_child(
-                        ChildView::new(self.sharing_dialog()).finish(),
-                        OffsetPositioning::offset_from_parent(
-                            vec2f(-8., 0.),
-                            ParentOffsetBounds::WindowByPosition,
-                            ParentAnchor::BottomRight,
-                            ChildAnchor::TopRight,
-                        ),
-                    );
-                }
-            }
+            OpenOverlay::SharingDialog => {}
             OpenOverlay::None => {}
         }
     }

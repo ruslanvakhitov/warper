@@ -88,13 +88,10 @@ impl ChannelState {
         Url::parse(&url)?;
         let mut state = CHANNEL_STATE.lock();
         match state.config.server_config.as_mut() {
-            Some(server_config) => server_config.server_root_url = url,
+            Some(server_config) => server_config.server_root_url = Some(url),
             None => {
-                state.config.server_config = Some(WarpServerConfig::local_override(
-                    url,
-                    Cow::Borrowed(""),
-                    None,
-                ));
+                state.config.server_config =
+                    Some(WarpServerConfig::local_override(Some(url), None, None));
             }
         }
         Ok(())
@@ -105,13 +102,10 @@ impl ChannelState {
         Url::parse(&url)?;
         let mut state = CHANNEL_STATE.lock();
         match state.config.server_config.as_mut() {
-            Some(server_config) => server_config.rtc_server_url = url,
+            Some(server_config) => server_config.rtc_server_url = Some(url),
             None => {
-                state.config.server_config = Some(WarpServerConfig::local_override(
-                    Cow::Borrowed(""),
-                    url,
-                    None,
-                ));
+                state.config.server_config =
+                    Some(WarpServerConfig::local_override(None, Some(url), None));
             }
         }
         Ok(())
@@ -126,11 +120,8 @@ impl ChannelState {
         match state.config.server_config.as_mut() {
             Some(server_config) => server_config.session_sharing_server_url = Some(url),
             None => {
-                state.config.server_config = Some(WarpServerConfig::local_override(
-                    Cow::Borrowed(""),
-                    Cow::Borrowed(""),
-                    Some(url),
-                ));
+                state.config.server_config =
+                    Some(WarpServerConfig::local_override(None, None, Some(url)));
             }
         }
         Ok(())
@@ -259,7 +250,7 @@ impl ChannelState {
             .config
             .server_config
             .as_ref()
-            .map(|config| config.firebase_auth_api_key.clone())
+            .and_then(|config| config.firebase_auth_api_key.clone())
             .filter(|key| !key.is_empty())
     }
 
@@ -269,7 +260,7 @@ impl ChannelState {
             .config
             .server_config
             .as_ref()
-            .map(|config| config.rtc_server_url.clone())
+            .and_then(|config| config.rtc_server_url.clone())
             .filter(|url| !url.is_empty())
     }
 
@@ -283,7 +274,7 @@ impl ChannelState {
                     .config
                     .server_config
                     .as_ref()
-                    .map(|config| config.server_root_url.clone())
+                    .and_then(|config| config.server_root_url.clone())
                     .filter(|url| !url.is_empty())
             }
         }

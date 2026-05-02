@@ -702,7 +702,9 @@ fn fetch_auth_tokens(
 ) -> BoxFuture<'static, StdResult<FirebaseAuthTokens, UserAuthenticationError>> {
     Box::pin(async move {
         let firebase_api_key = ChannelState::firebase_api_key();
-        let url = token.access_token_url(&firebase_api_key);
+        let url = token
+            .access_token_url(&firebase_api_key)
+            .map_err(UserAuthenticationError::Unexpected)?;
         let request_body = token.access_token_request_body();
         let proxy_url = token.proxy_url(&ChannelState::server_root_url(), &firebase_api_key);
         let response = match client

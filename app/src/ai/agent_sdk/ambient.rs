@@ -16,12 +16,9 @@ use crate::server::server_api::ai::{
     ListAgentMessagesRequest, ReadAgentMessageResponse, RunSortBy, RunSortOrder,
     SendAgentMessageRequest, SendAgentMessageResponse, SpawnAgentRequest, TaskListFilter,
 };
-use crate::server::server_api::ServerApi;
+use crate::server::server_api::{ServerApi, ServerApiProvider};
 use crate::workspaces::user_workspaces::UserWorkspaces;
-use crate::{
-    terminal::shared_session, util::time_format::format_approx_duration_from_now_utc,
-    ServerApiProvider,
-};
+use crate::{terminal::shared_session, util::time_format::format_approx_duration_from_now_utc};
 use anyhow::{anyhow, Context as _};
 use comfy_table::Cell;
 use futures::{future, StreamExt};

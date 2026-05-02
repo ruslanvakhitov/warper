@@ -8,7 +8,7 @@ use super::{
     SettingsAction, SettingsSection, ToggleSettingActionPair,
 };
 use crate::auth::{AuthStateProvider, UserUid};
-use crate::autoupdate::{self, AutoupdateStage, AutoupdateState};
+use crate::autoupdate::{self, AutoupdateStage};
 use crate::editor::{
     EditorView, Event as EditorEvent, SingleLineEditorOptions, TextColors, TextOptions,
 };
@@ -190,13 +190,15 @@ impl TypedActionView for MainSettingsPageView {
             .is_anonymous_or_logged_out()
             && action.blocked_for_anonymous_user()
         {
-            AuthManager::handle(ctx).update(ctx, |auth_manager, ctx| {
-                auth_manager.attempt_login_gated_feature(
-                    action.into(),
-                    AuthViewVariant::RequireLoginCloseable,
-                    ctx,
-                )
-            });
+            if ChannelState::is_warp_server_available() {
+                AuthManager::handle(ctx).update(ctx, |auth_manager, ctx| {
+                    auth_manager.attempt_login_gated_feature(
+                        action.into(),
+                        AuthViewVariant::RequireLoginCloseable,
+                        ctx,
+                    )
+                });
+            }
             return;
         }
 
@@ -265,20 +267,16 @@ impl MainSettingsPageView {
         let auth_state = AuthStateProvider::as_ref(ctx).get().clone();
         let is_oss = ChannelState::channel() == Channel::Oss;
 
-        let autoupdate_state_handle = AutoupdateState::handle(ctx);
-        ctx.observe(
-            &autoupdate_state_handle,
-            Self::handle_autoupdate_state_change,
-        );
-
         ctx.subscribe_to_model(&CloudPreferencesSettings::handle(ctx), |_, _, _, ctx| {
             ctx.notify();
         });
 
-        let auth_manager_handle = AuthManager::handle(ctx);
-        ctx.subscribe_to_model(&auth_manager_handle, |_, _, _, ctx| {
-            ctx.notify();
-        });
+        if ChannelState::is_warp_server_available() {
+            let auth_manager_handle = AuthManager::handle(ctx);
+            ctx.subscribe_to_model(&auth_manager_handle, |_, _, _, ctx| {
+                ctx.notify();
+            });
+        }
 
         let mut widgets: Vec<Box<dyn SettingsWidget<View = Self>>> = if is_oss {
             vec![
@@ -294,7 +292,7 @@ impl MainSettingsPageView {
             ]
         };
 
-        if ChannelState::app_version().is_some() {
+        if ChannelState::show_autoupdate_menu_items() && ChannelState::app_version().is_some() {
             widgets.push(Box::new(VersionInfoWidget::default()));
         }
 
@@ -306,14 +304,6 @@ impl MainSettingsPageView {
         let page = PageType::new_uncategorized(widgets, Some(title));
 
         MainSettingsPageView { page, auth_state }
-    }
-
-    fn handle_autoupdate_state_change(
-        &mut self,
-        _: ModelHandle<AutoupdateState>,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        ctx.notify();
     }
 }
 
@@ -1289,11 +1279,12 @@ impl SettingsPageMeta for MainSettingsPageView {
     }
 
     fn on_page_selected(&mut self, _: bool, ctx: &mut ViewContext<Self>) {
-        // We want to immediately see if the user is part of a workspace rather than wait for the next poll.
-        std::mem::drop(
-            TeamUpdateManager::handle(ctx)
-                .update(ctx, |manager, ctx| manager.refresh_workspace_metadata(ctx)),
-        );
+        if ChannelState::is_warp_server_available() {
+            std::mem::drop(
+                TeamUpdateManager::handle(ctx)
+                    .update(ctx, |manager, ctx| manager.refresh_workspace_metadata(ctx)),
+            );
+        }
     }
 
     fn update_filter(&mut self, query: &str, ctx: &mut ViewContext<Self>) -> MatchData {

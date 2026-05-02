@@ -138,7 +138,7 @@ pub struct BlocklistAIStatusBar {
     current_tip: Option<AgentTip>,
 
     ephemeral_message_model: ModelHandle<EphemeralMessageModel>,
-    agent_message_bar: ViewHandle<AgentMessageBar>,
+    agent_message_bar: Option<ViewHandle<AgentMessageBar>>,
     child_agent_status_card: ViewHandle<ChildAgentStatusCard>,
 }
 
@@ -338,20 +338,7 @@ impl BlocklistAIStatusBar {
             ctx.notify();
         });
 
-        let agent_message_bar = ctx.add_view(|ctx| {
-            AgentMessageBar::new(
-                agent_view_controller.clone(),
-                ephemeral_message_model.clone(),
-                shortcut_view_model.clone(),
-                input_buffer_model,
-                input_model.clone(),
-                input_suggestions_model,
-                slash_command_model,
-                context_model.clone(),
-                terminal_model.clone(),
-                ctx,
-            )
-        });
+        let agent_message_bar = None;
 
         let child_agent_status_card = ctx.add_typed_action_view(|ctx| {
             ChildAgentStatusCard::new(agent_view_controller.clone(), ctx)
@@ -440,7 +427,9 @@ impl BlocklistAIStatusBar {
 
     pub fn notify_and_notify_children(&mut self, ctx: &mut ViewContext<Self>) {
         ctx.notify();
-        self.agent_message_bar.update(ctx, |_, ctx| ctx.notify());
+        if let Some(agent_message_bar) = &self.agent_message_bar {
+            agent_message_bar.update(ctx, |_, ctx| ctx.notify());
+        }
     }
 
     fn reset_model_for_exchange(
@@ -1214,10 +1203,12 @@ impl View for BlocklistAIStatusBar {
                 // Don't render warping indicator - the loading screen is shown in the main view
                 return Empty::new().finish();
             } else if agent_view_controller.is_active() {
-                return Flex::column()
-                    .with_child(ChildView::new(&self.child_agent_status_card).finish())
-                    .with_child(ChildView::new(&self.agent_message_bar).finish())
-                    .finish();
+                let mut column = Flex::column()
+                    .with_child(ChildView::new(&self.child_agent_status_card).finish());
+                if let Some(agent_message_bar) = &self.agent_message_bar {
+                    column = column.with_child(ChildView::new(agent_message_bar).finish());
+                }
+                return column.finish();
             } else {
                 return Empty::new().finish();
             };

@@ -9,10 +9,31 @@ use crate::auth::{
     AuthStateProvider, UserUid,
 };
 use crate::server::server_api::auth::UserAuthenticationError;
-use crate::ServerApiProvider;
+use crate::server::server_api::ServerApiProvider;
+use warp_core::{
+    channel::{Channel, ChannelConfig, ChannelState, WarpServerConfig},
+    AppId,
+};
 use warpui::{App, SingletonEntity};
 
 fn initialize_app(app: &mut App) {
+    ChannelState::set(ChannelState::new(
+        Channel::Local,
+        ChannelConfig {
+            app_id: AppId::new("dev", "warper", "Warper"),
+            logfile_name: "warper.log".into(),
+            server_config: Some(WarpServerConfig::local_override(
+                Some("http://127.0.0.1:9".into()),
+                Some("ws://127.0.0.1:9/graphql/v2".into()),
+                None,
+            )),
+            oz_config: None,
+            telemetry_config: None,
+            autoupdate_config: None,
+            crash_reporting_config: None,
+            mcp_static_config: None,
+        },
+    ));
     app.add_singleton_model(|_ctx| ServerApiProvider::new_for_test());
     app.add_singleton_model(|_| AuthStateProvider::new_for_test());
     app.add_singleton_model(AuthManager::new_for_test);

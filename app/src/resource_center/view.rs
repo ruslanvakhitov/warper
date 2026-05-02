@@ -117,7 +117,7 @@ impl ResourceCenterView {
     pub fn new(
         ctx: &mut ViewContext<Self>,
         tips_completed: ModelHandle<TipsCompleted>,
-        changelog_model_handle: ModelHandle<ChangelogModel>,
+        changelog_model_handle: Option<ModelHandle<ChangelogModel>>,
     ) -> Self {
         let main_view = ResourceCenterPageView {
             page: ResourceCenterPage::Main,
@@ -157,7 +157,7 @@ impl ResourceCenterView {
     fn build_main_view(
         ctx: &mut ViewContext<Self>,
         tips_completed: ModelHandle<TipsCompleted>,
-        changelog_model_handle: ModelHandle<ChangelogModel>,
+        changelog_model_handle: Option<ModelHandle<ChangelogModel>>,
     ) -> ViewHandle<ResourceCenterMainView> {
         let main_view = ctx.add_typed_action_view(|ctx| {
             ResourceCenterMainView::new(ctx, tips_completed.clone(), changelog_model_handle)

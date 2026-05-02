@@ -11,7 +11,6 @@ use crate::search::data_source::Query;
 use crate::search::mixer::SearchMixer;
 use crate::terminal::input::buffer_model::{InputBufferModel, InputBufferUpdateEvent};
 use crate::terminal::input::inline_menu::{InlineMenuEvent, InlineMenuPositioner, InlineMenuView};
-use crate::terminal::input::plans::data_source::PlanMenuDataSource;
 use crate::terminal::input::plans::AcceptPlan;
 use crate::terminal::input::suggestions_mode_model::{
     InputSuggestionsModeEvent, InputSuggestionsModeModel,
@@ -31,7 +30,6 @@ pub enum InlinePlanMenuEvent {
 
 pub struct InlinePlanMenuView {
     menu_view: ViewHandle<InlineMenuView<AcceptPlan>>,
-    data_source: ModelHandle<PlanMenuDataSource>,
     mixer: ModelHandle<SearchMixer<AcceptPlan>>,
     input_suggestions_model: ModelHandle<InputSuggestionsModeModel>,
 }
@@ -45,11 +43,10 @@ impl InlinePlanMenuView {
         input_buffer_model: &ModelHandle<InputBufferModel>,
         ctx: &mut ViewContext<Self>,
     ) -> Self {
-        let data_source = ctx.add_model(|_| PlanMenuDataSource::new(conversation_id));
+        let _ = conversation_id;
 
         let mixer = ctx.add_model(|ctx| {
             let mut mixer = SearchMixer::<AcceptPlan>::new();
-            mixer.add_sync_source(data_source.clone(), []);
             mixer.run_query(Query::default(), ctx);
             mixer
         });
@@ -87,9 +84,7 @@ impl InlinePlanMenuView {
                     .as_ref(ctx)
                     .plan_menu_conversation_id()
                 {
-                    me.data_source.update(ctx, |ds, _| {
-                        ds.set_conversation_id(conversation_id);
-                    });
+                    let _ = conversation_id;
                     me.refresh_results("", ctx);
                 }
             },
@@ -104,7 +99,6 @@ impl InlinePlanMenuView {
 
         Self {
             menu_view,
-            data_source,
             mixer,
             input_suggestions_model,
         }

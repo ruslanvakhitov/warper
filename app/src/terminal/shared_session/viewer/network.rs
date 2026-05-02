@@ -57,6 +57,7 @@ use crate::{
         TerminalModel, TerminalView,
     },
     throttle::throttle,
+    ChannelState,
 };
 
 /// The amount of time we will wait to batch consecutive write to pty requests before sending an event to the server.
@@ -387,6 +388,13 @@ impl Network {
         ws_proxy_rx: async_channel::Receiver<UpstreamMessage>,
         ctx: &mut ModelContext<Self>,
     ) {
+        if !ChannelState::is_warp_server_available() {
+            ctx.emit(NetworkEvent::FailedToJoin {
+                reason: FailedToJoinReason::FailedToConnectToServer,
+            });
+            return;
+        }
+
         let auth_client = ServerApiProvider::as_ref(ctx).get_auth_client();
         let auth_state = AuthStateProvider::as_ref(ctx).get().clone();
         // Open a websocket to the server to join the session.
@@ -430,6 +438,12 @@ impl Network {
     /// is already attempting to reconnect.
     pub fn reconnect_websocket(&mut self, ctx: &mut ModelContext<Self>) {
         if matches!(self.stage, Stage::Finished | Stage::Reconnecting { .. }) {
+            return;
+        }
+        if !ChannelState::is_warp_server_available() {
+            log::info!("Not reconnecting shared session viewer without Warp server config");
+            self.close_without_reconnection();
+            ctx.emit(NetworkEvent::FailedToReconnect);
             return;
         }
         let Some(event_loop) = self.event_loop.clone() else {
@@ -489,6 +503,12 @@ impl Network {
 
     /// Fetches the new user id and reconnectes to the websocket.
     pub fn reauthenticate_viewer(&mut self, ctx: &mut ModelContext<Self>) {
+        if !ChannelState::is_warp_server_available() {
+            log::info!("Not reauthenticating shared session viewer without Warp server config");
+            self.close_without_reconnection();
+            return;
+        }
+
         let server_api = ServerApiProvider::as_ref(ctx).get();
         let auth_state = AuthStateProvider::as_ref(ctx).get().clone();
         ctx.spawn(

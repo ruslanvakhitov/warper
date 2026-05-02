@@ -65,23 +65,13 @@ impl WorkflowAliases {
     }
 
     /// A mapping of all aliases, for autocomplete.
-    pub fn autocomplete_data(&self, ctx: &AppContext) -> HashMap<String, String> {
-        let cloud_model = CloudModel::as_ref(ctx);
-        let mut alias_data = HashMap::with_capacity(self.aliases.len());
-        for alias in self.aliases.iter() {
-            if let Some(backing_workflow) = cloud_model.get_workflow(&alias.workflow_id) {
-                alias_data.insert(alias.alias.clone(), backing_workflow.display_name());
-            }
-        }
-        alias_data
+    pub fn autocomplete_data(&self, _ctx: &AppContext) -> HashMap<String, String> {
+        HashMap::new()
     }
 
     // potentially support autocomplete
-    pub fn match_alias(&self, input_text: &str) -> Option<WorkflowAlias> {
-        self.aliases
-            .iter()
-            .find(|alias| alias.alias == input_text)
-            .cloned()
+    pub fn match_alias(&self, _input_text: &str) -> Option<WorkflowAlias> {
+        None
     }
 
     pub fn get_aliases_for_workflow(&self, workflow_id: SyncId) -> Vec<&WorkflowAlias> {

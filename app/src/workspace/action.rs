@@ -681,6 +681,81 @@ impl From<&WorkspaceAction> for LoginGatedFeature {
 }
 
 impl WorkspaceAction {
+    pub fn requires_hosted_services(&self) -> bool {
+        use WorkspaceAction::*;
+
+        matches!(
+            self,
+            AutoupdateFailureLink
+                | ApplyUpdate
+                | LogOut
+                | DownloadNewVersion
+                | CheckForUpdate
+                | ExportAllWarpDriveObjects
+                | ShowUpgrade
+                | ShowReferralSettingsPage
+                | ImportToPersonalDrive
+                | ImportToTeamDrive
+                | CreatePersonalNotebook
+                | CreateTeamNotebook
+                | CreatePersonalWorkflow
+                | CreateTeamWorkflow
+                | CreatePersonalFolder
+                | CreateTeamFolder
+                | CreateTeamEnvVarCollection
+                | CreatePersonalEnvVarCollection
+                | CreatePersonalAIPrompt
+                | CreateTeamAIPrompt
+                | OpenWarpDrive
+                | ToggleWarpDrive
+                | Reauth
+                | SignupAnonymousUser
+                | SignInAnonymousWebUser
+                | OpenShareSessionModal(_)
+                | StopSharingSessionFromTabMenu { .. }
+                | StopSharingAllSessionsInTab { .. }
+                | CopySharedSessionLinkFromTab { .. }
+                | ViewObjectInWarpDrive(_)
+                | OpenObjectSharingSettings { .. }
+                | UndoTrash(_)
+                | OpenCloudAgentSetupGuide
+                | AttemptLoginGatedAIUpgrade
+                | OpenEnvironmentManagementPane
+                | OpenPalette {
+                    mode: PaletteMode::WarpDrive,
+                    ..
+                }
+                | TogglePalette {
+                    mode: PaletteMode::WarpDrive,
+                    ..
+                }
+                | AddAmbientAgentTab
+                | ShowSettingsPage(
+                    SettingsSection::BillingAndUsage
+                        | SettingsSection::Referrals
+                        | SettingsSection::SharedBlocks
+                        | SettingsSection::Teams
+                        | SettingsSection::WarpDrive
+                        | SettingsSection::CloudEnvironments
+                        | SettingsSection::OzCloudAPIKeys,
+                )
+                | ShowSettingsPageWithSearch {
+                    section: Some(
+                        SettingsSection::BillingAndUsage
+                            | SettingsSection::Referrals
+                            | SettingsSection::SharedBlocks
+                            | SettingsSection::Teams
+                            | SettingsSection::WarpDrive
+                            | SettingsSection::CloudEnvironments
+                            | SettingsSection::OzCloudAPIKeys,
+                    ),
+                    ..
+                }
+                | OpenAmbientAgentSession { .. }
+                | OpenConversationTranscriptViewer { .. }
+        )
+    }
+
     pub fn blocked_for_anonymous_user(&self) -> bool {
         use WorkspaceAction::*;
         matches!(

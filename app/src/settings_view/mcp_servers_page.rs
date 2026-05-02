@@ -67,7 +67,7 @@ pub struct MCPServersSettingsPageView {
     page: PageType<Self>,
     current_page: MCPServersSettingsPage,
     list_view: ViewHandle<MCPServersListPageView>,
-    edit_view: ViewHandle<MCPServersEditPageView>,
+    edit_view: Option<ViewHandle<MCPServersEditPageView>>,
     installation_modal_state: ModalViewState<Modal<InstallationModalBody>>,
 }
 
@@ -76,11 +76,6 @@ impl MCPServersSettingsPageView {
         let list_view = ctx.add_typed_action_view(MCPServersListPageView::new);
         ctx.subscribe_to_view(&list_view, |me, _, event, ctx| {
             me.handle_list_view_event(event, ctx);
-        });
-
-        let edit_view = ctx.add_typed_action_view(MCPServersEditPageView::new);
-        ctx.subscribe_to_view(&edit_view, |me, _, event, ctx| {
-            me.handle_edit_view_event(event, ctx);
         });
 
         let installation_modal_body =
@@ -105,15 +100,32 @@ impl MCPServersSettingsPageView {
             ),
             current_page: MCPServersSettingsPage::default(),
             list_view,
-            edit_view,
+            edit_view: None,
             installation_modal_state,
         }
+    }
+
+    fn ensure_edit_view(
+        &mut self,
+        ctx: &mut ViewContext<Self>,
+    ) -> ViewHandle<MCPServersEditPageView> {
+        if let Some(edit_view) = &self.edit_view {
+            return edit_view.clone();
+        }
+
+        let edit_view = ctx.add_typed_action_view(MCPServersEditPageView::new);
+        ctx.subscribe_to_view(&edit_view, |me, _, event, ctx| {
+            me.handle_edit_view_event(event, ctx);
+        });
+        self.edit_view = Some(edit_view.clone());
+        edit_view
     }
 
     pub fn update_page(&mut self, page: MCPServersSettingsPage, ctx: &mut ViewContext<Self>) {
         self.current_page = page;
         if let MCPServersSettingsPage::Edit { item_id } = page {
-            self.edit_view.update(ctx, |edit_view, ctx| {
+            let edit_view = self.ensure_edit_view(ctx);
+            edit_view.update(ctx, |edit_view, ctx| {
                 edit_view.set_mcp_server(item_id, ctx);
             });
         }
@@ -124,7 +136,11 @@ impl MCPServersSettingsPageView {
     pub fn focus(&mut self, ctx: &mut ViewContext<Self>) {
         match self.current_page {
             MCPServersSettingsPage::List => ctx.focus(&self.list_view),
-            MCPServersSettingsPage::Edit { .. } => ctx.focus(&self.edit_view),
+            MCPServersSettingsPage::Edit { .. } => {
+                if let Some(edit_view) = &self.edit_view {
+                    ctx.focus(edit_view);
+                }
+            }
         }
     }
 
@@ -477,7 +493,8 @@ impl MCPServersSettingsPageView {
 
                 // When we re-install, the installation uuid changes, so we should load the edit page with the new installation uuid
                 if let Some(new_installation) = new_installation {
-                    self.edit_view.update(ctx, |edit_page, ctx| {
+                    let edit_view = self.ensure_edit_view(ctx);
+                    edit_view.update(ctx, |edit_page, ctx| {
                         edit_page.set_mcp_server(
                             Some(ServerCardItemId::TemplatableMCPInstallation(
                                 new_installation.uuid(),
@@ -523,9 +540,13 @@ impl View for MCPServersSettingsPageView {
             MCPServersSettingsPage::Edit { item_id: _ } => {
                 // The edit view needs to be constrained so we will render it directly
                 // instead of rendering inside the settings widget
-                Container::new(ChildView::new(&self.edit_view).finish())
-                    .with_uniform_padding(style::PAGE_PADDING)
-                    .finish()
+                if let Some(edit_view) = &self.edit_view {
+                    Container::new(ChildView::new(edit_view).finish())
+                        .with_uniform_padding(style::PAGE_PADDING)
+                        .finish()
+                } else {
+                    self.page.render(self, _app)
+                }
             }
         }
     }

@@ -24,8 +24,8 @@ impl TestChannelGuard {
                 app_id: AppId::new("dev", "warper", "Warper"),
                 logfile_name: "warper.log".into(),
                 server_config: Some(WarpServerConfig::local_override(
-                    "http://127.0.0.1:9".into(),
-                    "ws://127.0.0.1:9/graphql/v2".into(),
+                    Some("http://127.0.0.1:9".into()),
+                    Some("ws://127.0.0.1:9/graphql/v2".into()),
                     None,
                 )),
                 oz_config: Some(OzConfig {

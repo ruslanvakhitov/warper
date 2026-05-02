@@ -301,6 +301,57 @@ fn test_validate_custom_uri_linear() {
 }
 
 #[test]
+fn validate_custom_uri_rejects_hosted_hosts_without_server_config() {
+    ChannelState::set(ChannelState::init());
+
+    for url in [
+        format!("{}://auth/desktop_redirect", ChannelState::url_scheme()),
+        format!("{}://team/settings", ChannelState::url_scheme()),
+        format!("{}://conversation/abc", ChannelState::url_scheme()),
+        format!("{}://drive/notebook?id=abc", ChannelState::url_scheme()),
+        format!(
+            "{}://settings/billing_and_usage",
+            ChannelState::url_scheme()
+        ),
+        format!("{}://settings/environments", ChannelState::url_scheme()),
+        format!("{}://settings/platform", ChannelState::url_scheme()),
+        format!("{}://action/cloud_agent_setup", ChannelState::url_scheme()),
+        format!(
+            "{}://action/new_cloud_agent_conversation",
+            ChannelState::url_scheme()
+        ),
+        format!("{}://action/focus_cloud_mode", ChannelState::url_scheme()),
+    ] {
+        let url = Url::parse(&url).unwrap();
+        let err = validate_custom_uri(&url).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("hosted-service url without Warp server config"),
+            "unexpected error for {url}: {err}"
+        );
+    }
+}
+
+#[test]
+fn validate_custom_uri_allows_local_actions_without_server_config() {
+    ChannelState::set(ChannelState::init());
+
+    for url in [
+        format!("{}://action/open-repo", ChannelState::url_scheme()),
+        format!("{}://action/new_tab?path=/tmp", ChannelState::url_scheme()),
+        format!("{}://settings/appearance", ChannelState::url_scheme()),
+        format!("{}://mcp/oauth2callback", ChannelState::url_scheme()),
+        format!("{}://codex", ChannelState::url_scheme()),
+    ] {
+        let url = Url::parse(&url).unwrap();
+        assert!(
+            validate_custom_uri(&url).is_ok(),
+            "expected local URI to be valid: {url}"
+        );
+    }
+}
+
+#[test]
 fn test_linear_action_parse_work() {
     let url = Url::parse(&format!(
         "{}://linear/work?prompt=hello",

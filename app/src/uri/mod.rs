@@ -105,7 +105,29 @@ impl FromStr for UriHost {
 }
 
 impl UriHost {
+    fn requires_hosted_services(&self, url: &Url) -> bool {
+        match self {
+            UriHost::Auth
+            | UriHost::Team
+            | UriHost::SharedSession
+            | UriHost::Conversation
+            | UriHost::Drive => true,
+            UriHost::Action => Action::parse(url)
+                .map(|action| action.requires_hosted_services())
+                .unwrap_or(false),
+            UriHost::Settings => settings_uri_requires_hosted_services(url),
+            UriHost::Launch | UriHost::Home | UriHost::Mcp | UriHost::Codex | UriHost::Linear => {
+                false
+            }
+        }
+    }
+
     fn handle(&self, primary_window_id: Option<WindowId>, url: &Url, ctx: &mut AppContext) {
+        if !ChannelState::is_warp_server_available() && self.requires_hosted_services(url) {
+            log::info!("Ignoring hosted-service URI without Warp server config");
+            return;
+        }
+
         // Handle host
         match self {
             UriHost::Auth => {
@@ -704,6 +726,11 @@ impl Action {
     }
 
     fn handle(&self, primary_window_id: Option<WindowId>, url: &Url, ctx: &mut AppContext) {
+        if !ChannelState::is_warp_server_available() && self.requires_hosted_services() {
+            log::info!("Ignoring hosted-service URI action without Warp server config");
+            return;
+        }
+
         #[cfg(target_os = "linux")]
         let primary_window_id = self.window_behavior_hint().resolve(primary_window_id, ctx);
         match self {
@@ -927,6 +954,16 @@ impl Action {
             }),
             Self::NewWindow => W::Nothing,
         }
+    }
+
+    fn requires_hosted_services(&self) -> bool {
+        matches!(
+            self,
+            Self::CloudAgentSetup
+                | Self::NewCloudAgentConversation
+                | Self::CreateEnvironment { .. }
+                | Self::FocusCloudMode
+        )
     }
 }
 
@@ -1294,6 +1331,12 @@ fn validate_custom_uri(url: &Url) -> Result<UriHost> {
         .ok_or_else(|| anyhow!("Received url with no host str"))?;
 
     let host = UriHost::from_str(host_str)?;
+    if !ChannelState::is_warp_server_available() && host.requires_hosted_services(url) {
+        return Err(anyhow!(
+            "Received hosted-service url without Warp server config: {}",
+            host_str
+        ));
+    }
 
     // Check if this host is allowed to have arbitrary paths.
     let host_allows_arbitrary_path = match host {
@@ -1318,6 +1361,17 @@ fn validate_custom_uri(url: &Url) -> Result<UriHost> {
     );
 
     Ok(host)
+}
+
+fn settings_uri_requires_hosted_services(url: &Url) -> bool {
+    let Some(settings_sub_page) = url.path_segments().into_iter().flatten().last() else {
+        return false;
+    };
+
+    matches!(
+        settings_sub_page,
+        "teams" | "billing_and_usage" | "environments" | "platform"
+    )
 }
 
 /// Formats the non-sensitive components of an incoming URL for logging on

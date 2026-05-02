@@ -49,6 +49,7 @@ use crate::terminal::shared_session::{
 };
 use crate::terminal::TerminalModel;
 use crate::throttle::throttle;
+use crate::ChannelState;
 
 #[cfg(not(any(test, feature = "integration_tests")))]
 use {
@@ -592,6 +593,14 @@ impl Network {
         source_type: SessionSourceType,
         ctx: &mut ModelContext<Self>,
     ) {
+        if !ChannelState::is_warp_server_available() {
+            ctx.emit(NetworkEvent::FailedToCreateSharedSession {
+                reason: FailedToInitializeSessionReason::internal_server_error_without_details(),
+                cause: None,
+            });
+            return;
+        }
+
         let auth_client = ServerApiProvider::as_ref(ctx).get_auth_client();
         let anonymous_id = AuthStateProvider::as_ref(ctx).get().anonymous_id();
 
@@ -672,6 +681,11 @@ impl Network {
     /// We also will not initiate an attempt if the session has been explicitly ended or is already attempting to reconnect.
     pub fn reconnect_websocket(&mut self, ctx: &mut ModelContext<Self>) {
         if matches!(self.stage, Stage::Finished | Stage::Reconnecting { .. }) {
+            return;
+        }
+        if !ChannelState::is_warp_server_available() {
+            log::info!("Not reconnecting shared session without Warp server config");
+            self.close_without_reconnection();
             return;
         }
 

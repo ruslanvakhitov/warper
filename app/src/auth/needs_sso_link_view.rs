@@ -1,5 +1,6 @@
 use super::auth_manager::AuthManager;
 use crate::{appearance::Appearance, auth::login_error_modal::LoginErrorModal};
+use warp_core::channel::ChannelState;
 use warpui::elements::{Align, MouseStateHandle, Shrinkable};
 use warpui::ui_components::button::ButtonVariant;
 use warpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
@@ -43,6 +44,10 @@ impl View for NeedsSsoLinkView {
     }
 
     fn render(&self, app: &AppContext) -> Box<dyn Element> {
+        if !ChannelState::is_warp_server_available() {
+            return LoginErrorModal::new(app).build().finish();
+        }
+
         let appearance = Appearance::as_ref(app);
         let ui_builder = appearance.ui_builder();
 
@@ -89,11 +94,19 @@ impl TypedActionView for NeedsSsoLinkView {
     fn handle_action(&mut self, action: &NeedsSsoLinkViewAction, ctx: &mut ViewContext<Self>) {
         match action {
             NeedsSsoLinkViewAction::ClickedLinkSsoButton => {
+                if !ChannelState::is_warp_server_available() {
+                    log::info!(
+                        "Ignoring SSO link action because Warp server config is unavailable"
+                    );
+                    return;
+                }
+
                 let email = self.email.as_deref().unwrap_or("");
 
                 AuthManager::handle(ctx).update(ctx, |auth_manager, ctx| {
-                    let url = auth_manager.link_sso_url(email);
-                    ctx.open_url(&url);
+                    if let Some(url) = auth_manager.link_sso_url(email) {
+                        ctx.open_url(&url);
+                    }
                 });
             }
         }

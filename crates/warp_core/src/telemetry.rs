@@ -140,56 +140,26 @@ pub fn all_events() -> impl Iterator<Item = Box<dyn TelemetryEventDesc>> {
     inventory::iter::<&'static dyn AnyTelemetryEventRegistration>().flat_map(|meta| meta.events())
 }
 
-// Records a telemetry event in the local in-memory queue.
+// WARPER-001: hosted Warp telemetry is amputated. Keep the macro surface so
+// downstream UI code compiles while ensuring calls cannot reach telemetry
+// providers, queues, or network upload paths.
 #[macro_export]
 macro_rules! send_telemetry_from_ctx {
     ($event:expr, $ctx:expr) => {
-        #[allow(unused_imports)]
-        use warp_core::telemetry::TelemetryEvent as _;
-        let event = $event;
-        if event.enablement_state().is_enabled() {
-            let auth_state =
-                <$crate::telemetry::TelemetryContextModel as warpui::SingletonEntity>::handle($ctx)
-                    .as_ref($ctx);
-            let user_id = auth_state.user_id($ctx);
-            let anonymous_id = auth_state.anonymous_id($ctx);
-            warpui::record_telemetry_from_ctx!(
-                user_id,
-                anonymous_id,
-                event.name().into(),
-                event.payload(),
-                event.contains_ugc(),
-                $ctx
-            );
+        if false {
+            let _ = &$event;
+            let _ = &$ctx;
         }
     };
 }
 
-/// Records a telemetry event in the local in-memory queue. This is the same as
-/// [`send_telemetry_from_ctx`], except it can be called in instances where you only have a
-/// `AppContext` rather than a `ViewContext`/`ModelContext`.
-///
-/// If possible, use [`send_telemetry_from_ctx`].
+/// Hosted Warp telemetry is amputated in Warper. This macro is intentionally a no-op.
 #[macro_export]
 macro_rules! send_telemetry_from_app_ctx {
     ($event:expr, $app_ctx:expr) => {
-        let event = $event;
-        if event.enablement_state().is_enabled() {
-            let auth_state =
-                <$crate::telemetry::TelemetryContextModel as warpui::SingletonEntity>::handle(
-                    $app_ctx,
-                )
-                .as_ref($app_ctx);
-            let user_id = auth_state.user_id($app_ctx.as_ref());
-            let anonymous_id = auth_state.anonymous_id($app_ctx.as_ref());
-            warpui::record_telemetry_on_executor!(
-                user_id,
-                anonymous_id,
-                event.name().into(),
-                event.payload(),
-                event.contains_ugc(),
-                $app_ctx.background_executor()
-            );
+        if false {
+            let _ = &$event;
+            let _ = &$app_ctx;
         }
     };
 }

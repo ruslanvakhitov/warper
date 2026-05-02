@@ -1,4 +1,5 @@
 use anyhow::anyhow;
+use warp_core::channel::ChannelState;
 use wasm_bindgen::prelude::*;
 
 use warpui::{
@@ -42,9 +43,11 @@ enum HandoffState {
 
 impl WebHandoffView {
     pub fn new(ctx: &mut ViewContext<Self>) -> Self {
-        ctx.subscribe_to_model(&AuthManager::handle(ctx), |me, _, event, ctx| {
-            me.handle_auth_manager_event(event, ctx);
-        });
+        if ChannelState::is_warp_server_available() {
+            ctx.subscribe_to_model(&AuthManager::handle(ctx), |me, _, event, ctx| {
+                me.handle_auth_manager_event(event, ctx);
+            });
+        }
 
         Self {
             state: HandoffState::Failed,
@@ -52,6 +55,12 @@ impl WebHandoffView {
     }
 
     fn import_user_from_session_cookie(&mut self, ctx: &mut ViewContext<Self>) {
+        if !ChannelState::is_warp_server_available() {
+            log::info!("Skipping web auth handoff because Warp server config is unavailable");
+            ctx.emit(WebHandoffEvent::Unsupported);
+            return;
+        }
+
         log::debug!("Attempting to derive auth from browser session cookie");
         AuthManager::handle(ctx).update(ctx, |auth_manager, ctx| {
             auth_manager.initialize_user_from_session_cookie(ctx);
@@ -61,6 +70,12 @@ impl WebHandoffView {
 
     /// Import the authenticated user from the host React app, if available.
     pub fn import_user(&mut self, ctx: &mut ViewContext<Self>) {
+        if !ChannelState::is_warp_server_available() {
+            log::info!("Skipping web auth handoff because Warp server config is unavailable");
+            ctx.emit(WebHandoffEvent::Unsupported);
+            return;
+        }
+
         match user_handoff() {
             Ok(Some(refresh_token)) => {
                 log::debug!("Attempting to retrieve refresh token from host app");

@@ -7,7 +7,7 @@ use crate::search::mixer::SearchMixer;
 use crate::server::ids::SyncId;
 use crate::terminal::input::buffer_model::{InputBufferModel, InputBufferUpdateEvent};
 use crate::terminal::input::inline_menu::{InlineMenuEvent, InlineMenuPositioner, InlineMenuView};
-use crate::terminal::input::prompts::{AcceptPrompt, PromptsMenuDataSource};
+use crate::terminal::input::prompts::AcceptPrompt;
 use crate::terminal::input::suggestions_mode_model::{
     InputSuggestionsModeEvent, InputSuggestionsModeModel,
 };
@@ -32,11 +32,8 @@ impl InlinePromptsMenuView {
         positioner: &ModelHandle<InlineMenuPositioner>,
         ctx: &mut ViewContext<Self>,
     ) -> Self {
-        let data_source = ctx.add_model(PromptsMenuDataSource::new);
-
         let mixer = ctx.add_model(|ctx| {
             let mut mixer = SearchMixer::<AcceptPrompt>::new();
-            mixer.add_sync_source(data_source, []);
             mixer.run_query(Query::default(), ctx);
             mixer
         });

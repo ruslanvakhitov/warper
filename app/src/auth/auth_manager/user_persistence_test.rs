@@ -88,10 +88,10 @@ fn test_serialize_persisted_user() {
 #[allow(deprecated)]
 fn test_windows_user_persistence() {
     use crate::auth::{AuthManager, AuthStateProvider};
+    use crate::server::server_api::ServerApiProvider;
     use crate::server::{
         datetime_ext::DateTimeExt, telemetry::context_provider::AppTelemetryContextProvider,
     };
-    use crate::ServerApiProvider;
     use chrono::DateTime;
     use warp_core::channel::ChannelState;
     use warpui::{App, SingletonEntity};
