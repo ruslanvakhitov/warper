@@ -2,9 +2,7 @@ use std::{fmt, path::PathBuf};
 
 use clap::{Args, Subcommand, ValueEnum};
 
-use crate::{
-    config_file::ConfigFileArgs, mcp::MCPSpec, model::ModelArgs, share::ShareArgs, skill::SkillSpec,
-};
+use crate::{config_file::ConfigFileArgs, mcp::MCPSpec, model::ModelArgs, skill::SkillSpec};
 
 /// Output format for agent results.
 #[derive(Debug, Copy, Clone, ValueEnum, Eq, PartialEq, Default)]
@@ -93,7 +91,7 @@ impl HiddenComputerUseArgs {
 /// The execution harness for an agent run.
 #[derive(Debug, Copy, Clone, ValueEnum, Eq, PartialEq, Default)]
 pub enum Harness {
-    /// Use Warp's built-in MAA infrastructure (default).
+    /// Legacy hosted harness.
     #[default]
     #[value(name = "oz")]
     Oz,
@@ -112,6 +110,26 @@ pub enum Harness {
     /// CLI or harness dropdown.
     #[value(skip)]
     Unknown,
+}
+
+/// Local CLI-backed execution harnesses retained in Warper.
+#[derive(Debug, Copy, Clone, ValueEnum, Eq, PartialEq)]
+pub enum LocalHarness {
+    /// Delegate to the `claude` CLI.
+    #[value(name = "claude", alias = "claude-code")]
+    Claude,
+    /// Delegate to the `gemini` CLI.
+    #[value(name = "gemini")]
+    Gemini,
+}
+
+impl From<LocalHarness> for Harness {
+    fn from(value: LocalHarness) -> Self {
+        match value {
+            LocalHarness::Claude => Harness::Claude,
+            LocalHarness::Gemini => Harness::Gemini,
+        }
+    }
 }
 
 impl Harness {
@@ -177,7 +195,7 @@ pub enum AgentCommand {
         clap::ArgGroup::new("prompt_group")
             .required(true)
             .multiple(true)
-            .args(["prompt", "saved_prompt", "task_id", "skill"])
+            .args(["prompt", "saved_prompt", "skill"])
     )
 )]
 pub struct RunAgentArgs {
@@ -200,7 +218,6 @@ pub struct RunAgentArgs {
     ///
     /// When used with --prompt, the skill provides the base context and the prompt is the task.
     ///
-    /// To automate a skill on a schedule, use `oz schedule create --skill <SPEC>`.
     #[arg(long = "skill", value_name = "SPEC")]
     pub skill: Option<SkillSpec>,
 
@@ -213,8 +230,6 @@ pub struct RunAgentArgs {
     /// Display agent progress in the Warp interface.
     #[arg(long = "gui", hide = true)]
     pub gui: bool,
-    #[command(flatten)]
-    pub share: ShareArgs,
     /// MCP servers to start before executing the agent.
     ///
     /// Can be specified as:
@@ -227,10 +242,6 @@ pub struct RunAgentArgs {
     /// LEGACY: MCP servers to start before executing the agent, identified by UUID.
     #[arg(long = "mcp-server", value_name = "UUID", hide = true)]
     pub mcp_servers: Vec<uuid::Uuid>,
-    /// Cloud environment to use, identified by ID.
-    #[arg(long = "environment", short = 'e', value_name = "ID")]
-    pub environment: Option<String>,
-
     /// Keep the agent's session open after the conversation completes.
     ///
     /// This is useful when you want to keep the session alive for follow-up interactions.
@@ -245,15 +256,6 @@ pub struct RunAgentArgs {
     )]
     pub idle_on_complete: Option<humantime::Duration>,
 
-    #[command(flatten)]
-    pub snapshot: SnapshotArgs,
-    /// Identifier for the task that spawned this agent, used to report progress.
-    #[arg(long = "task-id", hide = true, conflicts_with_all = ["prompt", "saved_prompt", "file"])]
-    pub task_id: Option<String>,
-
-    /// Whether we are running the agent in a sandboxed environment.
-    #[arg(long = "sandboxed", hide = true)]
-    pub sandboxed: bool,
     /// IAM role ARN to use for federated AWS Bedrock credentials for this run.
     #[arg(long = "bedrock-inference-role", value_name = "ROLE_ARN", hide = true)]
     pub bedrock_inference_role: Option<String>,
@@ -261,20 +263,13 @@ pub struct RunAgentArgs {
     #[command(flatten)]
     pub computer_use: HiddenComputerUseArgs,
 
-    /// Continue an existing cloud conversation by ID.
-    #[arg(long = "conversation", value_name = "ID")]
-    pub conversation: Option<String>,
-
     /// Agent profile to configure the terminal session.
     #[arg(long = "profile", value_name = "ID")]
     pub profile: Option<String>,
 
-    /// Execution harness for the agent run.
-    ///
-    /// "oz" (default) uses Warp's built-in agent infrastructure.
-    /// "claude" delegates to the `claude` CLI.
-    #[arg(long = "harness", value_name = "HARNESS", default_value_t = Harness::Oz, hide = true)]
-    pub harness: Harness,
+    /// Local CLI runner to run.
+    #[arg(long = "runner", value_enum)]
+    pub harness: Option<LocalHarness>,
 }
 
 impl RunAgentArgs {
@@ -286,21 +281,6 @@ impl RunAgentArgs {
     }
 }
 
-#[derive(Debug, Clone, Args)]
-pub struct SnapshotArgs {
-    /// Disable the end-of-run workspace snapshot upload.
-    #[arg(long = "no-snapshot")]
-    pub no_snapshot: bool,
-
-    /// Maximum time to wait for the end-of-run snapshot upload.
-    #[arg(long = "snapshot-upload-timeout", value_name = "DURATION")]
-    pub snapshot_upload_timeout: Option<humantime::Duration>,
-
-    /// Maximum time to wait for the declarations script before uploading the snapshot.
-    #[arg(long = "snapshot-script-timeout", value_name = "DURATION")]
-    pub snapshot_script_timeout: Option<humantime::Duration>,
-}
-
 /// Arguments for listing available agents.
 #[derive(Debug, Clone, Args)]
 pub struct ListAgentConfigsArgs {
@@ -308,8 +288,7 @@ pub struct ListAgentConfigsArgs {
     ///
     /// Format: `owner/repo` or `https://github.com/owner/repo`
     ///
-    /// When provided, lists skills from this repo instead of from your environments.
-    /// Any environments that include this repo will still be shown in the results.
+    /// When provided, lists skills from this repo.
     #[arg(long = "repo", short = 'r', value_name = "REPO")]
     pub repo: Option<String>,
 }
