@@ -14,7 +14,6 @@ use std::{
     time::Duration,
 };
 
-use crate::ai::blocklist::task_status_sync_model::TaskStatusSyncModel;
 use crate::ai::document::ai_document_model::{AIDocumentModel, AIDocumentModelEvent};
 use crate::ai::llms::{LLMId, LLMPreferences};
 use crate::ai::mcp::MCPServerState;
@@ -664,8 +663,7 @@ impl AgentDriver {
         ctx.spawn(
             async move {
                 // Mark the task as IN_PROGRESS before starting work. This covers
-                // the gap during environment setup, MCP startup, etc. — before any
-                // conversation exists and TaskStatusSyncModel can fire.
+                // the gap during environment setup, MCP startup, etc.
                 if let Some(task_id) = task_id {
                     if let Err(e) = server_api
                         .update_agent_task(
@@ -716,8 +714,7 @@ impl AgentDriver {
 
             // Report driver-level errors directly to the server. These errors
             // occur before or outside a conversation (e.g. bootstrap, MCP startup,
-            // environment setup) so TaskStatusSyncModel never fires for them.
-            // Success/blocked/cancelled are handled by TaskStatusSyncModel.
+            // environment setup).
             if let (Some(task_id), Err(err)) = (task_id, &result) {
                 report_driver_error(task_id, err, &server_api_for_error).await;
 
@@ -2016,23 +2013,12 @@ impl AgentDriver {
     /// Subscribe to the singleton `CLIAgentSessionsModel` so that idle-on-complete
     /// timers are driven by CLI agent session status changes.
     ///
-    /// Task state reporting is handled centrally by `TaskStatusSyncModel`;
-    /// the driver only registers the `terminal_view_id → task_id` mapping
-    /// so that the sync model can look up the task for each session.
     fn subscribe_to_cli_agent_session_events(
         &self,
         harness_exit: IdleTimeoutSender<()>,
         ctx: &mut ModelContext<Self>,
     ) {
         let terminal_view_id = self.terminal_driver.as_ref(ctx).terminal_view().id();
-
-        // Register this session with TaskStatusSyncModel so CLI agent
-        // status changes are reported to the server.
-        if let Some(task_id) = self.task_id {
-            TaskStatusSyncModel::handle(ctx).update(ctx, |model, ctx| {
-                model.register_cli_session(terminal_view_id, task_id, ctx);
-            });
-        }
 
         ctx.subscribe_to_model(
             &CLIAgentSessionsModel::handle(ctx),
@@ -2267,8 +2253,7 @@ pub(super) fn write_run_started(run_id: &str, output_format: OutputFormat) {
 /// Report a driver-level error to the server for the given task.
 ///
 /// Used for errors that occur before or outside a conversation. Errors
-/// that occur while the agent is running should be reported through
-/// the `TaskStatusSyncModel`.
+/// that occur while the agent is running are reported through their active driver.
 pub(super) async fn report_driver_error(
     task_id: AmbientAgentTaskId,
     err: &AgentDriverError,

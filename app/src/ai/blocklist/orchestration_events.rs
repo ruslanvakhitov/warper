@@ -865,31 +865,6 @@ impl OrchestrationEventService {
         }
     }
 
-    /// Accepts pre-built events from the v2 poller and enqueues them
-    /// for drain by the controller via the normal v1 path.
-    /// Lifecycle events go through coalescing and cap enforcement.
-    pub fn enqueue_polled_events(
-        &mut self,
-        conversation_id: AIConversationId,
-        events: Vec<PendingEvent>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        if events.is_empty() {
-            return;
-        }
-        for event in events {
-            if matches!(event.detail, PendingEventDetail::Lifecycle { .. }) {
-                self.enqueue_lifecycle_event(conversation_id, event);
-            } else {
-                self.pending_events
-                    .entry(conversation_id)
-                    .or_default()
-                    .push(event);
-            }
-        }
-        ctx.emit(OrchestrationEventServiceEvent::EventsReady { conversation_id });
-    }
-
     /// Drain and return all pending events for a conversation.
     fn drain_pending_events(&mut self, conversation_id: &AIConversationId) -> Vec<PendingEvent> {
         self.pending_events
