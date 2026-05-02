@@ -1,9 +1,4 @@
-//! Shared retry primitives for HTTP-backed operations in the agent SDK.
-//!
-//! Both the end-of-run snapshot upload pipeline and the handoff snapshot download pipeline
-//! need to retry transient HTTP failures on a bounded, predictable schedule. This module
-//! centralizes the backoff policy, transient-vs-permanent classification, and retry loop so
-//! the two call sites share a single source of truth.
+//! Shared retry primitives for retained agent SDK operations.
 
 use std::future::Future;
 use std::time::Duration;

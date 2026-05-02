@@ -8,7 +8,6 @@ use std::time::Duration;
 use futures::TryFutureExt;
 use inquire::{InquireError, Select};
 use warp_cli::agent::Harness;
-use warp_cli::environment::{EnvironmentCreateArgs, EnvironmentUpdateArgs};
 use warpui::r#async::FutureExt;
 use warpui::{AppContext, GetSingletonModelHandle, SingletonEntity as _, UpdateModel};
 
@@ -145,7 +144,7 @@ pub fn refresh_warp_drive(
 }
 
 /// Fetch the conversation's server metadata and validate that its harness matches the caller's
-/// `--harness` choice. Returns the metadata on success so the caller can reuse it (e.g. for the
+/// local runner choice. Returns the metadata on success so the caller can reuse it (e.g. for the
 /// server conversation token).
 ///
 /// Called up-front before any task/config-build logic consumes `args.harness`, so a mismatch
@@ -215,82 +214,20 @@ impl EnvironmentChoice {
     /// Resolve the environment to use when creating an agent integration.
     /// Warp Drive *must* have been synced first.
     pub fn resolve_for_create(
-        args: EnvironmentCreateArgs,
-        ctx: &AppContext,
+        _args: (),
+        _ctx: &AppContext,
     ) -> Result<Self, ResolveConfigurationError> {
-        if args.no_environment {
-            Ok(EnvironmentChoice::None)
-        } else if let Some(id) = args.environment {
-            Self::get_by_id(id, ctx)
-        } else {
-            let all_environments = CloudAmbientAgentEnvironment::get_all(ctx);
-            let mut synced_environments: Vec<(ServerId, &CloudAmbientAgentEnvironment)> =
-                all_environments
-                    .iter()
-                    .filter_map(|env| {
-                        if let SyncId::ServerId(server_id) = env.sync_id() {
-                            Some((server_id, env))
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
-
-            synced_environments
-                .sort_by_key(|(_, env)| env.model().string_model.name.to_lowercase());
-
-            let environments: Vec<EnvironmentChoice> = synced_environments
-                .into_iter()
-                .map(|(server_id, env)| EnvironmentChoice::Environment {
-                    id: server_id.to_string(),
-                    name: env.model().string_model.name.clone(),
-                })
-                .collect();
-
-            let mut options = vec![EnvironmentChoice::None];
-            options.extend(environments);
-
-            // If there are no synced environments, require the user to create one or use --no-environment.
-            if options.len() == 1 {
-                let cli_name = warp_cli::binary_name().unwrap_or_else(|| "warp".to_string());
-                return Err(ResolveConfigurationError::Other(anyhow::anyhow!(
-                    "No environments are configured for this account.\n\
-You can create an environment with `{cli_name} environment create`.\n\
-Or, re-run this command with `--no-environment` to not use an environment.\n\
-Without an environment, the agent will not be able to access private repositories or create pull requests.",
-                )));
-            }
-
-            let prompt = "Select an environment to run the agent in (or 'No environment'):";
-
-            let choice = Select::new(prompt, options).prompt();
-
-            match choice {
-                Ok(choice) => Ok(choice),
-                Err(InquireError::OperationCanceled | InquireError::OperationInterrupted) => {
-                    Err(ResolveConfigurationError::Canceled)
-                }
-                Err(err) => Err(ResolveConfigurationError::Other(anyhow::anyhow!(
-                    "Error selecting environment: {err}"
-                ))),
-            }
-        }
+        Ok(EnvironmentChoice::None)
     }
 
     /// Resolve the environment to use when updating an agent integration. If the user did not
     /// request any changes to the environment, this returns `Ok(None)`.
     /// Warp Drive *must* have been synced first.
     pub fn resolve_for_update(
-        args: EnvironmentUpdateArgs,
-        ctx: &AppContext,
+        _args: (),
+        _ctx: &AppContext,
     ) -> Result<Option<Self>, ResolveConfigurationError> {
-        if args.remove_environment {
-            Ok(Some(EnvironmentChoice::None))
-        } else if let Some(id) = args.environment {
-            Self::get_by_id(id, ctx).map(Some)
-        } else {
-            Ok(None)
-        }
+        Ok(None)
     }
 
     fn get_by_id(id: String, ctx: &AppContext) -> Result<Self, ResolveConfigurationError> {

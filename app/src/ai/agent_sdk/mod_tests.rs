@@ -1,133 +1,58 @@
 use serde_json::json;
 use warp_cli::{
-    artifact::{ArtifactCommand, DownloadArtifactArgs, GetArtifactArgs, UploadArtifactArgs},
-    task::{MessageCommand, MessageSendArgs, MessageWatchArgs, TaskCommand},
+    agent::{HiddenComputerUseArgs, PromptArg, RunAgentArgs},
+    artifact::{ArtifactCommand, UploadArtifactArgs},
     CliCommand,
 };
 use warp_core::telemetry::TelemetryEvent;
 
-use super::{command_requires_auth, command_to_telemetry_event};
+use super::{command_to_telemetry_event, telemetry::CliTelemetryEvent};
 
 #[test]
-fn artifact_download_requires_auth() {
-    assert!(command_requires_auth(&CliCommand::Artifact(
-        ArtifactCommand::Download(DownloadArtifactArgs {
-            artifact_uid: "artifact-123".to_string(),
-            out: None,
-        },)
+fn agent_run_telemetry_is_local_only() {
+    let event = command_to_telemetry_event(&CliCommand::Agent(warp_cli::agent::AgentCommand::Run(
+        RunAgentArgs {
+            prompt_arg: PromptArg {
+                prompt: Some("do local work".to_string()),
+                saved_prompt: None,
+            },
+            model: Default::default(),
+            config_file: Default::default(),
+            skill: None,
+            name: None,
+            cwd: None,
+            gui: false,
+            mcp_specs: vec![],
+            mcp_servers: vec![],
+            idle_on_complete: None,
+            bedrock_inference_role: None,
+            computer_use: HiddenComputerUseArgs::default(),
+            profile: None,
+        },
     )));
+
+    assert_eq!(
+        event.payload(),
+        Some(json!({
+            "gui": false,
+            "requested_mcp_servers": 0,
+            "has_environment": false,
+            "task_id": null,
+            "harness": "local",
+        }))
+    );
 }
 
 #[test]
-fn run_message_send_requires_auth() {
-    assert!(command_requires_auth(&CliCommand::Run(
-        TaskCommand::Message(MessageCommand::Send(MessageSendArgs {
-            to: vec!["run-456".to_string()],
-            subject: "subject".to_string(),
-            body: "body".to_string(),
-            sender_run_id: "run-123".to_string(),
-        }),)
-    )));
-}
-
-#[test]
-fn artifact_get_requires_auth() {
-    assert!(command_requires_auth(&CliCommand::Artifact(
-        ArtifactCommand::Get(GetArtifactArgs {
-            artifact_uid: "artifact-123".to_string(),
-        },)
-    )));
-}
-
-#[test]
-fn artifact_upload_requires_auth() {
-    assert!(command_requires_auth(&CliCommand::Artifact(
-        ArtifactCommand::Upload(UploadArtifactArgs {
+fn artifact_upload_telemetry_still_maps() {
+    let event = command_to_telemetry_event(&CliCommand::Artifact(ArtifactCommand::Upload(
+        UploadArtifactArgs {
             path: "artifact.txt".into(),
             run_id: Some("run-123".to_string()),
             conversation_id: None,
             description: None,
-        },)
-    )));
-}
-
-#[test]
-#[serial_test::serial]
-fn run_message_send_telemetry_uses_canonical_harness_from_env() {
-    std::env::set_var("OZ_HARNESS", "  CLAUDE  ");
-    let event = command_to_telemetry_event(&CliCommand::Run(TaskCommand::Message(
-        MessageCommand::Send(MessageSendArgs {
-            to: vec!["run-456".to_string()],
-            subject: "subject".to_string(),
-            body: "body".to_string(),
-            sender_run_id: "run-123".to_string(),
-        }),
-    )));
-    std::env::remove_var("OZ_HARNESS");
-
-    assert_eq!(event.payload(), Some(json!({ "harness": "claude" })));
-}
-
-#[test]
-#[serial_test::serial]
-fn run_message_send_telemetry_supports_claude_code_alias() {
-    std::env::set_var("OZ_HARNESS", "CLAUDE_CODE");
-    let event = command_to_telemetry_event(&CliCommand::Run(TaskCommand::Message(
-        MessageCommand::Send(MessageSendArgs {
-            to: vec!["run-456".to_string()],
-            subject: "subject".to_string(),
-            body: "body".to_string(),
-            sender_run_id: "run-123".to_string(),
-        }),
-    )));
-    std::env::remove_var("OZ_HARNESS");
-
-    assert_eq!(event.payload(), Some(json!({ "harness": "claude" })));
-}
-
-#[test]
-#[serial_test::serial]
-fn run_message_send_telemetry_supports_opencode_harness() {
-    std::env::set_var("OZ_HARNESS", "opencode");
-    let event = command_to_telemetry_event(&CliCommand::Run(TaskCommand::Message(
-        MessageCommand::Send(MessageSendArgs {
-            to: vec!["run-456".to_string()],
-            subject: "subject".to_string(),
-            body: "body".to_string(),
-            sender_run_id: "run-123".to_string(),
-        }),
-    )));
-    std::env::remove_var("OZ_HARNESS");
-
-    assert_eq!(event.payload(), Some(json!({ "harness": "opencode" })));
-}
-
-#[test]
-#[serial_test::serial]
-fn run_message_send_telemetry_defaults_to_unknown_harness() {
-    std::env::remove_var("OZ_HARNESS");
-    let event = command_to_telemetry_event(&CliCommand::Run(TaskCommand::Message(
-        MessageCommand::Send(MessageSendArgs {
-            to: vec!["run-456".to_string()],
-            subject: "subject".to_string(),
-            body: "body".to_string(),
-            sender_run_id: "run-123".to_string(),
-        }),
+        },
     )));
 
-    assert_eq!(event.payload(), Some(json!({ "harness": "unknown" })));
-}
-
-#[test]
-#[serial_test::serial]
-fn run_message_watch_telemetry_defaults_to_unknown_harness() {
-    std::env::remove_var("OZ_HARNESS");
-    let event = command_to_telemetry_event(&CliCommand::Run(TaskCommand::Message(
-        MessageCommand::Watch(MessageWatchArgs {
-            run_id: "run-123".to_string(),
-            since_sequence: 0,
-        }),
-    )));
-
-    assert_eq!(event.payload(), Some(json!({ "harness": "unknown" })));
+    assert!(matches!(event, CliTelemetryEvent::ArtifactUpload));
 }

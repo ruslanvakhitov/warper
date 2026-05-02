@@ -37,10 +37,7 @@ pub fn classify_driver_error(error: &AgentDriverError) -> (AgentTaskState, TaskS
                     format!("Failed to share agent session: {reason}")
                 }
                 ShareSessionError::Disabled => {
-                    "Session sharing is not enabled for your account. This is likely because \
-                     an administrator has disabled session sharing for your team. Please \
-                     verify that session sharing is enabled in your team settings, or try \
-                     running without the --share flag."
+                    "Session sharing is unavailable in this build."
                     .to_string()
                 }
                 ShareSessionError::Timeout => {
@@ -246,27 +243,38 @@ pub fn classify_driver_error(error: &AgentDriverError) -> (AgentTaskState, TaskS
                 PlatformErrorCode::InternalError,
             ),
         ),
-        AgentDriverError::ConversationHarnessMismatch { conversation_id, expected, got } => (
+        AgentDriverError::ConversationHarnessMismatch {
+            conversation_id,
+            expected,
+            got,
+        } => (
             AgentTaskState::Failed,
             TaskStatusUpdate::with_error_code(
                 format!(
-                    "Conversation {conversation_id} was produced by the {expected} harness, but --harness {got} was requested. \
-                     Re-run with --harness {expected} (or omit --harness) to continue this conversation."
+                    "Conversation {conversation_id} was produced by the {expected} runner, but --runner {got} was requested. \
+                     Re-run with --runner {expected} to continue this conversation."
                 ),
                 PlatformErrorCode::EnvironmentSetupFailed,
             ),
         ),
-        AgentDriverError::TaskHarnessMismatch { task_id, expected, got } => (
+        AgentDriverError::TaskHarnessMismatch {
+            task_id,
+            expected,
+            got,
+        } => (
             AgentTaskState::Failed,
             TaskStatusUpdate::with_error_code(
                 format!(
-                    "Task {task_id} was created with the {expected} harness, but --harness {got} was requested. \
-                     Re-run with --harness {expected} (or omit --harness) to continue this task."
+                    "Task {task_id} was created with the {expected} runner, but --runner {got} was requested. \
+                     Task continuation is unavailable in this build."
                 ),
                 PlatformErrorCode::EnvironmentSetupFailed,
             ),
         ),
-        AgentDriverError::ConversationResumeStateMissing { harness, conversation_id } => (
+        AgentDriverError::ConversationResumeStateMissing {
+            harness,
+            conversation_id,
+        } => (
             AgentTaskState::Failed,
             TaskStatusUpdate::with_error_code(
                 format!(

@@ -370,7 +370,7 @@ fn resolve_upload_association_from_sources(
 
     let ambient_task_id = resolve_env_run_id(env_run_id).map_err(|env_err| {
         anyhow!(
-            "Failed to resolve artifact upload association: no usable --run-id or --conversation-id was provided, and {OZ_RUN_ID_ENV_VAR}: {env_err}"
+            "Failed to resolve artifact upload association: no usable run or conversation id was provided, and {OZ_RUN_ID_ENV_VAR}: {env_err}"
         )
     })?;
 
