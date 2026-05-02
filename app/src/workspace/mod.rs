@@ -108,11 +108,7 @@ pub fn init(app: &mut AppContext) {
     crate::tab_configs::remove_confirmation_dialog::init(app);
     hoa_onboarding::init(app);
     tab_configs::session_config_modal::init(app);
-    view::launch_modal::oz_launch::init(app);
-    view::openwarp_launch_modal::init(app);
-    view::cloud_agent_capacity_modal::init(app);
     view::codex_modal::init(app);
-    view::free_tier_limit_hit_modal::init(app);
     view::global_search::view::GlobalSearchView::init(app);
     view::right_panel::RightPanelView::init(app);
     header_toolbar_editor::init(app);
@@ -178,48 +174,11 @@ pub fn init(app: &mut AppContext) {
         )]);
         #[cfg(debug_assertions)]
         {
-            // Debug actions for build plan migration modal (command palette only)
             app.register_editable_bindings([
-                EditableBinding::new(
-                    "workspace:open_build_plan_migration_modal",
-                    "[Debug] Open Build Plan Migration Modal",
-                    WorkspaceAction::OpenBuildPlanMigrationModal,
-                )
-                .with_context_predicate(id!("Workspace")),
-                EditableBinding::new(
-                    "workspace:reset_build_plan_migration_modal_state",
-                    "[Debug] Reset Build Plan Migration Modal State",
-                    WorkspaceAction::ResetBuildPlanMigrationModalState,
-                )
-                .with_context_predicate(id!("Workspace")),
                 EditableBinding::new(
                     "workspace:debug_reset_aws_bedrock_login_banner_dismissed",
                     "[Debug] Un-dismiss AWS login banner",
                     WorkspaceAction::DebugResetAwsBedrockLoginBannerDismissed,
-                )
-                .with_context_predicate(id!("Workspace")),
-                EditableBinding::new(
-                    "workspace:open_oz_launch_modal",
-                    "[Debug] Open Oz Launch Modal",
-                    WorkspaceAction::OpenOzLaunchModal,
-                )
-                .with_context_predicate(id!("Workspace")),
-                EditableBinding::new(
-                    "workspace:reset_oz_launch_modal_state",
-                    "[Debug] Reset Oz Launch Modal State",
-                    WorkspaceAction::ResetOzLaunchModalState,
-                )
-                .with_context_predicate(id!("Workspace")),
-                EditableBinding::new(
-                    "workspace:open_openwarp_launch_modal",
-                    "[Debug] Open OpenWarp Launch Modal",
-                    WorkspaceAction::OpenOpenWarpLaunchModal,
-                )
-                .with_context_predicate(id!("Workspace")),
-                EditableBinding::new(
-                    "workspace:reset_openwarp_launch_modal_state",
-                    "[Debug] Reset OpenWarp Launch Modal State",
-                    WorkspaceAction::ResetOpenWarpLaunchModalState,
                 )
                 .with_context_predicate(id!("Workspace")),
                 EditableBinding::new(
@@ -987,28 +946,6 @@ pub fn init(app: &mut AppContext) {
         .with_context_predicate(id!("Workspace"))
         .with_custom_action(CustomAction::SearchDrive),
     ]);
-
-    if FeatureFlag::Autoupdate.is_enabled() {
-        app.register_editable_bindings([
-            EditableBinding::new(
-                "workspace:update_and_relaunch",
-                "Install update and relaunch",
-                // TODO(vorporeal): I wonder if we should change wording here?
-                WorkspaceAction::ApplyUpdate,
-            )
-            .with_group(bindings::BindingGroup::AutoUpdate.as_str())
-            .with_context_predicate(id!("Workspace") & id!("AutoupdateState_UpdateReady"))
-            .with_enabled(|| ContextFlag::PromptForVersionUpdates.is_enabled()),
-            EditableBinding::new(
-                "workspace:check_for_updates",
-                "Check for updates",
-                WorkspaceAction::CheckForUpdate,
-            )
-            .with_group(bindings::BindingGroup::AutoUpdate.as_str())
-            .with_context_predicate(id!("Workspace") & !id!("AutoupdateState_UpdateReady"))
-            .with_enabled(|| ContextFlag::PromptForVersionUpdates.is_enabled()),
-        ]);
-    }
 
     app.register_editable_bindings([EditableBinding::new(
         "workspace:log_out",

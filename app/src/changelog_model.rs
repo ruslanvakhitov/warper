@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt, sync::Arc};
+use std::{collections::HashMap, fmt};
 
 use channel_versions::{Changelog, MarkdownSection};
 use itertools::Itertools;
@@ -10,27 +10,23 @@ use warpui::{
 };
 
 use crate::{
-    autoupdate::{self},
     channel::{Channel, ChannelState},
     features::{FeatureFlag, PREVIEW_FLAGS},
-    server::server_api::ServerApi,
 };
 
 pub struct ChangelogModel {
     pub changelog: ChangelogState,
     pub parsed_changelog: HashMap<String, FormattedText>,
     pub oz_updates: Vec<FormattedText>,
-    pub server_api: Arc<ServerApi>,
     pub image: Option<AssetSource>,
 }
 
 impl ChangelogModel {
-    pub fn new(server_api: Arc<ServerApi>) -> Self {
+    pub fn new() -> Self {
         Self {
             changelog: ChangelogState::None,
             parsed_changelog: HashMap::new(),
             oz_updates: Vec::new(),
-            server_api,
             image: None,
         }
     }
@@ -53,17 +49,8 @@ impl ChangelogModel {
                 // There is already a request pending, so no-op while we wait for the response
             }
             ChangelogState::None => {
-                self.changelog = ChangelogState::Pending;
-                let server_api = self.server_api.clone();
-                let _ = ctx.spawn(
-                    async move {
-                        (
-                            request_type,
-                            autoupdate::get_current_changelog(server_api).await,
-                        )
-                    },
-                    Self::handle_changelog_check,
-                );
+                log::info!("Hosted changelog fetch is unavailable in Warper");
+                ctx.emit(Event::ChangelogRequestFailed { request_type });
             }
         }
     }

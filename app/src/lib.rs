@@ -9,7 +9,6 @@ mod app_menus;
 mod app_services;
 mod app_state;
 mod auth;
-mod autoupdate;
 mod banner;
 mod billing;
 mod changelog_model;
@@ -196,7 +195,6 @@ use crate::ai::mcp::TemplatableMCPServerManager;
 use crate::ai::outline::RepoOutlines;
 use crate::ai::restored_conversations::RestoredAgentConversations;
 use crate::ai::skills::SkillManager;
-use crate::autoupdate::RelaunchModel;
 use crate::cloud_object::model::actions::ObjectActions;
 use crate::code::global_buffer_model::GlobalBufferModel;
 #[cfg(feature = "local_fs")]
@@ -1277,7 +1275,6 @@ fn initialize_app(
     let display_count = ctx.windows().display_count();
     ctx.add_singleton_model(|_| DisplayCount(display_count));
 
-    ctx.add_singleton_model(|_| RelaunchModel::new());
     ctx.add_singleton_model(|_| GitHubAuthNotifier::new());
     ctx.add_singleton_model(|_| NetworkStatus::new());
     ctx.add_singleton_model(|_| SystemStats::new());
@@ -1919,8 +1916,6 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
     }
 
     flags.extend([
-        #[cfg(feature = "autoupdate")]
-        FeatureFlag::Autoupdate,
         #[cfg(feature = "changelog")]
         FeatureFlag::Changelog,
         #[cfg(feature = "cocoa_sentry")]
@@ -2021,8 +2016,6 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::PromptSuggestionsViaMAA,
         #[cfg(feature = "clear_autosuggestion_on_escape")]
         FeatureFlag::ClearAutosuggestionOnEscape,
-        #[cfg(feature = "autoupdate_ui_revamp")]
-        FeatureFlag::AutoupdateUIRevamp,
         #[cfg(all(not(windows), feature = "kitty_images"))]
         FeatureFlag::KittyImages,
         #[cfg(feature = "warp_packs")]
@@ -2383,7 +2376,6 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
             FeatureFlag::AmbientAgentsCommandLine,
             FeatureFlag::AmbientAgentsImageUpload,
             FeatureFlag::AmbientAgentsRTC,
-            FeatureFlag::Autoupdate,
             FeatureFlag::Changelog,
             FeatureFlag::CloudConversations,
             FeatureFlag::CloudEnvironments,

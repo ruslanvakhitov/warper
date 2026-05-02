@@ -27,7 +27,6 @@ use auth::{AuthClient, AMBIENT_WORKLOAD_TOKEN_HEADER, CLOUD_AGENT_ID_HEADER};
 use base64::prelude::BASE64_URL_SAFE;
 use base64::Engine;
 use block::BlockClient;
-use channel_versions::ChannelVersions;
 use futures::StreamExt;
 use object::ObjectClient;
 use prost::Message;
@@ -48,8 +47,6 @@ use crate::ChannelState;
 
 use ::http::header::CONTENT_LENGTH;
 use anyhow::{anyhow, Context, Result};
-use chrono::{DateTime, FixedOffset};
-use instant::Instant;
 use parking_lot::{Mutex, RwLock};
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
@@ -120,25 +117,6 @@ pub struct ClientError {
 pub struct CloudAgentCapacityError {
     pub error: String,
     pub running_agents: i32,
-}
-
-#[derive(Deserialize, Debug)]
-struct TimeResponse {
-    current_time: DateTime<FixedOffset>,
-}
-
-#[derive(Debug, Clone)]
-pub struct ServerTime {
-    time_at_fetch: DateTime<FixedOffset>,
-    fetched_at: Instant,
-}
-
-impl ServerTime {
-    pub fn current_time(&self) -> DateTime<FixedOffset> {
-        let elapsed = chrono::Duration::from_std(self.fetched_at.elapsed())
-            .expect("duration should not be bigger than limit");
-        self.time_at_fetch + elapsed
-    }
 }
 
 /// Wrapper for deserialization errors. This covers both:
@@ -377,7 +355,6 @@ pub struct ServerApi {
     event_sender: async_channel::Sender<ServerApiEvent>,
     // TODO(jeff): Make `TelemetryApi` another type of client, and move it off `ServerApi`.
     telemetry_api: TelemetryApi,
-    last_server_time: Arc<Mutex<Option<ServerTime>>>,
     // We technically use OAuth2 for headless device authentication.
     oauth_client: Option<self::auth::OAuth2Client>,
     /// Cached ambient workload token for requests from ambient agents.
@@ -411,7 +388,6 @@ impl ServerApi {
             auth_state,
             event_sender,
             telemetry_api: TelemetryApi::new(),
-            last_server_time: Arc::new(Mutex::new(None)),
             oauth_client,
             ambient_workload_token: Arc::new(Mutex::new(None)),
             ambient_agent_task_id: Arc::new(RwLock::new(None)),
@@ -432,7 +408,6 @@ impl ServerApi {
             auth_state: Arc::new(AuthState::new_for_test()),
             event_sender: tx,
             telemetry_api: TelemetryApi::new(),
-            last_server_time: Arc::new(Mutex::new(None)),
             oauth_client,
             ambient_workload_token: Arc::new(Mutex::new(None)),
             ambient_agent_task_id: Arc::new(RwLock::new(None)),
@@ -1157,103 +1132,10 @@ impl ServerApi {
         }
     }
 
-    fn set_server_time(&self, server_time: ServerTime) {
-        let mut last_server_time = self.last_server_time.lock();
-        *last_server_time = Some(server_time);
-    }
-
-    fn cached_server_time(&self) -> Option<ServerTime> {
-        let last_server_time = self.last_server_time.lock();
-        last_server_time.as_ref().cloned()
-    }
-
     /// Returns the inner `http_client::Client` used by the `ServerApi`. Callers can use this long-lived
     /// client to make requests without having to create a new client.
     pub fn http_client(&self) -> &http_client::Client {
         &self.client
-    }
-
-    pub async fn server_time(&self) -> Result<ServerTime> {
-        if let Some(cached) = self.cached_server_time() {
-            return Ok(cached);
-        }
-
-        let time_endpoint = format!("{}/current_time", ChannelState::server_root_url());
-        log::info!("Sending server time request to {}", &time_endpoint);
-        let res = self.client.get(&time_endpoint).send().await?;
-
-        match res.status() {
-            StatusCode::OK => {
-                let time_response: TimeResponse = res.json().await?;
-                log::info!(
-                    "Received current time from server: {:?}",
-                    &time_response.current_time
-                );
-                let server_time = ServerTime {
-                    time_at_fetch: time_response.current_time,
-                    fetched_at: Instant::now(),
-                };
-                let res = Ok(server_time.clone());
-                self.set_server_time(server_time);
-
-                res
-            }
-            _ => {
-                let payload: ClientError = res.json().await?;
-                Err(anyhow!(payload).context("fetching time from server failed"))
-            }
-        }
-    }
-
-    /// Fetches updated Warp Channel Versions from Warp Server. If it is the first such request of
-    /// the current calendar day, first attempts to call the '/client_version/daily'. If that call
-    /// fails or if it not the first request of the calendar day, returns the result of a call to
-    /// `/client_version'. The caller can specify whether or not changelog information should be
-    /// included in the response based on whether or not it will be used.
-    pub async fn fetch_channel_versions(
-        &self,
-        include_changelogs: bool,
-        is_daily: bool,
-    ) -> Result<ChannelVersions> {
-        let mut url = Url::parse(&ChannelState::server_root_url())
-            .expect("Should not fail to parse server root URL");
-        if is_daily {
-            url.set_path("/client_version/daily");
-        } else {
-            url.set_path("/client_version");
-        }
-        url.query_pairs_mut()
-            .append_pair("include_changelogs", &include_changelogs.to_string());
-
-        if include_changelogs {
-            log::info!("Fetching channel versions and changelogs from Warp server");
-        } else {
-            log::info!("Fetching channel versions (without changelogs) from Warp server");
-        }
-
-        let mut request_builder = self
-            .client
-            .get(url.as_str())
-            .timeout(FETCH_CHANNEL_VERSIONS_TIMEOUT)
-            .header(EXPERIMENT_ID_HEADER, self.auth_state.anonymous_id());
-
-        // Authorization for /client_version is optional. Attach authorization header if an access
-        // token is present. First, try to get a valid token. If our cached one is expired, try to
-        // refresh. Failing that, send the expired token.
-        let auth_token = self
-            .get_or_refresh_access_token()
-            .await
-            .ok()
-            .and_then(|token| token.bearer_token())
-            .or_else(|| self.auth_state.get_access_token_ignoring_validity());
-        if let Some(token_str) = auth_token {
-            request_builder = request_builder.bearer_auth(token_str);
-        }
-
-        let response = request_builder.send().await?;
-        let versions: ChannelVersions = response.json().await?;
-        log::info!("Received channel versions from Warp server: {versions}");
-        Ok(versions)
     }
 }
 

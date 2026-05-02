@@ -158,7 +158,6 @@ use crate::terminal::view::ssh_remote_server_failed_banner::{
     SshRemoteServerFailedBanner, SshRemoteServerFailedBannerEvent,
 };
 use crate::terminal::view::telemetry::PromptSuggestionFallbackReason;
-use crate::workspace::view::cloud_agent_capacity_modal::CloudAgentCapacityModalVariant;
 use crate::workspaces::user_workspaces::UserWorkspacesEvent;
 
 pub use self::link_detection::GridHighlightedLink;
@@ -230,7 +229,6 @@ use crate::auth::auth_manager::AuthManager;
 use crate::auth::auth_state::AuthState;
 use crate::auth::auth_view_modal::AuthViewVariant;
 use crate::auth::{AuthStateProvider, UserUid};
-use crate::autoupdate::{self, get_update_state, AutoupdateStage};
 use crate::cloud_object::model::actions::ObjectActionType;
 use crate::cloud_object::model::persistence::CloudModel;
 use crate::cloud_object::{CloudObject, GenericStringObjectFormat, JsonObjectType};
@@ -1965,11 +1963,6 @@ pub enum Event {
         title: Option<String>,
         body: String,
     },
-    /// Emitted when cloud mode runs should display the cloud-agent capacity/credits modal.
-    ShowCloudAgentCapacityModal {
-        variant: CloudAgentCapacityModalVariant,
-    },
-    FreeTierLimitCheckTriggered,
     /// Emitted when the StartAgent executor needs the workspace to create a new child
     /// agent conversation in a split pane.
     StartAgentConversation(StartAgentRequest),
@@ -4556,13 +4549,6 @@ impl TerminalView {
         event: &BlocklistAIControllerEvent,
         ctx: &mut ViewContext<Self>,
     ) {
-        if matches!(
-            event,
-            BlocklistAIControllerEvent::FreeTierLimitCheckTriggered
-        ) && ChannelState::channel() != Channel::Oss
-        {
-            ctx.emit(Event::FreeTierLimitCheckTriggered);
-        }
         if let BlocklistAIControllerEvent::SentRequest { model_id, .. } = event {
             self.maybe_insert_aws_bedrock_login_banner(model_id, ctx);
         }
@@ -11125,24 +11111,10 @@ impl TerminalView {
             }
             ModelEvent::Handler(_) => {}
             ModelEvent::FinishUpdate(data) => {
-                let AutoupdateStage::UpdateReady {
-                    update_id: expected_update_id,
-                    ..
-                } = get_update_state(ctx)
-                else {
-                    log::warn!(
-                        "Got a FinishUpdate event without AutoupdateState being UpdateReady!"
-                    );
-                    return;
-                };
-                if expected_update_id == data.update_id {
-                    // Terminate this shell session so that it doesn't come
-                    // back when we restore sessions after the relaunch.
-                    self.shutdown_pty(ctx);
-                    autoupdate::initiate_relaunch_for_update(ctx);
-                } else {
-                    log::warn!("Got a FinishUpdate event with non-matching update id!");
-                }
+                log::debug!(
+                    "Ignoring hosted autoupdate completion event for removed update id {}",
+                    data.update_id
+                );
             }
             ModelEvent::SelectedTextChanged => {
                 ctx.emit(Event::SelectedTextChanged);

@@ -62,11 +62,10 @@ use crate::workspaces::update_manager::TeamUpdateManager;
 use crate::workspaces::user_workspaces::{UserWorkspaces, UserWorkspacesEvent};
 use crate::{
     app_state::{AppState, PaneUuid, WindowSnapshot},
-    autoupdate::UpdateReady,
     changelog_model::ChangelogRequestType,
     pane_group::{NewTerminalOptions, PanesLayout},
     send_telemetry_from_ctx,
-    server::{server_api::ServerTime, telemetry::TelemetryEvent},
+    server::telemetry::TelemetryEvent,
     UpdateQuakeModeEventArg,
 };
 use crate::{
@@ -77,7 +76,6 @@ use crate::{
 };
 use crate::{features::FeatureFlag, ChannelState};
 use crate::{send_telemetry_from_app_ctx, GlobalResourceHandles, GlobalResourceHandlesProvider};
-use anyhow::Result;
 use cfg_if::cfg_if;
 use itertools::Itertools;
 use lazy_static::lazy_static;
@@ -1678,7 +1676,6 @@ impl NewWorkspaceSource {
 #[derive(Clone)]
 struct WorkspaceArgs {
     global_resource_handles: GlobalResourceHandles,
-    server_time: Option<Arc<ServerTime>>,
     workspace_setting: NewWorkspaceSource,
 }
 
@@ -1735,7 +1732,6 @@ enum AuthOnboardingState {
 
 pub struct RootView {
     auth_onboarding_state: AuthOnboardingState,
-    server_time: Option<Arc<ServerTime>>,
     auth_view: Option<ViewHandle<AuthView>>,
     auth_override_view: Option<ViewHandle<AuthOverrideWarningModal>>,
     needs_sso_link_view: Option<ViewHandle<NeedsSsoLinkView>>,
@@ -1795,7 +1791,6 @@ impl RootView {
         let model_event_sender = global_resource_handles.model_event_sender.clone();
         let workspace_args = WorkspaceArgs {
             global_resource_handles,
-            server_time: None,
             workspace_setting,
         };
 
@@ -1853,7 +1848,6 @@ impl RootView {
 
         let root_view = Self {
             auth_onboarding_state,
-            server_time: None,
             auth_view,
             auth_override_view,
             needs_sso_link_view,
@@ -1928,48 +1922,6 @@ impl RootView {
         match &self.auth_onboarding_state {
             AuthOnboardingState::Terminal(workspace) => Some(workspace),
             _ => None,
-        }
-    }
-
-    fn polling_update_check_complete(
-        &mut self,
-        result: &Result<UpdateReady>,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        if let Ok(UpdateReady::Yes {
-            ref new_version, ..
-        }) = result
-        {
-            log::info!("Update ready for channel version {new_version:?}");
-            if new_version.update_by.is_some() {
-                log::info!("Update ready, there is an update-by time, checking for server time.");
-                if let Some(server_api) = self.server_api.clone() {
-                    let _ = ctx.spawn(
-                        async move { server_api.server_time().await },
-                        Self::server_time_updated,
-                    );
-                }
-            }
-        }
-    }
-
-    fn server_time_updated(
-        &mut self,
-        server_time: Result<ServerTime>,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        if let Ok(server_time) = server_time {
-            let server_time = Arc::new(server_time);
-            self.server_time = Some(server_time.clone());
-
-            if let AuthOnboardingState::Terminal(workspace) = &self.auth_onboarding_state {
-                workspace.update(ctx, |workspace, ctx| {
-                    workspace.set_server_time(server_time);
-                    ctx.notify();
-                })
-            }
-        } else {
-            log::error!("Error fetching server time {:?}", server_time.err());
         }
     }
 
@@ -3604,12 +3556,7 @@ impl TypedActionView for RootView {
 impl WorkspaceArgs {
     fn create_workspace(self, ctx: &mut ViewContext<RootView>) -> ViewHandle<Workspace> {
         ctx.add_typed_action_view(|ctx| {
-            Workspace::new(
-                self.global_resource_handles,
-                self.server_time,
-                self.workspace_setting,
-                ctx,
-            )
+            Workspace::new(self.global_resource_handles, self.workspace_setting, ctx)
         })
     }
 }
@@ -3780,7 +3727,6 @@ impl AuthOnboardingState {
                 };
                 let workspace_args = WorkspaceArgs {
                     global_resource_handles,
-                    server_time: None,
                     workspace_setting,
                 };
 

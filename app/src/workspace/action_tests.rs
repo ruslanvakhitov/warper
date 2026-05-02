@@ -80,7 +80,6 @@ fn pane_name_actions_save_workspace_state() {
 #[test]
 fn hosted_workspace_actions_are_classified() {
     assert!(WorkspaceAction::AddAmbientAgentTab.requires_hosted_services());
-    assert!(WorkspaceAction::OpenCloudAgentSetupGuide.requires_hosted_services());
     assert!(
         WorkspaceAction::ShowSettingsPage(SettingsSection::BillingAndUsage)
             .requires_hosted_services()
@@ -89,7 +88,6 @@ fn hosted_workspace_actions_are_classified() {
         WorkspaceAction::ShowSettingsPage(SettingsSection::CloudEnvironments)
             .requires_hosted_services()
     );
-    assert!(WorkspaceAction::CheckForUpdate.requires_hosted_services());
 }
 
 #[test]
