@@ -15,7 +15,7 @@ use session_sharing_protocol::sharer::SessionSourceType;
 use warp_cli::share::{ShareAccessLevel, ShareRequest, ShareSubject};
 use warp_completer::completer::CommandOutput;
 use warp_core::command::ExitCode;
-use warp_core::features::FeatureFlag;
+use warp_core::{channel::ChannelState, features::FeatureFlag};
 use warp_util::path::ShellFamily;
 use warpui::{
     r#async::FutureExt, AppContext, Entity, ModelContext, ModelHandle, SingletonEntity as _,
@@ -124,15 +124,16 @@ fn create_terminal_view(
     options: TerminalDriverOptions,
     ctx: &mut AppContext,
 ) -> Result<ViewHandle<TerminalView>, AgentDriverError> {
-    let is_shared_session_creator = if options.should_share {
-        IsSharedSessionCreator::Yes {
-            source_type: SessionSourceType::AmbientAgent {
-                task_id: options.task_id.map(|t| t.to_string()),
-            },
-        }
-    } else {
-        IsSharedSessionCreator::No
-    };
+    let is_shared_session_creator =
+        if options.should_share && ChannelState::is_warp_server_available() {
+            IsSharedSessionCreator::Yes {
+                source_type: SessionSourceType::AmbientAgent {
+                    task_id: options.task_id.map(|t| t.to_string()),
+                },
+            }
+        } else {
+            IsSharedSessionCreator::No
+        };
 
     let (_, root_view) = open_new_with_workspace_source(
         NewWorkspaceSource::Session {
@@ -197,8 +198,8 @@ impl TerminalDriver {
         // Create a oneshot channel for session sharing when sharing is expected.
         // When sharing is disabled (or running against ngrok), leave both halves
         // as None so that `wait_for_session_shared` returns immediately.
-        let sharing_expected =
-            should_share && !warp_core::channel::ChannelState::server_root_url().contains("ngrok");
+        let sharing_expected = should_share
+            && ChannelState::maybe_server_root_url().is_some_and(|url| !url.contains("ngrok"));
         let (mut session_share_tx, session_share_rx) = if sharing_expected {
             if !FeatureFlag::CreatingSharedSessions.is_enabled() {
                 // Session sharing was requested but the feature is not enabled for this

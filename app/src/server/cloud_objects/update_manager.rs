@@ -319,12 +319,7 @@ impl UpdateManager {
         event: &TeamTesterStatusEvent,
         ctx: &mut ModelContext<Self>,
     ) {
-        let TeamTesterStatusEvent::InitiateDataPollers { force_refresh } = event;
-        if *force_refresh {
-            self.refresh_updated_objects(ctx);
-        }
-
-        self.start_polling_for_updated_objects(ctx);
+        let _ = (event, ctx);
     }
 
     fn handle_model_event(&mut self, event: &SyncQueueEvent, ctx: &mut ModelContext<Self>) {
