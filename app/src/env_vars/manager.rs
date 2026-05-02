@@ -5,7 +5,7 @@ use crate::{
     safe_warn,
     server::{
         cloud_objects::update_manager::{
-            ObjectOperation, OperationSuccessType, UpdateManager, UpdateManagerEvent,
+            ObjectOperation, OperationSuccessType, UpdateManagerEvent,
         },
         ids::SyncId,
     },

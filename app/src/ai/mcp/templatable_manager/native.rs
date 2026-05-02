@@ -14,14 +14,12 @@ use crate::ai::mcp::http_client::build_client_with_headers;
 use crate::ai::mcp::templatable::GalleryData;
 use crate::ai::mcp::templatable_manager::FigmaMcpStatus;
 use crate::ai::mcp::{
-    Author, CloudMCPServer, JsonTemplate, MCPGalleryManager, MCPServerUpdate,
-    ParsedTemplatableMCPServerResult,
+    Author, JsonTemplate, MCPGalleryManager, MCPServerUpdate, ParsedTemplatableMCPServerResult,
 };
 
 use crate::ai::mcp::parsing::resolve_json;
 use crate::ai::mcp::TemplatableMCPServer;
 use crate::auth::AuthStateProvider;
-use crate::cloud_object::model::persistence::{CloudModel, CloudModelEvent};
 use crate::cloud_object::{CloudObject, CloudObjectLocation, CloudObjectMetadataExt, Space};
 use crate::server::cloud_objects::update_manager::InitiatedBy;
 use crate::server::ids::{ClientId, ServerId};
@@ -178,7 +176,7 @@ impl TemplatableMCPServerManager {
     pub fn new(
         locally_installed_servers: HashMap<Uuid, TemplatableMCPServerInstallation>,
         running_server_uuids: Vec<Uuid>,
-        running_legacy_server_uuids: &[Uuid],
+        _running_legacy_server_uuids: &[Uuid],
         ctx: &mut ModelContext<Self>,
     ) -> Self {
         // Subscribe to FileBasedMCPManager events.

@@ -10,10 +10,7 @@ use warp_core::{
 use warpui::{AppContext, ModelContext, SingletonEntity};
 
 use crate::{
-    cloud_object::{
-        model::persistence::{CloudModel, CloudModelEvent},
-        CloudObject as _,
-    },
+    cloud_object::model::persistence::{CloudModel, CloudModelEvent},
     drive::CloudObjectTypeAndId,
     server::ids::SyncId,
 };

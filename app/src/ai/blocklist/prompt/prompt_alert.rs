@@ -3,7 +3,7 @@ use warp_core::ui::appearance::Appearance;
 use warpui::{
     elements::{
         ConstrainedBox, Container, CrossAxisAlignment, Flex, FormattedTextElement,
-        HighlightedHyperlink, HyperlinkLens, MainAxisAlignment, MainAxisSize, ParentElement,
+        HighlightedHyperlink, MainAxisAlignment, MainAxisSize, ParentElement,
     },
     AppContext, Element, Entity, SingletonEntity, TypedActionView, View, ViewContext,
 };
@@ -16,12 +16,7 @@ use crate::{
 const NO_CONNECTION_PRIMARY_TEXT: &str = "No internet connection";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PromptAlertAction {
-    SignUpClickedForAnonymousUser,
-    OpenSettingsClicked,
-    OpenPrivacySettingsClicked,
-    ManageBillingClicked { team_uid: ServerId },
-}
+pub enum PromptAlertAction {}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PromptAlertEvent {
@@ -36,15 +31,6 @@ pub enum PromptAlertEvent {
 pub enum PromptAlertState {
     /// The user is offline (no connection).
     NoConnection,
-    /// Hosted Warp billing and quota states are retained as type-level compatibility
-    /// for downstream UI code until those call sites are deleted.
-    TelemetryDisabledOnFreeTier,
-    AnonymousUserRequestLimitSoftGate,
-    AnonymousUserRequestLimitHardGate,
-    DelinquentDueToPaymentIssue,
-    OveragesToggleableButNotEnabled,
-    MonthlyOveragesSpendLimitReached,
-    RequestLimitReached,
     /// No alert should be displayed.
     NoAlert,
 }
@@ -101,14 +87,7 @@ impl PromptAlertView {
                     NO_CONNECTION_PRIMARY_TEXT,
                 ));
             }
-            PromptAlertState::TelemetryDisabledOnFreeTier
-            | PromptAlertState::AnonymousUserRequestLimitSoftGate
-            | PromptAlertState::AnonymousUserRequestLimitHardGate
-            | PromptAlertState::DelinquentDueToPaymentIssue
-            | PromptAlertState::OveragesToggleableButNotEnabled
-            | PromptAlertState::MonthlyOveragesSpendLimitReached
-            | PromptAlertState::RequestLimitReached
-            | PromptAlertState::NoAlert => {}
+            PromptAlertState::NoAlert => {}
         }
     }
 }
@@ -116,14 +95,7 @@ impl PromptAlertView {
 fn does_alert_block_ai_requests(state: &PromptAlertState) -> bool {
     match state {
         PromptAlertState::NoConnection => true,
-        PromptAlertState::TelemetryDisabledOnFreeTier
-        | PromptAlertState::AnonymousUserRequestLimitSoftGate
-        | PromptAlertState::AnonymousUserRequestLimitHardGate
-        | PromptAlertState::DelinquentDueToPaymentIssue
-        | PromptAlertState::OveragesToggleableButNotEnabled
-        | PromptAlertState::MonthlyOveragesSpendLimitReached
-        | PromptAlertState::RequestLimitReached
-        | PromptAlertState::NoAlert => false,
+        PromptAlertState::NoAlert => false,
     }
 }
 
@@ -154,18 +126,7 @@ impl View for PromptAlertView {
         .with_line_height_ratio(1.)
         .with_hyperlink_font_color(appearance.theme().ansi_fg_blue())
         .with_no_text_wrapping()
-        .register_default_click_handlers_with_action_support(|hyperlink_lens, event, ctx| {
-            match hyperlink_lens {
-                HyperlinkLens::Url(url) => {
-                    ctx.open_url(url);
-                }
-                HyperlinkLens::Action(action_ref) => {
-                    if let Some(action) = action_ref.as_any().downcast_ref::<PromptAlertAction>() {
-                        event.dispatch_typed_action(action.clone());
-                    }
-                }
-            }
-        })
+        .register_default_click_handlers(|url, _, ctx| ctx.open_url(&url.url))
         .finish();
 
         let icon_size = appearance.ui_font_size();
@@ -198,22 +159,7 @@ impl View for PromptAlertView {
 impl TypedActionView for PromptAlertView {
     type Action = PromptAlertAction;
 
-    fn handle_action(&mut self, action: &Self::Action, ctx: &mut ViewContext<Self>) {
-        match action {
-            PromptAlertAction::SignUpClickedForAnonymousUser => {
-                ctx.emit(PromptAlertEvent::SignupAnonymousUser);
-            }
-            PromptAlertAction::OpenSettingsClicked => {
-                ctx.emit(PromptAlertEvent::OpenBillingAndUsagePage);
-            }
-            PromptAlertAction::OpenPrivacySettingsClicked => {
-                ctx.emit(PromptAlertEvent::OpenPrivacyPage);
-            }
-            PromptAlertAction::ManageBillingClicked { team_uid } => {
-                ctx.emit(PromptAlertEvent::OpenBillingPortal {
-                    team_uid: *team_uid,
-                });
-            }
-        }
+    fn handle_action(&mut self, action: &Self::Action, _ctx: &mut ViewContext<Self>) {
+        match *action {}
     }
 }

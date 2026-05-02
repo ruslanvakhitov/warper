@@ -511,7 +511,7 @@ impl<P: BackingView> PaneHeader<P> {
         &self,
         stack: &mut Stack,
         should_display_overflow_menu_button: bool,
-        app: &AppContext,
+        _app: &AppContext,
     ) {
         match self.open_overlay {
             OpenOverlay::OverflowMenu => {

@@ -2333,9 +2333,6 @@ impl BlocklistAIController {
                                     );
                                 },
                             );
-                            AIRequestUsageModel::handle(ctx).update(ctx, |model, ctx| {
-                                model.enable_buy_credits_banner(ctx);
-                            });
                         }
 
                         let mut renderable_error: RenderableAIError = e.as_ref().into();

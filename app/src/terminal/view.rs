@@ -2750,10 +2750,6 @@ pub struct TerminalView {
     /// Mouse state handle for the ambient agent cancel button in the pane header.
     ambient_agent_cancel_mouse_state: warpui::elements::MouseStateHandle,
 
-    /// First-time cloud agent setup view (full-screen overlay for creating initial environment).
-    first_time_cloud_agent_setup_view:
-        Option<ViewHandle<ambient_agent::FirstTimeCloudAgentSetupView>>,
-
     /// Environment setup mode selector modal for /create-environment command.
     environment_setup_mode_selector: Option<ViewHandle<EnvironmentSetupModeSelector>>,
 
@@ -3884,7 +3880,6 @@ impl TerminalView {
             }
         });
 
-        let first_time_cloud_agent_setup_view = None;
         let environment_setup_mode_selector = None;
 
         if FeatureFlag::CodebaseIndexSpeedbump.is_enabled() {
@@ -4111,7 +4106,6 @@ impl TerminalView {
             active_init_project_model: None,
             is_pending_aws_login: false,
             manual_pty_shutdown_requested: false,
-            first_time_cloud_agent_setup_view,
             environment_setup_mode_selector,
             is_environment_setup_mode_selector_open: false,
             pane_stack: None,
@@ -25845,14 +25839,6 @@ impl View for TerminalView {
         if let Some(sharer) = self.shared_session_sharer() {
             if sharer.is_inactivity_warning_modal_open() {
                 stack.add_child(ChildView::new(sharer.inactivity_modal()).finish())
-            }
-        }
-
-        // Render first-time cloud agent setup view when in Setup status
-        if self.ambient_agent_view_model.as_ref(app).is_in_setup() {
-            if let Some(first_time_cloud_agent_setup_view) = &self.first_time_cloud_agent_setup_view
-            {
-                stack.add_child(ChildView::new(first_time_cloud_agent_setup_view).finish());
             }
         }
 
