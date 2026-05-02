@@ -1,5 +1,4 @@
 use settings::Setting;
-use warp_core::send_telemetry_from_ctx;
 use warp_core::ui::{appearance::Appearance, Icon};
 use warpui::prelude::Empty;
 use warpui::AppContext;
@@ -25,7 +24,6 @@ use crate::{
 };
 
 use super::super::{AmbientAgentViewModelEvent, Status};
-use crate::ai::ambient_agents::telemetry::{CloudAgentTelemetryEvent, CloudModeEntryPoint};
 
 /// Icon size for the status indicator
 const STATUS_ICON_SIZE: f32 = 16.;
@@ -105,7 +103,7 @@ impl AmbientAgentEntryBlock {
         ai_context_model
             .selected_conversation(app)
             .and_then(|c| c.title())
-            .unwrap_or_else(|| "New cloud agent".to_owned())
+            .unwrap_or_else(|| "Hosted agent unavailable".to_owned())
     }
 
     fn ambient_agent_view_model<'a>(&self, app: &'a AppContext) -> &'a AmbientAgentViewModel {
@@ -149,7 +147,7 @@ impl AmbientAgentEntryBlock {
             (Icon::ClockLoader, theme.ansi_fg_magenta())
         } else {
             (
-                Icon::OzCloud,
+                Icon::Terminal,
                 theme.main_text_color(theme.background()).into_solid(),
             )
         };
@@ -282,21 +280,8 @@ impl TypedActionView for AmbientAgentEntryBlock {
     fn handle_action(&mut self, action: &Self::Action, ctx: &mut ViewContext<Self>) {
         match action {
             AmbientAgentEntryBlockAction::OpenAmbientAgent => {
-                send_telemetry_from_ctx!(
-                    CloudAgentTelemetryEvent::EnteredCloudMode {
-                        entry_point: CloudModeEntryPoint::EntryBlock,
-                    },
-                    ctx
-                );
-                if let Some(stack) = self.pane_stack.upgrade(ctx) {
-                    stack.update(ctx, |stack, ctx| {
-                        stack.push(
-                            self.terminal_manager.clone(),
-                            self.terminal_view.clone(),
-                            ctx,
-                        );
-                    });
-                }
+                let _ = ctx;
+                log::info!("Ignoring hosted ambient agent block open in local-only Warper");
             }
         }
     }

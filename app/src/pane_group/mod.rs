@@ -1280,29 +1280,28 @@ impl PaneGroup {
                 };
 
                 let (view, terminal_manager) = match pane_mode {
-                    PaneMode::Cloud => {
-                        Self::create_ambient_agent_terminal(resources, view_size, ctx)
+                    PaneMode::Cloud | PaneMode::Terminal | PaneMode::Agent => {
+                        PaneGroup::create_session(
+                            // Use cwd from the template iff such path exists, otherwise None
+                            // TODO(CORE-3187): On Windows, support WSL directory restoration.
+                            Some(cwd).filter(|p| p.exists()),
+                            HashMap::new(),
+                            IsSharedSessionCreator::No,
+                            resources,
+                            None,
+                            None, // no conversation restoration for launch config
+                            user_default_shell_unsupported_banner_model_handle,
+                            view_size,
+                            model_event_sender.clone(),
+                            chosen_shell,
+                            None,
+                            ctx,
+                        )
                     }
-                    PaneMode::Terminal | PaneMode::Agent => PaneGroup::create_session(
-                        // Use cwd from the template iff such path exists, otherwise None
-                        // TODO(CORE-3187): On Windows, support WSL directory restoration.
-                        Some(cwd).filter(|p| p.exists()),
-                        HashMap::new(),
-                        IsSharedSessionCreator::No,
-                        resources,
-                        None,
-                        None, // no conversation restoration for launch config
-                        user_default_shell_unsupported_banner_model_handle,
-                        view_size,
-                        model_event_sender.clone(),
-                        chosen_shell,
-                        None,
-                        ctx,
-                    ),
                 };
 
-                // Runs saved commands on start (terminal and agent modes only).
-                if !commands.is_empty() && !matches!(pane_mode, PaneMode::Cloud) {
+                // Runs saved commands on start.
+                if !commands.is_empty() {
                     let exec = commands.iter().map(|cmd| &cmd.exec).join(" && ");
                     view.update(ctx, |terminal, ctx| {
                         terminal.set_pending_command(exec.as_str(), ctx);
@@ -1776,56 +1775,21 @@ impl PaneGroup {
                 Ok((PaneData::new(pane_id), focus))
             }
             LeafContents::AmbientAgent(snapshot) => {
-                let task_data = snapshot.task_id.map(|task_id| {
-                    let task = AgentConversationsModel::handle(ctx).update(ctx, |model, ctx| {
-                        model.get_or_async_fetch_task_data(&task_id, ctx)
-                    });
-                    (task_id, task)
-                });
-
-                let restore_kind = match &task_data {
-                    Some((_, Some(task))) => {
-                        let item = ConversationOrTask::Task(task);
-                        match item.get_open_action(None, ctx) {
-                            Some(WorkspaceAction::OpenAmbientAgentSession {
-                                session_id, ..
-                            }) => AmbientRestoreKind::SharedSession { session_id },
-                            // Transcript viewer and other non-session actions depend on conversation metadata from
-                            // BlocklistAIHistoryModel, which is loaded asynchronously.
-                            // Defer to the pending-restoration handler so it can retry once that metadata arrives.
-                            _ => task_data
-                                .as_ref()
-                                .map(|(tid, _)| AmbientRestoreKind::PendingRestoration {
-                                    task_id: *tid,
-                                })
-                                .unwrap_or(AmbientRestoreKind::NewCloudConversation),
-                        }
-                    }
-                    Some((task_id, None)) => {
-                        AmbientRestoreKind::PendingRestoration { task_id: *task_id }
-                    }
-                    None => AmbientRestoreKind::NewCloudConversation,
-                };
-
-                let mut pending_task: Option<AmbientAgentTaskId> = None;
-                let (terminal_view, terminal_manager) = match restore_kind {
-                    AmbientRestoreKind::SharedSession { session_id } => {
-                        Self::create_shared_session_viewer(session_id, resources, view_size, ctx)
-                    }
-                    AmbientRestoreKind::PendingRestoration { task_id } => {
-                        let (view, manager) = Self::create_loading_terminal_manager_and_view(
-                            resources,
-                            view_size,
-                            ctx.window_id(),
-                            ctx,
-                        );
-                        pending_task = Some(task_id);
-                        (view, manager)
-                    }
-                    AmbientRestoreKind::NewCloudConversation => {
-                        Self::create_ambient_agent_terminal(resources, view_size, ctx)
-                    }
-                };
+                log::info!("Restoring stale ambient agent pane as a local terminal");
+                let (terminal_view, terminal_manager) = PaneGroup::create_session(
+                    None,
+                    HashMap::new(),
+                    IsSharedSessionCreator::No,
+                    resources,
+                    None,
+                    None,
+                    user_default_shell_unsupported_banner_model_handle,
+                    view_size,
+                    model_event_sender.clone(),
+                    None,
+                    None,
+                    ctx,
+                );
 
                 let pane_data = TerminalPane::new(
                     snapshot.uuid,
@@ -1838,14 +1802,9 @@ impl PaneGroup {
                 let pane_id = terminal_pane_id.into();
                 pane_contents.insert(pane_id, Box::new(pane_data));
 
-                if let Some(task_id) = pending_task {
-                    // Defer restoration to after the task data is loaded.
-                    pending_ambient_restorations.push((task_id, pane_id));
-                }
-
                 let focus = InitialFocus {
                     focused_pane: leaf.is_focused.then_some(pane_id),
-                    active_session: None,
+                    active_session: leaf.is_focused.then_some(terminal_pane_id),
                 };
                 Ok((PaneData::new(pane_id), focus))
             }
@@ -3128,18 +3087,11 @@ impl PaneGroup {
         pending: Vec<(AmbientAgentTaskId, PaneId)>,
         ctx: &mut ViewContext<Self>,
     ) {
-        for (task_id, _) in &pending {
-            AgentConversationsModel::handle(ctx).update(ctx, |model, ctx| {
-                model.get_or_async_fetch_task_data(task_id, ctx);
-            });
+        for (_, pane_id) in pending {
+            let (pane_data, _) =
+                self.create_terminal_pane_data(None, HashMap::new(), None, None, ctx);
+            self.replace_pane(pane_id, pane_data, false, ctx);
         }
-
-        self.pending_ambient_agent_conversation_restorations = pending.into_iter().collect();
-
-        let conversations_model = AgentConversationsModel::handle(ctx);
-        ctx.subscribe_to_model(&conversations_model, |me, _, event, ctx| {
-            me.handle_pending_ambient_restoration_event(event, ctx);
-        });
     }
 
     /// Subscription handler that processes pending ambient agent pane restorations
@@ -3288,27 +3240,13 @@ impl PaneGroup {
         true
     }
 
-    /// Replaces a pane with a new cloud conversation.
+    /// Replaces a stale hosted ambient pane with a local terminal.
     fn replace_pane_with_new_cloud_conversation(
         &mut self,
         pane_id: PaneId,
         ctx: &mut ViewContext<Self>,
     ) {
-        let resources = TerminalViewResources {
-            tips_completed: self.tips_completed.clone(),
-            server_api: self.server_api.clone(),
-            model_event_sender: self.model_event_sender.clone(),
-        };
-        let view_size = Self::estimated_view_bounds(ctx).size();
-        let (view, terminal_manager) =
-            Self::create_ambient_agent_terminal(resources, view_size, ctx);
-        let new_pane = TerminalPane::new(
-            Uuid::new_v4().as_bytes().to_vec(),
-            terminal_manager,
-            view,
-            self.model_event_sender.clone(),
-            ctx,
-        );
+        let (new_pane, _) = self.create_terminal_pane_data(None, HashMap::new(), None, None, ctx);
         self.replace_pane(pane_id, new_pane, false, ctx);
     }
 
@@ -3463,14 +3401,19 @@ impl PaneGroup {
                     pane_history,
                     ctx,
                 ),
-                PanesLayout::AmbientAgent => Self::initial_ambient_agent_pane(
-                    resources,
-                    view_bounds,
-                    model_event_sender_clone,
-                    pane_contents,
-                    pane_history,
-                    ctx,
-                ),
+                PanesLayout::AmbientAgent => {
+                    log::info!("Opening local terminal for stale ambient-agent layout");
+                    Self::initial_single_terminal_pane(
+                        NewTerminalOptions::default(),
+                        resources,
+                        unsupported_banner_model_handle,
+                        view_bounds,
+                        model_event_sender_clone,
+                        pane_contents,
+                        pane_history,
+                        ctx,
+                    )
+                }
             }
         };
 
@@ -3923,45 +3866,13 @@ impl PaneGroup {
         new_pane_id
     }
 
-    /// Creates a cloud-mode pane that is immediately hidden as a child agent pane.
-    /// Unlike `create_ambient_agent_pane`, this leaves the new terminal view
-    /// uninitialized so callers can create and select the child conversation
-    /// explicitly before the deferred shared-session viewer binds to it.
+    /// Creates a local terminal pane for stale child-agent state.
     fn insert_ambient_agent_pane_hidden_for_child_agent(
         &mut self,
         base_pane_id: PaneId,
         ctx: &mut ViewContext<Self>,
     ) -> TerminalPaneId {
-        let uuid = Uuid::new_v4();
-        let resources = TerminalViewResources {
-            tips_completed: self.tips_completed.clone(),
-            server_api: self.server_api.clone(),
-            model_event_sender: self.model_event_sender.clone(),
-        };
-        let view_bounds = Self::estimated_view_bounds(ctx);
-        let (view, terminal_manager) =
-            Self::create_cloud_mode_terminal(resources, view_bounds.size(), ctx);
-        let pane_data = TerminalPane::new(
-            uuid.as_bytes().to_vec(),
-            terminal_manager,
-            view,
-            self.model_event_sender.clone(),
-            ctx,
-        );
-        let new_pane_id = pane_data.terminal_pane_id();
-        let _ = self.add_pane_with_options(
-            Box::new(pane_data),
-            AddPaneOptions {
-                direction: Direction::Right,
-                base_pane_id: Some(base_pane_id),
-                focus_new_pane: false,
-                visibility: NewPaneVisibility::HiddenForChildAgent,
-                emit_app_state_changed: false,
-            },
-            ctx,
-        );
-
-        new_pane_id
+        self.insert_terminal_pane_hidden_for_child_agent(base_pane_id, HashMap::new(), ctx)
     }
 
     /// Get the [`PaneView<TerminalView>`] for the pane at `pane_index`, if that pane is:
@@ -6662,39 +6573,16 @@ impl PaneGroup {
         self.start_agent_mode_in_new_pane(initial_query, zero_state_prompt_suggestion_type, ctx);
     }
 
-    /// Creates an ambient agent pane with the given initial prompt.
+    /// Creates a local terminal pane for stale ambient-agent callers.
     fn create_ambient_agent_pane(&self, ctx: &mut ViewContext<Self>) -> TerminalPane {
-        let uuid = Uuid::new_v4();
-        let resources = TerminalViewResources {
-            tips_completed: self.tips_completed.clone(),
-            server_api: self.server_api.clone(),
-            model_event_sender: self.model_event_sender.clone(),
-        };
-
-        let view_bounds = Self::estimated_view_bounds(ctx);
-
-        let (terminal_view, terminal_manager) =
-            Self::create_ambient_agent_terminal(resources, view_bounds.size(), ctx);
-
-        TerminalPane::new(
-            uuid.into_bytes().to_vec(),
-            terminal_manager,
-            terminal_view,
-            self.model_event_sender.clone(),
-            ctx,
-        )
+        let (pane_data, _) = self.create_terminal_pane_data(None, HashMap::new(), None, None, ctx);
+        pane_data
     }
 
     /// Add and focus a cloud mode pane.
     pub fn add_ambient_agent_pane(&mut self, ctx: &mut ViewContext<Self>) {
-        if !FeatureFlag::AgentView.is_enabled() || !FeatureFlag::CloudMode.is_enabled() {
-            return;
-        }
-
-        let pane_data = self.create_ambient_agent_pane(ctx);
-
-        // Add the pane to the right
-        let _ = self.add_pane(Direction::Right, None, Box::new(pane_data), true, ctx);
+        let _ = ctx;
+        log::info!("Ignoring ambient agent pane request in local-only Warper");
     }
 
     /// Close overlays whose state is managed by this pane group or its terminal panes. Does not

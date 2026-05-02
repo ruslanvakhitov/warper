@@ -458,30 +458,6 @@ pub fn run() -> Result<()> {
     // Parse command-line arguments.
     let args = warp_cli::Args::from_env();
 
-    // Server URL overrides are only honored on internal dev channels. Release channels silently
-    // ignore `--server-root-url` / `--ws-server-url` / `--session-sharing-server-url` (and their
-    // `WARP_*` env-var equivalents) so shipped builds can't be redirected away from their
-    // baked-in server URLs. See `Channel::allows_server_url_overrides`.
-    if ChannelState::channel().allows_server_url_overrides() {
-        if let Some(url) = args.server_root_url() {
-            if let Err(e) = ChannelState::override_server_root_url(url.to_owned()) {
-                eprintln!("Error: Invalid server root URL: {e:#}");
-            }
-        }
-
-        if let Some(url) = args.ws_server_url() {
-            if let Err(e) = ChannelState::override_ws_server_url(url.to_owned()) {
-                eprintln!("Error: Invalid websocket server URL: {e:#}");
-            }
-        }
-
-        if let Some(url) = args.session_sharing_server_url() {
-            if let Err(e) = ChannelState::override_session_sharing_server_url(url.to_owned()) {
-                eprintln!("Error: Invalid session sharing server URL: {e:#}");
-            }
-        }
-    }
-
     if let Some(command) = args.command() {
         #[cfg(windows)]
         if command.prints_to_stdout() {
@@ -558,10 +534,9 @@ pub fn run() -> Result<()> {
             }
             warp_cli::Command::CommandLine(cmd) => {
                 let (is_sandboxed, computer_use_override) = match cmd.as_ref() {
-                    warp_cli::CliCommand::Agent(warp_cli::agent::AgentCommand::Run(run_args)) => (
-                        run_args.sandboxed,
-                        run_args.computer_use.computer_use_override(),
-                    ),
+                    warp_cli::CliCommand::Agent(warp_cli::agent::AgentCommand::Run(run_args)) => {
+                        (false, run_args.computer_use.computer_use_override())
+                    }
                     _ => (false, None),
                 };
 

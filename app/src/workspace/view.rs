@@ -2534,7 +2534,7 @@ impl Workspace {
             ctx.subscribe_to_model(&auth_manager, Self::handle_auth_manager_event);
         }
 
-        // Handle theme updates when there is a cloud update to themes while the picker is open.
+        // Handle local theme updates while the picker is open.
         ctx.subscribe_to_model(&ThemeSettings::handle(ctx), |me, _, _, ctx| {
             if me.is_theme_chooser_open() {
                 me.theme_chooser_view.update(ctx, |view, ctx| {
@@ -3648,29 +3648,8 @@ impl Workspace {
         session_id: SharedSessionId,
         ctx: &mut ViewContext<Self>,
     ) {
-        if !ChannelState::is_warp_server_available() {
-            log::info!("Ignoring shared-session join without Warp server config");
-            return;
-        }
-
-        let new_pane_group = ctx.add_typed_action_view(|ctx| {
-            PaneGroup::new_for_shared_session_viewer(
-                session_id,
-                self.tips_completed.clone(),
-                self.user_default_shell_unsupported_banner_model_handle
-                    .clone(),
-                self.server_api.clone(),
-                self.model_event_sender.clone(),
-                ctx,
-            )
-        });
-
-        ctx.subscribe_to_view(&new_pane_group, move |me, pane_group, event, ctx| {
-            me.handle_file_tree_event(pane_group, event, ctx)
-        });
-
-        self.tabs.push(TabData::new(new_pane_group));
-        self.activate_tab_internal(self.tab_count() - 1, ctx);
+        let _ = (session_id, ctx);
+        log::info!("Ignoring shared-session join in local-only Warper");
     }
 
     /// Opens a cloud conversation by server token.
@@ -3866,64 +3845,12 @@ impl Workspace {
     }
 
     fn copy_shared_session_link_from_tab(&mut self, tab_index: usize, ctx: &mut ViewContext<Self>) {
-        // Get the pane group for the specified tab
-        let Some(pane_group) = self.tabs.get(tab_index).map(|tab| tab.pane_group.clone()) else {
-            return;
-        };
-
-        // Get the focused terminal view in that tab
-        let Some(terminal_view) = pane_group.as_ref(ctx).focused_session_view(ctx) else {
-            return;
-        };
-
-        // Copy the shared session link from that terminal view
-        terminal_view.update(ctx, |view, ctx| {
-            view.copy_shared_session_link(SharedSessionActionSource::Tab, ctx);
-        });
+        let _ = (tab_index, ctx);
+        log::info!("Ignoring shared-session link copy in local-only Warper");
     }
 
     fn subscribe_to_shared_session_manager(ctx: &mut ViewContext<Self>) {
-        use terminal::shared_session::manager::{Manager, ManagerEvent};
-
-        let manager = Manager::handle(ctx);
-        ctx.subscribe_to_model(&manager, move |me, _, event, ctx| {
-            match event {
-                ManagerEvent::StartedShare {
-                    window_id,
-                    session_id,
-                } => {
-                    if *window_id == ctx.window_id() {
-                        me.copy_shared_session_link(session_id, ctx);
-                    }
-                }
-                #[cfg(target_family = "wasm")]
-                ManagerEvent::JoinedSession { view_id, .. } => {
-                    // Check if this session is in the current window and has an ambient agent task
-                    let manager = Manager::as_ref(ctx);
-                    if let Some(terminal_view) = manager.joined_view_by_id(view_id, ctx) {
-                        let task_id = terminal_view
-                            .as_ref(ctx)
-                            .model
-                            .lock()
-                            .ambient_agent_task_id();
-                        if task_id.is_some() {
-                            // Open the details panel for shared ambient agent sessions (unless on mobile)
-                            if !warpui::platform::wasm::is_mobile_device() {
-                                me.current_workspace_state.is_transcript_details_panel_open = true;
-                                me.transcript_info_button.update(ctx, |button, ctx| {
-                                    button.set_active(true, ctx);
-                                });
-                            }
-                            me.update_transcript_details_panel_data(ctx);
-                        }
-                    }
-                }
-                #[cfg(not(target_family = "wasm"))]
-                ManagerEvent::JoinedSession { .. } => {}
-                _ => {}
-            }
-            ctx.notify();
-        });
+        let _ = ctx;
     }
 
     fn copy_shared_session_link(
@@ -3931,14 +3858,8 @@ impl Workspace {
         session_id: &SharedSessionId,
         ctx: &mut ViewContext<Self>,
     ) {
-        ctx.clipboard().write(ClipboardContent::plain_text(
-            terminal::shared_session::join_link(session_id),
-        ));
-
-        self.toast_stack.update(ctx, |toast_stack, ctx| {
-            let toast = DismissibleToast::default("Remote control link copied.".to_string());
-            toast_stack.add_ephemeral_toast(toast, ctx);
-        });
+        let _ = (session_id, ctx);
+        log::info!("Ignoring shared-session link copy in local-only Warper");
     }
 
     // Returns true if the focused pane is the viewer of a shared session
@@ -5708,7 +5629,7 @@ impl Workspace {
     /// Builds the unified new-session menu items
     /// tab bar chevron and the vertical tab bar `+` button.
     ///
-    /// Order: Agent → Terminal (sidecar) → Cloud Oz → [tab configs] → separator → New worktree config (sidecar) → New tab config.
+    /// Order: Agent -> Terminal (sidecar) -> [tab configs] -> separator -> New worktree config (sidecar) -> New tab config.
     fn unified_new_session_menu_items(
         &self,
         ctx: &mut ViewContext<Self>,
@@ -5788,22 +5709,7 @@ impl Workspace {
             }
         }
 
-        // 3. Cloud Oz (if flags enabled)
-        if ChannelState::is_warp_server_available()
-            && is_any_ai_enabled
-            && FeatureFlag::AgentView.is_enabled()
-            && FeatureFlag::CloudMode.is_enabled()
-        {
-            let mut cloud_item = MenuItemFields::new("Cloud Oz")
-                .with_on_select_action(WorkspaceAction::AddAmbientAgentTab)
-                .with_icon(icons::Icon::LayoutAlt01);
-            if effective_default == DefaultSessionMode::CloudAgent {
-                cloud_item = cloud_item.with_key_shortcut_label(shortcut_label.clone());
-            }
-            menu_items.push(cloud_item.into_item());
-        }
-
-        // 3b. Local Docker Sandbox
+        // 3. Local Docker Sandbox
         if FeatureFlag::LocalDockerSandbox.is_enabled() {
             let mut docker_item = MenuItemFields::new("Local Docker Sandbox")
                 .with_on_select_action(WorkspaceAction::AddDockerSandboxTab)
@@ -10061,26 +9967,8 @@ impl Workspace {
     }
 
     fn add_ambient_agent_tab(&mut self, ctx: &mut ViewContext<Self>) {
-        if !ChannelState::is_warp_server_available()
-            || !FeatureFlag::AgentView.is_enabled()
-            || !FeatureFlag::CloudMode.is_enabled()
-        {
-            return;
-        }
-
-        send_telemetry_from_ctx!(
-            CloudAgentTelemetryEvent::EnteredCloudMode {
-                entry_point: CloudModeEntryPoint::NewTab,
-            },
-            ctx
-        );
-
-        self.add_tab_with_pane_layout(
-            PanesLayout::AmbientAgent,
-            Arc::new(HashMap::new()),
-            None,
-            ctx,
-        );
+        log::info!("Ignoring hosted ambient agent tab request in local-only Warper");
+        self.add_terminal_tab(false, ctx);
         ctx.notify();
     }
 
@@ -16166,7 +16054,7 @@ impl Workspace {
             .is_user_web_anonymous_user()
             .unwrap_or_default();
 
-        // Simplified mode for viewing Warp Drive objects, shared sessions, or conversation transcripts on WASM
+        // Simplified mode for legacy restored non-terminal views on WASM.
         #[cfg(target_family = "wasm")]
         if let Some(content_type) = self.get_simplified_wasm_tab_bar_content(ctx) {
             // Use MainAxisAlignment::SpaceBetween and expand to fill width
@@ -18727,11 +18615,7 @@ impl TypedActionView for Workspace {
                         }
                     }
                     DefaultSessionMode::CloudAgent => {
-                        if ChannelState::is_warp_server_available() {
-                            self.add_ambient_agent_tab(ctx);
-                        } else {
-                            self.add_terminal_tab(false, ctx);
-                        }
+                        self.add_terminal_tab(false, ctx);
                     }
                     DefaultSessionMode::DockerSandbox => {
                         self.add_docker_sandbox_tab(ctx);
@@ -20002,56 +19886,15 @@ impl TypedActionView for Workspace {
                 session_id,
                 task_id,
             } => {
-                if !ChannelState::is_warp_server_available() {
-                    log::info!("Ignoring ambient agent session without Warp server config");
-                    return;
-                }
-
-                // Mark task as manually opened so it appears in the conversation list
-                // even if its source is not user-initiated.
-                AgentConversationsModel::handle(ctx).update(ctx, |model, ctx| {
-                    model.mark_task_as_manually_opened(*task_id, ctx);
-                });
-
-                // Check if there's already a terminal viewing this task.
-                if let Some(tab_index) =
-                    self.find_tab_with_ambient_agent_conversation(*task_id, ctx)
-                {
-                    self.activate_tab(tab_index, ctx);
-                } else {
-                    self.add_tab_for_joining_shared_session(*session_id, ctx);
-                }
+                let _ = (session_id, task_id);
+                log::info!("Ignoring ambient agent session open in local-only Warper");
             }
             OpenConversationTranscriptViewer {
                 conversation_id,
                 ambient_agent_task_id,
             } => {
-                if !ChannelState::is_warp_server_available() {
-                    log::info!("Ignoring conversation transcript without Warp server config");
-                    return;
-                }
-
-                // Mark task as manually opened so it appears in the conversation list
-                // even if its source is not user-initiated.
-                if let Some(task_id) = ambient_agent_task_id {
-                    AgentConversationsModel::handle(ctx).update(ctx, |model, ctx| {
-                        model.mark_task_as_manually_opened(*task_id, ctx);
-                    });
-                }
-
-                // Check if there's already a terminal viewing this conversation's task.
-                if let Some(task_id) = ambient_agent_task_id {
-                    if let Some(tab_index) =
-                        self.find_tab_with_ambient_agent_conversation(*task_id, ctx)
-                    {
-                        self.activate_tab(tab_index, ctx);
-                        return;
-                    }
-                }
-                self.load_cloud_conversation_into_new_transcript_viewer(
-                    conversation_id.clone(),
-                    ctx,
-                );
+                let _ = (conversation_id, ambient_agent_task_id);
+                log::info!("Ignoring hosted conversation transcript open in local-only Warper");
             }
             ForkAIConversation {
                 conversation_id,
@@ -20702,7 +20545,7 @@ impl View for Workspace {
 
         let tab_bar_mode = self.tab_bar_mode(app);
 
-        // For WASM simplified tab bar views (Warp Drive objects, shared sessions, conversation transcripts),
+        // For WASM simplified tab bar views,
         // we render the tab bar outside of panels so that the details panel only affects content below the tab bar.
         cfg_if::cfg_if! {
             if #[cfg(target_family = "wasm")] {
@@ -21060,7 +20903,7 @@ impl View for Workspace {
                 }
             }
 
-            // Action sidecar for actionable items (Terminal, Agent, Cloud Oz, tab configs).
+            // Action sidecar for actionable items (Terminal, Agent, tab configs).
             if let Some(sidecar_item) = &self.tab_config_action_sidecar_item {
                 let anchor_label = self.new_session_dropdown_menu.read(app, |menu, _| {
                     menu.hovered_index().and_then(|idx| {
