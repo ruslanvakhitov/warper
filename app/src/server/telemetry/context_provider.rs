@@ -1,10 +1,13 @@
 use warp_core::telemetry::{TelemetryContextModel, TelemetryContextProvider};
-use warpui::{AppContext, ModelContext, SingletonEntity};
+use warpui::{AppContext, ModelContext};
 
+#[cfg(test)]
 use crate::auth::AuthStateProvider;
 
+#[cfg(test)]
 pub struct AppTelemetryContextProvider {}
 
+#[cfg(test)]
 impl AppTelemetryContextProvider {
     pub fn new_context_provider(
         _ctx: &mut ModelContext<TelemetryContextModel>,
@@ -13,6 +16,7 @@ impl AppTelemetryContextProvider {
     }
 }
 
+#[cfg(test)]
 impl TelemetryContextProvider for AppTelemetryContextProvider {
     fn user_id(&self, ctx: &AppContext) -> Option<String> {
         let auth_state = AuthStateProvider::as_ref(ctx).get();

@@ -5,10 +5,7 @@ use super::{
 use crate::server::server_api::ServerApiProvider;
 use crate::{
     ai::ambient_agents::telemetry::CloudAgentTelemetryEvent,
-    ai::{
-        ambient_agents::github_auth_notifier::{GitHubAuthEvent, GitHubAuthNotifier},
-        cloud_environments::{AmbientAgentEnvironment, GithubRepo},
-    },
+    ai::cloud_environments::{AmbientAgentEnvironment, GithubRepo},
     appearance::Appearance,
     editor::{
         EditorOptions, EditorView, PropagateAndNoOpNavigationKeys, SingleLineEditorOptions,
@@ -575,13 +572,6 @@ impl UpdateEnvironmentForm {
                 EnvironmentFormMode::Edit { env_id: *env_id }
             }
         };
-
-        // Subscribe to GitHubAuthNotifier to refetch repos when auth completes
-        ctx.subscribe_to_model(&GitHubAuthNotifier::handle(ctx), |me, _, event, ctx| {
-            if matches!(event, GitHubAuthEvent::AuthCompleted) {
-                me.fetch_github_repos(ctx);
-            }
-        });
 
         let mut form = Self {
             mode,

@@ -7,7 +7,6 @@ use std::fmt::Display;
 use std::str::FromStr;
 use uuid::{NonNilUuid, Uuid};
 
-pub mod github_auth_notifier;
 pub mod scheduled;
 pub mod spawn;
 pub mod task;

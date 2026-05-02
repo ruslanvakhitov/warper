@@ -1,5 +1,4 @@
 use super::*;
-use crate::ai::ambient_agents::github_auth_notifier::GitHubAuthNotifier;
 use crate::ai::cloud_environments::{
     AmbientAgentEnvironment, CloudAmbientAgentEnvironmentModel, GithubRepo,
 };
@@ -105,8 +104,6 @@ fn init_env_page_view_test_models(app: &mut App) {
     app.add_singleton_model(SyncQueue::mock);
     app.add_singleton_model(UpdateManager::mock);
     app.add_singleton_model(|_| KeybindingChangedNotifier::new());
-    app.add_singleton_model(|_| GitHubAuthNotifier::new());
-
     // The agent-assisted modal reads locally indexed repos via CodebaseIndexManager.
     // We register a test instance to avoid singleton lookup panics in unit tests.
     app.add_singleton_model(|ctx| {
