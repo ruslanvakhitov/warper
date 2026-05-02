@@ -135,15 +135,15 @@ pub struct WorkspaceState {
 }
 
 impl WorkspaceState {
-    pub fn is_any_non_terminal_view_open(&self, app: &AppContext) -> bool {
-        self.is_any_modal_open(app)
+    pub fn is_any_non_terminal_view_open(&self) -> bool {
+        self.is_any_modal_open()
             || self.is_theme_chooser_open
             || self.is_ai_assistant_panel_open
             || self.is_workflow_modal_open
             || self.is_warp_drive_open
     }
 
-    pub fn is_any_non_palette_modal_open(&self, app: &AppContext) -> bool {
+    pub fn is_any_non_palette_modal_open(&self) -> bool {
         self.is_theme_creator_modal_open
             || self.is_theme_deletion_modal_open
             || self.is_changelog_modal_open
@@ -169,8 +169,8 @@ impl WorkspaceState {
     }
 
     /// Returns whether any modal (sitting over terminal views) is open.
-    pub fn is_any_modal_open(&self, app: &AppContext) -> bool {
-        self.is_any_non_palette_modal_open(app)
+    pub fn is_any_modal_open(&self) -> bool {
+        self.is_any_non_palette_modal_open()
             || self.is_palette_open
             || self.is_ctrl_tab_palette_open
     }

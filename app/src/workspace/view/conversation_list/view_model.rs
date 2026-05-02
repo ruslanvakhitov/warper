@@ -35,18 +35,10 @@ impl ConversationListViewModel {
                 // These events change the set of items in the list, so we need
                 // to rebuild the cached ID list.
                 AgentConversationsModelEvent::ConversationsLoaded
-                | AgentConversationsModelEvent::NewTasksReceived
                 | AgentConversationsModelEvent::TasksUpdated
                 | AgentConversationsModelEvent::TaskManuallyOpened => {
                     me.refresh_cached_items(ctx);
                 }
-                // Status changes don't affect the set of IDs (status is read
-                // at render time via get_item_by_id); just signal a re-render.
-                AgentConversationsModelEvent::ConversationUpdated => {
-                    ctx.emit(ConversationListViewModelEvent);
-                }
-                // Artifact updates don't affect the conversation list
-                AgentConversationsModelEvent::ConversationArtifactsUpdated { .. } => {}
             }
         });
 
@@ -65,8 +57,7 @@ impl ConversationListViewModel {
     /// The cache stores only `ConversationOrTaskId`s; per-item fields like
     /// status, title, and last-updated are read fresh at render time via
     /// `get_item_by_id`. Callers should therefore avoid invoking this on
-    /// events that only mutate per-item state (e.g. `ConversationUpdated`);
-    /// emitting `ConversationListViewModelEvent` is sufficient there.
+    /// events that only mutate per-item state.
     fn refresh_cached_items(&mut self, ctx: &mut ModelContext<Self>) {
         let model = self.conversations_model.as_ref(ctx);
         self.cached_conversation_or_task_ids = model

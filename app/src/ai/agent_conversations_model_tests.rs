@@ -1,15 +1,9 @@
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Utc};
 use instant::Instant;
 use persistence::model::AgentConversationData;
-use std::{
-    collections::HashMap,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
-};
+use std::collections::HashMap;
 use warp_core::features::FeatureFlag;
-use warpui::{App, EntityId};
+use warpui::App;
 
 use crate::ai::agent::conversation::{AIConversation, AIConversationId, ConversationStatus};
 use crate::ai::ambient_agents::task::{TaskCreatorInfo, TaskStatusMessage};
@@ -17,16 +11,15 @@ use crate::ai::ambient_agents::AgentConfigSnapshot;
 use crate::ai::ambient_agents::AmbientAgentTaskId;
 use crate::ai::ambient_agents::{AmbientAgentTask, AmbientAgentTaskState};
 use crate::ai::artifacts::Artifact;
-use crate::ai::blocklist::history_model::{BlocklistAIHistoryEvent, BlocklistAIHistoryModel};
+use crate::ai::blocklist::history_model::BlocklistAIHistoryModel;
 use crate::ai::conversation_navigation::ConversationNavigationData;
 use crate::auth::AuthStateProvider;
 use crate::test_util::ai_agent_tasks::{create_api_task, create_message};
 
 use super::{
-    AgentConversationsModel, AgentConversationsModelEvent, AgentManagementFilters,
-    AgentRunDisplayStatus, ArtifactFilter, ConversationMetadata, ConversationOrTask,
-    EnvironmentFilter, HarnessFilter, OwnerFilter, StatusFilter, TaskFetchState,
-    MAX_PERSONAL_TASKS, MAX_TEAM_TASKS,
+    AgentConversationsModel, AgentManagementFilters, AgentRunDisplayStatus, ArtifactFilter,
+    ConversationMetadata, ConversationOrTask, EnvironmentFilter, HarnessFilter, OwnerFilter,
+    StatusFilter, TaskFetchState,
 };
 use crate::ai::ambient_agents::task::HarnessConfig;
 use warp_cli::agent::Harness;
@@ -63,38 +56,6 @@ fn create_test_task(
         last_event_sequence: None,
         children: vec![],
     }
-}
-
-#[test]
-fn test_conversation_status_update_emits_conversation_updated() {
-    App::test((), |mut app| async move {
-        let _interactive_management_guard =
-            FeatureFlag::InteractiveConversationManagementView.override_enabled(true);
-        let agent_model = app.add_singleton_model(|_| create_test_model());
-        let saw_conversation_updated = Arc::new(AtomicBool::new(false));
-
-        app.update(|ctx| {
-            let saw_conversation_updated = saw_conversation_updated.clone();
-            ctx.subscribe_to_model(&agent_model, move |_, event, _| {
-                if matches!(event, AgentConversationsModelEvent::ConversationUpdated) {
-                    saw_conversation_updated.store(true, Ordering::SeqCst);
-                }
-            });
-        });
-
-        agent_model.update(&mut app, |model, ctx| {
-            model.handle_history_event(
-                &BlocklistAIHistoryEvent::UpdatedConversationStatus {
-                    conversation_id: AIConversationId::new(),
-                    terminal_view_id: EntityId::new(),
-                    is_restored: false,
-                },
-                ctx,
-            );
-        });
-
-        assert!(saw_conversation_updated.load(Ordering::SeqCst));
-    });
 }
 
 #[test]
@@ -398,10 +359,6 @@ fn create_test_model() -> AgentConversationsModel {
     AgentConversationsModel {
         tasks: HashMap::new(),
         conversations: HashMap::new(),
-        in_flight_poll_abort_handle: None,
-        next_poll_abort_handle: None,
-        active_data_consumers_per_window: HashMap::new(),
-        has_finished_initial_load: false,
         manually_opened_task_ids: Default::default(),
         task_fetch_state: Default::default(),
     }
@@ -452,156 +409,6 @@ fn all_owner_filters() -> AgentManagementFilters {
         owners: OwnerFilter::All,
         ..Default::default()
     }
-}
-
-#[test]
-fn test_eviction_protects_personal_from_team_overflow() {
-    // Add 50 old personal tasks + 600 new team tasks
-    // After eviction: all 50 personal remain, only 300 team remain
-    let current_user = "user-personal";
-    let team_user = "user-team";
-    let now = Utc::now();
-
-    let mut model = create_test_model();
-
-    // Add 50 old personal tasks
-    for i in 0..50 {
-        let task = create_test_task(&make_uuid(i), current_user, now - Duration::days(30));
-        model.tasks.insert(task.task_id, task);
-    }
-
-    // Add 600 new team tasks
-    for i in 50..650 {
-        let task = create_test_task(&make_uuid(i), team_user, now - Duration::hours(i as i64));
-        model.tasks.insert(task.task_id, task);
-    }
-
-    model.enforce_task_cap(current_user);
-
-    // Count personal vs team
-    let personal_count = model
-        .tasks
-        .values()
-        .filter(|t| t.creator.as_ref().is_some_and(|c| c.uid == current_user))
-        .count();
-    let team_count = model.tasks.len() - personal_count;
-
-    // All 50 personal tasks should remain
-    assert_eq!(personal_count, 50, "all personal tasks should remain");
-    // Team tasks should be capped at MAX_TEAM_TASKS
-    assert_eq!(team_count, MAX_TEAM_TASKS, "team tasks should be capped");
-}
-
-#[test]
-fn test_eviction_caps_each_group_independently() {
-    // Add 250 personal + 350 team
-    // After eviction: 200 personal + 300 team
-    let current_user = "user-personal";
-    let team_user = "user-team";
-    let now = Utc::now();
-
-    let mut model = create_test_model();
-
-    // Add 250 personal tasks
-    for i in 0..250 {
-        let task = create_test_task(&make_uuid(i), current_user, now - Duration::hours(i as i64));
-        model.tasks.insert(task.task_id, task);
-    }
-
-    // Add 350 team tasks
-    for i in 250..600 {
-        let task = create_test_task(&make_uuid(i), team_user, now - Duration::hours(i as i64));
-        model.tasks.insert(task.task_id, task);
-    }
-
-    model.enforce_task_cap(current_user);
-
-    // Count personal vs team
-    let personal_count = model
-        .tasks
-        .values()
-        .filter(|t| t.creator.as_ref().is_some_and(|c| c.uid == current_user))
-        .count();
-    let team_count = model.tasks.len() - personal_count;
-
-    // Personal capped at MAX_PERSONAL_TASKS
-    assert_eq!(
-        personal_count, MAX_PERSONAL_TASKS,
-        "personal tasks should be capped"
-    );
-    // Team capped at MAX_TEAM_TASKS
-    assert_eq!(team_count, MAX_TEAM_TASKS, "team tasks should be capped");
-}
-
-#[test]
-fn test_eviction_removes_oldest_within_group() {
-    let current_user = "user-personal";
-    let now = Utc::now();
-
-    let mut model = create_test_model();
-
-    // Add 250 personal tasks with different timestamps
-    // Newer tasks have lower index (i.e., index 0 is newest)
-    for i in 0..250 {
-        let task = create_test_task(&make_uuid(i), current_user, now - Duration::hours(i as i64));
-        model.tasks.insert(task.task_id, task);
-    }
-
-    // Add 350 team tasks (to trigger eviction)
-    let team_user = "user-team";
-    for i in 250..600 {
-        let task = create_test_task(&make_uuid(i), team_user, now - Duration::hours(i as i64));
-        model.tasks.insert(task.task_id, task);
-    }
-
-    model.enforce_task_cap(current_user);
-
-    // The 200 newest personal tasks should remain (indices 0-199)
-    for i in 0..MAX_PERSONAL_TASKS {
-        let task_id: AmbientAgentTaskId = make_uuid(i).parse().unwrap();
-        assert!(
-            model.tasks.contains_key(&task_id),
-            "newest personal task {i} should remain"
-        );
-    }
-
-    // The oldest personal tasks should be evicted (indices 200-249)
-    for i in MAX_PERSONAL_TASKS..250 {
-        let task_id: AmbientAgentTaskId = make_uuid(i).parse().unwrap();
-        assert!(
-            !model.tasks.contains_key(&task_id),
-            "oldest personal task {i} should be evicted"
-        );
-    }
-}
-
-#[test]
-fn test_eviction_noop_when_under_cap() {
-    let current_user = "user-personal";
-    let team_user = "user-team";
-    let now = Utc::now();
-
-    let mut model = create_test_model();
-
-    // Add 100 personal + 100 team (well under cap)
-    for i in 0..100 {
-        let task = create_test_task(&make_uuid(i), current_user, now - Duration::hours(i as i64));
-        model.tasks.insert(task.task_id, task);
-    }
-    for i in 100..200 {
-        let task = create_test_task(&make_uuid(i), team_user, now - Duration::hours(i as i64));
-        model.tasks.insert(task.task_id, task);
-    }
-
-    let original_count = model.tasks.len();
-    model.enforce_task_cap(current_user);
-
-    // No tasks should be evicted
-    assert_eq!(
-        model.tasks.len(),
-        original_count,
-        "no tasks should be evicted when under cap"
-    );
 }
 
 #[test]

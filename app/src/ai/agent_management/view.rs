@@ -139,7 +139,6 @@ struct CardState {
 
 pub struct AgentManagementView {
     list_state: ListState<()>,
-    loading_icon_mouse_state: MouseStateHandle,
     scroll_state: ScrollStateHandle,
 
     /// Store the most recent requested set of ConversationOrTasks on the view
@@ -173,8 +172,6 @@ pub struct AgentManagementView {
 
 /// Enum to track the state of the view, based on what tasks we have visible
 enum ViewState {
-    /// The model is still loading in data
-    Loading,
     /// No local agent conversations are available to show.
     Empty,
     /// We have tasks, but currently have a filter applied that matches none of them
@@ -289,7 +286,6 @@ impl AgentManagementView {
             filters,
             search_query: String::new(),
             search_editor,
-            loading_icon_mouse_state: MouseStateHandle::default(),
             all_filter_button,
             personal_filter_button,
             status_dropdown,
@@ -316,12 +312,6 @@ impl AgentManagementView {
     fn get_view_state(&self, app: &AppContext) -> ViewState {
         let model = AgentConversationsModel::as_ref(app);
         let has_conversations = model.has_conversations();
-
-        // If loading with zero items, show skeleton cards
-        // If loading with items, show list of interactive conversations (with loading indicator in header)
-        if model.is_loading() && !has_conversations {
-            return ViewState::Loading;
-        }
 
         if !has_conversations {
             return ViewState::Empty;
@@ -966,24 +956,14 @@ impl AgentManagementView {
     ) {
         match event {
             AgentConversationsModelEvent::ConversationsLoaded
-            | AgentConversationsModelEvent::NewTasksReceived
             | AgentConversationsModelEvent::TasksUpdated => {
                 self.update_creator_dropdown(ctx);
                 self.update_source_dropdown(ctx);
                 self.refresh_details_panel_if_needed(ctx);
                 self.get_tasks_from_model(ctx);
             }
-            AgentConversationsModelEvent::ConversationUpdated => {
-                self.get_tasks_from_model(ctx);
-                self.refresh_details_panel_if_needed(ctx);
-                ctx.notify();
-            }
             // TaskManuallyOpened is handled by the conversation list view, not here.
             AgentConversationsModelEvent::TaskManuallyOpened => {}
-            AgentConversationsModelEvent::ConversationArtifactsUpdated { conversation_id } => {
-                self.update_artifacts_for_conversation(*conversation_id, ctx);
-                self.refresh_details_panel_if_needed(ctx);
-            }
         }
     }
 
@@ -1061,41 +1041,6 @@ impl AgentManagementView {
         self.details_panel.update(ctx, |p, ctx| {
             p.set_conversation_details(data, ctx);
         });
-    }
-
-    /// Update just the artifact buttons for a specific conversation
-    fn update_artifacts_for_conversation(
-        &mut self,
-        conversation_id: AIConversationId,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        let model = AgentConversationsModel::as_ref(ctx);
-        let Some(card_data) = model.get_conversation(&conversation_id) else {
-            return;
-        };
-        let artifacts = card_data.artifacts(ctx);
-
-        // Find the index of the card for this conversation
-        let Some(index) = self
-            .items
-            .iter()
-            .position(|card| card.item_id == ManagementCardItemId::Conversation(conversation_id))
-        else {
-            return;
-        };
-
-        // Update the artifact buttons for this card
-        if should_show_artifacts(&artifacts) {
-            if let Some(view) = &self.items[index].artifact_buttons_view {
-                view.update(ctx, |v, ctx| v.update_artifacts(&artifacts, ctx));
-            } else {
-                let new_view = self.create_artifact_buttons_view(&artifacts, ctx);
-                self.items[index].artifact_buttons_view = Some(new_view);
-            }
-        } else {
-            self.items[index].artifact_buttons_view = None;
-        }
-        ctx.notify();
     }
 
     fn handle_details_panel_event(
@@ -1268,18 +1213,6 @@ impl AgentManagementView {
             .with_border(Border::all(1.).with_border_fill(theme.surface_2()))
             .with_uniform_padding(12.)
             .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
-            .finish()
-    }
-
-    fn render_loading_state(&self, app: &AppContext) -> Box<dyn Element> {
-        let appearance = Appearance::as_ref(app);
-        let skeleton_cards = (0..5).map(|_| self.render_skeleton_card(appearance));
-
-        Flex::column()
-            .with_main_axis_size(MainAxisSize::Max)
-            .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
-            .with_children(skeleton_cards)
-            .with_spacing(8.)
             .finish()
     }
 
@@ -1519,7 +1452,6 @@ impl AgentManagementView {
     // Render the main page header based on the current view state
     fn render_header(&self, app: &AppContext) -> Box<dyn Element> {
         match self.get_view_state(app) {
-            ViewState::Loading => self.render_loading_header(app),
             ViewState::Empty => self.render_empty_header(app),
             ViewState::NoFilterMatches | ViewState::HasTasks => self.render_task_list_header(app),
         }
@@ -1562,10 +1494,6 @@ impl AgentManagementView {
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
 
-        let is_loading = AgentConversationsModel::handle(app)
-            .as_ref(app)
-            .is_loading();
-
         let is_on_team = UserWorkspaces::as_ref(app).current_team().is_some();
 
         let size_switch_threshold = MEDIUM_SIZE_SWITCH_THRESHOLD * appearance.monospace_ui_scalar();
@@ -1595,10 +1523,6 @@ impl AgentManagementView {
             if is_on_team {
                 header_top.add_child(ChildView::new(&self.personal_filter_button).finish());
                 header_top.add_child(ChildView::new(&self.all_filter_button).finish());
-            }
-
-            if is_loading {
-                header_top.add_child(self.render_cloud_loading_icon(appearance));
             }
 
             header_top.add_child(Expanded::new(1., Empty::new().finish()).finish());
@@ -1653,87 +1577,6 @@ impl AgentManagementView {
             )],
         )
         .finish()
-    }
-
-    fn render_cloud_loading_icon(&self, appearance: &Appearance) -> Box<dyn Element> {
-        let theme = appearance.theme();
-        let ui_builder = appearance.ui_builder().clone();
-        let icon_size = appearance.ui_font_size();
-
-        let loading_icon = ConstrainedBox::new(
-            Icon::Refresh
-                .to_warpui_icon(theme.sub_text_color(theme.surface_1()))
-                .finish(),
-        )
-        .with_height(icon_size)
-        .with_width(icon_size)
-        .finish();
-
-        Hoverable::new(self.loading_icon_mouse_state.clone(), move |mouse_state| {
-            let mut stack = Stack::new().with_child(loading_icon);
-            if mouse_state.is_hovered() {
-                let tooltip = ui_builder
-                    .tool_tip(String::from("Loading cloud agent runs"))
-                    .build()
-                    .finish();
-                stack.add_positioned_overlay_child(
-                    tooltip,
-                    OffsetPositioning::offset_from_parent(
-                        vec2f(0., -8.),
-                        ParentOffsetBounds::WindowByPosition,
-                        ParentAnchor::TopMiddle,
-                        ChildAnchor::BottomMiddle,
-                    ),
-                );
-            }
-            stack.finish()
-        })
-        .finish()
-    }
-
-    fn render_loading_header(&self, app: &AppContext) -> Box<dyn Element> {
-        let appearance = Appearance::as_ref(app);
-        let theme = appearance.theme();
-
-        let title = Text::new_inline(
-            "Runs",
-            appearance.ui_font_family(),
-            appearance.ui_font_size() + 4.,
-        )
-        .with_style(Properties::default().weight(Weight::Semibold))
-        .with_color(theme.active_ui_text_color().into())
-        .finish();
-
-        let loading_icon = ConstrainedBox::new(
-            Icon::Loading
-                .to_warpui_icon(Fill::Solid(internal_colors::neutral_6(theme)))
-                .finish(),
-        )
-        .with_height(appearance.ui_font_size() + 2.)
-        .with_width(appearance.ui_font_size() + 2.)
-        .finish();
-
-        let loading_row = Flex::row()
-            .with_cross_axis_alignment(CrossAxisAlignment::Center)
-            .with_child(Container::new(loading_icon).with_margin_right(10.).finish())
-            .with_child(
-                Text::new_inline(
-                    "Loading agents...",
-                    appearance.ui_font_family(),
-                    appearance.ui_font_size() + 2.,
-                )
-                .with_style(Properties::default().weight(Weight::Semibold))
-                .with_color(theme.active_ui_text_color().into())
-                .finish(),
-            )
-            .finish();
-
-        Flex::column()
-            .with_cross_axis_alignment(CrossAxisAlignment::Start)
-            .with_spacing(12.)
-            .with_child(title)
-            .with_child(loading_row)
-            .finish()
     }
 
     fn render_search_input(&self, app: &AppContext) -> Box<dyn Element> {
@@ -1864,7 +1707,6 @@ impl View for AgentManagementView {
 
     fn render(&self, app: &AppContext) -> Box<dyn Element> {
         let main_content = match self.get_view_state(app) {
-            ViewState::Loading => self.render_loading_state(app),
             ViewState::Empty => self.render_empty_view(app),
             ViewState::NoFilterMatches => self.render_no_results_view(app),
             ViewState::HasTasks => self.render_default_scroll_view(app),

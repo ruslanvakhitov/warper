@@ -2785,11 +2785,8 @@ impl Workspace {
         ctx.subscribe_to_model(
             &AgentConversationsModel::handle(ctx),
             |me, _, event, ctx| match event {
-                // Update transcript details if task or conversation data is updated
-                AgentConversationsModelEvent::NewTasksReceived
-                | AgentConversationsModelEvent::TasksUpdated
-                | AgentConversationsModelEvent::ConversationUpdated
-                | AgentConversationsModelEvent::ConversationArtifactsUpdated { .. } => {
+                // Update transcript details if task data is updated.
+                AgentConversationsModelEvent::TasksUpdated => {
                     me.update_transcript_details_panel_data(ctx);
                 }
                 _ => {}
@@ -4145,7 +4142,7 @@ impl Workspace {
         // toggle behavior which will close the current modal view and then toggle Warp AI.
         if self.current_workspace_state.is_ai_assistant_panel_open
             && !ai_assistant_panel.is_self_or_child_focused(ctx)
-            && !self.current_workspace_state.is_any_modal_open(ctx)
+            && !self.current_workspace_state.is_any_modal_open()
         {
             ctx.focus(&ai_assistant_panel);
             return;
@@ -7460,8 +7457,7 @@ impl Workspace {
         self.vertical_tabs_panel.show_settings_popup = false;
     }
 
-    /// Sets the visibility state of the agent management view
-    /// and updates the AgentConversationsModel to reflect the new state.
+    /// Sets the visibility state of the agent management view.
     fn set_is_agent_management_view_open(&mut self, is_open: bool, ctx: &mut ViewContext<Self>) {
         if self.agent_management_view.is_none() {
             self.current_workspace_state.is_agent_management_view_open = false;
@@ -7474,15 +7470,6 @@ impl Workspace {
             return;
         }
         self.current_workspace_state.is_agent_management_view_open = is_open;
-        let window_id = self.window_id;
-        let view_id = self.agent_management_view.as_ref().expect("checked").id();
-        AgentConversationsModel::handle(ctx).update(ctx, |model, ctx| {
-            if is_open {
-                model.register_view_open(window_id, view_id, ctx);
-            } else {
-                model.register_view_closed(window_id, view_id, ctx);
-            }
-        });
 
         // Notify panels about the agent management view state change so they can
         // update their top border visibility accordingly.
@@ -11819,7 +11806,7 @@ impl Workspace {
             && (accepted_action_type.is_none()
                 || !self
                     .current_workspace_state
-                    .is_any_non_terminal_view_open(ctx))
+                    .is_any_non_terminal_view_open())
         {
             self.focus_active_tab(ctx);
         }
@@ -11969,10 +11956,7 @@ impl Workspace {
         ctx: &mut ViewContext<Self>,
     ) {
         // If the invite modal is open, don't show the palette since it won't be visible anyway
-        if !self
-            .current_workspace_state
-            .is_any_non_palette_modal_open(ctx)
-        {
+        if !self.current_workspace_state.is_any_non_palette_modal_open() {
             let is_palette_mode_already_open =
                 self.palette.as_ref(ctx).is_mode_enabled(palette_mode, ctx)
                     && ((matches!(source, PaletteSource::CtrlTab { .. })
