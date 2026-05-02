@@ -119,13 +119,11 @@ type EmptyMouseStates = (
     HashMap<SyncId, MouseStateHandle>,
     HashMap<SyncId, MouseStateHandle>,
     HashMap<SyncId, MouseStateHandle>,
-    HashMap<SyncId, MouseStateHandle>,
     HashMap<SyncId, Instant>,
 );
 
 fn empty_card_mouse_states() -> EmptyMouseStates {
     (
-        HashMap::new(),
         HashMap::new(),
         HashMap::new(),
         HashMap::new(),
@@ -148,7 +146,6 @@ fn test_render_environments_list_with_single_environment() {
                 edit_mouse_states,
                 share_mouse_states,
                 card_hover_states,
-                view_runs_link_mouse_states,
                 copy_feedback_times,
             ) = empty_card_mouse_states();
             let card_render_state = EnvironmentCardRenderState {
@@ -156,7 +153,6 @@ fn test_render_environments_list_with_single_environment() {
                 edit_button_mouse_states: &edit_mouse_states,
                 share_button_mouse_states: &share_mouse_states,
                 card_hover_mouse_states: &card_hover_states,
-                view_runs_link_mouse_states: &view_runs_link_mouse_states,
                 copy_feedback_times: &copy_feedback_times,
             };
 
@@ -205,7 +201,6 @@ fn test_render_environments_list_with_multiple_environments() {
                 edit_mouse_states,
                 share_mouse_states,
                 card_hover_states,
-                view_runs_link_mouse_states,
                 copy_feedback_times,
             ) = empty_card_mouse_states();
             let card_render_state = EnvironmentCardRenderState {
@@ -213,7 +208,6 @@ fn test_render_environments_list_with_multiple_environments() {
                 edit_button_mouse_states: &edit_mouse_states,
                 share_button_mouse_states: &share_mouse_states,
                 card_hover_mouse_states: &card_hover_states,
-                view_runs_link_mouse_states: &view_runs_link_mouse_states,
                 copy_feedback_times: &copy_feedback_times,
             };
 
@@ -270,7 +264,6 @@ fn test_render_environment_card_with_minimal_config() {
                 edit_mouse_states,
                 share_mouse_states,
                 card_hover_states,
-                view_runs_link_mouse_states,
                 copy_feedback_times,
             ) = empty_card_mouse_states();
             let card_render_state = EnvironmentCardRenderState {
@@ -278,7 +271,6 @@ fn test_render_environment_card_with_minimal_config() {
                 edit_button_mouse_states: &edit_mouse_states,
                 share_button_mouse_states: &share_mouse_states,
                 card_hover_mouse_states: &card_hover_states,
-                view_runs_link_mouse_states: &view_runs_link_mouse_states,
                 copy_feedback_times: &copy_feedback_times,
             };
 
@@ -332,7 +324,6 @@ fn test_render_environment_card_with_github_repos() {
                 edit_mouse_states,
                 share_mouse_states,
                 card_hover_states,
-                view_runs_link_mouse_states,
                 copy_feedback_times,
             ) = empty_card_mouse_states();
             let card_render_state = EnvironmentCardRenderState {
@@ -340,7 +331,6 @@ fn test_render_environment_card_with_github_repos() {
                 edit_button_mouse_states: &edit_mouse_states,
                 share_button_mouse_states: &share_mouse_states,
                 card_hover_mouse_states: &card_hover_states,
-                view_runs_link_mouse_states: &view_runs_link_mouse_states,
                 copy_feedback_times: &copy_feedback_times,
             };
 
@@ -396,7 +386,6 @@ fn test_render_environment_card_with_setup_commands() {
                 edit_mouse_states,
                 share_mouse_states,
                 card_hover_states,
-                view_runs_link_mouse_states,
                 copy_feedback_times,
             ) = empty_card_mouse_states();
             let card_render_state = EnvironmentCardRenderState {
@@ -404,7 +393,6 @@ fn test_render_environment_card_with_setup_commands() {
                 edit_button_mouse_states: &edit_mouse_states,
                 share_button_mouse_states: &share_mouse_states,
                 card_hover_mouse_states: &card_hover_states,
-                view_runs_link_mouse_states: &view_runs_link_mouse_states,
                 copy_feedback_times: &copy_feedback_times,
             };
 
@@ -471,7 +459,6 @@ fn test_render_environment_card_with_all_features() {
                 edit_mouse_states,
                 share_mouse_states,
                 card_hover_states,
-                view_runs_link_mouse_states,
                 copy_feedback_times,
             ) = empty_card_mouse_states();
             let card_render_state = EnvironmentCardRenderState {
@@ -479,7 +466,6 @@ fn test_render_environment_card_with_all_features() {
                 edit_button_mouse_states: &edit_mouse_states,
                 share_button_mouse_states: &share_mouse_states,
                 card_hover_mouse_states: &card_hover_states,
-                view_runs_link_mouse_states: &view_runs_link_mouse_states,
                 copy_feedback_times: &copy_feedback_times,
             };
 
@@ -550,7 +536,6 @@ fn test_render_environment_card_with_empty_setup_commands() {
                 edit_mouse_states,
                 share_mouse_states,
                 card_hover_states,
-                view_runs_link_mouse_states,
                 copy_feedback_times,
             ) = empty_card_mouse_states();
             let card_render_state = EnvironmentCardRenderState {
@@ -558,7 +543,6 @@ fn test_render_environment_card_with_empty_setup_commands() {
                 edit_button_mouse_states: &edit_mouse_states,
                 share_button_mouse_states: &share_mouse_states,
                 card_hover_mouse_states: &card_hover_states,
-                view_runs_link_mouse_states: &view_runs_link_mouse_states,
                 copy_feedback_times: &copy_feedback_times,
             };
 
@@ -821,20 +805,6 @@ fn test_set_github_auth_redirect_target_updates_form() {
                 form.github_auth_redirect_target_for_test()
             });
             assert_eq!(target, GithubAuthRedirectTarget::SettingsEnvironments);
-        });
-
-        app.update(|ctx| {
-            view_handle.update(ctx, |view, ctx| {
-                view.set_github_auth_redirect_target(GithubAuthRedirectTarget::FocusCloudMode, ctx);
-            });
-        });
-
-        app.update(|ctx| {
-            let view = view_handle.as_ref(ctx);
-            let target = view.environment_form.read(ctx, |form, _ctx| {
-                form.github_auth_redirect_target_for_test()
-            });
-            assert_eq!(target, GithubAuthRedirectTarget::FocusCloudMode);
         });
     })
 }
@@ -1353,7 +1323,6 @@ fn test_render_environment_card_with_last_used_never() {
                 edit_mouse_states,
                 share_mouse_states,
                 card_hover_states,
-                view_runs_link_mouse_states,
                 copy_feedback_times,
             ) = empty_card_mouse_states();
 
@@ -1363,7 +1332,6 @@ fn test_render_environment_card_with_last_used_never() {
                 edit_button_mouse_states: &edit_mouse_states,
                 share_button_mouse_states: &share_mouse_states,
                 card_hover_mouse_states: &card_hover_states,
-                view_runs_link_mouse_states: &view_runs_link_mouse_states,
                 copy_feedback_times: &copy_feedback_times,
             };
 
@@ -1425,7 +1393,6 @@ fn test_render_environment_card_with_last_used_timestamp() {
                 edit_mouse_states,
                 share_mouse_states,
                 card_hover_states,
-                view_runs_link_mouse_states,
                 copy_feedback_times,
             ) = empty_card_mouse_states();
 
@@ -1435,7 +1402,6 @@ fn test_render_environment_card_with_last_used_timestamp() {
                 edit_button_mouse_states: &edit_mouse_states,
                 share_button_mouse_states: &share_mouse_states,
                 card_hover_mouse_states: &card_hover_states,
-                view_runs_link_mouse_states: &view_runs_link_mouse_states,
                 copy_feedback_times: &copy_feedback_times,
             };
 

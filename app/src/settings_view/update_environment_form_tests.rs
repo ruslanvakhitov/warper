@@ -90,30 +90,11 @@ fn test_build_auth_url_with_next_overrides_existing() {
 }
 
 #[test]
-fn test_build_auth_url_with_next_focus_cloud_mode() {
-    let base_url = "https://example.com/oauth/connect/github";
-    let result = UpdateEnvironmentForm::build_auth_url_with_next(
-        base_url,
-        GithubAuthRedirectTarget::FocusCloudMode,
-        "warplocal",
-    );
-    let parsed = Url::parse(&result).expect("result should be valid url");
-    let next_value = parsed
-        .query_pairs()
-        .find(|(key, _)| key == "next")
-        .map(|(_, value)| value.into_owned());
-    assert_eq!(
-        next_value,
-        Some("warplocal://action/focus_cloud_mode".to_string())
-    );
-}
-
-#[test]
 fn test_build_auth_url_with_next_uses_scheme_param() {
     let base_url = "https://example.com/oauth/connect/github?scheme=warp";
     let result = UpdateEnvironmentForm::build_auth_url_with_next(
         base_url,
-        GithubAuthRedirectTarget::FocusCloudMode,
+        GithubAuthRedirectTarget::SettingsEnvironments,
         "warplocal",
     );
     let parsed = Url::parse(&result).expect("result should be valid url");
@@ -121,10 +102,7 @@ fn test_build_auth_url_with_next_uses_scheme_param() {
         .query_pairs()
         .find(|(key, _)| key == "next")
         .map(|(_, value)| value.into_owned());
-    assert_eq!(
-        next_value,
-        Some("warp://action/focus_cloud_mode".to_string())
-    );
+    assert_eq!(next_value, Some("warp://settings/environments".to_string()));
 }
 
 #[derive(Default)]

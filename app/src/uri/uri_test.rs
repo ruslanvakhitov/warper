@@ -208,76 +208,6 @@ fn test_warp_web_link_failure() {
 }
 
 #[test]
-fn test_action_create_environment_parse() {
-    let url = Url::parse(&format!(
-        "{}://action/create_environment?repo=foo&repo=bar",
-        ChannelState::url_scheme()
-    ))
-    .unwrap();
-
-    let action = Action::parse(&url).unwrap();
-    match action {
-        Action::CreateEnvironment { repos } => {
-            assert_eq!(repos, vec!["foo".to_owned(), "bar".to_owned()]);
-        }
-        _ => panic!("unexpected action: {action:?}"),
-    }
-}
-
-#[test]
-fn test_action_focus_cloud_mode_parse() {
-    let url = Url::parse(&format!(
-        "{}://action/focus_cloud_mode",
-        ChannelState::url_scheme()
-    ))
-    .unwrap();
-
-    let action = Action::parse(&url).unwrap();
-    assert!(matches!(action, Action::FocusCloudMode));
-}
-
-#[test]
-fn test_action_create_environment_parse_no_repos() {
-    let url = Url::parse(&format!(
-        "{}://action/create_environment",
-        ChannelState::url_scheme()
-    ))
-    .unwrap();
-
-    let action = Action::parse(&url).unwrap();
-    match action {
-        Action::CreateEnvironment { repos } => {
-            assert!(repos.is_empty());
-        }
-        _ => panic!("unexpected action: {action:?}"),
-    }
-}
-
-#[test]
-fn test_action_cloud_agent_setup_parse() {
-    let url = Url::parse(&format!(
-        "{}://action/cloud_agent_setup",
-        ChannelState::url_scheme()
-    ))
-    .unwrap();
-
-    let action = Action::parse(&url).unwrap();
-    assert!(matches!(action, Action::CloudAgentSetup));
-}
-
-#[test]
-fn test_action_new_cloud_agent_conversation_parse() {
-    let url = Url::parse(&format!(
-        "{}://action/new_cloud_agent_conversation",
-        ChannelState::url_scheme()
-    ))
-    .unwrap();
-
-    let action = Action::parse(&url).unwrap();
-    assert!(matches!(action, Action::NewCloudAgentConversation));
-}
-
-#[test]
 fn test_action_new_agent_conversation_parse() {
     let url = Url::parse(&format!(
         "{}://action/new_agent_conversation",
@@ -315,12 +245,6 @@ fn validate_custom_uri_rejects_hosted_hosts_without_server_config() {
         ),
         format!("{}://settings/environments", ChannelState::url_scheme()),
         format!("{}://settings/platform", ChannelState::url_scheme()),
-        format!("{}://action/cloud_agent_setup", ChannelState::url_scheme()),
-        format!(
-            "{}://action/new_cloud_agent_conversation",
-            ChannelState::url_scheme()
-        ),
-        format!("{}://action/focus_cloud_mode", ChannelState::url_scheme()),
     ] {
         let url = Url::parse(&url).unwrap();
         let err = validate_custom_uri(&url).unwrap_err();

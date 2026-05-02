@@ -13,14 +13,8 @@ use warpui::ui_components::button::ButtonVariant;
 use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::agent_conversations_model::{
     AgentConversationsModel, AgentConversationsModelEvent, AgentManagementFilters, ArtifactFilter,
-    ConversationOrTask, CreatedOnFilter, CreatorFilter, EnvironmentFilter, HarnessFilter,
-    OwnerFilter, SessionStatus, SourceFilter, StatusFilter,
-};
-use crate::ai::agent_management::agent_type_selector::{
-    AgentType, AgentTypeSelector, AgentTypeSelectorEvent,
-};
-use crate::ai::agent_management::cloud_setup_guide_view::{
-    CloudSetupGuideEvent, CloudSetupGuideView,
+    ConversationOrTask, CreatedOnFilter, CreatorFilter, HarnessFilter, OwnerFilter, SessionStatus,
+    SourceFilter, StatusFilter,
 };
 use crate::ai::agent_management::details_action_buttons::{
     ActionButtonsConfig, AgentDetailsButtonEvent, ConversationActionButtonsRow,
@@ -28,8 +22,7 @@ use crate::ai::agent_management::details_action_buttons::{
 use crate::ai::agent_management::telemetry::{
     AgentManagementTelemetryEvent, ArtifactType, FilterType, OpenedFrom,
 };
-use crate::ai::ambient_agents::AmbientAgentTaskId;
-use crate::ai::ambient_agents::{cancel_task_with_toast, AgentSource};
+use crate::ai::ambient_agents::AgentSource;
 use crate::ai::artifacts::{Artifact, ArtifactButtonsRow, ArtifactButtonsRowEvent};
 use crate::ai::blocklist::history_model::BlocklistAIHistoryModel;
 use crate::ai::conversation_details_panel::{
@@ -39,14 +32,12 @@ use crate::ai::conversation_status_ui::render_status_element;
 use crate::ai::harness_display;
 use crate::app_state::PersistedAgentManagementFilters;
 use crate::appearance::Appearance;
-use crate::auth::AuthStateProvider;
 use crate::editor::{
     EditorView, Event as EditorEvent, PropagateAndNoOpNavigationKeys,
     PropagateHorizontalNavigationKeys, SingleLineEditorOptions, TextOptions,
 };
 use crate::menu::{MenuItem, MenuItemFields};
 use crate::notebooks::NotebookId;
-use crate::settings::ai::AISettings;
 use crate::ui_components::avatar::{Avatar, AvatarContent};
 use crate::util::time_format::format_approx_duration_from_now_utc;
 use crate::view_components::action_button::{
@@ -58,13 +49,11 @@ use crate::view_components::compactible_action_button::{
 use crate::view_components::dropdown::{Dropdown, DropdownAction, DropdownStyle};
 use crate::view_components::DismissibleToast;
 use crate::view_components::FilterableDropdown;
-use crate::workflows::WorkflowType;
 use crate::workspace::{ForkedConversationDestination, ToastStack};
 use crate::workspace::{RestoreConversationLayout, WorkspaceAction};
 use crate::workspaces::user_workspaces::UserWorkspaces;
 use crate::{send_telemetry_from_ctx, AgentModeEntrypoint};
 use pathfinder_geometry::vector::vec2f;
-use settings::Setting;
 use warp_cli::agent::Harness;
 use warp_core::ui::icons::Icon;
 use warp_core::ui::theme::color::internal_colors;
@@ -97,9 +86,6 @@ const MANAGEMENT_PANEL_WIDTH: f32 = 400.;
 // Vertical margin for filter row elements to align with dropdown buttons
 const FILTER_ROW_VERTICAL_MARGIN: f32 = 6.;
 
-// Environment IDs are a fixed-length ServerId (22 chars), so keep this dropdown compact.
-const ENV_DROPDOWN_WIDTH: f32 = 190.;
-
 const CARD_ROW_SPACING: f32 = 8.;
 const CARD_CONTENT_PADDING: f32 = 12.;
 const CARD_BORDER_RADIUS: f32 = 4.;
@@ -128,14 +114,12 @@ fn should_show_artifacts(artifacts: &[Artifact]) -> bool {
 /// Identifies a card item - either a task ID or a conversation ID
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ManagementCardItemId {
-    Task(AmbientAgentTaskId),
     Conversation(AIConversationId),
 }
 
 impl ManagementCardItemId {
     fn as_key(&self) -> String {
         match self {
-            ManagementCardItemId::Task(id) => format!("task_{id}"),
             ManagementCardItemId::Conversation(id) => format!("conv_{id}"),
         }
     }
@@ -168,19 +152,7 @@ pub struct AgentManagementView {
     search_query: String,
     search_editor: ViewHandle<EditorView>,
 
-    /// Whether the user has dismissed the setup guide
-    has_dismissed_setup_guide: bool,
-    /// Whether the user is viewing the setup guide (toggled via button)
-    is_viewing_setup_guide: bool,
-    setup_guide_button: CompactibleActionButton,
     new_agent_button: CompactibleActionButton,
-    view_agents_button: ViewHandle<ActionButton>,
-
-    /// Agent type selector modal
-    agent_type_selector: ViewHandle<AgentTypeSelector>,
-    is_agent_type_selector_open: bool,
-
-    cloud_setup_guide_view: ViewHandle<CloudSetupGuideView>,
 
     all_filter_button: ViewHandle<ActionButton>,
     personal_filter_button: ViewHandle<ActionButton>,
@@ -189,7 +161,6 @@ pub struct AgentManagementView {
     created_on_dropdown: ViewHandle<Dropdown<AgentManagementViewAction>>,
     artifact_dropdown: ViewHandle<Dropdown<AgentManagementViewAction>>,
     harness_dropdown: ViewHandle<Dropdown<AgentManagementViewAction>>,
-    environment_dropdown: ViewHandle<FilterableDropdown<AgentManagementViewAction>>,
     creator_dropdown: ViewHandle<FilterableDropdown<AgentManagementViewAction>>,
     clear_all_filters_button: ViewHandle<ActionButton>,
     no_filter_results_button: ViewHandle<ActionButton>,
@@ -204,8 +175,8 @@ pub struct AgentManagementView {
 enum ViewState {
     /// The model is still loading in data
     Loading,
-    /// Showing the setup guide (this is the zero state when has_tasks is false)
-    SetupGuide { has_items: bool },
+    /// No local agent conversations are available to show.
+    Empty,
     /// We have tasks, but currently have a filter applied that matches none of them
     NoFilterMatches,
     /// We have tasks that should be shown to the user
@@ -246,32 +217,12 @@ impl AgentManagementView {
                 })
         });
 
-        let setup_guide_button = CompactibleActionButton::new(
-            "Get started".to_string(),
-            None,
-            ButtonSize::Small,
-            AgentManagementViewAction::ToggleSetupGuide,
-            Icon::HelpCircle,
-            Arc::new(SecondaryTheme),
-            ctx,
-        );
-
-        let view_agents_button = ctx.add_typed_action_view(|_ctx| {
-            ActionButton::new("View Agents", NakedTheme)
-                .with_size(ButtonSize::Small)
-                .with_icon(Icon::ArrowLeft)
-                .on_click(|ctx| {
-                    ctx.dispatch_typed_action(AgentManagementViewAction::ToggleSetupGuide)
-                })
-        });
-
         // Set up dropdowns
         let status_dropdown = ctx.add_typed_action_view(Self::create_status_dropdown);
         let source_dropdown = ctx.add_typed_action_view(Self::create_source_dropdown);
         let created_on_dropdown = ctx.add_typed_action_view(Self::create_created_on_dropdown);
         let artifact_dropdown = ctx.add_typed_action_view(Self::create_artifact_dropdown);
         let harness_dropdown = ctx.add_typed_action_view(Self::create_harness_dropdown);
-        let environment_dropdown = ctx.add_typed_action_view(Self::create_environment_dropdown);
         let creator_dropdown = ctx.add_typed_action_view(Self::create_creator_dropdown);
 
         let no_filter_results_button = ctx.add_typed_action_view(move |_ctx| {
@@ -289,15 +240,6 @@ impl AgentManagementView {
                 .on_click(move |ctx| {
                     ctx.dispatch_typed_action(AgentManagementViewAction::ClearFilters)
                 })
-        });
-
-        let cloud_setup_guide_view = ctx.add_typed_action_view(CloudSetupGuideView::new);
-        ctx.subscribe_to_view(&cloud_setup_guide_view, |_, _, event, ctx| match event {
-            CloudSetupGuideEvent::OpenNewTabAndInsertWorkflow(workflow) => {
-                ctx.emit(AgentManagementViewEvent::OpenNewTabAndRunWorkflow(
-                    Box::new(workflow.clone()),
-                ));
-            }
         });
 
         let search_editor = ctx.add_typed_action_view(|ctx| {
@@ -325,16 +267,11 @@ impl AgentManagementView {
             "New agent".to_string(),
             None,
             ButtonSize::Small,
-            AgentManagementViewAction::ShowAgentTypeSelector,
+            AgentManagementViewAction::NewLocalAgent,
             Icon::Plus,
             Arc::new(PrimaryTheme),
             ctx,
         );
-
-        let agent_type_selector = ctx.add_typed_action_view(AgentTypeSelector::new);
-        ctx.subscribe_to_view(&agent_type_selector, Self::handle_agent_type_selector_event);
-
-        let has_dismissed_setup_guide = *AISettings::as_ref(ctx).did_dismiss_cloud_setup_guide;
 
         let filters = persisted_filters.map(|p| p.filters).unwrap_or_default();
 
@@ -352,11 +289,6 @@ impl AgentManagementView {
             filters,
             search_query: String::new(),
             search_editor,
-            has_dismissed_setup_guide,
-            is_viewing_setup_guide: false,
-            setup_guide_button,
-            view_agents_button,
-            cloud_setup_guide_view,
             loading_icon_mouse_state: MouseStateHandle::default(),
             all_filter_button,
             personal_filter_button,
@@ -365,13 +297,10 @@ impl AgentManagementView {
             created_on_dropdown,
             artifact_dropdown,
             harness_dropdown,
-            environment_dropdown,
             creator_dropdown,
             clear_all_filters_button,
             no_filter_results_button,
             new_agent_button,
-            agent_type_selector,
-            is_agent_type_selector_open: false,
             details_panel,
             selected_item_id: None,
         };
@@ -379,13 +308,6 @@ impl AgentManagementView {
         view.update_filter_buttons(ctx);
         view.sync_with_loaded_filters(ctx);
         view.update_creator_dropdown(ctx);
-        view.update_environment_dropdown(ctx);
-
-        // Trigger server fetch if persisted filters differ from defaults
-        // (team tasks are not loaded at startup, so we need to fetch them)
-        if view.filters != AgentManagementFilters::default() {
-            view.trigger_filter_fetch(ctx);
-        }
 
         view.get_tasks_from_model(ctx);
         view
@@ -393,17 +315,16 @@ impl AgentManagementView {
 
     fn get_view_state(&self, app: &AppContext) -> ViewState {
         let model = AgentConversationsModel::as_ref(app);
-        let has_items = model.has_items();
+        let has_conversations = model.has_conversations();
 
         // If loading with zero items, show skeleton cards
         // If loading with items, show list of interactive conversations (with loading indicator in header)
-        if model.is_loading() && !has_items {
+        if model.is_loading() && !has_conversations {
             return ViewState::Loading;
         }
 
-        // Show setup guide if: no items (zero state) or user clicked button to toggle on the guide
-        if !has_items || self.is_viewing_setup_guide {
-            return ViewState::SetupGuide { has_items };
+        if !has_conversations {
+            return ViewState::Empty;
         }
 
         if self.items.is_empty() {
@@ -547,20 +468,9 @@ impl AgentManagementView {
 
     /// Build the list of source filter items.
     fn build_source_dropdown_items() -> Vec<MenuItem<DropdownAction<AgentManagementViewAction>>> {
-        // Build up the sources list
-        let mut sources = vec![
-            AgentSource::WebApp,
-            AgentSource::CloudMode,
-            AgentSource::AgentWebhook,
-            AgentSource::Cli,
-        ];
+        let mut sources = Vec::new();
         if FeatureFlag::InteractiveConversationManagementView.is_enabled() {
             sources.push(AgentSource::Interactive)
-        }
-        sources.push(AgentSource::Linear);
-        sources.push(AgentSource::Slack);
-        if FeatureFlag::ScheduledAmbientAgents.is_enabled() {
-            sources.push(AgentSource::ScheduledAgent);
         }
 
         let mut items = vec![MenuItem::Item(
@@ -696,33 +606,6 @@ impl AgentManagementView {
         dropdown
     }
 
-    fn create_environment_dropdown(
-        ctx: &mut ViewContext<FilterableDropdown<AgentManagementViewAction>>,
-    ) -> FilterableDropdown<AgentManagementViewAction> {
-        let mut dropdown = FilterableDropdown::new(ctx);
-        Self::setup_searchable_filter_menu(&mut dropdown, "Environment", ctx);
-
-        // Keep the button compact when a specific environment ID is selected by abbreviating the
-        // displayed ID. (The dropdown menu still shows the full ID.)
-        dropdown.set_menu_header_text_override(|text| {
-            if matches!(text, "All" | "None") {
-                return format!("Environment: {text}");
-            }
-
-            let abbreviated = text.chars().take(6).collect::<String>();
-            if abbreviated == text {
-                format!("Environment: {text}")
-            } else {
-                format!("Environment: {abbreviated}…")
-            }
-        });
-
-        dropdown.set_top_bar_max_width(ENV_DROPDOWN_WIDTH);
-        dropdown.set_menu_width(ENV_DROPDOWN_WIDTH, ctx);
-
-        dropdown
-    }
-
     fn create_creator_dropdown(
         ctx: &mut ViewContext<FilterableDropdown<AgentManagementViewAction>>,
     ) -> FilterableDropdown<AgentManagementViewAction> {
@@ -753,60 +636,6 @@ impl AgentManagementView {
         dropdown.set_main_axis_size(MainAxisSize::Min, ctx);
         dropdown.set_menu_header_text_override(move |text| format!("{}: {}", label_prefix, text));
         dropdown.set_button_variant(ButtonVariant::Secondary);
-    }
-
-    /// Since the valid set of environments depends on what tasks we have loaded in,
-    /// we use this function to update the available options depending on the most recent
-    /// set of tasks.
-    fn update_environment_dropdown(&mut self, ctx: &mut ViewContext<Self>) {
-        let model = AgentConversationsModel::as_ref(ctx);
-        let envs = model.get_all_environment_ids_and_names(ctx);
-
-        let selected_name = match &self.filters.environment {
-            EnvironmentFilter::All => Some("All".to_string()),
-            EnvironmentFilter::NoEnvironment => Some("None".to_string()),
-            EnvironmentFilter::Specific(id) => envs.get(id).cloned(),
-        };
-
-        self.environment_dropdown.update(ctx, |dropdown, ctx| {
-            let mut items = vec![MenuItem::Item(
-                MenuItemFields::new("All").with_on_select_action(
-                    DropdownAction::SelectActionAndClose(
-                        AgentManagementViewAction::SetEnvironmentFilter(EnvironmentFilter::All),
-                    ),
-                ),
-            )];
-
-            items.push(MenuItem::Item(
-                MenuItemFields::new("None").with_on_select_action(
-                    DropdownAction::SelectActionAndClose(
-                        AgentManagementViewAction::SetEnvironmentFilter(
-                            EnvironmentFilter::NoEnvironment,
-                        ),
-                    ),
-                ),
-            ));
-
-            let mut sorted_envs: Vec<_> = envs.into_iter().collect();
-            sorted_envs.sort_by(|(_, name_a), (_, name_b)| name_a.cmp(name_b));
-
-            for (environment_id, environment_name) in sorted_envs {
-                items.push(MenuItem::Item(
-                    MenuItemFields::new(environment_name).with_on_select_action(
-                        DropdownAction::SelectActionAndClose(
-                            AgentManagementViewAction::SetEnvironmentFilter(
-                                EnvironmentFilter::Specific(environment_id),
-                            ),
-                        ),
-                    ),
-                ));
-            }
-
-            dropdown.set_rich_items(items, ctx);
-            if let Some(selected_name) = selected_name {
-                dropdown.set_selected_by_name(&selected_name, ctx);
-            }
-        });
     }
 
     fn update_creator_dropdown(&mut self, ctx: &mut ViewContext<Self>) {
@@ -852,77 +681,8 @@ impl AgentManagementView {
 
     /// Common handler for filter changes: fetch, refresh tasks, and save.
     fn on_filter_changed(&mut self, ctx: &mut ViewContext<Self>) {
-        self.trigger_filter_fetch(ctx);
         self.get_tasks_from_model(ctx);
         ctx.dispatch_global_action("workspace:save_app", ());
-    }
-
-    /// Trigger a server fetch for tasks matching current filters.
-    fn trigger_filter_fetch(&self, ctx: &mut ViewContext<Self>) {
-        let current_user_uid = AuthStateProvider::handle(ctx)
-            .as_ref(ctx)
-            .get()
-            .user_id()
-            .map(|uid| uid.as_string());
-        if let Some(uid) = current_user_uid {
-            let filters = self.filters.clone();
-            AgentConversationsModel::handle(ctx).update(ctx, |model, ctx| {
-                model.fetch_tasks_for_filters(&filters, &uid, ctx);
-            });
-        }
-    }
-
-    /// Shows the setup guide from a deep-link/action without toggling it off on repeated calls.
-    pub(crate) fn show_setup_guide_from_link(&mut self, ctx: &mut ViewContext<Self>) {
-        if !self.is_viewing_setup_guide {
-            send_telemetry_from_ctx!(AgentManagementTelemetryEvent::OpenSetupGuide, ctx);
-        }
-        self.is_viewing_setup_guide = true;
-        ctx.notify();
-    }
-
-    #[cfg(test)]
-    pub(crate) fn is_showing_setup_guide(&self) -> bool {
-        self.is_viewing_setup_guide
-    }
-
-    pub(crate) fn apply_environment_filter_from_link(
-        &mut self,
-        environment_id: String,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        // This navigation should show the team/global task runs list.
-        self.filters.owners = OwnerFilter::All;
-        self.filters.reset_all_but_owner();
-        self.filters.environment = EnvironmentFilter::Specific(environment_id);
-        self.update_filter_buttons(ctx);
-
-        // Clear search query.
-        self.search_query.clear();
-        self.search_editor.update(ctx, |editor, ctx| {
-            editor.clear_buffer_and_reset_undo_stack(ctx);
-        });
-
-        // Reset the selected states for the dropdowns.
-        self.status_dropdown.update(ctx, |dropdown, ctx| {
-            dropdown.set_selected_by_index(0, ctx);
-        });
-        self.source_dropdown.update(ctx, |dropdown, ctx| {
-            dropdown.set_selected_by_index(0, ctx);
-        });
-        self.created_on_dropdown.update(ctx, |dropdown, ctx| {
-            dropdown.set_selected_by_index(0, ctx);
-        });
-        self.artifact_dropdown.update(ctx, |dropdown, ctx| {
-            dropdown.set_selected_by_index(0, ctx);
-        });
-        self.harness_dropdown.update(ctx, |dropdown, ctx| {
-            dropdown.set_selected_by_index(0, ctx);
-        });
-
-        self.update_environment_dropdown(ctx);
-        self.update_creator_dropdown(ctx);
-        self.on_filter_changed(ctx);
     }
 
     /// Sync all tasks from the management model, and update the ListState
@@ -945,9 +705,9 @@ impl AgentManagementView {
                 }
                 match_indices_case_insensitive(&t.title(ctx), &search_query).is_some()
             })
-            .map(|t| {
+            .filter_map(|t| {
                 let item_id = match t {
-                    ConversationOrTask::Task(task) => ManagementCardItemId::Task(task.task_id),
+                    ConversationOrTask::Task(_) => return None,
                     ConversationOrTask::Conversation(conversation) => {
                         ManagementCardItemId::Conversation(conversation.nav_data.id)
                     }
@@ -956,12 +716,7 @@ impl AgentManagementView {
 
                 let copy_link_url = t.session_or_conversation_link(ctx);
                 let mut config = match t {
-                    ConversationOrTask::Task(task) => ActionButtonsConfig::for_task(
-                        task.task_id,
-                        &t.display_status(ctx),
-                        None, // Don't show open button in card hover
-                        copy_link_url,
-                    ),
+                    ConversationOrTask::Task(_) => return None,
                     ConversationOrTask::Conversation(conversation) => {
                         ActionButtonsConfig::for_conversation(
                             conversation.nav_data.id,
@@ -975,11 +730,11 @@ impl AgentManagementView {
                     config.view_details_item_id = Some(item_id.clone());
                 }
 
-                CardData {
+                Some(CardData {
                     item_id,
                     artifacts,
                     action_buttons_config: config,
-                }
+                })
             })
             .collect();
 
@@ -1085,16 +840,7 @@ impl AgentManagementView {
                 // Open button only shown in details panel, not in management view cards.
                 // We open the cards directly via clicking on them.
             }
-            AgentDetailsButtonEvent::CancelTask { task_id } => {
-                send_telemetry_from_ctx!(
-                    AgentManagementTelemetryEvent::CloudRunCancelled {
-                        task_id: task_id.to_string(),
-                    },
-                    ctx
-                );
-
-                cancel_task_with_toast(*task_id, ctx);
-            }
+            AgentDetailsButtonEvent::CancelTask { .. } => {}
             AgentDetailsButtonEvent::ForkConversation { conversation_id } => {
                 send_telemetry_from_ctx!(
                     AgentManagementTelemetryEvent::ConversationForked {
@@ -1131,15 +877,6 @@ impl AgentManagementView {
                         send_telemetry_from_ctx!(
                             AgentManagementTelemetryEvent::ConversationLinkCopied {
                                 conversation_id: conversation_id.to_string(),
-                                copied_from: OpenedFrom::ManagementView,
-                            },
-                            ctx
-                        );
-                    }
-                    ManagementCardItemId::Task(task_id) => {
-                        send_telemetry_from_ctx!(
-                            AgentManagementTelemetryEvent::SessionLinkCopied {
-                                task_id: task_id.to_string(),
                                 copied_from: OpenedFrom::ManagementView,
                             },
                             ctx
@@ -1232,7 +969,6 @@ impl AgentManagementView {
             | AgentConversationsModelEvent::NewTasksReceived
             | AgentConversationsModelEvent::TasksUpdated => {
                 self.update_creator_dropdown(ctx);
-                self.update_environment_dropdown(ctx);
                 self.update_source_dropdown(ctx);
                 self.refresh_details_panel_if_needed(ctx);
                 self.get_tasks_from_model(ctx);
@@ -1267,19 +1003,6 @@ impl AgentManagementView {
         let model = AgentConversationsModel::as_ref(ctx);
 
         let data = match item_id {
-            ManagementCardItemId::Task(task_id) => {
-                let Some(task_wrapper) = model.get_task(task_id) else {
-                    return;
-                };
-                // Agent management view should always open in a new tab
-                let open_action =
-                    task_wrapper.get_open_action(Some(RestoreConversationLayout::NewTab), ctx);
-                let copy_link_url = task_wrapper.session_or_conversation_link(ctx);
-                let Some(task) = model.get_task_data(task_id) else {
-                    return;
-                };
-                ConversationDetailsData::from_task(&task, open_action, copy_link_url, ctx)
-            }
             ManagementCardItemId::Conversation(conversation_id) => {
                 let Some(conversation) = model.get_conversation(conversation_id) else {
                     return;
@@ -1390,43 +1113,6 @@ impl AgentManagementView {
                 ctx.emit(AgentManagementViewEvent::OpenPlanNotebook {
                     notebook_uid: *notebook_uid,
                 });
-            }
-        }
-    }
-
-    fn handle_agent_type_selector_event(
-        &mut self,
-        _view: ViewHandle<AgentTypeSelector>,
-        event: &AgentTypeSelectorEvent,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        match event {
-            AgentTypeSelectorEvent::Selected(agent_type) => {
-                self.is_agent_type_selector_open = false;
-                match agent_type {
-                    AgentType::Cloud => {
-                        send_telemetry_from_ctx!(
-                            AgentManagementTelemetryEvent::SpawnNewCloudAgent,
-                            ctx
-                        );
-                        ctx.dispatch_typed_action(&WorkspaceAction::AddAmbientAgentTab);
-                    }
-                    AgentType::Local => {
-                        send_telemetry_from_ctx!(
-                            AgentManagementTelemetryEvent::SpawnNewLocalAgent,
-                            ctx
-                        );
-                        ctx.dispatch_typed_action(&WorkspaceAction::NewTabInAgentMode {
-                            entrypoint: AgentModeEntrypoint::AgentManagementView,
-                            zero_state_prompt_suggestion_type: None,
-                        });
-                    }
-                }
-                ctx.notify();
-            }
-            AgentTypeSelectorEvent::Dismissed => {
-                self.is_agent_type_selector_open = false;
-                ctx.notify();
             }
         }
     }
@@ -1605,7 +1291,6 @@ impl AgentManagementView {
 
         let model = AgentConversationsModel::as_ref(app);
         let card_data = match &card_state.item_id {
-            ManagementCardItemId::Task(task_id) => model.get_task(task_id),
             ManagementCardItemId::Conversation(conv_id) => model.get_conversation(conv_id),
         };
         let Some(card_data) = card_data else {
@@ -1835,14 +1520,12 @@ impl AgentManagementView {
     fn render_header(&self, app: &AppContext) -> Box<dyn Element> {
         match self.get_view_state(app) {
             ViewState::Loading => self.render_loading_header(app),
-            ViewState::SetupGuide {
-                has_items: has_tasks,
-            } => self.render_setup_guide_header(has_tasks, app),
+            ViewState::Empty => self.render_empty_header(app),
             ViewState::NoFilterMatches | ViewState::HasTasks => self.render_task_list_header(app),
         }
     }
 
-    fn render_setup_guide_header(&self, has_tasks: bool, app: &AppContext) -> Box<dyn Element> {
+    fn render_empty_header(&self, app: &AppContext) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
         let size_switch_threshold = MEDIUM_SIZE_SWITCH_THRESHOLD * appearance.monospace_ui_scalar();
 
@@ -1851,13 +1534,9 @@ impl AgentManagementView {
                 .with_cross_axis_alignment(CrossAxisAlignment::Center)
                 .with_main_axis_size(MainAxisSize::Max);
 
-            if has_tasks {
-                header_row.add_child(ChildView::new(&self.view_agents_button).finish());
-            }
-
             header_row.add_child(Expanded::new(1., Empty::new().finish()).finish());
 
-            if !has_tasks && !cfg!(target_family = "wasm") {
+            if !cfg!(target_family = "wasm") {
                 let button = if use_expanded {
                     self.new_agent_button.expanded_button()
                 } else {
@@ -1901,12 +1580,6 @@ impl AgentManagementView {
             .with_color(theme.active_ui_text_color().into())
             .finish();
 
-            let setup_guide_button = if use_expanded {
-                self.setup_guide_button.expanded_button()
-            } else {
-                self.setup_guide_button.compact_button()
-            };
-
             let new_agent_button = if use_expanded {
                 self.new_agent_button.expanded_button()
             } else {
@@ -1929,7 +1602,6 @@ impl AgentManagementView {
             }
 
             header_top.add_child(Expanded::new(1., Empty::new().finish()).finish());
-            header_top.add_child(ChildView::new(setup_guide_button).finish());
 
             if !cfg!(target_family = "wasm") {
                 header_top.add_child(ChildView::new(new_agent_button).finish());
@@ -1946,8 +1618,6 @@ impl AgentManagementView {
             if FeatureFlag::AgentHarness.is_enabled() {
                 filters_wrap.add_child(ChildView::new(&self.harness_dropdown).finish());
             }
-
-            filters_wrap.add_child(ChildView::new(&self.environment_dropdown).finish());
 
             if self.filters.owners != OwnerFilter::PersonalOnly {
                 filters_wrap.add_child(ChildView::new(&self.creator_dropdown).finish());
@@ -2125,6 +1795,40 @@ impl AgentManagementView {
         .finish()
     }
 
+    fn render_empty_view(&self, app: &AppContext) -> Box<dyn Element> {
+        let appearance = Appearance::as_ref(app);
+        let icon = ConstrainedBox::new(
+            Icon::Oz
+                .to_warpui_icon(appearance.theme().nonactive_ui_text_color())
+                .finish(),
+        )
+        .with_width(24.)
+        .with_height(24.)
+        .finish();
+
+        let text = Text::new_inline(
+            "No local agent runs yet",
+            appearance.ui_font_family(),
+            appearance.ui_font_size(),
+        )
+        .with_style(Properties::default().weight(Weight::Semibold))
+        .with_color(appearance.theme().nonactive_ui_text_color().into())
+        .finish();
+
+        let mut content = Flex::column()
+            .with_main_axis_size(MainAxisSize::Min)
+            .with_cross_axis_alignment(CrossAxisAlignment::Center)
+            .with_spacing(12.)
+            .with_child(icon)
+            .with_child(text);
+
+        if !cfg!(target_family = "wasm") {
+            content.add_child(ChildView::new(self.new_agent_button.expanded_button()).finish());
+        }
+
+        Align::new(content.finish()).finish()
+    }
+
     fn render_default_scroll_view(&self, app: &AppContext) -> Box<dyn Element> {
         let theme = Appearance::as_ref(app).theme();
         let axis_config = SingleAxisConfig::Manual {
@@ -2161,7 +1865,7 @@ impl View for AgentManagementView {
     fn render(&self, app: &AppContext) -> Box<dyn Element> {
         let main_content = match self.get_view_state(app) {
             ViewState::Loading => self.render_loading_state(app),
-            ViewState::SetupGuide { .. } => ChildView::new(&self.cloud_setup_guide_view).finish(),
+            ViewState::Empty => self.render_empty_view(app),
             ViewState::NoFilterMatches => self.render_no_results_view(app),
             ViewState::HasTasks => self.render_default_scroll_view(app),
         };
@@ -2195,14 +1899,7 @@ impl View for AgentManagementView {
             main_view
         };
 
-        if self.is_agent_type_selector_open {
-            Stack::new()
-                .with_child(base_view)
-                .with_child(ChildView::new(&self.agent_type_selector).finish())
-                .finish()
-        } else {
-            base_view
-        }
+        base_view
     }
 }
 
@@ -2213,18 +1910,15 @@ pub enum AgentManagementViewAction {
     SetSourceFilter(SourceFilter),
     SetCreatedOnFilter(CreatedOnFilter),
     SetArtifactFilter(ArtifactFilter),
-    SetEnvironmentFilter(EnvironmentFilter),
     SetCreatorFilter(CreatorFilter),
     SetHarnessFilter(HarnessFilter),
     ClearFilters,
-    ToggleSetupGuide,
-    ShowAgentTypeSelector,
+    NewLocalAgent,
     OpenSession { item_id: ManagementCardItemId },
     FocusSearch,
 }
 
 pub enum AgentManagementViewEvent {
-    OpenNewTabAndRunWorkflow(Box<WorkflowType>),
     OpenPlanNotebook { notebook_uid: NotebookId },
 }
 
@@ -2279,10 +1973,6 @@ impl TypedActionView for AgentManagementView {
                 self.get_tasks_from_model(ctx);
                 ctx.dispatch_global_action("workspace:save_app", ());
             }
-            AgentManagementViewAction::SetEnvironmentFilter(filter) => {
-                self.filters.environment = filter.clone();
-                self.on_filter_changed(ctx);
-            }
             AgentManagementViewAction::SetCreatorFilter(filter) => {
                 send_telemetry_from_ctx!(
                     AgentManagementTelemetryEvent::FilterChanged {
@@ -2322,39 +2012,19 @@ impl TypedActionView for AgentManagementView {
                 self.harness_dropdown.update(ctx, |dropdown, ctx| {
                     dropdown.set_selected_by_index(0, ctx);
                 });
-                self.update_environment_dropdown(ctx);
                 self.update_creator_dropdown(ctx);
                 self.on_filter_changed(ctx);
             }
-            AgentManagementViewAction::ToggleSetupGuide => {
-                if self.is_viewing_setup_guide {
-                    // User is leaving the guide - persist dismissal
-                    send_telemetry_from_ctx!(AgentManagementTelemetryEvent::DismissSetupGuide, ctx);
-                    if !self.has_dismissed_setup_guide {
-                        AISettings::handle(ctx).update(ctx, |settings, ctx| {
-                            let _ = settings.did_dismiss_cloud_setup_guide.set_value(true, ctx);
-                        });
-                        self.has_dismissed_setup_guide = true;
-                    }
-                    self.is_viewing_setup_guide = false;
-                } else {
-                    self.show_setup_guide_from_link(ctx);
-                }
-                ctx.notify();
-            }
-            AgentManagementViewAction::ShowAgentTypeSelector => {
-                send_telemetry_from_ctx!(
-                    AgentManagementTelemetryEvent::AgentTypeSelectorOpened,
-                    ctx
-                );
-                self.is_agent_type_selector_open = true;
-                ctx.focus(&self.agent_type_selector);
-                ctx.notify();
+            AgentManagementViewAction::NewLocalAgent => {
+                send_telemetry_from_ctx!(AgentManagementTelemetryEvent::SpawnNewLocalAgent, ctx);
+                ctx.dispatch_typed_action(&WorkspaceAction::NewTabInAgentMode {
+                    entrypoint: AgentModeEntrypoint::AgentManagementView,
+                    zero_state_prompt_suggestion_type: None,
+                });
             }
             AgentManagementViewAction::OpenSession { item_id } => {
                 let model = AgentConversationsModel::as_ref(ctx);
                 let card_data = match item_id {
-                    ManagementCardItemId::Task(task_id) => model.get_task(task_id),
                     ManagementCardItemId::Conversation(conv_id) => model.get_conversation(conv_id),
                 };
                 let Some(card_data) = card_data else {
@@ -2371,15 +2041,6 @@ impl TypedActionView for AgentManagementView {
                         send_telemetry_from_ctx!(
                             AgentManagementTelemetryEvent::ConversationOpened {
                                 conversation_id: conversation_id.to_string(),
-                                opened_from: OpenedFrom::ManagementView,
-                            },
-                            ctx
-                        );
-                    }
-                    ManagementCardItemId::Task(task_id) => {
-                        send_telemetry_from_ctx!(
-                            AgentManagementTelemetryEvent::CloudRunOpened {
-                                task_id: task_id.to_string(),
                                 opened_from: OpenedFrom::ManagementView,
                             },
                             ctx

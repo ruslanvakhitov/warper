@@ -133,7 +133,7 @@ impl WebIntent {
                         let action_type = segments[1];
                         // Allowlist of valid actions,
                         // since we shouldn't expose all Warp actions as web URLs.
-                        const ALLOWED_ACTIONS: &[&str] = &["open-repo", "focus_cloud_mode"];
+                        const ALLOWED_ACTIONS: &[&str] = &["open-repo"];
                         if !ALLOWED_ACTIONS.contains(&action_type) {
                             return Err(anyhow!("Unknown action type in url: {}", action_type));
                         }

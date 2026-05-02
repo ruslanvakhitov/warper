@@ -6,7 +6,6 @@ use crate::{
     settings_view::{
         environments_page::{EnvironmentsPage, EnvironmentsPageView},
         settings_page::{PaneEventWrapper, SettingsPageEvent},
-        update_environment_form::GithubAuthRedirectTarget,
     },
 };
 
@@ -23,11 +22,7 @@ pub struct EnvironmentManagementPane {
 impl EnvironmentManagementPane {
     pub fn new(ctx: &mut ViewContext<PaneGroup>) -> Self {
         // Create the EnvironmentsPageView
-        let environments_page_view = ctx.add_typed_action_view(|ctx| {
-            let mut view = EnvironmentsPageView::new(ctx);
-            view.set_github_auth_redirect_target(GithubAuthRedirectTarget::FocusCloudMode, ctx);
-            view
-        });
+        let environments_page_view = ctx.add_typed_action_view(EnvironmentsPageView::new);
 
         Self::from_view(environments_page_view, ctx)
     }

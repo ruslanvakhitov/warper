@@ -152,14 +152,12 @@ pub enum EnvironmentFormMode {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GithubAuthRedirectTarget {
     SettingsEnvironments,
-    FocusCloudMode,
 }
 
 impl GithubAuthRedirectTarget {
     fn next_path(self) -> &'static str {
         match self {
             Self::SettingsEnvironments => "settings/environments",
-            Self::FocusCloudMode => "action/focus_cloud_mode",
         }
     }
 }
@@ -721,9 +719,7 @@ impl UpdateEnvironmentForm {
         self.should_handle_escape_from_editor = should_handle;
     }
 
-    /// Sets the auth source, which affects the redirect URL used after GitHub auth completes.
-    /// When set to `CloudSetup`, the redirect URL will include a source parameter that tells
-    /// the URI handler to skip opening the settings page.
+    /// Sets the auth source for GitHub auth.
     pub fn set_auth_source(&mut self, source: AuthSource) {
         self.auth_source = source;
     }
@@ -2782,18 +2778,13 @@ impl UpdateEnvironmentForm {
     fn build_next_url(
         target: GithubAuthRedirectTarget,
         scheme_for_next: &str,
-        auth_source: AuthSource,
+        _auth_source: AuthSource,
         platform: OAuthNextPlatform,
     ) -> Option<String> {
         match platform {
             OAuthNextPlatform::Native => {
                 let base = format!("{scheme_for_next}://{}", target.next_path());
-                let mut url = Url::parse(&base).ok()?;
-
-                if matches!(auth_source, AuthSource::CloudSetup) {
-                    url.query_pairs_mut()
-                        .append_pair("source", crate::uri::CLOUD_SETUP_SOURCE);
-                }
+                let url = Url::parse(&base).ok()?;
 
                 Some(url.to_string())
             }
@@ -2807,13 +2798,7 @@ impl UpdateEnvironmentForm {
                         {
                             let mut pairs = url.query_pairs_mut();
                             pairs.append_pair("oauth", "github");
-                            if matches!(auth_source, AuthSource::CloudSetup) {
-                                pairs.append_pair("source", crate::uri::CLOUD_SETUP_SOURCE);
-                            }
                         }
-                    }
-                    GithubAuthRedirectTarget::FocusCloudMode => {
-                        url.set_path("/action/focus_cloud_mode");
                     }
                 }
 

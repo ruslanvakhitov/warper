@@ -1365,6 +1365,11 @@ impl AgentConversationsModel {
         !self.tasks.is_empty() || !self.conversations.is_empty()
     }
 
+    /// Returns true if we have local conversations in this view.
+    pub fn has_conversations(&self) -> bool {
+        !self.conversations.is_empty()
+    }
+
     /// Returns an iterator over all ambient agent tasks.
     pub fn tasks_iter(&self) -> impl Iterator<Item = &AmbientAgentTask> {
         self.tasks.values()
