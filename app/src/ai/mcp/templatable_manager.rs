@@ -106,7 +106,7 @@ pub struct TemplatableMCPServerInfo {
     description: Option<String>,
     /// Whether the underlying transport uses authentication.
     ///
-    /// TODO(vorporeal): Use this to display a toast when server authentication and connection is complete, and
+    /// TODO(vorporeal): Use this to display a toast when MCP transport authentication and connection is complete, and
     /// to provide a "log out" button.
     #[allow(dead_code)]
     is_authenticated_transport: bool,

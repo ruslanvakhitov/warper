@@ -3,8 +3,7 @@ use std::{fmt, path::PathBuf};
 use clap::{Args, Subcommand, ValueEnum};
 
 use crate::{
-    config_file::ConfigFileArgs, environment::EnvironmentCreateArgs, mcp::MCPSpec,
-    model::ModelArgs, scope::ObjectScope, share::ShareArgs, skill::SkillSpec,
+    config_file::ConfigFileArgs, mcp::MCPSpec, model::ModelArgs, share::ShareArgs, skill::SkillSpec,
 };
 
 /// Output format for agent results.
@@ -70,34 +69,7 @@ impl PromptArg {
     }
 }
 
-/// Shared CLI args for controlling computer use capabilities.
-#[derive(Debug, Clone, Args, Default)]
-pub struct ComputerUseArgs {
-    /// Enable computer use capabilities for this agent run.
-    #[arg(long = "computer-use", conflicts_with = "no_computer_use")]
-    pub computer_use: bool,
-
-    /// Disable computer use capabilities for this agent run.
-    #[arg(long = "no-computer-use", conflicts_with = "computer_use")]
-    pub no_computer_use: bool,
-}
-
-impl ComputerUseArgs {
-    /// Returns the computer use override based on CLI flags.
-    /// - `Some(true)` if `--computer-use` was specified
-    /// - `Some(false)` if `--no-computer-use` was specified
-    /// - `None` if neither was specified (use default behavior)
-    pub fn computer_use_override(&self) -> Option<bool> {
-        match (self.computer_use, self.no_computer_use) {
-            (true, false) => Some(true),
-            (false, true) => Some(false),
-            _ => None,
-        }
-    }
-}
-
-/// Hidden variant of [`ComputerUseArgs`] for commands where computer use flags
-/// should be accepted but not shown in help output.
+/// Hidden CLI args for controlling computer use capabilities.
 #[derive(Debug, Clone, Args, Default)]
 pub struct HiddenComputerUseArgs {
     /// Enable computer use capabilities for this agent run.
@@ -189,10 +161,8 @@ pub enum AgentProfileCommand {
 /// Agent-related subcommands.
 #[derive(Debug, Clone, Subcommand)]
 pub enum AgentCommand {
-    /// Run a new Oz agent.
+    /// Run a new local agent.
     Run(RunAgentArgs),
-    /// Dispatch an Oz agent that runs remotely.
-    RunCloud(RunCloudArgs),
     /// Manage agent profiles.
     #[command(subcommand)]
     Profile(AgentProfileCommand),
@@ -329,110 +299,6 @@ pub struct SnapshotArgs {
     /// Maximum time to wait for the declarations script before uploading the snapshot.
     #[arg(long = "snapshot-script-timeout", value_name = "DURATION")]
     pub snapshot_script_timeout: Option<humantime::Duration>,
-}
-
-#[derive(Debug, Clone, Args)]
-#[command(
-    name = "run-cloud",
-    visible_alias = "ra",
-    alias = "run-ambient",
-    group(
-        clap::ArgGroup::new("prompt_group")
-            .required(true)
-            .multiple(true)
-            .args(["prompt", "saved_prompt", "skill"])
-    )
-)]
-pub struct RunCloudArgs {
-    #[command(flatten)]
-    pub prompt_arg: PromptArg,
-
-    #[command(flatten)]
-    pub model: ModelArgs,
-
-    #[command(flatten)]
-    pub config_file: ConfigFileArgs,
-
-    /// Use a skill as the base prompt for the agent.
-    ///
-    /// Format: `skill_name`, `repo:skill_name`, or `org/repo:skill_name`
-    ///
-    /// Skills are searched in `.agents/skills/`, `.warp/skills/`, `.claude/skills/`, and `.codex/skills/` directories.
-    /// If a repo is specified, searches only that repo. If org is also specified,
-    /// validates the repo's git remote matches the expected org.
-    ///
-    /// When used with --prompt, the skill provides the base context and the prompt is the task.
-    ///
-    /// To automate a skill on a schedule, use `oz schedule create --skill <SPEC>`.
-    #[arg(long = "skill", value_name = "SPEC")]
-    pub skill: Option<SkillSpec>,
-
-    /// Name for this agent task.
-    #[arg(long = "name", short = 'n')]
-    pub name: Option<String>,
-
-    /// MCP servers to start before executing the agent.
-    ///
-    /// Can be specified as:
-    /// - A path to a JSON file containing MCP configuration
-    /// - Inline JSON with MCP server configuration
-    ///
-    /// Can be specified multiple times to include multiple servers.
-    #[arg(long = "mcp", value_name = "SPEC")]
-    pub mcp_specs: Vec<MCPSpec>,
-
-    /// The environment to run this ambient agent in.
-    #[command(flatten)]
-    pub environment: EnvironmentCreateArgs,
-    /// Open the agent's session in Warp once it's available.
-    #[arg(long = "open")]
-    pub open: bool,
-
-    /// Continue an existing cloud conversation by ID.
-    #[arg(long = "conversation", value_name = "ID")]
-    pub conversation: Option<String>,
-
-    #[command(flatten)]
-    pub scope: ObjectScope,
-
-    /// Where this job should be hosted. Setting "warp" runs it on Warp's infrastructure. Any other
-    /// value is treated is a self-hosted job and the value will be matched with the self-hosted
-    /// worker's name.
-    #[arg(long = "host", value_name = "WORKER_ID")]
-    pub worker_host: Option<String>,
-
-    /// Path to a file to attach to the agent query.
-    ///
-    /// Can be specified multiple times to attach multiple files (maximum 5).
-    ///
-    /// Example: --attach file1.png --attach file2.txt
-    #[arg(
-        long = "attach",
-        value_name = "PATH",
-        num_args = 1,
-        action = clap::ArgAction::Append,
-        value_parser = clap::value_parser!(PathBuf),
-    )]
-    pub attachment_paths: Vec<PathBuf>,
-
-    #[command(flatten)]
-    pub computer_use: ComputerUseArgs,
-    #[command(flatten)]
-    pub snapshot: SnapshotArgs,
-
-    /// Execution harness for the agent run.
-    ///
-    /// "oz" (default) uses Warp's built-in agent infrastructure.
-    /// "claude" delegates to the `claude` CLI.
-    #[arg(long = "harness", value_name = "HARNESS", default_value_t = Harness::Oz, hide = true)]
-    pub harness: Harness,
-
-    /// Name of a managed secret for Claude Code harness authentication.
-    ///
-    /// Resolved server-side and injected into the agent container.
-    /// Only valid when --harness is set to "claude".
-    #[arg(long = "claude-auth-secret", value_name = "NAME", hide = true)]
-    pub claude_auth_secret: Option<String>,
 }
 
 /// Arguments for listing available agents.

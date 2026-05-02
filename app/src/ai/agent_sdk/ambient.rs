@@ -1,31 +1,26 @@
-//! Commands to interact with ambient agents on Warp's platform.
+//! Commands to inspect legacy ambient agent records.
 use std::io::Write as _;
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::ai::ambient_agents::spawn::{
-    spawn_task, AmbientAgentEvent, SessionJoinInfo, TASK_STATUS_POLLING_DURATION,
-};
-use crate::ai::ambient_agents::task::HarnessConfig;
+use crate::ai::ambient_agents::spawn::SessionJoinInfo;
+use crate::ai::ambient_agents::AmbientAgentTask;
 use crate::ai::ambient_agents::AmbientAgentTaskState;
-use crate::ai::ambient_agents::{AgentConfigSnapshot, AmbientAgentTask};
 use crate::ai::artifacts::Artifact;
-use crate::auth::AuthStateProvider;
 use crate::server::server_api::ai::{
     AIClient, AgentMessageHeader, AgentRunEvent, AgentSource, ArtifactType, ExecutionLocation,
     ListAgentMessagesRequest, ReadAgentMessageResponse, RunSortBy, RunSortOrder,
-    SendAgentMessageRequest, SendAgentMessageResponse, SpawnAgentRequest, TaskListFilter,
+    SendAgentMessageRequest, SendAgentMessageResponse, TaskListFilter,
 };
 use crate::server::server_api::{ServerApi, ServerApiProvider};
-use crate::workspaces::user_workspaces::UserWorkspaces;
-use crate::{terminal::shared_session, util::time_format::format_approx_duration_from_now_utc};
+use crate::util::time_format::format_approx_duration_from_now_utc;
 use anyhow::{anyhow, Context as _};
 use comfy_table::Cell;
-use futures::{future, StreamExt};
+use futures::StreamExt;
 use serde::Serialize;
 
 use warp_cli::{
-    agent::{Harness, OutputFormat, Prompt, RunCloudArgs},
+    agent::OutputFormat,
     json_filter::JsonOutput,
     task::{
         ArtifactTypeArg, ExecutionLocationArg, ListTasksArgs, MessageCommand, MessageDeliveredArgs,
@@ -35,31 +30,16 @@ use warp_cli::{
     GlobalOptions,
 };
 use warp_core::channel::ChannelState;
-use warp_core::features::FeatureFlag;
 use warpui::r#async::Timer;
 use warpui::{
     platform::TerminationMode, r#async::Spawnable, AppContext, ModelContext, SingletonEntity,
 };
-
-use crate::ai::agent_sdk::driver::attachments::{
-    process_attachment, MAX_ATTACHMENT_COUNT_FOR_CLOUD_QUERY,
-};
-use crate::cloud_object::model::persistence::CloudModel;
-use crate::server::ids::{ServerId, SyncId};
-
-use super::common::{EnvironmentChoice, ResolveConfigurationError};
 
 const MAX_LINE_WIDTH: usize = 90;
 const STREAM_RETRY_BACKOFF_STEPS: &[u64] = &[1, 2, 5, 10];
 
 /// Singleton model that runs async work for ambient agent CLI commands.
 struct AmbientAgentRunner;
-
-/// Run an ambient agent with the provided arguments.
-pub fn run_ambient_agent(ctx: &mut AppContext, args: RunCloudArgs) -> anyhow::Result<()> {
-    let runner = ctx.add_singleton_model(|_ctx| AmbientAgentRunner);
-    runner.update(ctx, |runner, ctx| runner.run_agent(args, ctx))
-}
 
 /// List ambient agent tasks.
 pub fn list_ambient_agent_tasks(
@@ -231,348 +211,6 @@ impl AmbientAgentRunner {
             }
         });
     }
-    fn run_agent(&self, args: RunCloudArgs, ctx: &mut ModelContext<Self>) -> anyhow::Result<()> {
-        if !FeatureFlag::AmbientAgentsCommandLine.is_enabled() {
-            return Err(anyhow::anyhow!("Unsupported feature"));
-        }
-        let skill_enabled = FeatureFlag::OzPlatformSkills.is_enabled();
-        if args.skill.is_some() && !skill_enabled {
-            return Err(anyhow::anyhow!("unexpected argument '--skill' found"));
-        }
-
-        let refresh_future = super::common::refresh_workspace_metadata(ctx);
-        let warp_drive_sync_future = super::common::refresh_warp_drive(ctx);
-        let setup_future = future::try_join(refresh_future, warp_drive_sync_future);
-
-        ctx.spawn(setup_future, move |_runner, setup_result, ctx| {
-            if let Err(err) = setup_result {
-                super::report_fatal_error(err, ctx);
-                return;
-            }
-
-            // Validate that at least one of prompt, skill, or conversation is provided.
-            // conversation is used to continue an existing cloud conversation.
-            let prompt = args.prompt_arg.to_prompt();
-            let has_prompt_source = prompt.is_some()
-                || (skill_enabled && args.skill.is_some())
-                || args.conversation.is_some();
-            if !has_prompt_source {
-                super::report_fatal_error(
-                    anyhow::anyhow!("Either --prompt, --skill, or --conversation must be provided"),
-                    ctx,
-                );
-                return;
-            }
-
-            // TODO: Consider making the server's prompt field optional when skill is provided,
-            // rather than sending an empty string for skill-only invocations.
-            let prompt_string = match prompt {
-                Some(Prompt::PlainText(text)) => text,
-                Some(Prompt::SavedPrompt(id)) => {
-                    // Resolve the saved prompt to pass along as the ambient agent query.
-                    // We look up the prompt text here, rather than passing along the saved prompt ID,
-                    // in order to support personal saved prompts, which team service accounts would not
-                    // have access to.
-                    // TODO: we should pipe the saved prompt ID through the API, and resolve it server-side.
-                    // That'd also allow finding all tasks which used a given saved prompt.
-                    let sync_id: SyncId = match ServerId::try_from(id.as_str()) {
-                        Ok(server_id) => server_id.into(),
-                        Err(err) => {
-                            super::report_fatal_error(
-                                anyhow::anyhow!("Failed to parse saved prompt ID '{id}': {err}"),
-                                ctx,
-                            );
-                            return;
-                        }
-                    };
-
-                    let cloud_model = CloudModel::handle(ctx);
-                    let workflow = cloud_model.as_ref(ctx).get_workflow(&sync_id);
-
-                    match workflow {
-                        Some(cloud_workflow) => match cloud_workflow.model().data.prompt() {
-                            Some(prompt_text) => prompt_text.to_string(),
-                            None => {
-                                super::report_fatal_error(
-                                    anyhow::anyhow!("'{id}' is not a saved prompt"),
-                                    ctx,
-                                );
-                                return;
-                            }
-                        },
-                        None => {
-                            super::report_fatal_error(
-                                anyhow::anyhow!("Saved prompt with ID '{id}' not found"),
-                                ctx,
-                            );
-                            return;
-                        }
-                    }
-                }
-                // Skill-only invocation: use empty prompt, skill provides instructions
-                None => String::new(),
-            };
-
-            let loaded_file = match args.config_file.file.as_deref() {
-                Some(path) => match super::config_file::load_config_file(path) {
-                    Ok(file) => Some(file),
-                    Err(err) => {
-                        super::report_fatal_error(err, ctx);
-                        return;
-                    }
-                },
-                None => None,
-            };
-
-            // Validate and process attachments early, before environment selection
-            // This ensures users don't have to go through env selection if attachment validation fails
-            if args.attachment_paths.len() > MAX_ATTACHMENT_COUNT_FOR_CLOUD_QUERY {
-                super::report_fatal_error(
-                    anyhow::anyhow!(
-                        "Too many attachments. Maximum {} attachments allowed, but {} were provided.",
-                        MAX_ATTACHMENT_COUNT_FOR_CLOUD_QUERY,
-                        args.attachment_paths.len()
-                    ),
-                    ctx,
-                );
-                return;
-            }
-
-            let attachments = if FeatureFlag::AmbientAgentsImageUpload.is_enabled() {
-                if !args.attachment_paths.is_empty() {
-                    match args
-                        .attachment_paths
-                        .iter()
-                        .enumerate()
-                        .map(|(i, path)| process_attachment(path, i))
-                        .collect::<Result<Vec<_>, _>>()
-                    {
-                        Ok(processed) => processed,
-                        Err(err) => {
-                            super::report_fatal_error(err, ctx);
-                            return;
-                        }
-                    }
-                } else {
-                    vec![]
-                }
-            } else {
-                if !args.attachment_paths.is_empty() {
-                    super::report_fatal_error(
-                        anyhow::anyhow!("Attachment upload is not enabled"),
-                        ctx,
-                    );
-                    return;
-                }
-                vec![]
-            };
-
-            let mut environment_args = args.environment;
-            if environment_args.environment.is_none() && !environment_args.no_environment {
-                if let Some(environment_id) = loaded_file
-                    .as_ref()
-                    .and_then(|f| f.file.environment_id.clone())
-                {
-                    environment_args.environment = Some(environment_id);
-                }
-            }
-
-            let environment_id = match EnvironmentChoice::resolve_for_create(environment_args, ctx)
-            {
-                Ok(EnvironmentChoice::None) => {
-                    eprintln!("Agent will run without an environment.");
-                    None
-                },
-                Ok(EnvironmentChoice::Environment { id, .. }) => Some(id),
-                Err(ResolveConfigurationError::Canceled) => {
-                    ctx.terminate_app(TerminationMode::ForceTerminate, None);
-                    return;
-                }
-                Err(err) => {
-                    super::report_fatal_error(anyhow::anyhow!(err), ctx);
-                    return;
-                }
-            };
-
-            let ai_client = ServerApiProvider::as_ref(ctx).get_ai_client();
-
-            // Compute the upgrade link in case we hit capacity.
-            let upgrade_link = AuthStateProvider::as_ref(ctx)
-                .get()
-                .user_id()
-                .map(UserWorkspaces::upgrade_link);
-
-            let cli_mcp_servers =
-                match super::mcp_config::build_mcp_servers_from_specs(&args.mcp_specs) {
-                    Ok(mcp_servers) => mcp_servers,
-                    Err(err) => {
-                        super::report_fatal_error(err, ctx);
-                        return;
-                    }
-                };
-
-            let harness_override = (args.harness != Harness::Oz).then_some(HarnessConfig {
-                harness_type: args.harness,
-            });
-            let harness_auth_secrets = args.claude_auth_secret.clone().map(|name| {
-                crate::ai::ambient_agents::task::HarnessAuthSecretsConfig {
-                    claude_auth_secret_name: Some(name),
-                }
-            });
-
-            let merged_config = super::config_file::merge_with_precedence(
-                loaded_file.as_ref(),
-                AgentConfigSnapshot {
-                    name: args.name,
-                    environment_id,
-                    model_id: args.model.model.clone(),
-                    base_prompt: None,
-                    mcp_servers: cli_mcp_servers,
-                    profile_id: None,
-                    worker_host: args.worker_host.clone(),
-                    skill_spec: None,
-                    computer_use_enabled: args.computer_use.computer_use_override(),
-                    harness: harness_override,
-                    harness_auth_secrets,
-                },
-            );
-
-            // We must wait until after workspace metadata is refreshed to check available LLMs.
-            let model_id = match merged_config
-                .model_id
-                .as_deref()
-                .map(|model_id| super::common::validate_agent_mode_base_model_id(model_id, ctx))
-                .transpose()
-            {
-                Ok(id) => id.map(|id| id.to_string()),
-                Err(err) => {
-                    super::report_fatal_error(err, ctx);
-                    return;
-                }
-            };
-
-            let config = {
-                let mut config = merged_config;
-                config.model_id = model_id;
-                if config.is_empty() {
-                    None
-                } else {
-                    Some(config)
-                }
-            };
-
-            // For ambient runs, skill is passed to the server and resolved in the remote environment
-            let skill = if skill_enabled {
-                args.skill.as_ref().map(|s| s.to_string())
-            } else {
-                None
-            };
-
-            let request = SpawnAgentRequest {
-                prompt: prompt_string,
-                config,
-                title: None,
-                team: match (args.scope.team, args.scope.personal) {
-                    (true, _) => Some(true),
-                    (_, true) => Some(false),
-                    _ => None,
-                },
-                skill,
-                attachments,
-                interactive: None,
-                parent_run_id: None,
-                runtime_skills: vec![],
-                referenced_attachments: vec![],
-            };
-
-            let should_open = args.open;
-            let oz_root_url = ChannelState::oz_root_url();
-            let ai_client_clone = ai_client.clone();
-            let spawn_future = async move {
-                let mut stream = Box::pin(spawn_task(request, ai_client_clone, Some(TASK_STATUS_POLLING_DURATION)));
-                let mut session_join_info = None;
-                let mut spawned_task_id = None;
-
-                while let Some(event_result) = stream.next().await {
-                    match event_result {
-                        Ok(event) => match event {
-                            AmbientAgentEvent::TaskSpawned { task_id, .. } => {
-                                println!("Spawned ambient agent with run ID: {task_id}");
-                                println!("View run: {oz_root_url}/runs/{task_id}");
-                                spawned_task_id = Some(task_id);
-                            }
-                            AmbientAgentEvent::AtCapacity => {
-                                println!("Concurrent cloud agent limit reached. This agent run will begin when one of your current cloud runs completes.");
-                                if let Some(url) = &upgrade_link {
-                                    println!("To increase your concurrent agent limit, upgrade your plan: {}", url);
-                                }
-                            }
-                            AmbientAgentEvent::StateChanged {
-                                state,
-                                status_message,
-                            } => {
-                                if matches!(
-                                    state,
-                                    AmbientAgentTaskState::InProgress
-                                        | AmbientAgentTaskState::Succeeded
-                                ) || state.is_failure_like()
-                                {
-                                    println!("Agent state: {:?}", state);
-                                }
-                                if state.is_failure_like() {
-                                    if let Some(msg) = status_message {
-                                        println!("Error: {}", msg.message);
-                                    } else {
-                                        println!("Run failed with no error message");
-                                    }
-                                }
-                            }
-                            AmbientAgentEvent::SessionStarted {
-                                session_join_info: info,
-                            } => {
-                                println!("View agent session: {}", info.session_link);
-                                session_join_info = Some(info);
-                            }
-                            AmbientAgentEvent::TimedOut => {
-                                let task_id_str = spawned_task_id.as_ref().map_or_else(|| "unknown".to_string(), |id| id.to_string());
-                                println!("Agent session with run ID {task_id_str} is not ready after {}s. Check for a sharing link in the ambient agent management panel. See https://docs.warp.dev/agent-platform/cloud-agents/managing-cloud-agents for details.", TASK_STATUS_POLLING_DURATION.as_secs());
-                            }
-                        },
-                        Err(err) => {
-                            return Err(err);
-                        }
-                    }
-                }
-
-                Ok(session_join_info)
-            };
-
-            ctx.spawn(spawn_future, move |_, result, ctx| match result {
-                Ok(session_join_info) => {
-                    if should_open {
-                        if let Some(session_join_info) = session_join_info {
-                            let url =
-                                match (super::is_running_in_warp(), session_join_info.session_id) {
-                                    (true, Some(session_id)) => {
-                                        shared_session::join_native_intent(&session_id)
-                                    }
-                                    _ => session_join_info.session_link,
-                                };
-
-                            ctx.open_url(&url);
-                        }
-                    }
-                    ctx.terminate_app(TerminationMode::ForceTerminate, None);
-                }
-                Err(err) => {
-                    super::report_fatal_error(err, ctx);
-                }
-            });
-        });
-
-        Ok(())
-    }
-
     fn list_tasks(
         &self,
         limit: i32,

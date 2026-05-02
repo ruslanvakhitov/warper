@@ -16,8 +16,6 @@ pub(super) enum CliTelemetryEvent {
         /// Which execution harness was selected (e.g. "oz", "claude").
         harness: String,
     },
-    /// Executing `warp agent run-ambient`
-    AgentRunAmbient,
     /// Executing `warp agent profile list`
     AgentProfileList,
     /// Executing `warp agent list`
@@ -56,12 +54,6 @@ pub(super) enum CliTelemetryEvent {
     RunMessageRead { harness: &'static str },
     /// Executing `warp run message mark-delivered`
     RunMessageMarkDelivered { harness: &'static str },
-    /// Executing `warp login`
-    Login,
-    /// Executing `warp logout`
-    Logout,
-    /// Executing `warp whoami`
-    Whoami,
     /// Executing `warp provider setup`
     ProviderSetup,
     /// Executing `warp provider list`
@@ -134,7 +126,6 @@ impl TelemetryEvent for CliTelemetryEvent {
                 "task_id": task_id,
                 "harness": harness,
             })),
-            CliTelemetryEvent::AgentRunAmbient => None,
             CliTelemetryEvent::AgentProfileList => None,
             CliTelemetryEvent::AgentList => None,
             CliTelemetryEvent::EnvironmentList => None,
@@ -156,9 +147,6 @@ impl TelemetryEvent for CliTelemetryEvent {
             CliTelemetryEvent::RunMessageMarkDelivered { harness } => {
                 Some(json!({ "harness": harness }))
             }
-            CliTelemetryEvent::Login => None,
-            CliTelemetryEvent::Logout => None,
-            CliTelemetryEvent::Whoami => None,
             CliTelemetryEvent::ProviderSetup => None,
             CliTelemetryEvent::ProviderList => None,
             CliTelemetryEvent::IntegrationCreate => None,
@@ -212,7 +200,6 @@ impl TelemetryEventDesc for CliTelemetryEventDiscriminants {
     fn name(&self) -> &'static str {
         match self {
             CliTelemetryEventDiscriminants::AgentRun => "CLI.Execute.Agent.Run",
-            CliTelemetryEventDiscriminants::AgentRunAmbient => "CLI.Execute.Agent.RunAmbient",
             CliTelemetryEventDiscriminants::AgentProfileList => "CLI.Execute.Agent.Profile.List",
             CliTelemetryEventDiscriminants::AgentList => "CLI.Execute.Agent.List",
             CliTelemetryEventDiscriminants::EnvironmentList => "CLI.Execute.Environment.List",
@@ -238,9 +225,6 @@ impl TelemetryEventDesc for CliTelemetryEventDiscriminants {
             CliTelemetryEventDiscriminants::RunMessageMarkDelivered => {
                 "CLI.Execute.Run.Message.MarkDelivered"
             }
-            CliTelemetryEventDiscriminants::Login => "CLI.Execute.Login",
-            CliTelemetryEventDiscriminants::Logout => "CLI.Execute.Logout",
-            CliTelemetryEventDiscriminants::Whoami => "CLI.Execute.Whoami",
             CliTelemetryEventDiscriminants::ProviderSetup => "CLI.Execute.Provider.Setup",
             CliTelemetryEventDiscriminants::ProviderList => "CLI.Execute.Provider.List",
             CliTelemetryEventDiscriminants::IntegrationCreate => "CLI.Execute.Integration.Create",
@@ -280,9 +264,6 @@ impl TelemetryEventDesc for CliTelemetryEventDiscriminants {
     fn description(&self) -> &'static str {
         match self {
             CliTelemetryEventDiscriminants::AgentRun => "Ran an agent from the Warp CLI",
-            CliTelemetryEventDiscriminants::AgentRunAmbient => {
-                "Ran an ambient agent from the Warp CLI"
-            }
             CliTelemetryEventDiscriminants::AgentProfileList => {
                 "Listed agent profiles from the Warp CLI"
             }
@@ -330,9 +311,6 @@ impl TelemetryEventDesc for CliTelemetryEventDiscriminants {
             CliTelemetryEventDiscriminants::RunMessageMarkDelivered => {
                 "Marked a run message as delivered from the Warp CLI"
             }
-            CliTelemetryEventDiscriminants::Login => "Logged in via the Warp CLI",
-            CliTelemetryEventDiscriminants::Logout => "Logged out via the Warp CLI",
-            CliTelemetryEventDiscriminants::Whoami => "Printed current user info from the Warp CLI",
             CliTelemetryEventDiscriminants::ProviderSetup => "Set up a provider via the Warp CLI",
             CliTelemetryEventDiscriminants::ProviderList => "Listed providers from the Warp CLI",
             CliTelemetryEventDiscriminants::IntegrationCreate => {

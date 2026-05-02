@@ -1,18 +1,10 @@
-use crate::ai::agent::conversation::AIConversationId;
-use crate::ai::agent::AIAgentExchangeId;
-use crate::auth::AuthStateProvider;
 use crate::server::server_api::ai::AIClient;
 use crate::settings::AISettings;
-use crate::workspaces::user_workspaces::UserWorkspaces;
 use crate::workspaces::workspace::WorkspaceUid;
-use crate::BlocklistAIHistoryModel;
-use ai::api_keys::ApiKeyManager;
 use chrono::{DateTime, Utc};
 use instant::Instant;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use warp_core::channel::{Channel, ChannelState};
-use warp_core::user_preferences::GetUserPreferences as _;
 use warp_graphql::scalars::time::ServerTimestamp;
 use warpui::{AppContext, Entity, ModelContext, SingletonEntity};
 
@@ -39,9 +31,6 @@ pub struct BonusGrant {
     pub request_credits_remaining: i32,
     pub scope: BonusGrantScope,
 }
-
-/// The key for the corresponding entry in UserDefaults.
-const REQUEST_LIMIT_INFO_CACHE_KEY: &str = "AIRequestLimitInfo";
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub enum RequestLimitRefreshDuration {
@@ -140,25 +129,7 @@ impl RequestLimitInfo {
     }
 }
 
-fn cache_request_limit_info(request_limit_info: RequestLimitInfo, app_mut: &mut AppContext) {
-    if let Ok(serialized) = serde_json::to_string(&request_limit_info) {
-        let _ = app_mut
-            .private_user_preferences()
-            .write_value(REQUEST_LIMIT_INFO_CACHE_KEY, serialized);
-    }
-}
-
-fn get_cached_request_limit_info(app_mut: &mut AppContext) -> Option<RequestLimitInfo> {
-    app_mut
-        .private_user_preferences()
-        .read_value(REQUEST_LIMIT_INFO_CACHE_KEY)
-        .unwrap_or_default()
-        .and_then(|serialized| serde_json::from_str(serialized.as_str()).ok())
-}
-
 pub struct AIRequestUsageModel {
-    ai_client: Arc<dyn AIClient>,
-
     /// The last time at which `request_limit_info` was updated.
     last_update_time: Option<Instant>,
 
@@ -181,15 +152,9 @@ pub enum AIRequestUsageModelEvent {
 }
 
 impl AIRequestUsageModel {
-    pub fn new(ai_client: Arc<dyn AIClient>, ctx: &mut ModelContext<Self>) -> Self {
-        // Check if the user has cached request limit info from before.
-        // This is only used to show the latest known value before we finish refreshing from the server below.
-        let cached_request_limit_info = get_cached_request_limit_info(ctx);
-        let request_limit_info = cached_request_limit_info.unwrap_or_default();
-
+    pub fn new(_ai_client: Arc<dyn AIClient>, _ctx: &mut ModelContext<Self>) -> Self {
         Self {
-            ai_client,
-            request_limit_info,
+            request_limit_info: RequestLimitInfo::default(),
             last_update_time: None,
             bonus_grants: vec![],
         }
@@ -197,8 +162,8 @@ impl AIRequestUsageModel {
 
     #[cfg(test)]
     pub fn new_for_test(ai_client: Arc<dyn AIClient>, _ctx: &mut ModelContext<Self>) -> Self {
+        let _ = ai_client;
         Self {
-            ai_client,
             last_update_time: None,
             request_limit_info: RequestLimitInfo::default(),
             bonus_grants: vec![],
@@ -209,25 +174,9 @@ impl AIRequestUsageModel {
         self.last_update_time
     }
 
-    /// Spawns a task to refresh the latest AI request usage and bonus grants, fetching from the server.
-    pub fn refresh_request_usage_async(&mut self, ctx: &mut ModelContext<Self>) {
-        if !AuthStateProvider::as_ref(ctx).get().is_logged_in() {
-            return;
-        }
-
-        let ai_client = self.ai_client.clone();
-        ctx.spawn(
-            async move { ai_client.get_request_limit_info().await },
-            |model, result, ctx| match result {
-                Ok(usage_info) => {
-                    model.bonus_grants = usage_info.bonus_grants;
-                    model.update_request_limit_info(usage_info.request_limit_info, ctx);
-                }
-                Err(e) => {
-                    log::warn!("Failed to retrieve initial request limit info: {e:#}");
-                }
-            },
-        );
+    /// Hosted request usage is not fetched in the OSS build.
+    pub fn refresh_request_usage_async(&mut self, _ctx: &mut ModelContext<Self>) {
+        self.last_update_time = Some(Instant::now());
     }
 
     pub fn update_request_limit_info(
@@ -237,7 +186,6 @@ impl AIRequestUsageModel {
     ) {
         self.last_update_time = Some(Instant::now());
         self.request_limit_info = request_limit_info;
-        cache_request_limit_info(request_limit_info, ctx);
 
         AISettings::handle(ctx).update(ctx, |ai_settings, ctx| {
             ai_settings.update_quota_info(&request_limit_info, ctx);
@@ -248,92 +196,11 @@ impl AIRequestUsageModel {
 
     pub fn provide_negative_feedback_response_for_ai_conversation(
         &mut self,
-        client_conversation_id: AIConversationId,
-        request_id: String,
-        client_exchange_id: AIAgentExchangeId,
-        ctx: &mut ModelContext<Self>,
+        _client_conversation_id: crate::ai::agent::conversation::AIConversationId,
+        _request_id: String,
+        _client_exchange_id: crate::ai::agent::AIAgentExchangeId,
+        _ctx: &mut ModelContext<Self>,
     ) {
-        let server_conversation_id = BlocklistAIHistoryModel::as_ref(ctx)
-            .conversation(&client_conversation_id)
-            .and_then(|conversation| conversation.server_conversation_token());
-
-        let Some(server_conversation_id) = server_conversation_id else {
-            return;
-        };
-        let server_conversation_id_string = server_conversation_id.as_str().to_string();
-        let server_conversation_id_string_clone = server_conversation_id_string.clone();
-
-        let request_ids = BlocklistAIHistoryModel::as_ref(ctx)
-            .conversation(&client_conversation_id)
-            .map(|conversation| {
-                let mut request_ids = vec![];
-
-                let target_exchange = conversation
-                    .root_task_exchanges()
-                    .find(|exchange| exchange.id == client_exchange_id);
-
-                let mut found_target = false;
-
-                for exchange in conversation.exchanges_reversed() {
-                    if let Some(target_exchange) = target_exchange {
-                        if exchange.id == target_exchange.id {
-                            found_target = true;
-                        }
-                    } else {
-                        break;
-                    }
-
-                    if found_target {
-                        if let Some(server_output_id) = exchange.output_status.server_output_id() {
-                            request_ids.push(server_output_id.to_string());
-                        }
-
-                        if exchange
-                            .input
-                            .iter()
-                            .any(|input| input.user_query().is_some())
-                        {
-                            break;
-                        }
-                    }
-                }
-
-                request_ids
-            })
-            .unwrap_or_default();
-
-        // No reason to refund if there are no request ids.
-        if request_ids.is_empty() {
-            return;
-        }
-
-        let ai_client = self.ai_client.clone();
-        ctx.spawn(
-            async move {
-                ai_client
-                    .provide_negative_feedback_response_for_ai_conversation(
-                        server_conversation_id_string_clone,
-                        request_ids,
-                    )
-                    .await
-            },
-            |_, result, ctx| match result {
-                Ok(requests_refunded) => {
-                    if requests_refunded > 0 {
-                        ctx.emit(AIRequestUsageModelEvent::RequestBonusRefunded {
-                            requests_refunded,
-                            server_conversation_id: server_conversation_id_string,
-                            request_id,
-                        });
-                    }
-                }
-                Err(e) => {
-                    log::error!(
-                        "Failed to provide negative feedback response for ai conversation: {e:?}"
-                    );
-                }
-            },
-        );
     }
 
     /// Returns the number of remaining requests the user has based on their latest rate limit info.
@@ -357,48 +224,9 @@ impl AIRequestUsageModel {
         self.requests_remaining() > 0
     }
 
-    /// Returns `true` if the user meets one of the following conditions:
-    /// 1. user has ai credits from the plan base limit
-    /// 2. user has overage enabled
-    /// 3. user has bonus grants (either team grants or user grants)
-    /// 4. user's team plan has pay-as-you-go enabled (enterprise only)
-    /// 5. user's team is on enterprise with bonus grants auto-reload enable (enterprise only)
-    /// 6. user has BYOK enabled and has provided at least one API key
-    /// Use this method as the starting point for AI availability checking.
-    pub fn has_any_ai_remaining(&self, ctx: &AppContext) -> bool {
-        if ChannelState::channel() == Channel::Oss {
-            return true;
-        }
-
-        let current_workspace = UserWorkspaces::as_ref(ctx).current_workspace();
-
-        let has_base_plan_ai_requests = self.has_requests_remaining();
-
-        let user_bonus_credits = self.total_user_interactive_bonus_credits_remaining() > 0;
-        let workspace_bonus_credits = current_workspace
-            .map(|workspace| self.total_workspace_bonus_credits_remaining(workspace.uid) > 0)
-            .unwrap_or_default();
-
-        let workspace_has_overages =
-            current_workspace.is_some_and(|workspace| workspace.are_overages_remaining());
-
-        let is_payg_enabled = current_workspace
-            .is_some_and(|w| w.billing_metadata.is_enterprise_pay_as_you_go_enabled());
-
-        let is_enterprise_auto_reload_enabled = current_workspace
-            .is_some_and(|w| w.billing_metadata.is_enterprise_auto_reload_enabled());
-
-        // If you have provided your own API key,
-        // it doesn't matter if you are out of warp-provided requests.
-        let has_byo_api_key = UserWorkspaces::as_ref(ctx).is_byo_api_key_enabled()
-            && ApiKeyManager::as_ref(ctx).keys().has_any_key();
-
-        has_base_plan_ai_requests
-            || (user_bonus_credits || workspace_bonus_credits)
-            || workspace_has_overages
-            || is_payg_enabled
-            || is_enterprise_auto_reload_enabled
-            || has_byo_api_key
+    /// Hosted billing quotas are not enforced in the OSS build.
+    pub fn has_any_ai_remaining(&self, _ctx: &AppContext) -> bool {
+        true
     }
 
     pub fn requests_used(&self) -> usize {
@@ -493,21 +321,8 @@ impl AIRequestUsageModel {
     }
 
     pub fn total_current_workspace_bonus_credits_remaining(&self, ctx: &AppContext) -> i32 {
-        UserWorkspaces::as_ref(ctx)
-            .current_workspace()
-            .map(|workspace| self.total_workspace_bonus_credits_remaining(workspace.uid))
-            .unwrap_or(0)
-    }
-
-    fn total_user_interactive_bonus_credits_remaining(&self) -> i32 {
-        let now = Utc::now();
-        self.bonus_grants
-            .iter()
-            .filter(|grant| grant.scope == BonusGrantScope::User)
-            .filter(|grant| grant.grant_type != BonusGrantType::AmbientOnly)
-            .filter(|grant| grant.expiration.is_none_or(|exp| now < exp))
-            .map(|grant| grant.request_credits_remaining)
-            .sum()
+        let _ = ctx;
+        0
     }
 }
 

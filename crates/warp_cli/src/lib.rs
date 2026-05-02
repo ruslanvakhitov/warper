@@ -64,7 +64,7 @@ pub struct ParentOpts {
 /// Global options that apply to all CLI commands.
 #[derive(Debug, Default, Clone, clap::Args)]
 pub struct GlobalOptions {
-    /// API key for server authentication.
+    /// API key for local AI provider requests.
     #[arg(long = "api-key", global = true, env = "WARP_API_KEY")]
     pub api_key: Option<String>,
 
@@ -82,16 +82,14 @@ pub struct GlobalOptions {
 /// Command-line argument parser for the main Warp binary. This is used across all channels.
 #[derive(Debug, Default, Parser, Clone)]
 #[command(
-    name = "oz",
-    display_name = "Oz",
-    about = r#"The orchestration platform for cloud agents
+    name = "warp",
+    display_name = "Warp",
+    about = r#"Warp terminal and local AI tooling
 
-The Oz CLI is a tool for running, managing, and orchestrating coding agents at scale.
 Use the CLI to:
-* Launch and inspect cloud agents
-* Schedule cloud agents to run in the future
-* Manage the environments that cloud agents run in
-* Upload secrets to Oz's secure storage"#
+* Start local agent sessions
+* Manage local MCP servers
+* Inspect available AI models"#
 )]
 #[clap(args_conflicts_with_subcommands = true)]
 pub struct Args {
@@ -259,32 +257,18 @@ impl Args {
         if !FeatureFlag::CloudEnvironments.is_enabled() {
             command = command.mut_subcommand("environment", |c| c.hide(true));
             command = command.mut_subcommand("agent", |agent_cmd| {
-                agent_cmd
-                    .mut_subcommand("run", |run_cmd| {
-                        run_cmd.mut_arg("environment", |arg| arg.hide(true))
-                    })
-                    .mut_subcommand("run-cloud", |cloud_cmd| {
-                        cloud_cmd.mut_arg("environment", |arg| arg.hide(true))
-                    })
+                agent_cmd.mut_subcommand("run", |run_cmd| {
+                    run_cmd.mut_arg("environment", |arg| arg.hide(true))
+                })
             });
         }
 
         // Hide the --conversation flag from help text
         if !FeatureFlag::CloudConversations.is_enabled() {
             command = command.mut_subcommand("agent", |agent_cmd| {
-                agent_cmd
-                    .mut_subcommand("run", |run_cmd| {
-                        run_cmd.mut_arg("conversation", |arg| arg.hide(true))
-                    })
-                    .mut_subcommand("run-cloud", |cloud_cmd| {
-                        cloud_cmd.mut_arg("conversation", |arg| arg.hide(true))
-                    })
-            });
-        }
-
-        if !FeatureFlag::AmbientAgentsCommandLine.is_enabled() {
-            command = command.mut_subcommand("agent", |agent_cmd| {
-                agent_cmd.mut_subcommand("run-cloud", |c| c.hide(true))
+                agent_cmd.mut_subcommand("run", |run_cmd| {
+                    run_cmd.mut_arg("conversation", |arg| arg.hide(true))
+                })
             });
         }
 
@@ -467,7 +451,7 @@ pub enum WorkerCommand {
 /// but it allows scripting some Warp functionality.
 #[derive(Debug, Clone, Subcommand)]
 pub enum CliCommand {
-    /// Interact with Oz.
+    /// Run local agent tasks.
     #[command(subcommand)]
     Agent(crate::agent::AgentCommand),
 
@@ -486,13 +470,6 @@ pub enum CliCommand {
     /// Manage available models.
     #[command(subcommand)]
     Model(crate::model::ModelCommand),
-
-    /// Log in to Warp.
-    Login,
-    /// Log out of Warp.
-    Logout,
-    /// Print information about the logged-in user.
-    Whoami,
 
     /// Manage providers.
     #[command(subcommand)]

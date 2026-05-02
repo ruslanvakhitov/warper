@@ -60,7 +60,6 @@ use crate::{
     terminal::view::ConversationRestorationInNewPaneType,
 };
 use driver::AgentDriverError;
-use warp_graphql::object_permissions::OwnerType;
 
 use crate::ai::attachment_utils::attachments_download_dir;
 use crate::ai::skills::{
@@ -75,7 +74,6 @@ use telemetry::CliTelemetryEvent;
 use warp_cli::agent::{Harness, Prompt, RunAgentArgs};
 use warp_cli::OZ_HARNESS_ENV;
 
-mod admin;
 mod agent_config;
 mod ambient;
 mod artifact;
@@ -104,20 +102,6 @@ mod telemetry;
 #[cfg(test)]
 mod test_support;
 mod text_layout;
-
-/// Prints a non-blocking warning to stderr when the CLI is invoked with a team-scoped API key.
-fn maybe_warn_team_api_key(ctx: &AppContext) {
-    let auth_state = AuthStateProvider::handle(ctx).as_ref(ctx).get();
-    let owner_type = auth_state.api_key_owner_type();
-    if !matches!(owner_type, Some(OwnerType::Team)) {
-        return;
-    }
-
-    eprintln!(
-        "\x1b[33mWarning: Free cloud credits apply to personal runs only but this run uses \
-         a team API key. If you want to use free cloud credits, consider using a personal API key instead.\x1b[0m"
-    );
-}
 
 /// Run a Warp CLI command.
 pub fn run(
@@ -148,9 +132,6 @@ fn dispatch_command(
         CliCommand::MCP(mcp_cmd) => mcp::run(ctx, global_options, mcp_cmd),
         CliCommand::Run(task_cmd) => run_task(ctx, global_options, task_cmd),
         CliCommand::Model(model_cmd) => model::run(ctx, global_options, model_cmd),
-        CliCommand::Login => admin::login(ctx),
-        CliCommand::Logout => admin::logout(ctx),
-        CliCommand::Whoami => admin::whoami(ctx, global_options.output_format),
         CliCommand::Provider(provider_cmd) => {
             if !FeatureFlag::ProviderCommand.is_enabled() {
                 return Err(anyhow::anyhow!("invalid value 'provider'"));
@@ -285,27 +266,6 @@ fn run_agent(
             });
 
             Ok(())
-        }
-        AgentCommand::RunCloud(args) => {
-            if args.environment.environment.is_some()
-                && !FeatureFlag::CloudEnvironments.is_enabled()
-            {
-                return Err(anyhow::anyhow!("unexpected argument '--environment' found"));
-            }
-            if args.conversation.is_some() && !FeatureFlag::CloudConversations.is_enabled() {
-                return Err(anyhow::anyhow!(
-                    "unexpected argument '--conversation' found"
-                ));
-            }
-            if args.harness != Harness::Oz && !FeatureFlag::AgentHarness.is_enabled() {
-                return Err(anyhow::anyhow!("unexpected argument '--harness' found"));
-            }
-            if args.claude_auth_secret.is_some() && args.harness != Harness::Claude {
-                return Err(anyhow::anyhow!(
-                    "--claude-auth-secret is only valid with --harness claude."
-                ));
-            }
-            ambient::run_ambient_agent(ctx, args)
         }
         AgentCommand::Profile(sub) => profiles::run(ctx, global_options, sub),
         AgentCommand::List(args) => agent_config::list_agents(ctx, args),
@@ -591,7 +551,7 @@ impl AgentDriverRunner {
             // Build driver options and task, handling task creation or existing task setup.
             // For the `--task-id` path, `task_conversation_id` is the `conversation_id` read off
             // the fetched `AmbientAgentTask` (set by the server when linking the task to an
-            // existing conversation, e.g. via `run-cloud --conversation`).
+            // existing conversation).
             let (mut driver_options, task, task_conversation_id) =
                 Self::build_driver_options_and_task(&foreground, args, &server_api).await?;
 
@@ -907,7 +867,7 @@ impl AgentDriverRunner {
     /// and task attachments (images and files) from the server and update the driver options.
     ///
     /// Returns the task's `conversation_id` when the server has linked the task to an existing
-    /// AI conversation (e.g. a `run-cloud --conversation` spawn). The caller uses this to drive
+    /// AI conversation. The caller uses this to drive
     /// transcript rehydration without a separate `--conversation` CLI arg.
     async fn fetch_secrets_and_attachments(
         foreground: &ModelSpawner<Self>,
@@ -1214,8 +1174,6 @@ impl AgentDriverRunner {
         share_requests: Option<Vec<ShareRequest>>,
         task: driver::Task,
     ) {
-        maybe_warn_team_api_key(ctx);
-
         // Initializing the driver will fail if not logged in. Since we check that above, panic here - it's difficult to
         // fallibly instantiate a UI framework model.
         let driver = ctx.add_singleton_model(|ctx| {
@@ -1246,7 +1204,6 @@ fn command_requires_auth(command: &CliCommand) -> bool {
     match command {
         CliCommand::Agent(agent_cmd) => match agent_cmd {
             AgentCommand::Run { .. } => true,
-            AgentCommand::RunCloud { .. } => true,
             AgentCommand::Profile(sub) => match sub {
                 AgentProfileCommand::List => true,
             },
@@ -1272,9 +1229,6 @@ fn command_requires_auth(command: &CliCommand) -> bool {
         CliCommand::Model(model_cmd) => match model_cmd {
             ModelCommand::List => true,
         },
-        CliCommand::Login => false,
-        CliCommand::Logout => false,
-        CliCommand::Whoami => true,
         CliCommand::Provider(_) => true,
         CliCommand::Integration(_) => true,
         CliCommand::Schedule(_) => true,
@@ -1301,12 +1255,10 @@ fn launch_command(
         return dispatch_command(ctx, command, global_options);
     }
 
-    let cli_name = warp_cli::binary_name().unwrap_or_else(|| "warp".to_string());
-
     let auth_state = AuthStateProvider::handle(ctx).as_ref(ctx).get();
     if !auth_state.is_logged_in() {
         return Err(anyhow::anyhow!(
-            "You are not logged in - please log in with `{cli_name} login` to continue."
+            "Server authentication is unavailable in this build. Provide a local provider API key instead."
         ));
     }
 
@@ -1330,7 +1282,7 @@ fn launch_command(
                 let message = if auth_state.is_api_key_authenticated() {
                     "Your API key is invalid. Please provide a valid key via '--api-key' or the WARP_API_KEY environment variable.".to_string()
                 } else {
-                    format!("Your credentials are invalid. Please log in again with `{cli_name} login`.")
+                    "Your credentials are invalid. Provide a valid API key via '--api-key' or the WARP_API_KEY environment variable.".to_string()
                 };
                 report_fatal_error(anyhow::anyhow!(message), ctx);
             }
@@ -1403,7 +1355,6 @@ fn command_to_telemetry_event(command: &CliCommand) -> CliTelemetryEvent {
             task_id: args.task_id.clone(),
             harness: args.harness.to_string(),
         },
-        CliCommand::Agent(AgentCommand::RunCloud(_)) => CliTelemetryEvent::AgentRunAmbient,
         CliCommand::Agent(AgentCommand::Profile(sub)) => match sub {
             AgentProfileCommand::List => CliTelemetryEvent::AgentProfileList,
         },
@@ -1452,9 +1403,6 @@ fn command_to_telemetry_event(command: &CliCommand) -> CliTelemetryEvent {
             },
         },
         CliCommand::Model(ModelCommand::List) => CliTelemetryEvent::ModelList,
-        CliCommand::Login => CliTelemetryEvent::Login,
-        CliCommand::Logout => CliTelemetryEvent::Logout,
-        CliCommand::Whoami => CliTelemetryEvent::Whoami,
         CliCommand::Provider(ProviderCommand::Setup(_)) => CliTelemetryEvent::ProviderSetup,
         CliCommand::Provider(ProviderCommand::List) => CliTelemetryEvent::ProviderList,
         CliCommand::Integration(integration_cmd) => match integration_cmd {

@@ -18,7 +18,7 @@ use super::user::FirebaseAuthTokens;
 pub enum Credentials {
     /// Firebase authentication with ID token and refresh token.
     Firebase(FirebaseAuthTokens),
-    /// API key for direct server authentication.
+    /// API key for legacy non-Warper authentication paths.
     ApiKey {
         key: String,
         /// The owner type for this API key. Only set after user info is fetched from the server.
@@ -106,7 +106,7 @@ impl Credentials {
 pub enum AuthToken {
     /// Firebase short-lived access token.
     Firebase(String),
-    /// API key for direct server authentication.
+    /// API key for legacy non-Warper authentication paths.
     ApiKey(String),
     /// No authentication token available (e.g. session cookie auth or test credentials).
     #[cfg_attr(
@@ -142,7 +142,7 @@ impl AuthToken {
 pub enum LoginToken {
     /// A Firebase token to be exchanged for auth tokens.
     Firebase(FirebaseToken),
-    /// An API key for direct server authentication.
+    /// An API key for legacy non-Warper authentication paths.
     ApiKey(String),
     /// Authentication derived from an ambient browser session cookie.
     SessionCookie,

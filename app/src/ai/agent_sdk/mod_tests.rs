@@ -9,16 +9,6 @@ use warp_core::telemetry::TelemetryEvent;
 use super::{command_requires_auth, command_to_telemetry_event};
 
 #[test]
-fn logout_does_not_require_auth() {
-    assert!(!command_requires_auth(&CliCommand::Logout));
-}
-
-#[test]
-fn login_does_not_require_auth() {
-    assert!(!command_requires_auth(&CliCommand::Login));
-}
-
-#[test]
 fn artifact_download_requires_auth() {
     assert!(command_requires_auth(&CliCommand::Artifact(
         ArtifactCommand::Download(DownloadArtifactArgs {
