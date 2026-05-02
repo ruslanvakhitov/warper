@@ -1066,6 +1066,13 @@ impl AgentConversationsModel {
             .sorted_by(|a, b| b.last_updated().cmp(&a.last_updated()))
     }
 
+    pub fn conversations_iter(&self) -> impl Iterator<Item = ConversationOrTask<'_>> {
+        self.conversations
+            .values()
+            .map(ConversationOrTask::Conversation)
+            .sorted_by(|a, b| b.last_updated().cmp(&a.last_updated()))
+    }
+
     /// Get a task by its task ID
     pub fn get_task(&self, task_id: &AmbientAgentTaskId) -> Option<ConversationOrTask<'_>> {
         self.tasks.get(task_id).map(ConversationOrTask::Task)

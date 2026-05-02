@@ -309,13 +309,7 @@ pub enum TerminalAction {
     StopSharingCurrentSession {
         source: SharedSessionActionSource,
     },
-    OpenSharedSessionOnDesktop {
-        source: SharedSessionActionSource,
-    },
     ToggleBlockFilterOnSelectedOrLastBlock(ToggleBlockFilterSource),
-    OpenShareSessionModal {
-        source: SharedSessionActionSource,
-    },
     CopySharedSessionLink {
         source: SharedSessionActionSource,
     },
@@ -594,13 +588,9 @@ impl fmt::Debug for TerminalAction {
             StopSharingCurrentSession { source } => {
                 write!(f, "StopSharingCurrentSession({source:?})")
             }
-            OpenSharedSessionOnDesktop { source } => {
-                write!(f, "OpenSharedSessionOnDesktop({source:?})")
-            }
             ToggleBlockFilterOnSelectedOrLastBlock(_) => {
                 f.write_str("ToggleBlockFilterOnSelectedOrLastBlock")
             }
-            OpenShareSessionModal { source } => write!(f, "OpenShareSessionModal({source:?})"),
             CopySharedSessionLink { .. } => f.write_str("CopySharedSessionLink"),
             VimModeBanner(action) => write!(f, "VimModeBanner({action:?})"),
             ToggleSnackbarInActivePane => write!(f, "ToggleSnackbarInActivePane"),

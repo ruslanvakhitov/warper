@@ -1760,10 +1760,7 @@ fn render_tab_group(
             (*pane_id, ms)
         })
         .collect();
-    let is_active = tab_index == workspace.active_tab_index
-        && !workspace
-            .current_workspace_state
-            .is_agent_management_view_open;
+    let is_active = tab_index == workspace.active_tab_index;
     let has_top_border = tab_index > 0;
     let is_first_tab = tab_index == 0;
     let is_last_tab = tab_index + 1 == workspace.tabs.len();
@@ -1966,7 +1963,7 @@ fn render_tab_group(
         };
 
         // Show the action buttons when the group OR the buttons themselves
-        // are hovered, following the pattern from AgentManagementView.
+        // are hovered.
         // This prevents flickering when the mouse moves from the group
         // to the overlay buttons (which may sit outside the group bounds).
         let should_show_action_buttons = !drag_state.is_any_pane_dragging

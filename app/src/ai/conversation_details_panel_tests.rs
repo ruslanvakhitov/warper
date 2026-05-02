@@ -155,37 +155,6 @@ fn test_from_task_includes_linked_directory_when_run_id_matches() {
 }
 
 #[test]
-fn test_from_conversation_metadata_passes_harness_through() {
-    for harness in [
-        None,
-        Some(Harness::Oz),
-        Some(Harness::Claude),
-        Some(Harness::Gemini),
-        Some(Harness::Unknown),
-    ] {
-        let data = ConversationDetailsData::from_conversation_metadata(
-            AIConversationId::new(),
-            "Title".to_string(),
-            None,
-            Utc::now().with_timezone(&Local),
-            None,
-            None,
-            None,
-            vec![],
-            None,
-            None,
-            None,
-            None,
-            harness,
-        );
-        assert_eq!(
-            data.harness, harness,
-            "harness {harness:?} should pass through"
-        );
-    }
-}
-
-#[test]
 fn test_from_task_resolves_harness() {
     App::test((), |mut app| async move {
         let _history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));

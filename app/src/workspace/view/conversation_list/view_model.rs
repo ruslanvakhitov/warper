@@ -1,8 +1,6 @@
 use crate::ai::active_agent_views_model::ConversationOrTaskId;
 use crate::ai::agent_conversations_model::{
-    AgentConversationsModel, AgentConversationsModelEvent, AgentManagementFilters, ArtifactFilter,
-    ConversationOrTask, CreatedOnFilter, CreatorFilter, OwnerFilter, SessionStatus, SourceFilter,
-    StatusFilter,
+    AgentConversationsModel, AgentConversationsModelEvent, ConversationOrTask,
 };
 use fuzzy_match::match_indices_case_insensitive;
 use warpui::{AppContext, Entity, ModelContext, ModelHandle, SingletonEntity};
@@ -34,11 +32,11 @@ impl ConversationListViewModel {
             match event {
                 // These events change the set of items in the list, so we need
                 // to rebuild the cached ID list.
-                AgentConversationsModelEvent::ConversationsLoaded
-                | AgentConversationsModelEvent::TasksUpdated
-                | AgentConversationsModelEvent::TaskManuallyOpened => {
+                AgentConversationsModelEvent::ConversationsLoaded => {
                     me.refresh_cached_items(ctx);
                 }
+                AgentConversationsModelEvent::TasksUpdated
+                | AgentConversationsModelEvent::TaskManuallyOpened => {}
             }
         });
 
@@ -52,7 +50,7 @@ impl ConversationListViewModel {
         model
     }
 
-    /// Rebuilds the cached list of IDs from the current task/conversation set.
+    /// Rebuilds the cached list of IDs from the current conversation set.
     ///
     /// The cache stores only `ConversationOrTaskId`s; per-item fields like
     /// status, title, and last-updated are read fresh at render time via
@@ -61,40 +59,12 @@ impl ConversationListViewModel {
     fn refresh_cached_items(&mut self, ctx: &mut ModelContext<Self>) {
         let model = self.conversations_model.as_ref(ctx);
         self.cached_conversation_or_task_ids = model
-            .get_tasks_and_conversations(
-                &AgentManagementFilters {
-                    owners: OwnerFilter::PersonalOnly,
-                    status: StatusFilter::All,
-                    source: SourceFilter::All,
-                    created_on: CreatedOnFilter::All,
-                    creator: CreatorFilter::All,
-                    artifact: ArtifactFilter::All,
-                    environment: Default::default(),
-                    harness: Default::default(),
-                },
-                ctx,
-            )
-            // Expired and Unavailable ambient agent sessions can't be opened, so we filter them out.
-            // Regular conversations have None session_status
-            .filter(|item| {
-                item.get_session_status()
-                    .is_none_or(|status| status == SessionStatus::Available)
-            })
-            // Only show user-initiated sources (Slack, Linear, Interactive) or tasks that have
-            // been manually opened from the management page.
-            .filter(|item| {
-                let is_user_initiated = item.source().is_some_and(|s| s.is_user_initiated());
-                let is_manually_opened = match item {
-                    ConversationOrTask::Task(task) => model.is_task_manually_opened(&task.task_id),
-                    ConversationOrTask::Conversation(_) => false,
-                };
-                is_user_initiated || is_manually_opened
-            })
-            .map(|item| match item {
-                ConversationOrTask::Task(task) => ConversationOrTaskId::TaskId(task.task_id),
+            .conversations_iter()
+            .filter_map(|item| match item {
                 ConversationOrTask::Conversation(conv) => {
-                    ConversationOrTaskId::ConversationId(conv.nav_data.id)
+                    Some(ConversationOrTaskId::ConversationId(conv.nav_data.id))
                 }
+                ConversationOrTask::Task(_) => None,
             })
             .collect();
 

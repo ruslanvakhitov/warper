@@ -8,7 +8,6 @@ use crate::view_components::copyable_text_field::COPY_FEEDBACK_DURATION;
 
 use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::agent_conversations_model::AgentRunDisplayStatus;
-use crate::ai::agent_management::view::ManagementCardItemId;
 use crate::ai::ambient_agents::AmbientAgentTaskId;
 use crate::ui_components::icons::Icon;
 use crate::view_components::action_button::{ActionButton, ButtonSize, SecondaryTheme};
@@ -23,9 +22,6 @@ pub struct ActionButtonsConfig {
     pub open_action: Option<WorkspaceAction>,
     pub cancel_task_id: Option<AmbientAgentTaskId>,
     pub fork_conversation_id: Option<AIConversationId>,
-    /// Shows an info button for viewing more details.
-    /// Only used in management view hover toolbelt.
-    pub view_details_item_id: Option<ManagementCardItemId>,
     /// Conversation link URL (either to the transcript or live session) for copy link button.
     pub copy_link_url: Option<String>,
 }
@@ -36,7 +32,6 @@ impl ActionButtonsConfig {
         self.open_action.is_none()
             && self.cancel_task_id.is_none()
             && self.fork_conversation_id.is_none()
-            && self.view_details_item_id.is_none()
             && self.copy_link_url.is_none()
     }
 
@@ -58,7 +53,6 @@ impl ActionButtonsConfig {
                 None
             },
             fork_conversation_id: None,
-            view_details_item_id: None,
             copy_link_url,
         }
     }
@@ -75,7 +69,6 @@ impl ActionButtonsConfig {
             open_action,
             cancel_task_id: None,
             fork_conversation_id: Some(conversation_id),
-            view_details_item_id: None,
             copy_link_url,
         }
     }
@@ -87,7 +80,6 @@ pub enum AgentDetailsButtonEvent {
     Open,
     CancelTask { task_id: AmbientAgentTaskId },
     ForkConversation { conversation_id: AIConversationId },
-    ViewDetails { item_id: ManagementCardItemId },
     CopyLink { link: String },
 }
 
@@ -97,7 +89,6 @@ pub enum AgentDetailsAction {
     Open,
     CancelTask,
     ForkConversation,
-    ViewDetails,
     CopyLink,
 }
 
@@ -107,7 +98,6 @@ pub struct ConversationActionButtonsRow {
     open_button: ViewHandle<ActionButton>,
     cancel_task_button: ViewHandle<ActionButton>,
     fork_conversation_button: ViewHandle<ActionButton>,
-    view_details_button: ViewHandle<ActionButton>,
     copy_link_button: ViewHandle<ActionButton>,
 }
 
@@ -140,15 +130,6 @@ impl ConversationActionButtonsRow {
             )
         });
 
-        let view_details_button = ctx.add_typed_action_view(|_| {
-            Self::make_action_button(
-                Icon::Info,
-                "View details",
-                None,
-                AgentDetailsAction::ViewDetails,
-            )
-        });
-
         let copy_link_button = ctx.add_typed_action_view(|_| {
             Self::make_action_button(
                 Icon::Link,
@@ -163,7 +144,6 @@ impl ConversationActionButtonsRow {
             open_button,
             cancel_task_button,
             fork_conversation_button,
-            view_details_button,
             copy_link_button,
         }
     }
@@ -230,10 +210,6 @@ impl View for ConversationActionButtonsRow {
         if self.config.fork_conversation_id.is_some() && !cfg!(target_family = "wasm") {
             row.add_child(ChildView::new(&self.fork_conversation_button).finish());
         }
-        if self.config.view_details_item_id.is_some() {
-            row.add_child(ChildView::new(&self.view_details_button).finish());
-        }
-
         row.finish()
     }
 }
@@ -256,13 +232,6 @@ impl TypedActionView for ConversationActionButtonsRow {
             AgentDetailsAction::ForkConversation => {
                 if let Some(conversation_id) = self.config.fork_conversation_id {
                     ctx.emit(AgentDetailsButtonEvent::ForkConversation { conversation_id });
-                }
-            }
-            AgentDetailsAction::ViewDetails => {
-                if let Some(item_id) = &self.config.view_details_item_id {
-                    ctx.emit(AgentDetailsButtonEvent::ViewDetails {
-                        item_id: item_id.clone(),
-                    });
                 }
             }
             AgentDetailsAction::CopyLink => {

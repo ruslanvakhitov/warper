@@ -4,20 +4,14 @@ use std::ops::Range;
 use std::sync::{Arc, Mutex};
 
 use crate::ai::active_agent_views_model::{ActiveAgentViewsModel, ConversationOrTaskId};
-use crate::ai::agent::api::ServerConversationToken;
 use crate::ai::agent::conversation::AIConversationId;
-use crate::ai::agent_conversations_model::{AgentConversationsModel, ConversationOrTask};
-use crate::ai::agent_management::telemetry::{AgentManagementTelemetryEvent, OpenedFrom};
 use crate::ai::blocklist::history_model::BlocklistAIHistoryModel;
 use crate::appearance::Appearance;
-use crate::drive::sharing::dialog::SharingDialog;
-use crate::drive::sharing::ShareableObject;
 use crate::editor::{
     EditorView, Event as EditorEvent, PropagateAndNoOpNavigationKeys,
     PropagateHorizontalNavigationKeys, SingleLineEditorOptions, TextOptions,
 };
 use crate::menu::{Event as MenuEvent, Menu, MenuItem, MenuItemFields};
-use crate::server::telemetry::SharingDialogSource;
 use crate::view_components::action_button::{ActionButton, ButtonSize, SecondaryTheme};
 use crate::view_components::DismissibleToast;
 use crate::workspace::global_actions::ForkedConversationDestination;
@@ -30,7 +24,6 @@ use crate::workspace::view::conversation_list::item::{
 use crate::workspace::ToastStack;
 use crate::workspace::WorkspaceAction;
 use warp_core::features::FeatureFlag;
-use warp_core::send_telemetry_from_ctx;
 use warp_core::ui::Icon;
 
 use super::view_model::{ConversationEntry, ConversationListViewModel};
@@ -119,9 +112,6 @@ pub enum ConversationListViewAction {
         /// positioned where the right click took place.
         position: Option<Vector2F>,
     },
-    OpenShareDialog {
-        conversation_id: ConversationOrTaskId,
-    },
     DeleteFromOverflowMenu {
         conversation_id: ConversationOrTaskId,
     },
@@ -160,10 +150,6 @@ pub struct ConversationListView {
     item_overflow_menu: ViewHandle<Menu<ConversationListViewAction>>,
     /// Tracks the overflow menu state (which item it's open for and where to position it).
     overflow_menu_state: Option<OverflowMenuState>,
-    /// Sharing dialog for conversations.
-    sharing_dialog: ViewHandle<SharingDialog>,
-    /// Track which conversation the share dialog is open for.
-    share_dialog_open_for: Option<ConversationOrTaskId>,
     selected_index: Option<usize>,
     collapsed_sections: HashSet<ConversationSection>,
     /// Cached flat list of items (headers + conversations) for rendering and navigation.
@@ -260,13 +246,6 @@ impl ConversationListView {
             MenuEvent::ItemSelected | MenuEvent::ItemHovered => {}
         });
 
-        let sharing_dialog = ctx.add_typed_action_view(|ctx| SharingDialog::new(None, ctx));
-        ctx.subscribe_to_view(&sharing_dialog, move |me, _, _event, ctx| {
-            // SharingDialogEvent::Close is the only event currently
-            me.share_dialog_open_for = None;
-            ctx.notify();
-        });
-
         let mut view = Self {
             window_id: ctx.window_id(),
             view_id: ctx.view_id(),
@@ -275,8 +254,6 @@ impl ConversationListView {
             toggle_view_all_button,
             item_overflow_menu,
             overflow_menu_state: None,
-            sharing_dialog,
-            share_dialog_open_for: None,
             selected_index: None,
             collapsed_sections: HashSet::new(),
             list_items: Arc::new(Vec::new()),
@@ -389,7 +366,7 @@ impl ConversationListView {
         self.list_items.get(index)
     }
 
-    /// Finds the flat index of a conversation or task by ID, or None if not found.
+    /// Finds the flat index of a conversation by ID, or None if not found.
     fn get_index_of_conversation_id(&self, conversation_id: ConversationOrTaskId) -> Option<usize> {
         self.list_items.iter().position(|item| match item {
             ListItem::Conversation(entry) => entry.id == conversation_id,
@@ -531,30 +508,6 @@ impl ConversationListView {
         self.focus_query_editor(ctx);
     }
 
-    /// Send telemetry for opening a conversation or task
-    fn send_open_telemetry(id: &ConversationOrTaskId, ctx: &mut ViewContext<Self>) {
-        match id {
-            ConversationOrTaskId::ConversationId(conversation_id) => {
-                send_telemetry_from_ctx!(
-                    AgentManagementTelemetryEvent::ConversationOpened {
-                        conversation_id: conversation_id.to_string(),
-                        opened_from: OpenedFrom::ConversationList,
-                    },
-                    ctx
-                );
-            }
-            ConversationOrTaskId::TaskId(task_id) => {
-                send_telemetry_from_ctx!(
-                    AgentManagementTelemetryEvent::CloudRunOpened {
-                        task_id: task_id.to_string(),
-                        opened_from: OpenedFrom::ConversationList,
-                    },
-                    ctx
-                );
-            }
-        }
-    }
-
     /// Activate the currently selected item by dispatching the appropriate WorkspaceAction
     /// (i.e. opening the selected conversation or starting a new conversation).
     fn activate_selected_item(&mut self, ctx: &mut ViewContext<Self>) {
@@ -577,7 +530,6 @@ impl ConversationListView {
 
                 // Use shared logic from ConversationOrTask to determine click action
                 if let Some(action) = item.get_open_action(None, ctx) {
-                    Self::send_open_telemetry(&entry.id, ctx);
                     ctx.dispatch_typed_action(&action);
                 }
             }
@@ -635,7 +587,7 @@ impl ConversationListView {
 }
 
 /// Renders the zero state for the conversation list view
-/// (i.e. when there are no local or ambient conversations).
+/// (i.e. when there are no local conversations).
 fn render_zero_state(
     zero_state_button_mouse_state: MouseStateHandle,
     app: &AppContext,
@@ -668,7 +620,7 @@ fn render_zero_state(
         .with_child(
             ConstrainedBox::new(
                 FormattedTextElement::from_str(
-                    "Your active and past conversations with local and ambient agents will appear here.",
+                    "Your active and past conversations with local agents will appear here.",
                     appearance.ui_font_family(),
                     14.,
                 )
@@ -896,88 +848,27 @@ impl TypedActionView for ConversationListView {
                     });
 
                     let conversation_id = *conversation_id;
-                    let is_ambient_agent_conversation =
-                        matches!(conversation_id, ConversationOrTaskId::TaskId(_));
-
-                    let mut delete_item = MenuItemFields::new("Delete")
+                    let delete_item = MenuItemFields::new("Delete")
                         .with_override_text_color(Appearance::as_ref(ctx).theme().ansi_fg_red())
-                        .with_on_select_action(ConversationListViewAction::DeleteFromOverflowMenu {
-                            conversation_id,
-                        })
-                        .with_disabled(is_ambient_agent_conversation);
-                    if is_ambient_agent_conversation {
-                        delete_item = delete_item
-                            .with_tooltip("Ambient agent conversations cannot be deleted");
-                    }
+                        .with_on_select_action(
+                            ConversationListViewAction::DeleteFromOverflowMenu { conversation_id },
+                        );
 
-                    // Check if conversation is shareable:
-                    // - For tasks: check if there's an associated conversation_id
-                    // - For conversations: check if synced to cloud
-                    let is_shareable = match conversation_id {
-                        ConversationOrTaskId::TaskId(task_id) => {
-                            if let Some(ConversationOrTask::Task(task)) =
-                                AgentConversationsModel::as_ref(ctx).get_task(&task_id)
-                            {
-                                task.conversation_id.is_some()
-                            } else {
-                                false
-                            }
-                        }
-                        ConversationOrTaskId::ConversationId(conv_id) => {
-                            BlocklistAIHistoryModel::as_ref(ctx)
-                                .can_conversation_be_shared(&conv_id)
-                        }
-                    };
-
-                    // Only show share item if the conversation is shareable
-                    let share_item = if is_shareable {
-                        Some(
-                            MenuItemFields::new("Share conversation")
-                                .with_on_select_action(
-                                    ConversationListViewAction::OpenShareDialog { conversation_id },
-                                )
-                                .into_item(),
-                        )
-                    } else {
-                        None
-                    };
-
-                    let fork_items: Option<[MenuItem<ConversationListViewAction>; 2]> =
-                        // Forking from a closed ambient agent conversation is not supported at this point.
-                        if !is_ambient_agent_conversation {
-                            Some([
-                                MenuItemFields::new("Fork in new pane")
-                                    .with_on_select_action(
-                                        ConversationListViewAction::ForkConversation {
-                                            conversation_id,
-                                            destination: ForkedConversationDestination::SplitPane,
-                                        },
-                                    )
-                                    .into_item(),
-                                MenuItemFields::new("Fork in new tab")
-                                    .with_on_select_action(
-                                        ConversationListViewAction::ForkConversation {
-                                            conversation_id,
-                                            destination: ForkedConversationDestination::NewTab,
-                                        },
-                                    )
-                                    .into_item(),
-                            ])
-                        } else {
-                            None
-                        };
-
-                    let mut items = Vec::new();
-                    if let Some(share_item) = share_item {
-                        items.push(share_item);
-                    }
-                    if let Some(fork_items) = fork_items {
-                        items.extend(fork_items);
-                    }
-
-                    if !items.is_empty() {
-                        items.push(MenuItem::Separator);
-                    }
+                    let mut items = vec![
+                        MenuItemFields::new("Fork in new pane")
+                            .with_on_select_action(ConversationListViewAction::ForkConversation {
+                                conversation_id,
+                                destination: ForkedConversationDestination::SplitPane,
+                            })
+                            .into_item(),
+                        MenuItemFields::new("Fork in new tab")
+                            .with_on_select_action(ConversationListViewAction::ForkConversation {
+                                conversation_id,
+                                destination: ForkedConversationDestination::NewTab,
+                            })
+                            .into_item(),
+                        MenuItem::Separator,
+                    ];
                     items.push(delete_item.into_item());
                     self.item_overflow_menu.update(ctx, |menu, ctx| {
                         menu.set_items(items, ctx);
@@ -985,49 +876,9 @@ impl TypedActionView for ConversationListView {
                 }
                 ctx.notify();
             }
-            ConversationListViewAction::OpenShareDialog { conversation_id } => {
-                // Clear selection state when opening share dialog
-                self.selected_index = None;
-
-                // Resolve the AIConversationId for the shareable object
-                let ai_conversation_id: Option<AIConversationId> = match conversation_id {
-                    ConversationOrTaskId::TaskId(task_id) => {
-                        // For tasks, look up the associated conversation_id by server token
-                        if let Some(ConversationOrTask::Task(task)) =
-                            AgentConversationsModel::as_ref(ctx).get_task(task_id)
-                        {
-                            task.conversation_id.as_ref().and_then(|token_str| {
-                                let server_token = ServerConversationToken::new(token_str.clone());
-                                BlocklistAIHistoryModel::as_ref(ctx)
-                                    .find_conversation_id_by_server_token(&server_token)
-                            })
-                        } else {
-                            None
-                        }
-                    }
-                    ConversationOrTaskId::ConversationId(conv_id) => Some(*conv_id),
-                };
-
-                let Some(ai_conversation_id) = ai_conversation_id else {
-                    return;
-                };
-
-                // Set the share dialog target and open it
-                self.share_dialog_open_for = Some(*conversation_id);
-                self.sharing_dialog.update(ctx, |dialog, ctx| {
-                    dialog.set_target(
-                        Some(ShareableObject::AIConversation(ai_conversation_id)),
-                        ctx,
-                    );
-                    dialog.report_open(SharingDialogSource::ConversationList, ctx);
-                });
-                ctx.focus(&self.sharing_dialog);
-                ctx.notify();
-            }
             ConversationListViewAction::DeleteFromOverflowMenu { conversation_id } => {
                 let ConversationOrTaskId::ConversationId(ai_conversation_id) = conversation_id
                 else {
-                    // For now, delete is only implemented for non-ambient conversations.
                     return;
                 };
 
@@ -1079,7 +930,6 @@ impl TypedActionView for ConversationListView {
                     return;
                 };
 
-                Self::send_open_telemetry(id, ctx);
                 ctx.dispatch_typed_action(&action);
             }
             ConversationListViewAction::ArrowUp => {
@@ -1205,8 +1055,6 @@ impl View for ConversationListView {
             let overflow_menu_state = self.overflow_menu_state;
             let focused_conversation =
                 ActiveAgentViewsModel::as_ref(app).get_focused_conversation(self.window_id);
-            let sharing_dialog = self.sharing_dialog.clone();
-            let share_dialog_open_for = self.share_dialog_open_for;
             let list_position_id = self.get_position_id();
             let tooltip_opens_right = TabSettings::as_ref(app)
                 .header_toolbar_chip_selection
@@ -1266,8 +1114,6 @@ impl View for ConversationListView {
                                         }
                                         _ => OverflowMenuDisplay::Closed,
                                     };
-                                    let is_share_dialog_open =
-                                        share_dialog_open_for == Some(entry.id);
                                     Some(render_item(
                                         ItemProps {
                                             conversation: &conversation,
@@ -1279,8 +1125,6 @@ impl View for ConversationListView {
                                             overflow_menu: &overflow_menu,
                                             overflow_menu_display,
                                             conversation_id: entry.id,
-                                            sharing_dialog: &sharing_dialog,
-                                            is_share_dialog_open,
                                             list_position_id: &list_position_id,
                                             tooltip_opens_right,
                                         },

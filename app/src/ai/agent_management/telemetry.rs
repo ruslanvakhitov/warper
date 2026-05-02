@@ -7,8 +7,6 @@ use warp_core::telemetry::{EnablementState, TelemetryEvent, TelemetryEventDesc};
 #[derive(Clone, Copy, Debug, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum OpenedFrom {
-    ManagementView,
-    ConversationList,
     DetailsPanel,
 }
 
@@ -22,26 +20,10 @@ pub enum ArtifactType {
     File,
 }
 
-/// Type of filter changed
-#[derive(Clone, Copy, Debug, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum FilterType {
-    Status,
-    Source,
-    CreatedOn,
-    Creator,
-    Owner,
-    Harness,
-}
-
-/// Telemetry events for the agent management view
+/// Telemetry events for agent notification and conversation details surfaces.
 #[derive(Serialize, Debug, EnumDiscriminants)]
 #[strum_discriminants(derive(EnumIter))]
 pub enum AgentManagementTelemetryEvent {
-    /// User toggled the agent management view open or closed
-    ViewToggled { is_open: bool },
-    /// User spawned a new local agent
-    SpawnNewLocalAgent,
     /// User opened a conversation
     ConversationOpened {
         conversation_id: String,
@@ -54,13 +36,6 @@ pub enum AgentManagementTelemetryEvent {
     },
     /// User clicked an artifact button
     ArtifactClicked { artifact_type: ArtifactType },
-    /// User changed a filter
-    FilterChanged { filter_type: FilterType },
-    /// User clicked an item details button
-    DetailsViewed {
-        item_id: String,
-        viewed_from: OpenedFrom,
-    },
     /// User copied a conversation link
     ConversationLinkCopied {
         conversation_id: String,
@@ -95,10 +70,6 @@ impl TelemetryEvent for AgentManagementTelemetryEvent {
 
     fn payload(&self) -> Option<serde_json::Value> {
         match self {
-            AgentManagementTelemetryEvent::ViewToggled { is_open } => {
-                Some(json!({ "is_open": is_open }))
-            }
-            AgentManagementTelemetryEvent::SpawnNewLocalAgent => None,
             AgentManagementTelemetryEvent::ConversationOpened {
                 conversation_id,
                 opened_from,
@@ -116,16 +87,6 @@ impl TelemetryEvent for AgentManagementTelemetryEvent {
             AgentManagementTelemetryEvent::ArtifactClicked { artifact_type } => {
                 Some(json!({ "artifact_type": artifact_type }))
             }
-            AgentManagementTelemetryEvent::FilterChanged { filter_type } => {
-                Some(json!({ "filter_type": filter_type }))
-            }
-            AgentManagementTelemetryEvent::DetailsViewed {
-                item_id,
-                viewed_from,
-            } => Some(json!({
-                "item_id": item_id,
-                "viewed_from": viewed_from,
-            })),
             AgentManagementTelemetryEvent::ConversationLinkCopied {
                 conversation_id,
                 copied_from,
@@ -178,13 +139,9 @@ impl TelemetryEvent for AgentManagementTelemetryEvent {
 impl TelemetryEventDesc for AgentManagementTelemetryEventDiscriminants {
     fn name(&self) -> &'static str {
         match self {
-            Self::ViewToggled => "AgentManagement.ViewToggled",
-            Self::SpawnNewLocalAgent => "AgentManagement.SpawnNewLocalAgent",
             Self::ConversationOpened => "AgentManagement.ConversationOpened",
             Self::CloudRunOpened => "AgentManagement.CloudRunOpened",
             Self::ArtifactClicked => "AgentManagement.ArtifactClicked",
-            Self::FilterChanged => "AgentManagement.FilterChanged",
-            Self::DetailsViewed => "AgentManagement.DetailsViewed",
             Self::ConversationLinkCopied => "AgentManagement.ConversationLinkCopied",
             Self::SessionLinkCopied => "AgentManagement.SessionLinkCopied",
             Self::TombstoneArtifactClicked => "AgentManagement.TombstoneArtifactClicked",
@@ -201,13 +158,9 @@ impl TelemetryEventDesc for AgentManagementTelemetryEventDiscriminants {
 
     fn description(&self) -> &'static str {
         match self {
-            Self::ViewToggled => "User toggled the agent management view open or closed",
-            Self::SpawnNewLocalAgent => "User spawned a new local agent from agent management",
             Self::ConversationOpened => "User opened a conversation",
             Self::CloudRunOpened => "User opened a cloud run",
             Self::ArtifactClicked => "User clicked an artifact button",
-            Self::FilterChanged => "User changed a filter in the management view",
-            Self::DetailsViewed => "User clicked View details",
             Self::ConversationLinkCopied => "User copied a conversation link",
             Self::SessionLinkCopied => "User copied a session link",
             Self::TombstoneArtifactClicked => "User clicked an artifact in the tombstone view",

@@ -13,7 +13,6 @@ use crate::auth::auth_manager::LoginGatedFeature;
 use crate::drive::items::WarpDriveItemId;
 use crate::drive::CloudObjectTypeAndId;
 use crate::palette::PaletteMode;
-use crate::pane_group::PaneGroup;
 use crate::prompt::editor_modal::OpenSource as PromptEditorOpenSource;
 use crate::search;
 use crate::server::ids::SyncId;
@@ -36,7 +35,7 @@ use warpui::accessibility::AccessibilityVerbosity;
 use warpui::geometry::rect::RectF;
 use warpui::geometry::vector::Vector2F;
 use warpui::platform::Cursor;
-use warpui::{EntityId, WeakViewHandle, WindowId};
+use warpui::{EntityId, WindowId};
 
 use super::global_actions::{ForkFromExchange, ForkedConversationDestination};
 use super::tab_settings::{
@@ -319,16 +318,6 @@ pub enum WorkspaceAction {
     #[cfg(target_family = "wasm")]
     OpenLinkOnDesktop(url::Url),
     ReopenClosedSession,
-    OpenShareSessionModal(usize),
-    StopSharingSessionFromTabMenu {
-        terminal_view_id: EntityId,
-    },
-    StopSharingAllSessionsInTab {
-        pane_group: WeakViewHandle<PaneGroup>,
-    },
-    CopySharedSessionLinkFromTab {
-        tab_index: usize,
-    },
     AddWindow,
     AddWindowWithShell {
         shell: AvailableShell,
@@ -543,7 +532,6 @@ pub enum WorkspaceAction {
     ToggleNotificationMailbox {
         select_first: bool,
     },
-    ToggleAgentManagementView,
     /// Show the rewind confirmation dialog before rewinding an AI conversation
     ShowRewindConfirmationDialog {
         ai_block_view_id: EntityId,
@@ -648,7 +636,6 @@ impl From<&WorkspaceAction> for LoginGatedFeature {
             CreateTeamFolder => "Creating a team folder",
             CreateTeamEnvVarCollection => "Creating a team environment variable collection",
             CreateTeamAIPrompt => "Creating a team prompt",
-            OpenShareSessionModal(_) => "Sharing a session",
             _ => "Unknown reason",
         }
     }
@@ -681,10 +668,6 @@ impl WorkspaceAction {
                 | Reauth
                 | SignupAnonymousUser
                 | SignInAnonymousWebUser
-                | OpenShareSessionModal(_)
-                | StopSharingSessionFromTabMenu { .. }
-                | StopSharingAllSessionsInTab { .. }
-                | CopySharedSessionLinkFromTab { .. }
                 | ViewObjectInWarpDrive(_)
                 | OpenObjectSharingSettings { .. }
                 | UndoTrash(_)
@@ -735,7 +718,6 @@ impl WorkspaceAction {
                 | CreateTeamFolder
                 | CreateTeamEnvVarCollection
                 | CreateTeamAIPrompt
-                | OpenShareSessionModal(_)
         )
     }
 
@@ -908,10 +890,6 @@ impl WorkspaceAction {
             | SignupAnonymousUser
             | LogOut
             | OpenLink(_)
-            | OpenShareSessionModal(_)
-            | StopSharingSessionFromTabMenu { .. }
-            | StopSharingAllSessionsInTab { .. }
-            | CopySharedSessionLinkFromTab { .. }
             | ReopenClosedSession
             | FocusLeftPanel
             | FocusRightPanel
@@ -949,7 +927,6 @@ impl WorkspaceAction {
             | OpenGlobalSearch
             | ToggleConversationListView
             | ToggleNotificationMailbox { .. }
-            | ToggleAgentManagementView
             | ToggleAIDocumentPane { .. }
             | HideAIDocumentPanes
             | OpenAIDocumentPane { .. }

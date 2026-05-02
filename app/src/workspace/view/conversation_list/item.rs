@@ -3,7 +3,6 @@ use crate::ai::active_agent_views_model::ConversationOrTaskId;
 use crate::ai::agent_conversations_model::ConversationOrTask;
 use crate::ai::conversation_status_ui::{render_status_element, STATUS_ELEMENT_PADDING};
 use crate::appearance::Appearance;
-use crate::drive::sharing::dialog::SharingDialog;
 use crate::menu::Menu;
 use crate::ui_components::icons::Icon;
 use crate::ui_components::menu_button::{icon_button_with_context_menu, MenuDirection};
@@ -15,11 +14,10 @@ use warp_core::ui::color::coloru_with_opacity;
 use warp_core::ui::theme::color::internal_colors;
 use warp_util::path::user_friendly_path;
 use warpui::elements::{
-    AnchorPair, ChildAnchor, ChildView, ConstrainedBox, Container, CornerRadius,
-    CrossAxisAlignment, DispatchEventResult, Element, EventHandler, Flex, Highlight, Hoverable,
-    MainAxisAlignment, MainAxisSize, MouseInBehavior, MouseStateHandle, OffsetPositioning,
-    OffsetType, ParentAnchor, ParentElement, ParentOffsetBounds, PositionedElementOffsetBounds,
-    PositioningAxis, Radius, SavePosition, Shrinkable, Stack, Text, XAxisAnchor, YAxisAnchor,
+    ChildAnchor, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, DispatchEventResult,
+    Element, EventHandler, Flex, Highlight, Hoverable, MainAxisAlignment, MainAxisSize,
+    MouseInBehavior, MouseStateHandle, OffsetPositioning, ParentAnchor, ParentElement,
+    ParentOffsetBounds, Radius, SavePosition, Shrinkable, Stack, Text,
 };
 use warpui::fonts::{Properties, Weight};
 use warpui::platform::Cursor;
@@ -32,9 +30,6 @@ const MAX_TOOLTIP_LENGTH: usize = 80;
 
 /// Spacing between icon and title
 const ICON_SPACING: f32 = 4.;
-
-/// Offset for the sharing dialog from the item row
-const DIALOG_OFFSET_PIXELS: f32 = -16.;
 
 /// Generate a position ID for a conversation list item
 fn conversation_item_position_id(id: &ConversationOrTaskId) -> String {
@@ -75,8 +70,6 @@ pub struct ItemProps<'a> {
     pub overflow_menu: &'a ViewHandle<Menu<ConversationListViewAction>>,
     pub overflow_menu_display: OverflowMenuDisplay,
     pub conversation_id: ConversationOrTaskId,
-    pub sharing_dialog: &'a ViewHandle<SharingDialog>,
-    pub is_share_dialog_open: bool,
     pub list_position_id: &'a str,
     pub tooltip_opens_right: bool,
 }
@@ -164,8 +157,6 @@ pub fn render_item(props: ItemProps<'_>, app: &AppContext) -> Box<dyn Element> {
         overflow_menu,
         overflow_menu_display,
         conversation_id,
-        sharing_dialog,
-        is_share_dialog_open,
         list_position_id,
         tooltip_opens_right,
     } = props;
@@ -195,18 +186,8 @@ pub fn render_item(props: ItemProps<'_>, app: &AppContext) -> Box<dyn Element> {
     }
 
     let status_element_size = font_size + STATUS_ELEMENT_PADDING * 2.;
-    let icon_element: Box<dyn Element> = if conversation.is_ambient_agent_conversation() {
-        ConstrainedBox::new(
-            Icon::Cloud
-                .to_warpui_icon(theme.sub_text_color(theme.background()))
-                .finish(),
-        )
-        .with_width(status_element_size)
-        .with_height(status_element_size)
-        .finish()
-    } else {
-        render_status_element(&conversation.status(app), font_size, appearance)
-    };
+    let icon_element: Box<dyn Element> =
+        render_status_element(&conversation.status(app), font_size, appearance);
 
     let icon_and_title_row = Shrinkable::new(
         1.0,
@@ -386,43 +367,19 @@ pub fn render_item(props: ItemProps<'_>, app: &AppContext) -> Box<dyn Element> {
         )
         .finish();
 
-    // Wrap in a stack to support the sharing dialog overlay
     let position_id = conversation_item_position_id(&conversation_id);
-    let mut item_stack = Stack::new().with_child(event_handler);
-
-    // Add the sharing dialog as a positioned overlay when open for this item
-    if is_share_dialog_open {
-        // Position the dialog to the right of the item row
-        item_stack.add_positioned_overlay_child(
-            ChildView::new(sharing_dialog).finish(),
-            OffsetPositioning::from_axes(
-                PositioningAxis::relative_to_stack_child(
-                    &position_id,
-                    PositionedElementOffsetBounds::WindowBySize,
-                    OffsetType::Pixel(DIALOG_OFFSET_PIXELS),
-                    AnchorPair::new(XAxisAnchor::Right, XAxisAnchor::Left),
-                ),
-                PositioningAxis::relative_to_stack_child(
-                    &position_id,
-                    PositionedElementOffsetBounds::WindowByPosition,
-                    OffsetType::Pixel(DIALOG_OFFSET_PIXELS),
-                    AnchorPair::new(YAxisAnchor::Middle, YAxisAnchor::Middle),
-                ),
-            ),
-        );
-    }
-
-    SavePosition::new(item_stack.finish(), &position_id).finish()
+    SavePosition::new(
+        Stack::new().with_child(event_handler).finish(),
+        &position_id,
+    )
+    .finish()
 }
 
 /// Returns the secondary label for a conversation list item:
 /// - For local conversations: the working directory.
-/// - For tasks: the source (Linear, Slack, CLI, etc.)
 fn format_item_subtext(conversation: &ConversationOrTask, app: &AppContext) -> Option<String> {
     match conversation {
-        ConversationOrTask::Task(task) => {
-            task.source.as_ref().map(|s| s.display_name().to_string())
-        }
+        ConversationOrTask::Task(_) => None,
         ConversationOrTask::Conversation(metadata) => {
             // If this conversation is active (with an expanded agent view),
             // we use the terminal session's live working directory.

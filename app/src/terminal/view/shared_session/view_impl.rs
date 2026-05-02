@@ -22,13 +22,13 @@ use crate::terminal::shared_session::{
     COPY_LINK_TEXT,
 };
 use crate::terminal::view::{
-    ContextMenuAction, Event, InlineBannerItem, InlineBannerType, RichContentInsertionPosition,
-    SharedSessionBanners, SizeUpdateBuilder, TerminalAction, TerminalView,
+    Event, InlineBannerItem, InlineBannerType, RichContentInsertionPosition, SharedSessionBanners,
+    SizeUpdateBuilder, TerminalAction, TerminalView,
 };
 use crate::terminal::TerminalModel;
 use crate::view_components::{DismissibleToast, ToastFlavor};
 use crate::{
-    menu::{MenuItem, MenuItemFields},
+    menu::MenuItem,
     terminal::shared_session::presence_manager::{Event as PresenceManagerEvent, PresenceManager},
 };
 use crate::{send_telemetry_from_ctx, TelemetryEvent};
@@ -372,25 +372,6 @@ impl TerminalView {
         }
 
         ctx.emit(Event::RoleRequestCancelled(role_request_id.clone()));
-    }
-
-    pub fn open_share_session_modal(
-        &mut self,
-        open_source: SharedSessionActionSource,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        if !matches!(
-            open_source,
-            SharedSessionActionSource::BlocklistContextMenu { .. }
-        ) {
-            let show_accent_border = self
-                .focus_handle()
-                .map(|fh| fh.is_in_split_pane(ctx))
-                .unwrap_or(false);
-            self.set_show_pane_accent_border(show_accent_border, ctx);
-        };
-
-        ctx.emit(Event::OpenShareSessionModal { open_source });
     }
 
     pub fn open_share_session_denied_modal(&mut self, ctx: &mut ViewContext<Self>) {
@@ -1221,28 +1202,6 @@ impl TerminalView {
         }
     }
 
-    pub fn open_shared_session_on_desktop(
-        &mut self,
-        source: SharedSessionActionSource,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        #[cfg(target_family = "wasm")]
-        {
-            let manager = Manager::as_ref(ctx);
-            let Some(session_id) = manager
-                .session_id(&ctx.view_id())
-                .or_else(|| manager.ended_session_id(&ctx.view_id()))
-            else {
-                return;
-            };
-            if let Ok(url) = url::Url::parse(&join_link(&session_id)) {
-                crate::uri::web_intent_parser::open_url_on_desktop(&url);
-            }
-        }
-
-        send_telemetry_from_ctx!(TelemetryEvent::WebSessionOpenedOnDesktop { source }, ctx);
-    }
-
     // Called when viewer receives acknowledgment from server
     // on role request status (in flight, or failed)
     pub fn on_shared_session_viewer_role_request_in_flight(
@@ -1613,45 +1572,10 @@ impl TerminalView {
 
     pub fn session_sharing_context_menu_items(
         &self,
-        model: &TerminalModel,
-        is_share_session_disabled: bool,
+        _model: &TerminalModel,
+        _is_share_session_disabled: bool,
     ) -> Vec<MenuItem<TerminalAction>> {
-        if !ChannelState::is_warp_server_available() {
-            return Vec::new();
-        }
-
-        let mut items = Vec::new();
-
-        if !model.shared_session_status().is_sharer_or_viewer() {
-            items.push(
-                MenuItemFields::new("Share session...")
-                    .with_on_select_action(TerminalAction::ContextMenu(
-                        ContextMenuAction::OpenShareSessionModal,
-                    ))
-                    .with_disabled(is_share_session_disabled)
-                    .into_item(),
-            );
-        } else if model.shared_session_status().is_active_sharer() {
-            items.push(
-                MenuItemFields::new("Stop sharing")
-                    .with_on_select_action(TerminalAction::ContextMenu(
-                        ContextMenuAction::StopSharing,
-                    ))
-                    .into_item(),
-            );
-        }
-
-        if model.shared_session_status().is_sharer_or_viewer() {
-            items.push(
-                MenuItemFields::new("Copy session sharing link")
-                    .with_on_select_action(TerminalAction::CopySharedSessionLink {
-                        source: SharedSessionActionSource::RightClickMenu,
-                    })
-                    .into_item(),
-            );
-        }
-
-        items
+        Vec::new()
     }
 
     /// Resizes the terminal from when the sharer updates size.

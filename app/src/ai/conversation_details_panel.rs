@@ -396,45 +396,6 @@ impl ConversationDetailsData {
             harness: None,
         }
     }
-
-    #[allow(clippy::too_many_arguments)]
-    /// Used to populate the details panel from the management view, where we don't always have access
-    /// to the full `AIConversation`.
-    pub fn from_conversation_metadata(
-        ai_conversation_id: AIConversationId,
-        title: String,
-        creator_name: Option<String>,
-        created_at: DateTime<Local>,
-        directory: Option<String>,
-        credits_used: Option<f32>,
-        conversation_id: Option<String>,
-        artifacts: Vec<Artifact>,
-        open_action: Option<WorkspaceAction>,
-        status: Option<ConversationStatus>,
-        initial_query: Option<String>,
-        copy_link_url: Option<String>,
-        harness: Option<Harness>,
-    ) -> Self {
-        ConversationDetailsData {
-            mode: PanelMode::Conversation {
-                directory,
-                server_conversation_id: conversation_id,
-                ai_conversation_id: Some(ai_conversation_id),
-                status,
-            },
-            title,
-            creator: creator_name.map(|name| CreatorInfo::new(name, None)),
-            created_at: Some(created_at),
-            credits: credits_used.map(CreditsInfo::LocalConversation),
-            run_time: None,
-            open_action,
-            artifacts,
-            source_prompt: initial_query,
-            copy_link_url,
-            skill_spec: None,
-            harness,
-        }
-    }
 }
 
 /// Events emitted by the ConversationDetailsPanel.
@@ -765,10 +726,6 @@ impl ConversationDetailsPanel {
                     initial_prompt: None,
                     destination: ForkedConversationDestination::NewTab,
                 });
-            }
-            AgentDetailsButtonEvent::ViewDetails { .. } => {
-                // ViewDetails not shown in the details panel because we're already viewing it,
-                // only in management view cards
             }
             AgentDetailsButtonEvent::CopyLink { link } => {
                 match &self.data.mode {

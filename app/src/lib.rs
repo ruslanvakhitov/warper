@@ -305,8 +305,8 @@ pub enum LaunchMode {
     /// Run the regular GUI application.
     App {
         args: warp_cli::AppArgs,
-        /// API key for server authentication, if provided via `--api-key` or `WARP_API_KEY`.
-        /// Only used on dogfood channels.
+        /// API key provided via `--api-key` or `WARP_API_KEY`.
+        /// Retained only for non-Warper compatibility paths.
         api_key: Option<String>,
     },
 
@@ -2222,8 +2222,6 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::RevertToCheckpoints,
         #[cfg(feature = "rewind_slash_command")]
         FeatureFlag::RewindSlashCommand,
-        #[cfg(feature = "agent_management_view")]
-        FeatureFlag::AgentManagementView,
         #[cfg(feature = "agent_management_details_view")]
         FeatureFlag::AgentManagementDetailsView,
         #[cfg(feature = "agent_view")]
@@ -2367,7 +2365,6 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
             FeatureFlag::APIKeyAuthentication,
             FeatureFlag::APIKeyManagement,
             FeatureFlag::AgentManagementDetailsView,
-            FeatureFlag::AgentManagementView,
             FeatureFlag::AgentSharedSessions,
             FeatureFlag::AmbientAgentsCommandLine,
             FeatureFlag::AmbientAgentsImageUpload,
