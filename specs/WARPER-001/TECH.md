@@ -58,6 +58,8 @@ Companion to `PRODUCT.md` in this directory; refer there for user-visible behavi
 ### 6. Add guardrails
 
 - Add static denylist checks for removed endpoint literals and service names in app/runtime crates: `app.warp.dev`, `rtc.app.warp.dev`, `sessions.app.warp.dev`, `oz.warp.dev`, Firebase auth API keys/domains, RudderStack hosts, Sentry DSNs, and hosted update URLs.
+- Keep static denylist scopes focused on runtime surfaces and removed user entrypoints while excluding specs, scripts, test files, generated schema/generated files, and OpenRouter implementation files. OpenRouter remains out of scope for WARPER-001.
+- Include stale restore/deeplink guardrails for pane-group and URI roots that could resurrect anonymous signup, Warp Drive object panes, shared-session state, billing/team/platform/settings deeplinks, or hosted agent panes.
 - Add startup tests that run with hosted configs absent and fail on parse attempts, retries, or background tasks for removed services.
 - Add an offline smoke path that launches the app or a minimal app harness with outbound networking blocked or intercepted and verifies local terminal creation still succeeds.
 - Add UI absence tests for account, billing, Drive, sharing, team, Oz/cloud agent, hosted update, and telemetry upload entrypoints.
@@ -70,7 +72,7 @@ Companion to `PRODUCT.md` in this directory; refer there for user-visible behavi
 - Product invariants 12, 13: add static and runtime checks proving telemetry upload and Sentry initialization are absent while local logs/crash files, if retained, do not contain upload destinations or background send tasks.
 - Product invariant 15: add tests around feature flag and experiment initialization to prove server-backed experiment state is not loaded or fetched, and retained flags are local-only.
 - Product invariant 17: create migration tests with persisted auth/cloud/team/billing/sharing/update state from the old schema and verify app startup ignores or removes it locally without network access.
-- Product invariant 20: include the denylist and offline smoke in the presubmit/toolchain path so regressions are caught without private credentials or hosted service availability.
+- Product invariant 20: include the denylist and offline smoke in the presubmit/toolchain path so regressions are caught without private credentials or hosted service availability. The local smoke must print the exact validations it performs and the explicit gaps it does not cover: no macOS `.app` launch, no OS-level outbound network block, no live UI terminal/pane/settings exercise, no private credentials, no hosted Warp/Oz availability, and no OpenRouter behavior validation.
 - Before implementation PR: run `./script/presubmit` plus the new offline smoke and static denylist checks.
 
 ## Risks and mitigations

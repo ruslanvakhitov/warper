@@ -129,18 +129,15 @@ impl Args {
             } else {
                 use clap::FromArgMatches as _;
 
-                // Check for disabled commands before parsing to prevent help from showing.
-                if !FeatureFlag::WarpManagedSecrets.is_enabled() {
-                    let args: Vec<String> = env::args().collect();
-                    if args.len() > 1 && args[1] == "secret" {
-                        eprintln!("error: unrecognized subcommand 'secret'\n");
-                        eprintln!("For more information, try '--help'");
-                        std::process::exit(2);
-                    }
+                // Warp-managed secrets are hosted infrastructure and are not part of Warper.
+                let args: Vec<String> = env::args().collect();
+                if args.len() > 1 && args[1] == "secret" {
+                    eprintln!("error: unrecognized subcommand 'secret'\n");
+                    eprintln!("For more information, try '--help'");
+                    std::process::exit(2);
                 }
 
                 if !FeatureFlag::ArtifactCommand.is_enabled() {
-                    let args: Vec<String> = env::args().collect();
                     if args.len() > 1 && args[1] == "artifact" {
                         eprintln!("error: unrecognized subcommand 'artifact'\n");
                         eprintln!("For more information, try '--help'");
@@ -169,10 +166,8 @@ impl Args {
     pub fn clap_command() -> clap::Command {
         let mut command = <Args as CommandFactory>::command();
 
-        // Hide the secret subcommand from help text.
-        if !FeatureFlag::WarpManagedSecrets.is_enabled() {
-            command = command.mut_subcommand("secret", |c| c.hide(true));
-        }
+        // Hide hosted Warp-managed secrets from help text.
+        command = command.mut_subcommand("secret", |c| c.hide(true));
 
         // Hide the artifact subcommand from help text.
         if !FeatureFlag::ArtifactCommand.is_enabled() {

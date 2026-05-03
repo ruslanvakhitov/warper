@@ -8,8 +8,26 @@ case "${1:-}" in
         cat <<'USAGE'
 Usage: script/warper_offline_local_smoke
 
-Runs the WARPER-001 startup-scope denylist and focused warp_core channel tests
-that verify the default Warper local config has no hosted service credentials.
+Runs deterministic, credential-free WARPER-001 local-only guardrails.
+
+Validates:
+  - startup/channel denylist checks for hosted Warp/Oz/Firebase endpoints
+  - hosted UI/action/deeplink/menu entrypoint vocabulary denylist checks
+  - telemetry, crash reporting, autoupdate, and Sentry upload/download denylist checks
+  - app/src and crates runtime endpoint literal checks outside tests/generated schema
+  - focused warp_core channel tests for absent hosted service configs
+  - Warper OSS runtime build check
+
+Does not validate:
+  - launching the macOS .app
+  - enforcing an OS-level outbound network block
+  - manual terminal creation, pane splitting, or settings edits in a live UI
+  - app crate `#[cfg(test)]` modules for amputated hosted features
+  - private credentials, hosted Warp/Oz service availability, or OpenRouter behavior
+
+Use this as the local harness that can run in presubmit-like environments
+without private credentials; pair it with a manual blocked-network .app launch
+before release.
 USAGE
         exit 0
         ;;
@@ -22,8 +40,39 @@ USAGE
         ;;
 esac
 
-./script/check_warper_static_denylist
+echo "WARPER-001 offline local smoke"
+echo
+echo "Validates:"
+echo "  - startup/channel hosted endpoint denylist"
+echo "  - UI/action/deeplink/menu hosted entrypoint denylist"
+echo "  - telemetry/crash/autoupdate/Sentry upload and download denylist"
+echo "  - runtime endpoint literals in app/src and crates outside tests/generated schema"
+echo "  - warp_core absent hosted service config tests"
+echo "  - Warper OSS runtime build check"
+echo
+echo "Does not validate:"
+echo "  - macOS .app launch"
+echo "  - OS-level outbound network blocking"
+echo "  - live UI terminal creation, pane splitting, or settings edits"
+echo "  - app crate #[cfg(test)] modules for amputated hosted features"
+echo "  - private credentials, hosted Warp/Oz availability, or OpenRouter behavior"
+echo
 
+echo "Running static denylist: startup"
+./script/check_warper_static_denylist
+echo "Running static denylist: entrypoints"
+./script/check_warper_static_denylist entrypoints
+echo "Running static denylist: telemetry-crash-update"
+./script/check_warper_static_denylist telemetry-crash-update
+echo "Running static denylist: all-runtime"
+./script/check_warper_static_denylist all-runtime
+
+echo "Running focused warp_core channel tests"
 cargo test \
     -p warp_core \
     channel::state::tests
+
+echo "Running Warper OSS runtime build check"
+cargo check \
+    -p warp \
+    --bin warp-oss

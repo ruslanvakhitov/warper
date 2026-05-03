@@ -10,6 +10,47 @@ fi
 
 scope="${1:-startup}"
 
+endpoint_denylist='(app\.warp\.dev|rtc\.app\.warp\.dev|sessions\.app\.warp\.dev|oz\.warp\.dev|AIza[0-9A-Za-z_-]+|identitytoolkit\.googleapis\.com|securetoken\.googleapis\.com|firebaseapp\.com|rudderstack\.com|rudderlabs|api\.segment\.io|dataplane\.rudderstack|sentry\.io|releases\.warp\.dev|warp-releases|channel_versions\.json|warp\.dev/download)'
+
+common_excluded_globs=(
+    --glob '!specs/**'
+    --glob '!script/**'
+    --glob '!**/*_test.rs'
+    --glob '!**/*_tests.rs'
+    --glob '!**/mod_test.rs'
+    --glob '!**/lib_tests.rs'
+    --glob '!**/tests/**'
+    --glob '!crates/warp_graphql_schema/**'
+    --glob '!**/generated/**'
+    --glob '!**/generated_schema/**'
+    --glob '!app/src/ai/agent/api/openrouter.rs'
+)
+
+run_denylist() {
+    local label="$1"
+    local denylist="$2"
+    shift 2
+
+    local matches
+    matches="$(
+        rg \
+            --line-number \
+            --no-heading \
+            --color never \
+            "${common_excluded_globs[@]}" \
+            "$@" \
+            -e "$denylist" || true
+    )"
+
+    if [[ -n "$matches" ]]; then
+        echo "WARPER-001 static denylist failed for scope '$scope' ($label)."
+        echo "Remove hosted Warp/Oz/account/billing/Drive/team/sharing/agent/telemetry/update entrypoints from runtime code."
+        echo
+        echo "$matches"
+        exit 1
+    fi
+}
+
 case "$scope" in
     startup)
         targets=(
@@ -21,29 +62,44 @@ case "$scope" in
         )
         excluded_globs=()
         ;;
+    entrypoints)
+        ;;
     all-runtime)
         targets=(
             "app/src"
             "crates"
         )
-        excluded_globs=(
-            --glob '!**/*_test.rs'
-            --glob '!**/*_tests.rs'
-            --glob '!**/mod_test.rs'
-            --glob '!**/lib_tests.rs'
-        )
+        excluded_globs=()
         ;;
     -h|--help)
         cat <<'USAGE'
-Usage: script/check_warper_static_denylist [startup|all-runtime]
+Usage: script/check_warper_static_denylist [startup|entrypoints|telemetry-crash-update|all-runtime]
 
-Checks WARPER-001 local-only surfaces for removed hosted endpoint literals.
+Checks WARPER-001 local-only guardrails for removed hosted endpoint literals
+and high-risk UI/action entrypoint roots. OpenRouter files are not scanned by
+the entrypoint symbol checks because OpenRouter is explicitly out of scope for
+WARPER-001 amputation.
+
+All modes exclude specs, scripts, tests, generated schema, generated files, and
+OpenRouter implementation files from the scanned runtime surface.
 
 Modes:
-  startup      Check the local startup/channel/config surfaces used by Warper.
-  all-runtime  Check app/src and crates, excluding explicitly scoped test files.
+  startup                 Check the local startup/channel/config surfaces used by Warper.
+  entrypoints             Check removed UI/action/deeplink/menu roots for hosted surfaces.
+  telemetry-crash-update  Check telemetry, crash reporting, autoupdate, and Sentry build hooks.
+  all-runtime             Check app/src and crates, excluding explicitly scoped test files.
 USAGE
         exit 0
+        ;;
+    telemetry-crash-update|worker-d)
+        targets=(
+            "app/src/server/telemetry"
+            "app/src/crash_reporting"
+            "app/src/autoupdate"
+            "app/src/appearance.rs"
+            "app/build.rs"
+        )
+        excluded_globs=()
         ;;
     *)
         echo "Unknown scope: $scope"
@@ -52,25 +108,56 @@ USAGE
         ;;
 esac
 
-denylist='(app\.warp\.dev|rtc\.app\.warp\.dev|sessions\.app\.warp\.dev|oz\.warp\.dev|AIza[0-9A-Za-z_-]+|identitytoolkit\.googleapis\.com|securetoken\.googleapis\.com|firebaseapp\.com|rudderstack\.com|rudderlabs|sentry\.io|releases\.warp\.dev|warp-releases|channel_versions\.json|warp\.dev/download)'
+if [[ "$scope" == "entrypoints" ]]; then
+    run_denylist \
+        "workspace hosted actions" \
+        '\b(LogOut|Reauth|SignupAnonymousUser|SignInAnonymousWebUser|ExportAllWarpDriveObjects|ImportToTeamDrive|ToggleWarpDrive|OpenWarpDrive|AttemptLoginGatedAIUpgrade|OpenBillingAndUsagePage|OpenBillingPortal|OpenTeamSettingsPage|JoinSharedSession|StartSharedSession|OpenShareSessionModal)\b' \
+        app/src/workspace/action.rs \
+        app/src/workspace/global_actions.rs \
+        app/src/app_menus.rs
 
-matches="$(
-    rg \
-        --line-number \
-        --no-heading \
-        --color never \
-        --glob '!script/check_warper_static_denylist' \
-        ${excluded_globs[@]+"${excluded_globs[@]}"} \
-        -e "$denylist" \
-        "${targets[@]}" || true
-)"
+    run_denylist \
+        "settings hosted pages and labels" \
+        '(billing_and_usage|warp_drive_page|teams_page|referrals_page|platform_page|telemetry\.rs|Billing and Usage|Warp Drive as agent context|Auto-sync plans to Warp Drive|Team settings|Computer use in Cloud Agents|CloudAgentComputerUseWidget|ToggleCloudAgentComputerUse|ToggleWarpDriveContext|SignupAnonymousUser|OpenBillingPortal)' \
+        app/src/settings \
+        app/src/settings_view
 
-if [[ -n "$matches" ]]; then
-    echo "WARPER-001 static denylist failed for scope '$scope'."
-    echo "Remove hosted Warp/Oz/Firebase/RudderStack/Sentry/update endpoint literals from runtime code."
-    echo
-    echo "$matches"
-    exit 1
+    run_denylist \
+        "command/search/menu hosted labels" \
+        '(Share session|Stop sharing|Shared session|Warp Drive|Billing|Pricing|Quota|team drive|Team Drive|Open in Oz|Cloud Agent|cloud-agent|create-environment|remote-control)' \
+        app/src/search \
+        app/src/terminal/input \
+        app/src/pane_group/pane/view/header
+
+    run_denylist \
+        "restore/deeplink hosted roots" \
+        '(SharedSession|shared_session|AmbientAgentPaneSnapshot|CloudMode|CloudConversationData::Oz|OpenWarpDriveObjectSettings|SignupAnonymousUser|OpenWarpDriveObjectInPane)' \
+        app/src/app_state.rs \
+        app/src/tab.rs \
+        app/src/pane_group/mod.rs \
+        app/src/pane_group/pane \
+        app/src/terminal/view/action.rs
+
+    run_denylist \
+        "deeplink hosted dispatches" \
+        '(root_view:open_(team|billing|platform|environment|warp_drive|shared|auth)|WorkspaceAction::(OpenWarpDrive|ToggleWarpDrive|ImportToTeamDrive|ExportAllWarpDriveObjects|SignupAnonymousUser|Reauth|LogOut)|://(auth|team|conversation|drive|shared_session)/|settings/(billing_and_usage|teams|environments|platform))' \
+        app/src/uri
+
+    echo "WARPER-001 static denylist passed for scope '$scope'."
+    exit 0
 fi
+
+denylist="$endpoint_denylist"
+
+if [[ "$scope" == "telemetry-crash-update" || "$scope" == "worker-d" ]]; then
+    denylist="(${denylist#(}"
+    denylist="${denylist%)}|sentry::init|sentry::capture_message|startSentry|stopSentry|crashSentry|recordBreadcrumb|setUser\(|Sentry\.framework|Sentry\.xcframework|Sentry-Dynamic|update_sentry_cocoa|warp_sentry_objc)"
+fi
+
+run_denylist \
+    "hosted endpoint literals" \
+    "$denylist" \
+    ${excluded_globs[@]+"${excluded_globs[@]}"} \
+    "${targets[@]}"
 
 echo "WARPER-001 static denylist passed for scope '$scope'."

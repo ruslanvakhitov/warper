@@ -6,7 +6,6 @@ publish.workspace = true
 license.workspace = true
 
 [features]
-crash_reporting = ["dep:sentry", "dep:sentry-log"]
 integration_tests = []
 local_fs = []
 release_bundle = []
@@ -33,8 +32,6 @@ serde.workspace = true
 settings.workspace = true
 serde_json.workspace = true
 serde_with.workspace = true
-sentry = { workspace = true, optional = true }
-sentry-log = { workspace = true, optional = true }
 strum.workspace = true
 sysinfo.workspace = true
 thiserror.workspace = true
