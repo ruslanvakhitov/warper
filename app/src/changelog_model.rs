@@ -65,13 +65,7 @@ impl ChangelogModel {
     ) {
         match changelog {
             Ok(Some(changelog)) => {
-                if FeatureFlag::OzChangelogUpdates.is_enabled() {
-                    self.oz_updates = changelog
-                        .oz_updates
-                        .iter()
-                        .filter_map(|update_markdown| parse_markdown(update_markdown).ok())
-                        .collect();
-                }
+                self.oz_updates.clear();
                 self.changelog = ChangelogState::Some(changelog.clone());
                 self.maybe_add_changelog_sections();
                 self.parse_changelog_markdown();

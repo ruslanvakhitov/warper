@@ -3,6 +3,8 @@ use warpui::{AppContext, ModelContext};
 
 #[cfg(test)]
 use crate::auth::AuthStateProvider;
+#[cfg(test)]
+use warpui::SingletonEntity;
 
 #[cfg(test)]
 pub struct AppTelemetryContextProvider {}

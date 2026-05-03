@@ -1,30 +1,25 @@
-//! Representation of Warp user credentials.
+//! Passive representation of legacy Warp credential shapes.
 //!
-//! The primary representation is [`Credentials`], which is the source of truth for how a user is
-//! authenticated to Warp.
-//!
-//! Credentials can be split into two halves:
-//! * [`LoginToken`], which is a long-lived token that we use to fetch user information.
-//!   When using Firebase, this is an OAuth2 refresh token.
-//! * [`AuthToken`], which is a short-lived token that's included in all other server requests.
-//!   When using Firebase, this is an OAuth2 access token.
-use anyhow::{bail, Result};
+//! Warper does not launch hosted Warp auth flows, exchange Firebase tokens, or
+//! restore persisted credentials. These enums remain only so retained dead
+//! server-shaped modules and tests can compile while the runtime graph stays
+//! local-only.
 use warp_graphql::object_permissions::OwnerType;
 
 use super::user::FirebaseAuthTokens;
 
-/// Represents the different ways a user can authenticate with Warp.
+/// Legacy credential variants retained as passive data.
 #[derive(Clone, Debug)]
 pub enum Credentials {
-    /// Firebase authentication with ID token and refresh token.
+    /// Legacy Firebase authentication with ID token and refresh token.
     Firebase(FirebaseAuthTokens),
-    /// API key for legacy non-Warper authentication paths.
+    /// Legacy Warp API key authentication.
     ApiKey {
         key: String,
-        /// The owner type for this API key. Only set after user info is fetched from the server.
+        /// The owner type for this API key.
         owner_type: Option<OwnerType>,
     },
-    /// Authentication derived from an ambient browser session cookie.
+    /// Legacy browser session-cookie authentication.
     SessionCookie,
     /// Test credentials used in unit tests, integration tests, and skip_login builds.
     #[cfg(any(test, feature = "integration_tests", feature = "skip_login"))]
@@ -137,60 +132,20 @@ impl AuthToken {
     }
 }
 
-/// Long-lived credentials exchanged for user information.
+/// Legacy long-lived credential shapes. Warper does not exchange them.
 #[derive(Debug)]
 pub enum LoginToken {
-    /// A Firebase token to be exchanged for auth tokens.
     Firebase(FirebaseToken),
-    /// An API key for legacy non-Warper authentication paths.
     ApiKey(String),
-    /// Authentication derived from an ambient browser session cookie.
     SessionCookie,
 }
 
-/// The type of firebase token that can be used to authenticate a user.
-/// For logged in users and anonymous users, we use a refresh token.
-/// We use a short-lived custom token when we first create and fetch a new anonymous user.
-/// In both cases the token can be exchanged for a short lived access token.
+/// Legacy Firebase token shape retained as passive data. Warper does not
+/// exchange these tokens or construct Firebase/proxy requests.
 #[derive(Debug)]
 pub enum FirebaseToken {
-    /// The token type for a logged in user.
     Refresh(RefreshToken),
-
-    /// The token type for an anonymous user.
     Custom(String),
-}
-
-impl FirebaseToken {
-    /// Returns the url for trading this long lived token into an access token.
-    pub fn access_token_url(&self, _api_key: &str) -> Result<String> {
-        bail!("Firebase token exchange is unavailable in Warper")
-    }
-
-    /// Returns the POST body for to include when trading this long lived token into an access token.
-    pub fn access_token_request_body(&self) -> Vec<(&str, &str)> {
-        match self {
-            FirebaseToken::Refresh(refresh_token) => vec![
-                ("grant_type", "refresh_token"),
-                ("refresh_token", refresh_token.get()),
-            ],
-            FirebaseToken::Custom(custom_token) => {
-                vec![("returnSecureToken", "true"), ("token", custom_token)]
-            }
-        }
-    }
-
-    /// Returns the proxy URL for trading this long lived token into an access token.
-    /// Used when the initial request to Firebase fails and we want to try and proxy the request
-    /// through our server.
-    pub fn proxy_url(&self, server_root: &str, api_key: &str) -> String {
-        match self {
-            FirebaseToken::Refresh(_) => format!("{server_root}/proxy/token?key={api_key}"),
-            FirebaseToken::Custom(_) => {
-                format!("{server_root}/proxy/customToken?key={api_key}")
-            }
-        }
-    }
 }
 
 #[derive(Debug, Clone)]

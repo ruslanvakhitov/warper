@@ -12,7 +12,7 @@ pub fn memory_footprint_bytes() -> u64 {
 /// current process's memory usage.
 ///
 /// Each platform populates whichever fields it can natively provide.  The
-/// returned value is an opaque JSON blob suitable for attaching to Sentry
+/// returned value is an opaque JSON blob suitable for local diagnostics
 /// events and telemetry payloads.
 pub fn memory_breakdown() -> serde_json::Value {
     platform::memory_breakdown()

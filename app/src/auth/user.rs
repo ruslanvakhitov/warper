@@ -18,7 +18,7 @@ pub enum AnonymousUserType {
     WebClientAnonymousUser,
 }
 
-/// Type of principal making the authenticated request.
+/// Legacy principal type retained as passive metadata.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum PrincipalType {
     #[default]
@@ -76,41 +76,37 @@ impl TryFrom<warp_graphql::queries::get_user::AnonymousUserPersonalObjectLimits>
     }
 }
 
-/// The in-memory representation of a logged-in User.
-/// This does not include authentication credentials, which are stored separately
-/// in the `Credentials` enum.
+/// Passive metadata for a legacy Warp user. Warper does not populate this at
+/// startup from hosted auth; it remains for retained local/dead modules that
+/// still carry user-shaped data.
 #[derive(Debug, Clone)]
 pub struct User {
-    /// The Firebase UID of this user.
+    /// Legacy hosted user id.
     pub local_id: UserUid,
     /// Metadata about the user.
     pub metadata: UserMetadata,
     /// Whether or not the user is onboarded.
     pub is_onboarded: bool,
-    /// Whether or not the user needs to link their account via SSO due to an organization setting.
+    /// Legacy SSO-link flag. Warper does not surface SSO UI.
     pub needs_sso_link: bool,
-    /// What type of anonymous user this user is. May be `None` if they are not anonymous.
+    /// Legacy anonymous-account type.
     pub anonymous_user_type: Option<AnonymousUserType>,
     /// Whether or not this user is on what we consider a "work" domain, meaning the domain isn't
     /// from a general email provider (e.g. gmail.com, hotmail.com, proton.me, etc.).
-    /// Calculated on warp-server.
+    /// Legacy server-calculated value.
     pub is_on_work_domain: bool,
     pub linked_at: Option<ServerTimestamp>,
     pub personal_object_limits: Option<PersonalObjectLimits>,
-    /// Type of principal (user or service account). Fetched fresh from the server
-    /// on each login/refresh.
+    /// Legacy principal type.
     pub principal_type: PrincipalType,
 }
 
-/// This struct holds extra information about the user. Most of this information comes directly
-/// from Firebase.
+/// Passive profile metadata retained from legacy user-shaped data.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct UserMetadata {
-    /// The user's email. NOTE: unlike other fields which use `Option`s to denote null values,
-    /// an anonymous user will have an empty string as their email here.
+    /// Email from legacy profile data.
     pub email: String,
-    /// The user's display name from Firebase. We should prefer showing this over their email, if
-    /// we can. Typically this is only populated when using a non-email provider like GitHub.
+    /// Display name from legacy profile data.
     pub display_name: Option<String>,
     /// A URL for their profile picture.
     pub photo_url: Option<String>,
@@ -118,18 +114,11 @@ pub struct UserMetadata {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FirebaseAuthTokens {
-    /// ID tokens are Firebase tokens, which are short-lived tokens that are used to authenticate
-    /// requests to the server. These are obtained by exchanging long-lived refresh tokens.
+    /// Legacy short-lived token value. Warper does not exchange or refresh it.
     pub id_token: String,
-    /// Refresh tokens are long-lived tokens that can be exchanged for short-lived access tokens
-    /// (stored in the id_token field). We use the refresh token to get a new ID token when the
-    /// current one expires.
-    /// Note that there are two types of refresh tokens we store in this field:
-    /// "Refresh tokens": these are used for logged-in users.
-    /// "Custom tokens": these are used for anonymous firebase users.
+    /// Legacy long-lived token value retained only as passive data.
     pub refresh_token: String,
-    /// When the ID token expires. If the token has expired, or will expire soon, we should
-    /// fetch a new ID token using the user's refresh token.
+    /// Legacy expiration timestamp.
     pub expiration_time: DateTime<FixedOffset>,
 }
 
@@ -210,7 +199,3 @@ impl From<FirebaseProfile> for UserMetadata {
         }
     }
 }
-
-#[cfg(test)]
-#[path = "user_test.rs"]
-mod tests;

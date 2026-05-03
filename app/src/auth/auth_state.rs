@@ -10,6 +10,7 @@ use uuid::Uuid;
 use warp_core::channel::{Channel, ChannelState};
 use warp_graphql::object_permissions::OwnerType;
 use warpui::{AppContext, Entity, SingletonEntity};
+use warpui_extras::secure_storage::AppContextExt;
 
 use crate::{
     cloud_object::{GenericStringObjectFormat, JsonObjectType, ObjectType},
@@ -18,35 +19,27 @@ use crate::{
 
 use super::{
     anonymous_id::get_or_create_anonymous_id,
-    auth_manager::user_persistence::PersistedUser,
     credentials::Credentials,
     user::{AnonymousUserType, FirebaseAuthTokens, PersonalObjectLimits, PrincipalType, User},
     UserUid,
 };
 
 const ANONYMOUS_USER_NOTIFICATION_BLOCK_TIMER: Duration = Duration::days(7);
+const LEGACY_USER_STORAGE_KEY: &str = "User";
 
-/// Describes what persistence action to take based on the current auth state.
-pub(super) enum PersistAction {
-    /// The user has Firebase credentials and should be persisted to secure storage.
-    Persist(Box<PersistedUser>),
-    /// The user has been logged out and should be removed from secure storage.
-    Remove,
-    /// No persistence action is needed (e.g. API key or test credentials).
-    DoNothing,
-}
-
-/// AuthState holds information about the currently-logged in user.
-/// If you need to access AuthState, you can use the AuthStateProvider singleton model.
+/// AuthState is local-only in Warper. It may expose passive user metadata to
+/// retained local code, but startup never restores, refreshes, or creates
+/// Warp-hosted credentials.
 pub struct AuthState {
     /// The currently logged-in User. None if the user isn't logged in currently.
     user: RwLock<Option<User>>,
 
-    /// An anonymous UUID. Can be used to consistently identify an anonymous user who is not logged in.
+    /// Local UUID used where retained local code needs a stable process/user
+    /// identifier without account state.
     anonymous_id: Uuid,
 
-    /// State that indicates whether the current user's refresh token has been
-    /// invalidated, meaning a reauth is required.
+    /// Legacy compatibility bit. Warper never sets this from a hosted refresh
+    /// failure or shows a reauth surface.
     needs_reauth: AtomicBool,
 
     /// The current authentication credentials.
@@ -86,9 +79,12 @@ impl AuthState {
             return state;
         }
 
-        let _ = PersistedUser::remove_from_secure_storage(ctx).map_err(|err| {
-            log::info!("Unable to clear persisted Warp auth state: {err:?}");
-        });
+        let _ = ctx
+            .secure_storage()
+            .remove_value(LEGACY_USER_STORAGE_KEY)
+            .map_err(|err| {
+                log::info!("Unable to clear persisted Warp auth state: {err:?}");
+            });
 
         state
     }
@@ -97,48 +93,7 @@ impl AuthState {
         cfg!(any(test, feature = "skip_login")) || ChannelState::channel() == Channel::Integration
     }
 
-    /// Determines the appropriate persistence action based on the current auth state.
-    pub(super) fn persist_action(&self) -> PersistAction {
-        let user = self.user.read().clone();
-        let credentials = self.credentials.read().clone();
-
-        match (user, credentials) {
-            (Some(user), Some(Credentials::Firebase(firebase_tokens))) => {
-                let anonymous_user_type = user.anonymous_user_type();
-                let linked_at = user.linked_at();
-                let personal_object_limits = user.personal_object_limits();
-
-                #[allow(deprecated)]
-                let persisted = PersistedUser {
-                    auth_tokens: firebase_tokens,
-                    refresh_token: String::new(),
-                    local_id: user.local_id,
-                    metadata: user.metadata,
-                    is_onboarded: user.is_onboarded,
-                    needs_sso_link: user.needs_sso_link,
-                    anonymous_user_type,
-                    linked_at,
-                    personal_object_limits,
-                    is_on_work_domain: user.is_on_work_domain,
-                };
-                PersistAction::Persist(Box::new(persisted))
-            }
-            // Remove persisted auth state if it is unset in-memory.
-            (None, None) => PersistAction::Remove,
-            // Do not persist if using API keys, session cookies, or test credentials.
-            (Some(_), Some(Credentials::ApiKey { .. })) => PersistAction::DoNothing,
-            (Some(_), Some(Credentials::SessionCookie)) => PersistAction::DoNothing,
-            #[cfg(any(test, feature = "integration_tests", feature = "skip_login"))]
-            (Some(_), Some(Credentials::Test)) => PersistAction::DoNothing,
-            // Credentials without a user, or user without credentials - transient states
-            // during initialization or refresh; no persistence action needed.
-            (None, Some(_)) | (Some(_), None) => PersistAction::DoNothing,
-        }
-    }
-
-    /// Sets the user. This should only be called by the AuthManager, to ensure
-    /// side-effects are handled properly (e.g. notifying other models, persisting
-    /// the user to secure storage, etc.).
+    /// Sets passive user metadata for tests or retained local compatibility.
     pub(super) fn set_user(&self, user: Option<User>) {
         *self.user.write() = user;
     }
@@ -148,7 +103,7 @@ impl AuthState {
         self.credentials.read().clone()
     }
 
-    /// Sets the credentials. Should only be called within the auth module.
+    /// Sets passive credentials for tests or retained local compatibility.
     pub(super) fn set_credentials(&self, credentials: Option<Credentials>) {
         *self.credentials.write() = credentials;
     }
@@ -230,9 +185,8 @@ impl AuthState {
         })
     }
 
-    /// Returns whether or not the user is anonymous.
-    /// Anonymous users are real Warp users, but have no providers linked in Firebase.
-    /// Returns `None` if there is no user data.
+    /// Returns whether retained passive metadata describes a legacy anonymous
+    /// account. Returns `None` when no metadata is installed.
     pub fn is_user_anonymous(&self) -> Option<bool> {
         self.user
             .read()
@@ -240,8 +194,8 @@ impl AuthState {
             .map(|user| user.is_user_anonymous())
     }
 
-    /// Returns whether or not the user is a "web client anonymous user", aka their account
-    /// originated from viewing Warp on web.
+    /// Returns whether retained passive metadata came from a legacy web-client
+    /// anonymous account.
     pub fn is_user_web_anonymous_user(&self) -> Option<bool> {
         self.user.read().as_ref().map(|user| {
             user.anonymous_user_type() == Some(AnonymousUserType::WebClientAnonymousUser)
@@ -263,7 +217,9 @@ impl AuthState {
         })
     }
 
-    /// Returns whether or not the anonymous user is past any of their Warp Drive object limits.
+    /// Legacy object-limit helper for dead cloud-object code. Local Warper
+    /// startup installs no anonymous account metadata, so this normally returns
+    /// `None`.
     pub fn is_anonymous_user_past_object_limit(
         &self,
         object_type: ObjectType,
@@ -289,8 +245,7 @@ impl AuthState {
         })
     }
 
-    /// Returns the user's photo URL from Firebase,
-    /// typically acquired from linking a provider like Google/GitHub.
+    /// Returns a retained passive profile-photo URL, if present.
     pub fn user_photo_url(&self) -> Option<String> {
         self.user
             .read()
@@ -298,15 +253,13 @@ impl AuthState {
             .and_then(|user| user.metadata.photo_url.clone())
     }
 
-    /// Returns whether or not the user needs to link their account to an SSO provider.
-    /// The actual value is calculated on the server to avoid additional RPCs to Firebase.
+    /// Legacy passive SSO-link metadata. Warper does not surface SSO UI.
     pub fn needs_sso_link(&self) -> Option<bool> {
         self.user.read().as_ref().map(|user| user.needs_sso_link)
     }
 
     /// Returns the anonymous user type.
-    /// Note that a `Some()` value here does NOT mean the user is still anonymous;
-    /// they might have since signed up, but we keep their anonymous user type around.
+    /// Retained passive legacy account type.
     pub fn anonymous_user_type(&self) -> Option<AnonymousUserType> {
         self.user
             .read()
@@ -315,7 +268,7 @@ impl AuthState {
     }
 
     /// Returns the personal object limits the user has.
-    /// Currently, only anonymous users have limits.
+    /// Retained passive legacy object limits.
     pub fn personal_object_limits(&self) -> Option<PersonalObjectLimits> {
         self.user
             .read()
@@ -330,7 +283,7 @@ impl AuthState {
         }
     }
 
-    /// If the user is logged in, returns their Firebase UID. Otherwise, returns None.
+    /// Returns a retained passive user id. Local Warper startup returns `None`.
     pub fn user_id(&self) -> Option<UserUid> {
         self.user.read().as_ref().map(|user| user.local_id)
     }
@@ -341,21 +294,18 @@ impl AuthState {
         self.anonymous_id.to_string()
     }
 
-    /// Returns whether a reauth is required for the current user given the state
-    /// of their refresh token.
+    /// Returns the inert legacy reauth bit.
     pub fn needs_reauth(&self) -> bool {
         self.needs_reauth.load(Ordering::Relaxed)
     }
 
-    /// Sets whether a reauth is required for the current user.
-    /// Returns whether or not the reauth state was changed from false to true.
+    /// Sets the inert legacy reauth bit.
     pub(super) fn set_needs_reauth(&self, new_needs_reauth: bool) -> bool {
         let prev_needs_reauth = self.needs_reauth.swap(new_needs_reauth, Ordering::Relaxed);
         !prev_needs_reauth && new_needs_reauth
     }
 
-    /// Returns whether or not the renotification block to encourage anonymous users to sign up
-    /// has expired.
+    /// Legacy helper for dead anonymous-account prompts.
     pub fn anonymous_user_renotification_block_expired(
         &self,
         last_time_opt: Option<String>,

@@ -19,6 +19,21 @@ use warpui::keymap::Keystroke;
 use warpui::notification::{NotificationSendError, RequestPermissionsOutcome};
 use warpui::rendering::ThinStrokes;
 
+#[derive(Clone, Copy, Debug, Serialize)]
+pub enum SharedSessionActionSource {
+    BlocklistContextMenu,
+    Tab,
+    PaneHeader,
+    CommandPalette,
+    OnboardingBlock,
+    Closed,
+    InactivityModal,
+    NonUser,
+    SharingDialog,
+    RightClickMenu,
+    FooterChip,
+}
+
 use crate::ai::agent::api::ServerConversationToken;
 use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::agent::AIAgentActionId;
@@ -66,7 +81,6 @@ use crate::settings::import::config::ParsedTerminalSetting;
 use crate::settings::import::config::SettingType;
 use crate::settings::import::model::TerminalType;
 use crate::settings::AgentModeCodingPermissionsType;
-use crate::settings_view::TeamsInviteOption;
 use crate::tab::TabTelemetryAction;
 use crate::terminal::block_list_viewport::InputMode;
 use crate::terminal::cli_agent_sessions::CLIAgentInputEntrypoint;
@@ -78,7 +92,6 @@ use crate::terminal::model::session::SessionId;
 use crate::terminal::model::terminal_model::BlockSelectionCardinality;
 use crate::terminal::model::terminal_model::TmuxInstallationState;
 use crate::terminal::settings::AltScreenPaddingMode;
-use crate::terminal::shared_session::SharedSessionActionSource;
 use crate::terminal::shell::ShellType;
 use crate::terminal::ssh::ssh_detection::SshInteractiveSessionDetected;
 use crate::terminal::view::block_onboarding::onboarding_agentic_suggestions_block::OnboardingChipType;
@@ -1145,7 +1158,6 @@ impl From<AgentViewEntryOrigin> for TelemetryAgentViewEntryOrigin {
             AgentViewEntryOrigin::AIDocument => Self::AIDocument,
             AgentViewEntryOrigin::AutoFollowUp => Self::AutoFollowUp,
             AgentViewEntryOrigin::RestoreExistingConversation => Self::RestoreExistingConversation,
-            AgentViewEntryOrigin::SharedSessionSelection => Self::SharedSessionSelection,
             AgentViewEntryOrigin::AgentRequestedNewConversation => {
                 Self::AgentRequestedNewConversation
             }
@@ -1153,8 +1165,6 @@ impl From<AgentViewEntryOrigin> for TelemetryAgentViewEntryOrigin {
             AgentViewEntryOrigin::AcceptedUnitTestSuggestion => Self::AcceptedUnitTestSuggestion,
             AgentViewEntryOrigin::AcceptedPassiveCodeDiff => Self::AcceptedPassiveCodeDiff,
             AgentViewEntryOrigin::InlineCodeReview => Self::InlineCodeReview,
-            AgentViewEntryOrigin::CloudAgent => Self::AmbientAgent,
-            AgentViewEntryOrigin::ThirdPartyCloudAgent => Self::ThirdPartyCloudAgent,
             AgentViewEntryOrigin::Cli => Self::Cli,
             AgentViewEntryOrigin::ImageAdded => Self::ImageAdded,
             AgentViewEntryOrigin::SlashCommand { .. } => Self::SlashCommand,
@@ -1518,7 +1528,6 @@ pub enum TelemetryEvent {
     DeletedWorkflow,
     DeletedNotebook,
     ToggleApprovalsModal,
-    ChangedInviteViewOption(TeamsInviteOption),
     SendEmailInvites,
     CommandCorrection {
         event: CommandCorrectionEvent,
@@ -4032,7 +4041,6 @@ impl TelemetryEvent {
             | TelemetryEvent::DeletedWorkflow
             | TelemetryEvent::DeletedNotebook
             | TelemetryEvent::ToggleApprovalsModal
-            | TelemetryEvent::ChangedInviteViewOption(_)
             | TelemetryEvent::SendEmailInvites
             | TelemetryEvent::ResourceCenterOpened
             | TelemetryEvent::ResourceCenterTipsCompleted
@@ -4668,7 +4676,6 @@ impl TelemetryEvent {
             | TelemetryEvent::DeletedWorkflow
             | TelemetryEvent::DeletedNotebook
             | TelemetryEvent::ToggleApprovalsModal
-            | TelemetryEvent::ChangedInviteViewOption(_)
             | TelemetryEvent::SendEmailInvites
             | TelemetryEvent::CommandCorrection { .. }
             | TelemetryEvent::SetLineHeight { .. }
@@ -5096,10 +5103,8 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::AgentModeChangedInputType => EnablementState::Always,
             Self::StartedSharingCurrentSession
             | Self::StoppedSharingCurrentSession
-            | Self::SharedSessionModalUpgradePressed => {
-                EnablementState::Flag(FeatureFlag::CreatingSharedSessions)
-            }
-            Self::JoinedSharedSession => EnablementState::Flag(FeatureFlag::ViewingSharedSessions),
+            | Self::SharedSessionModalUpgradePressed
+            | Self::JoinedSharedSession => EnablementState::Always,
             Self::OpenNotebook | Self::EditNotebook | Self::NotebookAction => {
                 EnablementState::Always
             }
@@ -5219,7 +5224,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::DeletedWorkflow => EnablementState::Always,
             Self::DeletedNotebook => EnablementState::Always,
             Self::ToggleApprovalsModal => EnablementState::Always,
-            Self::ChangedInviteViewOption => EnablementState::Always,
             Self::SendEmailInvites => EnablementState::Always,
             Self::CommandCorrection => EnablementState::Always,
             Self::SetLineHeight => EnablementState::Always,
@@ -5855,7 +5859,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::DeletedWorkflow => "Deleted Workflow",
             Self::DeletedNotebook => "Deleted Notebook",
             Self::ToggleApprovalsModal => "Toggle Approvals Modal",
-            Self::ChangedInviteViewOption => "Changed invite view option",
             Self::SendEmailInvites => "Sent email invites",
             Self::TierLimitHit => "Tier Limit Hit",
             Self::SharedObjectLimitHitBannerViewPlansButtonClicked => {
@@ -6322,7 +6325,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::DeletedWorkflow => "Deleted workflow from Warp Drive team",
             Self::DeletedNotebook => "Deleted notebook from Warp Drive team",
             Self::ToggleApprovalsModal => "Opened or closed teams modal",
-            Self::ChangedInviteViewOption => "Toggled between link and invite for invite",
             Self::SendEmailInvites => "Sent email invites for Warp Drive team",
             Self::CommandCorrection => "Accepted command correction",
             Self::SetLineHeight => "Set line height through Settings -> Appearance",
