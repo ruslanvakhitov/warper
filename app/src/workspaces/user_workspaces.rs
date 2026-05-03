@@ -12,10 +12,9 @@ use crate::{
     cloud_object::{
         model::persistence::CloudModel, CloudObjectEventEntrypoint, ObjectType, Owner, Space,
     },
-    pricing::PricingInfoModel,
     report_error,
     server::{
-        experiments::{ServerExperiment, ServerExperiments, ServerExperimentsEvent},
+        experiments::ServerExperiment,
         ids::ServerId,
         server_api::{team::TeamClient, workspace::WorkspaceClient},
     },
@@ -47,7 +46,7 @@ use crate::workspaces::workspace::{
 #[cfg(test)]
 use super::workspace::WorkspaceMemberUsageInfo;
 
-const STRIPE_SUBSCRIPTION_INTERVAL_PAGE_PREFIX: &str = "/upgrade";
+const HOSTED_BILLING_REMOVED: &str = "hosted billing is removed in Warper";
 
 #[derive(Debug)]
 pub enum UserWorkspacesEvent {
@@ -117,12 +116,10 @@ pub struct WorkspacesMetadataResponse {
     pub feature_model_choices: Option<FeatureModelChoice>,
 }
 
-// A representation of all data we fetch at a single time via our 10 minute poll.
-// Prefer adding to this struct if you need relatively fresh data vs making
-// independent queries.
+// Compatibility wrapper for legacy team/workspace call sites. WARPER-001 keeps
+// local workspaces only, so this no longer carries hosted pricing payloads.
 pub struct WorkspacesMetadataWithPricing {
     pub metadata: WorkspacesMetadataResponse,
-    pub pricing_info: Option<warp_graphql::billing::PricingInfo>,
 }
 
 pub struct CreateTeamResponse {
@@ -181,11 +178,6 @@ impl UserWorkspaces {
         current_workspace_uid: Option<WorkspaceUid>,
         ctx: &mut ModelContext<Self>,
     ) -> Self {
-        ctx.subscribe_to_model(&ServerExperiments::handle(ctx), |me, event, ctx| {
-            let ServerExperimentsEvent::ExperimentsUpdated = event;
-            me.update_session_sharing_enablement(ctx);
-        });
-
         ctx.subscribe_to_model(&CodeSettings::handle(ctx), |_, code_settings_event, ctx| {
             match code_settings_event {
                 CodeSettingsChangedEvent::CodebaseContextEnabled { .. }
@@ -211,23 +203,12 @@ impl UserWorkspaces {
         }
     }
 
-    pub fn upgrade_link(user_id: UserUid) -> String {
-        format!(
-            "{}{}/{}/{}",
-            ChannelState::server_root_url(),
-            STRIPE_SUBSCRIPTION_INTERVAL_PAGE_PREFIX,
-            "user",
-            user_id.as_str()
-        )
+    pub fn upgrade_link(_user_id: UserUid) -> String {
+        HOSTED_BILLING_REMOVED.to_string()
     }
 
-    pub fn upgrade_link_for_team(team_uid: ServerId) -> String {
-        format!(
-            "{}{}/{}",
-            ChannelState::server_root_url(),
-            STRIPE_SUBSCRIPTION_INTERVAL_PAGE_PREFIX,
-            team_uid
-        )
+    pub fn upgrade_link_for_team(_team_uid: ServerId) -> String {
+        HOSTED_BILLING_REMOVED.to_string()
     }
 
     pub fn team_from_uid(&self, team_uid: ServerId) -> Option<&Team> {
@@ -611,28 +592,10 @@ impl UserWorkspaces {
         self.joinable_teams.len()
     }
 
-    // Returns a Vec of the user's active spaces, based on their
-    // team membership. Includes the "Personal Space" by default.
-    pub fn all_user_spaces(&self, ctx: &AppContext) -> Vec<Space> {
-        if AuthStateProvider::as_ref(ctx)
-            .get()
-            .is_user_web_anonymous_user()
-            .unwrap_or_default()
-        {
-            return vec![Space::Shared];
-        }
-
-        let mut spaces = Vec::new();
-        spaces.extend(self.team_spaces().iter());
-
-        if FeatureFlag::SharedWithMe.is_enabled()
-            && CloudModel::as_ref(ctx).has_directly_shared_objects(self, ctx)
-        {
-            spaces.push(Space::Shared);
-        }
-        spaces.push(Space::Personal);
-
-        spaces
+    // WARPER-001 removes hosted teams and shared-with-me spaces. Only the
+    // local personal object space is restored.
+    pub fn all_user_spaces(&self, _ctx: &AppContext) -> Vec<Space> {
+        vec![Space::Personal]
     }
 
     // Returns the [`Owner`] for the user's personal drive. If the user is not authenticated, this
@@ -648,7 +611,7 @@ impl UserWorkspaces {
     // does not directly identify an owner (it's the space for shared objects), returns `None`.
     pub fn space_to_owner(&self, space: Space, ctx: &AppContext) -> Option<Owner> {
         match space {
-            Space::Team { team_uid } => Some(Owner::Team { team_uid }),
+            Space::Team { .. } => None,
             Space::Personal => self.personal_drive(ctx),
             Space::Shared => None,
         }
@@ -656,29 +619,10 @@ impl UserWorkspaces {
 
     // Maps an [`Owner`] into a [`Space`], based on the user's team memberships.
     // This is always possible, as unknown owners imply the shared space.
-    pub fn owner_to_space(&self, owner: Owner, ctx: &AppContext) -> Space {
+    pub fn owner_to_space(&self, owner: Owner, _ctx: &AppContext) -> Space {
         match owner {
-            Owner::User { user_uid } => {
-                if !FeatureFlag::SharedWithMe.is_enabled() {
-                    return Space::Personal;
-                }
-
-                let current_user = AuthStateProvider::as_ref(ctx).get().user_id();
-                if Some(user_uid) == current_user {
-                    Space::Personal
-                } else {
-                    Space::Shared
-                }
-            }
-            Owner::Team { team_uid } => {
-                if !FeatureFlag::SharedWithMe.is_enabled()
-                    || self.team_from_uid_across_all_workspaces(team_uid).is_some()
-                {
-                    Space::Team { team_uid }
-                } else {
-                    Space::Shared
-                }
-            }
+            Owner::User { .. } => Space::Personal,
+            Owner::Team { .. } => Space::Personal,
         }
     }
 
@@ -783,12 +727,6 @@ impl UserWorkspaces {
     ) {
         match result {
             Ok(response) => {
-                if let Some(pricing_info) = response.pricing_info {
-                    PricingInfoModel::handle(ctx).update(ctx, |model, ctx| {
-                        model.update_pricing_info(pricing_info, ctx);
-                    });
-                }
-
                 let workspaces = response.metadata.workspaces;
                 let joinable_teams = response.metadata.joinable_teams;
 
@@ -1252,10 +1190,7 @@ impl UserWorkspaces {
     ) {
         match result {
             Ok(result) => {
-                let wrapped = WorkspacesMetadataWithPricing {
-                    metadata: result,
-                    pricing_info: None,
-                };
+                let wrapped = WorkspacesMetadataWithPricing { metadata: result };
                 self.on_workspaces_updated(Ok(wrapped), ctx);
                 ctx.emit(UserWorkspacesEvent::UpdateWorkspaceSettingsSuccess);
             }
@@ -1294,10 +1229,7 @@ impl UserWorkspaces {
     ) {
         match result {
             Ok(result) => {
-                let wrapped = WorkspacesMetadataWithPricing {
-                    metadata: result,
-                    pricing_info: None,
-                };
+                let wrapped = WorkspacesMetadataWithPricing { metadata: result };
                 self.on_workspaces_updated(Ok(wrapped), ctx);
                 ctx.emit(UserWorkspacesEvent::PurchaseAddonCreditsSuccess);
             }
@@ -1499,26 +1431,13 @@ impl UserWorkspaces {
     }
 
     /// Updates whether or not session sharing is enabled based on the current team's tier policy.
-    fn update_session_sharing_enablement(&self, ctx: &AppContext) {
+    fn update_session_sharing_enablement(&self, _ctx: &AppContext) {
         if cfg!(any(test, feature = "integration_tests")) {
             return;
         }
 
-        // If we have experiment state to unconditionally enable / disable the feature,
-        // then we defer to that.
-        let server_experiments = ServerExperiments::as_ref(ctx);
-        if server_experiments.is_experiment_enabled(&ServerExperiment::SessionSharingControl)
-            || server_experiments.is_experiment_enabled(&ServerExperiment::SessionSharingExperiment)
-        {
-            return;
-        }
-
-        let is_session_sharing_enabled_via_tier_policy = self
-            .current_team()
-            .and_then(|t| t.billing_metadata.tier.session_sharing_policy)
-            .map(|policy| policy.is_enabled)
-            .unwrap_or(true);
-        FeatureFlag::CreatingSharedSessions.set_enabled(is_session_sharing_enabled_via_tier_policy);
+        // Session sharing is amputated in Warper; there is no feature flag or
+        // hosted policy to update.
     }
 }
 
@@ -1539,7 +1458,6 @@ impl TeamClient for LocalOnlyTeamClient {
                 experiments: None,
                 feature_model_choices: None,
             },
-            pricing_info: None,
         })
     }
 

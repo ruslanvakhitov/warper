@@ -10,8 +10,8 @@ use self::{
 };
 use crate::server::cloud_objects::update_manager::InitiatedBy;
 use crate::{
-    ai::cloud_agent_config::CloudAgentConfigModel,
-    ai::cloud_environments::CloudAmbientAgentEnvironmentModel,
+    ai::cloud_agent_config::AgentConfigObjectModel,
+    ai::cloud_environments::AmbientAgentEnvironmentObjectModel,
     ai::{
         ambient_agents::scheduled::CloudScheduledAmbientAgentModel,
         document::ai_document_model::AIDocumentId,
@@ -25,7 +25,7 @@ use crate::{
     drive::{
         folders::{CloudFolderModel, FolderId},
         items::WarpDriveItem,
-        CloudObjectTypeAndId, OpenWarpDriveObjectArgs, OpenWarpDriveObjectSettings,
+        CloudObjectTypeAndId, LocalObjectOpenArgs, LocalObjectOpenSettings,
     },
     env_vars::CloudEnvVarCollectionModel,
     notebooks::{CloudNotebookModel, NotebookId},
@@ -35,7 +35,6 @@ use crate::{
             ClientId, HashableId, HashedSqliteId, ObjectUid, ServerId, ServerIdAndType, SyncId,
             ToServerId,
         },
-        server_api::object::ObjectClient,
         sync_queue::{QueueItem, SerializedModel},
     },
     settings::cloud_preferences::CloudPreferenceModel,
@@ -50,7 +49,6 @@ use crate::{
     },
 };
 use anyhow::Result;
-use async_trait::async_trait;
 use chrono::{Duration, Utc};
 use derivative::Derivative;
 use lazy_static::lazy_static;
@@ -321,7 +319,7 @@ pub trait CloudObject: Debug {
                         // If the object has a parent, but the parent is not in CloudModel, assume
                         // the object is shared, but not its parent. For backwards compatibility,
                         // if sharing is disabled, default to trashed rather than untrashed.
-                        !FeatureFlag::SharedWithMe.is_enabled()
+                        true
                     }
                 }
             }
@@ -446,8 +444,6 @@ pub trait CloudObject: Debug {
 ///
 /// When building new model types (e.g. for settings or launch configs) we should just
 /// have to implement this trait, and not the entire CloudObject trait.
-#[cfg_attr(not(target_family = "wasm"), async_trait)]
-#[cfg_attr(target_family = "wasm", async_trait(?Send))]
 pub trait CloudModelType: Debug + Clone + Send + Sync {
     /// The associated CloudObject type for this model (e.g. CloudNotebook, CloudWorkflow, etc)
     type CloudObjectType: CloudObject + 'static;
@@ -518,20 +514,6 @@ pub trait CloudModelType: Debug + Clone + Send + Sync {
 
     /// Returns a serialized model.
     fn serialized(&self) -> SerializedModel;
-
-    /// Sends a request to the server to create this model.
-    async fn send_create_request(
-        object_client: Arc<dyn ObjectClient>,
-        request: CreateObjectRequest,
-    ) -> Result<CreateCloudObjectResult>;
-
-    /// Sends a request to the server to update this model.
-    async fn send_update_request(
-        &self,
-        object_client: Arc<dyn ObjectClient>,
-        server_id: ServerId,
-        revision: Option<Revision>,
-    ) -> Result<UpdateCloudObjectResult<GenericServerObject<Self::IdType, Self>>>;
 
     /// Returns whether this model type supports being moved to the given space.
     fn can_move_to_space(&self, _current_space: Space, _new_space: Space) -> bool {
@@ -935,7 +917,7 @@ where
 /// can be opened natively in Warp with no web interaction.
 pub fn extract_server_id_and_object_type_from_warp_drive_link(
     url: &Url,
-) -> Option<OpenWarpDriveObjectArgs> {
+) -> Option<LocalObjectOpenArgs> {
     let server_id = url
         .path_segments()
         .and_then(|mut segments| segments.next_back())
@@ -956,18 +938,13 @@ pub fn extract_server_id_and_object_type_from_warp_drive_link(
         .get("focused_folder_id")
         .and_then(|s| s.to_string().try_into().ok());
 
-    let invitee_email: Option<String> = query_string.get("invitee_email").map(|s| s.to_string());
-
-    Some(OpenWarpDriveObjectArgs {
+    Some(LocalObjectOpenArgs {
         object_type,
         server_id: match server_id {
             Some(server_id) => server_id.try_into().ok()?,
             _ => return None,
         },
-        settings: OpenWarpDriveObjectSettings {
-            focused_folder_id,
-            invitee_email,
-        },
+        settings: LocalObjectOpenSettings { focused_folder_id },
     })
 }
 
@@ -1028,7 +1005,7 @@ impl<T> ConflictStatus<T> {
 /// no two generic string objects have the same key.
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub struct GenericStringObjectUniqueKey {
-    /// The unique key.  E.g. for cloud prefs this is the storage_key of the pref
+    /// The unique key. E.g. for legacy preferences this is the storage key.
     pub key: String,
 
     /// Whether this key is unique for all generic string objects, or unique per user.
@@ -1186,7 +1163,7 @@ pub enum ServerCloudObject {
     TemplatableMCPServer(ServerTemplatableMCPServer),
     AmbientAgentEnvironment(ServerAmbientAgentEnvironment),
     ScheduledAmbientAgent(ServerScheduledAmbientAgent),
-    CloudAgentConfig(ServerCloudAgentConfig),
+    AgentConfig(ServerAgentConfigObject),
 }
 
 impl ServerCloudObject {
@@ -1212,7 +1189,7 @@ impl ServerCloudObject {
             ServerCloudObject::ScheduledAmbientAgent(scheduled_ambient_agent) => {
                 &scheduled_ambient_agent.metadata
             }
-            ServerCloudObject::CloudAgentConfig(cloud_agent_config) => &cloud_agent_config.metadata,
+            ServerCloudObject::AgentConfig(agent_config) => &agent_config.metadata,
         }
     }
 
@@ -1238,7 +1215,7 @@ impl ServerCloudObject {
             ServerCloudObject::ScheduledAmbientAgent(scheduled_ambient_agent) => {
                 scheduled_ambient_agent.id.uid()
             }
-            ServerCloudObject::CloudAgentConfig(cloud_agent_config) => cloud_agent_config.id.uid(),
+            ServerCloudObject::AgentConfig(agent_config) => agent_config.id.uid(),
         }
     }
 }
@@ -1286,10 +1263,10 @@ where
             value.as_any().downcast_ref::<ServerScheduledAmbientAgent>()
         {
             ServerCloudObject::ScheduledAmbientAgent(server_scheduled_ambient_agent.clone())
-        } else if let Some(server_cloud_agent_config) =
-            value.as_any().downcast_ref::<ServerCloudAgentConfig>()
+        } else if let Some(server_agent_config) =
+            value.as_any().downcast_ref::<ServerAgentConfigObject>()
         {
-            ServerCloudObject::CloudAgentConfig(server_cloud_agent_config.clone())
+            ServerCloudObject::AgentConfig(server_agent_config.clone())
         } else {
             panic!("Unknown server object type");
         }
@@ -1393,10 +1370,11 @@ pub type ServerAIExecutionProfile =
 pub type ServerTemplatableMCPServer =
     GenericServerObject<GenericStringObjectId, CloudTemplatableMCPServerModel>;
 pub type ServerAmbientAgentEnvironment =
-    GenericServerObject<GenericStringObjectId, CloudAmbientAgentEnvironmentModel>;
+    GenericServerObject<GenericStringObjectId, AmbientAgentEnvironmentObjectModel>;
 pub type ServerScheduledAmbientAgent =
     GenericServerObject<GenericStringObjectId, CloudScheduledAmbientAgentModel>;
-pub type ServerCloudAgentConfig = GenericServerObject<GenericStringObjectId, CloudAgentConfigModel>;
+pub type ServerAgentConfigObject =
+    GenericServerObject<GenericStringObjectId, AgentConfigObjectModel>;
 
 impl<T, S> GenericServerObject<GenericStringObjectId, GenericStringModel<T, S>>
 where

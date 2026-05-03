@@ -1,22 +1,17 @@
-use serde::{Deserialize, Serialize};
-use std::fmt;
-use warp_server_client::cloud_object::Owner;
-
 use crate::{
-    auth::AuthStateProvider,
     cloud_object::{
         model::{
             generic_string_model::{GenericStringModel, GenericStringObjectId, StringModel},
             json_model::{JsonModel, JsonSerializer},
-            persistence::CloudModel,
         },
         GenericCloudObject, GenericStringObjectFormat, GenericStringObjectUniqueKey,
         JsonObjectType, Revision, ServerCloudObject,
     },
     server::{ids::SyncId, sync_queue::QueueItem},
-    workspaces::user_workspaces::UserWorkspaces,
 };
-use warpui::{AppContext, SingletonEntity as _};
+use serde::{Deserialize, Serialize};
+use std::fmt;
+use warpui::AppContext;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct GithubRepo {
@@ -83,7 +78,7 @@ impl ProvidersConfig {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-/// An AmbientAgentEnvironment represents an environment that we would run a Warp agent in.
+/// Environment settings used when preparing a local agent workspace.
 pub struct AmbientAgentEnvironment {
     /// Environment name
     #[serde(default)]
@@ -100,30 +95,26 @@ pub struct AmbientAgentEnvironment {
     /// List of setup commands to run after cloning
     #[serde(default)]
     pub setup_commands: Vec<String>,
-    /// Optional cloud provider configurations for automatic auth.
+    /// Optional provider configurations for automatic auth.
     #[serde(default, skip_serializing_if = "ProvidersConfig::is_empty")]
     pub providers: ProvidersConfig,
 }
 
-pub type CloudAmbientAgentEnvironment =
-    GenericCloudObject<GenericStringObjectId, CloudAmbientAgentEnvironmentModel>;
-pub type CloudAmbientAgentEnvironmentModel =
+pub type AmbientAgentEnvironmentObject =
+    GenericCloudObject<GenericStringObjectId, AmbientAgentEnvironmentObjectModel>;
+pub type AmbientAgentEnvironmentObjectModel =
     GenericStringModel<AmbientAgentEnvironment, JsonSerializer>;
 
-impl CloudAmbientAgentEnvironment {
-    pub fn get_all(app: &AppContext) -> Vec<CloudAmbientAgentEnvironment> {
-        CloudModel::as_ref(app)
-            .get_all_objects_of_type::<GenericStringObjectId, CloudAmbientAgentEnvironmentModel>()
-            .cloned()
-            .collect()
+impl AmbientAgentEnvironmentObject {
+    pub fn get_all(_app: &AppContext) -> Vec<AmbientAgentEnvironmentObject> {
+        Vec::new()
     }
 
     pub fn get_by_id<'a>(
-        sync_id: &'a SyncId,
-        app: &'a AppContext,
-    ) -> Option<&'a CloudAmbientAgentEnvironment> {
-        CloudModel::as_ref(app)
-            .get_object_of_type::<GenericStringObjectId, CloudAmbientAgentEnvironmentModel>(sync_id)
+        _sync_id: &'a SyncId,
+        _app: &'a AppContext,
+    ) -> Option<&'a AmbientAgentEnvironmentObject> {
+        None
     }
 }
 
@@ -147,10 +138,10 @@ impl AmbientAgentEnvironment {
 }
 
 impl StringModel for AmbientAgentEnvironment {
-    type CloudObjectType = CloudAmbientAgentEnvironment;
+    type CloudObjectType = AmbientAgentEnvironmentObject;
 
     fn model_type_name(&self) -> &'static str {
-        "Cloud environment"
+        "Agent environment"
     }
 
     fn should_enforce_revisions() -> bool {
@@ -158,7 +149,7 @@ impl StringModel for AmbientAgentEnvironment {
     }
 
     fn model_format() -> GenericStringObjectFormat {
-        GenericStringObjectFormat::Json(JsonObjectType::CloudEnvironment)
+        GenericStringObjectFormat::Json(JsonObjectType::AgentEnvironment)
     }
 
     fn display_name(&self) -> String {
@@ -168,9 +159,9 @@ impl StringModel for AmbientAgentEnvironment {
     fn update_object_queue_item(
         &self,
         revision_ts: Option<Revision>,
-        object: &CloudAmbientAgentEnvironment,
+        object: &AmbientAgentEnvironmentObject,
     ) -> QueueItem {
-        QueueItem::UpdateCloudEnvironment {
+        QueueItem::UpdateAgentEnvironment {
             model: object.model().clone().into(),
             id: object.id,
             revision: revision_ts.or_else(|| object.metadata.revision.clone()),
@@ -200,7 +191,7 @@ impl StringModel for AmbientAgentEnvironment {
 
 impl JsonModel for AmbientAgentEnvironment {
     fn json_object_type() -> JsonObjectType {
-        JsonObjectType::CloudEnvironment
+        JsonObjectType::AgentEnvironment
     }
 }
 
@@ -209,22 +200,20 @@ impl JsonModel for AmbientAgentEnvironment {
 /// If the user is on a team, returns `Owner::Team`. Otherwise, returns
 /// `Owner::User` with the current user's ID. Returns `None` if the user
 /// is not logged in.
-pub fn owner_for_new_environment(ctx: &AppContext) -> Option<Owner> {
-    if let Some(team_uid) = UserWorkspaces::as_ref(ctx).current_team_uid() {
-        Some(Owner::Team { team_uid })
-    } else {
-        let user_id = AuthStateProvider::as_ref(ctx).get().user_id()?;
-        Some(Owner::User { user_uid: user_id })
-    }
+pub fn owner_for_new_environment(
+    _ctx: &AppContext,
+) -> Option<warp_server_client::cloud_object::Owner> {
+    None
 }
 
 /// Resolves the current owner for creating new personal environments.
 ///
 /// Returns `Owner::User` with the current user's ID. Returns `None` if the user
 /// is not logged in.
-pub fn owner_for_new_personal_environment(ctx: &AppContext) -> Option<Owner> {
-    let user_id = AuthStateProvider::as_ref(ctx).get().user_id()?;
-    Some(Owner::User { user_uid: user_id })
+pub fn owner_for_new_personal_environment(
+    _ctx: &AppContext,
+) -> Option<warp_server_client::cloud_object::Owner> {
+    None
 }
 
 #[cfg(test)]

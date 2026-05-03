@@ -6,17 +6,15 @@ use crate::{
         model::{
             generic_string_model::{GenericStringModel, GenericStringObjectId, StringModel},
             json_model::{JsonModel, JsonSerializer},
-            persistence::CloudModel,
         },
         GenericCloudObject, GenericStringObjectFormat, GenericStringObjectUniqueKey,
         JsonObjectType, Revision, ServerCloudObject,
     },
     server::{ids::SyncId, server_api::ai::AgentConfigSnapshot, sync_queue::QueueItem},
 };
-use warpui::{AppContext, SingletonEntity as _};
+use warpui::AppContext;
 
-/// A CloudAgentConfig represents a saved agent configuration that can be referenced
-/// when running agents via `--agent-id`.
+/// Saved agent configuration that can be referenced when running agents via `--agent-id`.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Default)]
 pub struct AgentConfig {
     /// Configuration name
@@ -32,8 +30,8 @@ pub struct AgentConfig {
     pub mcp_servers: Option<HashMap<String, serde_json::Value>>,
 }
 
-pub type CloudAgentConfig = GenericCloudObject<GenericStringObjectId, CloudAgentConfigModel>;
-pub type CloudAgentConfigModel = GenericStringModel<AgentConfig, JsonSerializer>;
+pub type AgentConfigObject = GenericCloudObject<GenericStringObjectId, AgentConfigObjectModel>;
+pub type AgentConfigObjectModel = GenericStringModel<AgentConfig, JsonSerializer>;
 
 impl AgentConfig {
     /// Convert to AgentConfigSnapshot for use in agent execution.
@@ -57,25 +55,24 @@ impl AgentConfig {
     }
 }
 
-impl CloudAgentConfig {
-    pub fn get_all(app: &AppContext) -> Vec<CloudAgentConfig> {
-        CloudModel::as_ref(app)
-            .get_all_objects_of_type::<GenericStringObjectId, CloudAgentConfigModel>()
-            .cloned()
-            .collect()
+impl AgentConfigObject {
+    pub fn get_all(_app: &AppContext) -> Vec<AgentConfigObject> {
+        Vec::new()
     }
 
-    pub fn get_by_id<'a>(sync_id: &'a SyncId, app: &'a AppContext) -> Option<&'a CloudAgentConfig> {
-        CloudModel::as_ref(app)
-            .get_object_of_type::<GenericStringObjectId, CloudAgentConfigModel>(sync_id)
+    pub fn get_by_id<'a>(
+        _sync_id: &'a SyncId,
+        _app: &'a AppContext,
+    ) -> Option<&'a AgentConfigObject> {
+        None
     }
 }
 
 impl StringModel for AgentConfig {
-    type CloudObjectType = CloudAgentConfig;
+    type CloudObjectType = AgentConfigObject;
 
     fn model_type_name(&self) -> &'static str {
-        "Cloud agent config"
+        "Agent config"
     }
 
     fn should_enforce_revisions() -> bool {
@@ -83,7 +80,7 @@ impl StringModel for AgentConfig {
     }
 
     fn model_format() -> GenericStringObjectFormat {
-        GenericStringObjectFormat::Json(JsonObjectType::CloudAgentConfig)
+        GenericStringObjectFormat::Json(JsonObjectType::AgentConfig)
     }
 
     fn display_name(&self) -> String {
@@ -93,9 +90,9 @@ impl StringModel for AgentConfig {
     fn update_object_queue_item(
         &self,
         revision_ts: Option<Revision>,
-        object: &CloudAgentConfig,
+        object: &AgentConfigObject,
     ) -> QueueItem {
-        QueueItem::UpdateCloudAgentConfig {
+        QueueItem::UpdateAgentConfig {
             model: object.model().clone().into(),
             id: object.id,
             revision: revision_ts.or_else(|| object.metadata.revision.clone()),
@@ -107,7 +104,7 @@ impl StringModel for AgentConfig {
     }
 
     fn new_from_server_update(&self, server_cloud_object: &ServerCloudObject) -> Option<Self> {
-        if let ServerCloudObject::CloudAgentConfig(server_config) = server_cloud_object {
+        if let ServerCloudObject::AgentConfig(server_config) = server_cloud_object {
             return Some(server_config.model.clone().string_model);
         }
         None
@@ -124,6 +121,6 @@ impl StringModel for AgentConfig {
 
 impl JsonModel for AgentConfig {
     fn json_object_type() -> JsonObjectType {
-        JsonObjectType::CloudAgentConfig
+        JsonObjectType::AgentConfig
     }
 }

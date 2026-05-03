@@ -14,18 +14,16 @@ use crate::{
     server::sync_queue::QueueItem,
 };
 
-use settings::{
-    macros::define_settings_group, RespectUserSyncSetting, SupportedPlatforms, SyncToCloud,
-};
-define_settings_group!(CloudPreferencesSettings, settings: [
+use settings::{macros::define_settings_group, SupportedPlatforms, SyncToCloud};
+define_settings_group!(LocalPreferencesSettings, settings: [
    settings_sync_enabled: IsSettingsSyncEnabled {
        type: bool,
        default: false,
        supported_platforms: SupportedPlatforms::ALL,
-       sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::No),
+       sync_to_cloud: SyncToCloud::Never,
        private: false,
        toml_path: "account.is_settings_sync_enabled",
-       description: "Whether settings are synced across devices via the cloud.",
+       description: "Legacy settings sync value retained only to ignore old local config.",
    },
 ]);
 
@@ -82,16 +80,7 @@ impl Platform {
     }
 }
 
-/// Defines the data model for a cloud synced user preference.
-///
-/// The expected usage is that each storage key is modeled as its own cloud preference object.
-/// This allows users to edit individual cloud preferences with less fear of an offline
-/// collision (e.g. if I change one preference on one machine and then update another while
-/// offline on another machine, modeling them individually allows for both changes to be applied).
-///
-/// Note that I considered adding a concept of "preference group" as a higher level namespace
-/// for preferences (in case users want to create groups of them), but decided to hold off on
-/// this until we actually support that feature.
+/// Legacy serialized preference object retained for reading old local rows.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Preference {
     /// The storage key (unique identifier for this preference).
@@ -106,10 +95,7 @@ pub struct Preference {
 }
 
 impl Preference {
-    /// Creates a new preference object with the given storage key and value and the appropriate
-    /// platform key for the given syncing mode.
-    /// Used when creating a new preference the first time.  For preferences synced from the
-    /// cloud they will desererialize directly from JSON.
+    /// Creates a legacy preference object with the given storage key and value.
     pub fn new(storage_key: String, value: &str, syncing_mode: SyncToCloud) -> Result<Self> {
         let platform = match syncing_mode {
             SyncToCloud::PerPlatform(_) => Platform::current_platform(),
@@ -129,7 +115,7 @@ impl Preference {
     }
 }
 
-/// Defines a based model for syncing cloud preferences.
+/// Legacy preference model. New settings are local-only and should not create this object.
 impl StringModel for Preference {
     type CloudObjectType = CloudPreference;
 
@@ -138,17 +124,17 @@ impl StringModel for Preference {
     }
 
     fn should_enforce_revisions() -> bool {
-        // Last write wins for cloud prefs
+        // Legacy preferences never enforce revisions.
         false
     }
 
     fn should_show_activity_toasts() -> bool {
-        // No update toasts for cloud prefs
+        // No update toasts for legacy preferences.
         false
     }
 
     fn warn_if_unsaved_at_quit() -> bool {
-        // Don't block quitting on unsaved cloud prefs changes
+        // Don't block quitting on unsaved legacy preference changes.
         false
     }
 
@@ -172,7 +158,7 @@ impl StringModel for Preference {
         revision_ts: Option<Revision>,
         object: &CloudPreference,
     ) -> QueueItem {
-        QueueItem::UpdateCloudPreferences {
+        QueueItem::UpdateLocalPreference {
             model: object.model().clone().into(),
             id: object.id,
             revision: revision_ts.or_else(|| object.metadata.revision.clone()),

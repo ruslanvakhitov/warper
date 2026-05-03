@@ -1,8 +1,5 @@
-pub mod cloud_action_confirmation_dialog;
-mod cloud_object_naming_dialog;
 pub mod cloud_object_styling;
 pub mod drive_helpers;
-pub mod empty_trash_confirmation_dialog;
 pub mod export;
 pub mod folders;
 pub mod import;
@@ -88,18 +85,16 @@ impl fmt::Display for DriveObjectType {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Default)]
-pub struct OpenWarpDriveObjectSettings {
-    /// The folder that should be focused in the Warp Drive when the object is opened.
+pub struct LocalObjectOpenSettings {
+    /// The local folder that should be focused when the object is opened.
     pub focused_folder_id: Option<ServerId>,
-    /// The email of the user to invite to the object, if the object is being opened via the request access flow.
-    pub invitee_email: Option<String>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub struct OpenWarpDriveObjectArgs {
+pub struct LocalObjectOpenArgs {
     pub object_type: ObjectType,
     pub server_id: ServerId,
-    pub settings: OpenWarpDriveObjectSettings,
+    pub settings: LocalObjectOpenSettings,
 }
 
 /// Enum to use to pass down type and id between actions to avoid multiplying actions whenever we
@@ -227,7 +222,7 @@ impl CloudObjectTypeAndId {
     }
 
     pub fn drive_row_position_id(self) -> String {
-        format!("WarpDriveRow_{}", self.uid())
+        format!("LocalObjectRow_{}", self.uid())
     }
 
     pub fn from_generic_string_object(object_type: GenericStringObjectFormat, id: SyncId) -> Self {
@@ -250,9 +245,7 @@ pub fn write_has_auto_opened_welcome_folder_to_user_defaults(app: &mut AppContex
         .write_value(settings::HAS_AUTO_OPENED_WELCOME_FOLDER, true.to_string());
 }
 
-/// Enum used for sorting elements in the Warp Drive Index (and potentially other places).
-/// In the future it can be used to add other options (like, by name or by author), and exposed to
-/// users in the index.
+/// Enum used for sorting local object lists.
 #[derive(
     Default,
     PartialEq,
@@ -267,7 +260,7 @@ pub fn write_has_auto_opened_welcome_folder_to_user_defaults(app: &mut AppContex
     settings_value::SettingsValue,
 )]
 #[schemars(
-    description = "Sort order for Warp Drive items.",
+    description = "Sort order for local object items.",
     rename_all = "snake_case"
 )]
 pub enum DriveSortOrder {
@@ -347,7 +340,7 @@ impl DriveSortOrder {
         }
     }
 
-    /// Returns the text that is used to display the sorting option in the KnowledgeIndex's sorting menu
+    /// Returns the text that is used to display the sorting option in the local object list menu.
     pub fn menu_text(&self, index_variant: DriveIndexVariant) -> &str {
         match (self, index_variant) {
             (DriveSortOrder::ByTimestamp, DriveIndexVariant::MainIndex) => "Last updated",

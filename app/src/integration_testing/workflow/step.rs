@@ -4,7 +4,7 @@ use warpui::{
 
 use crate::{
     cloud_object::{model::persistence::CloudModel, CloudObjectEventEntrypoint, Space},
-    drive::OpenWarpDriveObjectSettings,
+    drive::LocalObjectOpenSettings,
     integration_testing::view_getters::workspace_view,
     server::{
         cloud_objects::update_manager::UpdateManager,
@@ -70,7 +70,7 @@ pub fn open_workflow(window_key: impl Into<String>, workflow_key: impl Into<Stri
                 WindowManager::as_ref(ctx).show_window_and_focus_app(*window_id);
                 workspace.open_workflow_in_pane(
                     &WorkflowOpenSource::Existing(*workflow_id),
-                    &OpenWarpDriveObjectSettings::default(),
+                    &LocalObjectOpenSettings::default(),
                     WorkflowViewMode::View,
                     ctx,
                 );

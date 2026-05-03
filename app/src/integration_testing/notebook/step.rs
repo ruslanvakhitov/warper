@@ -9,7 +9,7 @@ use warpui::{
 
 use crate::{
     cloud_object::{model::persistence::CloudModel, CloudObjectEventEntrypoint, Space},
-    drive::OpenWarpDriveObjectSettings,
+    drive::LocalObjectOpenSettings,
     integration_testing::view_getters::{notebook_view, workspace_view},
     notebooks::manager::NotebookSource,
     server::{
@@ -83,7 +83,7 @@ pub fn open_notebook(window_key: impl Into<String>, notebook_key: impl Into<Stri
             WindowManager::as_ref(ctx).show_window_and_focus_app(*window_id);
             workspace.open_notebook(
                 &NotebookSource::Existing(*notebook_id),
-                &OpenWarpDriveObjectSettings::default(),
+                &LocalObjectOpenSettings::default(),
                 ctx,
                 true,
             );

@@ -208,10 +208,6 @@ impl EnvVarCollectionView {
             .with_hovered_styles(hovered_styles)
             .with_text_and_icon_label(text_and_icon);
 
-        if FeatureFlag::SharedWithMe.is_enabled() && !editability.can_edit() {
-            button = button.disabled();
-        }
-
         let button = button
             .build()
             .on_click(move |ctx, _, _| ctx.dispatch_typed_action(action.clone()));

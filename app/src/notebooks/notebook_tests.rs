@@ -25,7 +25,7 @@ use crate::{
         },
         Owner, Revision, ServerCloudObject, ServerMetadata, ServerNotebook, ServerPermissions,
     },
-    drive::OpenWarpDriveObjectSettings,
+    drive::LocalObjectOpenSettings,
     editor::{DisplayPoint, EditorAction, InteractionState, SelectAction},
     network::NetworkStatus,
     notebooks::{
@@ -140,7 +140,7 @@ fn open_notebook(
     notebook: CloudNotebook,
 ) -> BoxFuture<'static, ()> {
     let load_future = handle.update(app, |view, ctx| {
-        view.load(notebook, &OpenWarpDriveObjectSettings::default(), ctx)
+        view.load(notebook, &LocalObjectOpenSettings::default(), ctx)
     });
     app.update(|ctx| ctx.await_spawned_future(load_future.future_id()))
 }

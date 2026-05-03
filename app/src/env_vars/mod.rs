@@ -111,7 +111,7 @@ fn get_init_command_for_env_var(value: &EnvVarValue, shell_family: ShellFamily) 
     }
 }
 
-/// Defines the data model for a cloud synced collection of environment variables.
+/// Defines the data model for a retained local environment variable collection.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Default)]
 pub struct EnvVarCollection {
     // Collection title

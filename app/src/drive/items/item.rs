@@ -23,7 +23,7 @@ use crate::{
         CloudObject, CloudObjectMetadataExt, Owner,
     },
     drive::CloudObjectTypeAndId,
-    workspaces::{user_profiles::UserProfiles, user_workspaces::UserWorkspaces},
+    workspaces::user_profiles::UserProfiles,
 };
 
 use crate::workspace::header_toolbar_item::HeaderToolbarItemKind;
@@ -443,18 +443,13 @@ impl<'a> WarpDriveRow<'a> {
             .owner;
 
         let mut owner_label = "From ".to_string();
-        match owner {
-            Owner::User { user_uid } => {
-                match UserProfiles::as_ref(app).displayable_identifier_for_uid(user_uid) {
-                    Some(user) => owner_label.push_str(&user),
-                    None => owner_label.push_str("unknown user"),
-                }
+        if let Owner::User { user_uid } = owner {
+            match UserProfiles::as_ref(app).displayable_identifier_for_uid(user_uid) {
+                Some(user) => owner_label.push_str(&user),
+                None => owner_label.push_str("unknown user"),
             }
-            Owner::Team { team_uid, .. } => owner_label.push_str(
-                UserWorkspaces::as_ref(app)
-                    .team_from_uid(team_uid)
-                    .map_or("unknown team", |team| &team.name),
-            ),
+        } else {
+            return None;
         }
 
         let background = appearance.theme().surface_1();

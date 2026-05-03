@@ -6,7 +6,6 @@ use warp_core::features::FeatureFlag;
 use warpui::{AppContext, SingletonEntity};
 
 pub mod categories;
-use anyhow::Result;
 use workflow::Workflow;
 
 pub mod aliases;
@@ -22,9 +21,8 @@ pub mod workflow_view;
 use crate::appearance::Appearance;
 use crate::cloud_object::model::view::CloudViewModel;
 use crate::cloud_object::{
-    CloudModelType, CloudObjectEventEntrypoint, CreateCloudObjectResult, CreateObjectRequest,
-    GenericCloudObject, GenericServerObject, ObjectType, Revision, ServerCloudObject,
-    UpdateCloudObjectResult,
+    CloudModelType, CloudObjectEventEntrypoint, GenericCloudObject, ObjectType, Revision,
+    ServerCloudObject,
 };
 use crate::server::cloud_objects::update_manager::InitiatedBy;
 
@@ -34,9 +32,7 @@ use crate::drive::CloudObjectTypeAndId;
 use crate::notebooks::{NotebookId, NotebookLocation};
 use crate::persistence::ModelEvent;
 use crate::server::ids::{ServerId, SyncId};
-use crate::server::server_api::object::ObjectClient;
 use crate::server::sync_queue::{QueueItem, SerializedModel};
-use async_trait::async_trait;
 pub use categories::{CategoriesView, CategoriesViewEvent, WorkflowsViewAction};
 
 pub fn init(app: &mut AppContext) {
@@ -101,7 +97,7 @@ impl WorkflowViewMode {
             })
             .unwrap_or(true);
 
-        if !FeatureFlag::SharedWithMe.is_enabled() || can_edit {
+        if can_edit {
             Self::Edit
         } else {
             Self::View
@@ -121,9 +117,7 @@ impl WorkflowViewMode {
             })
             .unwrap_or(true);
 
-        if FeatureFlag::SharedWithMe.is_enabled() && !can_edit {
-            Self::View
-        } else if ContextFlag::RunWorkflow.is_enabled() {
+        if ContextFlag::RunWorkflow.is_enabled() {
             Self::Edit
         } else {
             Self::View
@@ -149,12 +143,12 @@ pub enum AIWorkflowOrigin {
     LegacyWarpAI,
 }
 
-/// Wrapper type for a workflow that may be saved locally or using cloud sync.
+/// Wrapper type for a workflow from local files, local object storage, generated AI output, or a notebook.
 #[derive(Clone, Debug, PartialEq)]
 pub enum WorkflowType {
     /// Saved workflows sourced from local, global, project, app collections, saved locally.
     Local(Workflow),
-    /// Saved workflows from personal or team collections, saved using cloud-sync.
+    /// Saved workflows from the retained local object store.
     Cloud(Box<CloudWorkflow>),
     /// Ephemeral/transient workflows created from Warp AI output
     AIGenerated {
@@ -229,8 +223,6 @@ impl CloudWorkflowModel {
 /// `CloudWorkflow` is a workflow retrieved from the server.
 pub type CloudWorkflow = GenericCloudObject<WorkflowId, CloudWorkflowModel>;
 
-#[cfg_attr(not(target_family = "wasm"), async_trait)]
-#[cfg_attr(target_family = "wasm", async_trait(?Send))]
 impl CloudModelType for CloudWorkflowModel {
     type CloudObjectType = CloudWorkflow;
     type IdType = WorkflowId;
@@ -320,28 +312,6 @@ impl CloudModelType for CloudWorkflowModel {
             });
         }
         None
-    }
-
-    async fn send_create_request(
-        object_client: Arc<dyn ObjectClient>,
-        request: CreateObjectRequest,
-    ) -> Result<CreateCloudObjectResult> {
-        object_client.create_workflow(request).await
-    }
-
-    async fn send_update_request(
-        &self,
-        object_client: Arc<dyn ObjectClient>,
-        server_id: ServerId,
-        revision: Option<Revision>,
-    ) -> Result<UpdateCloudObjectResult<GenericServerObject<WorkflowId, Self>>> {
-        object_client
-            .update_workflow(
-                server_id.into(),
-                serde_json::to_string(&self.data)?.into(),
-                revision,
-            )
-            .await
     }
 
     fn renders_in_warp_drive(&self) -> bool {

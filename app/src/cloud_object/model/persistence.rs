@@ -533,8 +533,8 @@ impl CloudModel {
             ServerCloudObject::ScheduledAmbientAgent(scheduled_ambient_agent) => {
                 self.upsert_from_server_object(scheduled_ambient_agent, ctx);
             }
-            ServerCloudObject::CloudAgentConfig(cloud_agent_config) => {
-                self.upsert_from_server_object(cloud_agent_config, ctx);
+            ServerCloudObject::AgentConfig(agent_config) => {
+                self.upsert_from_server_object(agent_config, ctx);
             }
         }
     }
@@ -1486,7 +1486,7 @@ impl CloudModel {
                     }
                 }
             }
-            None => !FeatureFlag::SharedWithMe.is_enabled(),
+            None => true,
         };
 
         cache.insert(uid.to_owned(), result);

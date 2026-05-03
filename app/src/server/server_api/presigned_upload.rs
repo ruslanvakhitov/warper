@@ -170,13 +170,15 @@ async fn send_upload_request(
     content_length: Option<u64>,
     error_context: UploadErrorContext,
 ) -> Result<()> {
-    let response = build_upload_request(http_client, target, content_length)?
-        .body(body)
-        .send()
-        .await
-        .context(error_context.transport)?;
-
-    ensure_upload_succeeded(response, error_context).await
+    let _ = (
+        http_client,
+        target.url,
+        target.method,
+        body,
+        content_length,
+        error_context,
+    );
+    Err(anyhow!("Hosted artifact upload is unavailable in Warper"))
 }
 
 pub(crate) async fn upload_to_target(

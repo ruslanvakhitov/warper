@@ -33,7 +33,7 @@ use crate::{
 };
 use crate::{
     cloud_object::{
-        ServerAmbientAgentEnvironment, ServerCloudAgentConfig, ServerCloudObject,
+        ServerAgentConfigObject, ServerAmbientAgentEnvironment, ServerCloudObject,
         ServerEnvVarCollection, ServerFolder, ServerMCPServer, ServerNotebook, ServerPreference,
         ServerScheduledAmbientAgent, ServerTemplatableMCPServer, ServerWorkflow,
         ServerWorkflowEnum,
@@ -1223,13 +1223,13 @@ impl TryFrom<warp_graphql::generic_string_object::GenericStringObject>
     }
 }
 
-impl TryFrom<warp_graphql::generic_string_object::GenericStringObject> for ServerCloudAgentConfig {
+impl TryFrom<warp_graphql::generic_string_object::GenericStringObject> for ServerAgentConfigObject {
     type Error = anyhow::Error;
 
     fn try_from(
         gso: warp_graphql::generic_string_object::GenericStringObject,
     ) -> Result<Self, Self::Error> {
-        ServerCloudAgentConfig::try_from_graphql_fields(
+        ServerAgentConfigObject::try_from_graphql_fields(
             ServerId::from_string_lossy(gso.metadata.uid.inner()),
             Some(gso.serialized_model),
             gso.metadata.try_into()?,

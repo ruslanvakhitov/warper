@@ -21,10 +21,7 @@ use crate::util::file::external_editor::EditorSettings;
 #[cfg(feature = "local_fs")]
 use crate::util::openable_file_type::{is_supported_image_file, resolve_file_target, FileTarget};
 use crate::{
-    drive::OpenWarpDriveObjectArgs,
-    terminal::model::session::Session,
-    uri::parse_url_paths::{get_item_data_from_warp_link, WarpWebLink},
-    workspace::ActiveSession,
+    drive::LocalObjectOpenArgs, terminal::model::session::Session, workspace::ActiveSession,
 };
 
 use super::file::is_markdown_file;
@@ -264,15 +261,7 @@ impl NotebookLinks {
     /// * Other files are opened in the configured editor or system-default application.
     pub fn open(&self, link: LinkTarget, ctx: &mut ModelContext<Self>) {
         match link {
-            LinkTarget::Url(url) => {
-                if let Some(WarpWebLink::DriveObject(args)) = get_item_data_from_warp_link(&url) {
-                    return ctx.emit(LinkEvent::OpenWarpDriveLink {
-                        open_warp_drive_args: *args,
-                    });
-                }
-
-                ctx.open_url(url.as_str())
-            }
+            LinkTarget::Url(url) => ctx.open_url(url.as_str()),
             LinkTarget::LocalFile {
                 path,
                 session,
@@ -410,7 +399,7 @@ pub enum LinkEvent {
         session: Arc<Session>,
     },
     OpenWarpDriveLink {
-        open_warp_drive_args: OpenWarpDriveObjectArgs,
+        open_warp_drive_args: LocalObjectOpenArgs,
     },
     /// This event tells the parent pane group to open a new terminal session in the given
     /// directory.

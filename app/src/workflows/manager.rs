@@ -1,7 +1,7 @@
 use super::{workflow::Workflow, CloudWorkflowModel};
 use crate::{
     cloud_object::{model::persistence::CloudModel, GenericCloudObject, Owner},
-    drive::OpenWarpDriveObjectSettings,
+    drive::LocalObjectOpenSettings,
     pane_group::{PaneContent, WorkflowPane},
     safe_warn,
     server::{
@@ -62,7 +62,7 @@ impl WorkflowManager {
     pub fn create_pane(
         &mut self,
         source: &WorkflowOpenSource,
-        settings: &OpenWarpDriveObjectSettings,
+        settings: &LocalObjectOpenSettings,
         mode: WorkflowViewMode,
         window_id: WindowId,
         ctx: &mut ModelContext<Self>,
@@ -117,7 +117,7 @@ impl WorkflowManager {
                             *initial_folder_id,
                             ClientId::default(),
                         ),
-                        &OpenWarpDriveObjectSettings::default(),
+                        &LocalObjectOpenSettings::default(),
                         mode,
                         ctx,
                     );

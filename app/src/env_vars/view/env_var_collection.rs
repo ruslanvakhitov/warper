@@ -26,10 +26,7 @@ use crate::{
         model::persistence::{CloudModel, CloudModelEvent},
         CloudObjectEventEntrypoint, Owner,
     },
-    drive::{
-        items::WarpDriveItemId,
-        sharing::{ContentEditability, ShareableObject},
-    },
+    drive::sharing::{ContentEditability, ShareableObject},
     editor::EditorView,
     env_vars::{
         active_env_var_collection_data::{
@@ -48,7 +45,7 @@ use crate::{
     search::external_secrets::view::ExternalSecretsMenu,
     send_telemetry_from_ctx,
     server::{
-        cloud_objects::update_manager::{FetchSingleObjectOption, UpdateManager},
+        cloud_objects::update_manager::UpdateManager,
         ids::{ServerId, SyncId},
     },
     terminal::{model::secrets::SecretLevel, safe_mode_settings::get_secret_obfuscation_mode},
@@ -315,7 +312,6 @@ pub struct EnvVarCollectionView {
 pub enum EnvVarCollectionEvent {
     Pane(PaneEvent),
     UpdatedEnvVarCollection(SyncId),
-    ViewInWarpDrive(WarpDriveItemId),
     Invoke(EnvVarCollectionType),
 }
 #[derive(Debug, Clone)]
@@ -350,8 +346,6 @@ pub enum EnvVarCollectionAction {
     // Unsaved changes dialog actions
     ForceClose,
     CloseUnsavedChangesDialog,
-    // Breadcrumbs action
-    ViewInWarpDrive(WarpDriveItemId),
 }
 
 /// Defines the view for a collection of environment variables
@@ -613,8 +607,6 @@ impl EnvVarCollectionView {
                 .cloned();
             if let Some(env_var_collection) = env_var_collection {
                 me.load(env_var_collection, ctx);
-            } else if let Some(server_id) = env_var_collection_id.into_server() {
-                me.fetch_and_load_env_var_collection(server_id, window_id, ctx);
             } else {
                 ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
                     toast_stack.add_ephemeral_toast_by_type(
@@ -624,35 +616,6 @@ impl EnvVarCollectionView {
                     );
                 });
                 log::warn!("Tried to open unknown env var collection {env_var_collection_id:?}");
-            }
-        });
-    }
-
-    fn fetch_and_load_env_var_collection(
-        &mut self,
-        env_var_collection_id: ServerId,
-        window_id: WindowId,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        let fetch_cloud_object_rx =
-            UpdateManager::handle(ctx).update(ctx, |update_manager, ctx| {
-                update_manager.fetch_single_cloud_object(
-                    &env_var_collection_id,
-                    FetchSingleObjectOption::None,
-                    ctx,
-                )
-            });
-        ctx.spawn(fetch_cloud_object_rx, move |me, _, ctx| {
-            if let Some(env_var_collection) = CloudModel::as_ref(ctx)
-                .get_env_var_collection(&SyncId::ServerId(env_var_collection_id))
-                .cloned()
-            {
-                me.load(env_var_collection, ctx);
-            } else {
-                ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
-                    toast_stack.add_ephemeral_toast_by_type(ToastType::CloudObjectNotFound, window_id, ctx);
-                });
-                log::warn!("Tried to open unknown env var collection {env_var_collection_id:?} after fetching");
             }
         });
     }
@@ -673,7 +636,7 @@ impl EnvVarCollectionView {
         if let Some(server_id) = env_var_collection.id.into_server() {
             self.pane_configuration.update(ctx, |pane_config, ctx| {
                 pane_config
-                    .set_shareable_object(Some(ShareableObject::WarpDriveObject(server_id)), ctx);
+                    .set_shareable_object(Some(ShareableObject::LocalObject(server_id)), ctx);
             });
         }
 
@@ -968,10 +931,8 @@ impl EnvVarCollectionView {
             ActiveEnvVarCollectionDataEvent::CreatedOnServer(server_id) => {
                 self.update_breadcrumbs(ctx);
                 self.pane_configuration.update(ctx, |pane_config, ctx| {
-                    pane_config.set_shareable_object(
-                        Some(ShareableObject::WarpDriveObject(*server_id)),
-                        ctx,
-                    );
+                    pane_config
+                        .set_shareable_object(Some(ShareableObject::LocalObject(*server_id)), ctx);
                 });
             }
             ActiveEnvVarCollectionDataEvent::TrashStatusChanged => {
@@ -1104,10 +1065,6 @@ impl EnvVarCollectionView {
             });
     }
 
-    fn view_in_warp_drive(&mut self, id: WarpDriveItemId, ctx: &mut ViewContext<Self>) {
-        ctx.emit(EnvVarCollectionEvent::ViewInWarpDrive(id));
-    }
-
     // This is a public re-export of close since it's a trait method
     pub(super) fn close_env_var_collection(&mut self, ctx: &mut ViewContext<Self>) {
         self.close(ctx);
@@ -1213,7 +1170,7 @@ impl EnvVarCollectionView {
                         ),
                     });
 
-                if !FeatureFlag::SharedWithMe.is_enabled() || editability.can_edit() {
+                if editability.can_edit() {
                     row_contents.add_child(
                         Container::new(
                             icon_button(
@@ -1314,11 +1271,7 @@ impl View for EnvVarCollectionView {
                         Container::new(render_breadcrumbs(
                             self.breadcrumbs.clone(),
                             appearance,
-                            |ctx, _, breadcrumb| {
-                                ctx.dispatch_typed_action(EnvVarCollectionAction::ViewInWarpDrive(
-                                    breadcrumb.kind.into_item_id(),
-                                ));
-                            },
+                            |_, _, _| {},
                         ))
                         .with_horizontal_margin(CORE_HORIZONATAL_MARGIN)
                         .with_vertical_margin(CORE_VERTICAL_MARGIN / 2.)
@@ -1344,7 +1297,7 @@ impl View for EnvVarCollectionView {
                 .with_main_axis_size(MainAxisSize::Max)
                 .with_main_axis_alignment(MainAxisAlignment::End)
                 .with_cross_axis_alignment(CrossAxisAlignment::Center);
-            if !FeatureFlag::SharedWithMe.is_enabled() || editability.can_edit() {
+            if editability.can_edit() {
                 buttons_row.add_child(
                     Container::new(self.render_save_button(appearance, app))
                         .with_margin_left(BUTTON_SPACING)
@@ -1545,7 +1498,6 @@ impl TypedActionView for EnvVarCollectionView {
                 self.update_open_modal_state(ctx);
                 ctx.notify();
             }
-            EnvVarCollectionAction::ViewInWarpDrive(id) => self.view_in_warp_drive(*id, ctx),
         }
     }
 }

@@ -13,7 +13,7 @@ use crate::{
         model::persistence::{CloudModel, CloudModelEvent},
         Owner,
     },
-    drive::OpenWarpDriveObjectSettings,
+    drive::LocalObjectOpenSettings,
     pane_group::{NotebookPane, PaneContent},
     safe_debug, safe_warn,
     server::{
@@ -182,7 +182,7 @@ impl NotebookManager {
     pub fn create_pane(
         &mut self,
         source: &NotebookSource,
-        settings: &OpenWarpDriveObjectSettings,
+        settings: &LocalObjectOpenSettings,
         window_id: WindowId,
         ctx: &mut ModelContext<Self>,
     ) -> NotebookPane {

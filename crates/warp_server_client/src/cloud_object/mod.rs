@@ -5,10 +5,7 @@ use chrono::{DateTime, Utc};
 use derivative::Derivative;
 use pathfinder_geometry::vector::vec2f;
 use serde::{Deserialize, Serialize};
-use warp_core::{
-    features::FeatureFlag,
-    ui::{Icon, appearance::Appearance, theme::Fill},
-};
+use warp_core::ui::{Icon, appearance::Appearance, theme::Fill};
 use warp_graphql::{object_permissions::AccessLevel, scalars::time::ServerTimestamp};
 use warpui_core::{
     Element,
@@ -160,9 +157,9 @@ pub enum JsonObjectType {
     MCPServer,
     AIExecutionProfile,
     TemplatableMCPServer,
-    CloudEnvironment,
+    AgentEnvironment,
     ScheduledAmbientAgent,
-    CloudAgentConfig,
+    AgentConfig,
 }
 
 impl JsonObjectType {
@@ -175,9 +172,9 @@ impl JsonObjectType {
             JsonObjectType::MCPServer => "MCPSERVER",
             JsonObjectType::AIExecutionProfile => "AIEXECUTIONPROFILE",
             JsonObjectType::TemplatableMCPServer => "TEMPLATABLEMCPSERVER",
-            JsonObjectType::CloudEnvironment => "CLOUDENVIRONMENT",
+            JsonObjectType::AgentEnvironment => "CLOUDENVIRONMENT",
             JsonObjectType::ScheduledAmbientAgent => "SCHEDULEDAMBIENTAGENT",
-            JsonObjectType::CloudAgentConfig => "CLOUDAGENTCONFIG",
+            JsonObjectType::AgentConfig => "CLOUDAGENTCONFIG",
         }
     }
 }
@@ -194,9 +191,9 @@ impl TryFrom<&str> for JsonObjectType {
             "MCPSERVER" => Ok(JsonObjectType::MCPServer),
             "AIEXECUTIONPROFILE" => Ok(JsonObjectType::AIExecutionProfile),
             "TEMPLATABLEMCPSERVER" => Ok(JsonObjectType::TemplatableMCPServer),
-            "CLOUDENVIRONMENT" => Ok(JsonObjectType::CloudEnvironment),
+            "CLOUDENVIRONMENT" => Ok(JsonObjectType::AgentEnvironment),
             "SCHEDULEDAMBIENTAGENT" => Ok(JsonObjectType::ScheduledAmbientAgent),
-            "CLOUDAGENTCONFIG" => Ok(JsonObjectType::CloudAgentConfig),
+            "CLOUDAGENTCONFIG" => Ok(JsonObjectType::AgentConfig),
             _ => Err(anyhow!("could not convert unknown json object type")),
         }
     }
@@ -432,29 +429,16 @@ pub struct CloudObjectPermissions {
 
 impl CloudObjectPermissions {
     pub fn new_from_server(server_permissions: ServerPermissions) -> Self {
-        let guests = if FeatureFlag::SharedWithMe.is_enabled() {
-            server_permissions
-                .guests
-                .into_iter()
-                .map(CloudObjectGuest::from_server)
-                .collect()
-        } else {
-            Vec::new()
-        };
-
-        let anyone_with_link = if FeatureFlag::SharedWithMe.is_enabled() {
-            server_permissions
-                .anyone_link_sharing
-                .map(CloudLinkSharing::from_server)
-        } else {
-            None
-        };
+        let _ = (
+            server_permissions.guests,
+            server_permissions.anyone_link_sharing,
+        );
 
         Self {
             owner: server_permissions.space,
             permissions_last_updated_ts: Some(server_permissions.permissions_last_updated_ts),
-            guests,
-            anyone_with_link,
+            guests: Vec::new(),
+            anyone_with_link: None,
         }
     }
 
@@ -480,16 +464,12 @@ impl CloudObjectPermissions {
     pub fn update_from_new_permissions_ts(&mut self, server_permissions: ServerPermissions) {
         self.owner = server_permissions.space;
         self.permissions_last_updated_ts = Some(server_permissions.permissions_last_updated_ts);
-        if FeatureFlag::SharedWithMe.is_enabled() {
-            self.guests = server_permissions
-                .guests
-                .into_iter()
-                .map(CloudObjectGuest::from_server)
-                .collect();
-            self.anyone_with_link = server_permissions
-                .anyone_link_sharing
-                .map(CloudLinkSharing::from_server);
-        }
+        let _ = (
+            server_permissions.guests,
+            server_permissions.anyone_link_sharing,
+        );
+        self.guests.clear();
+        self.anyone_with_link = None;
     }
 }
 
@@ -811,14 +791,14 @@ impl From<GenericStringObjectFormat>
             GenericStringObjectFormat::Json(JsonObjectType::TemplatableMCPServer) => {
                 GraphQLFormat::JsonTemplatableMCPServer
             }
-            GenericStringObjectFormat::Json(JsonObjectType::CloudEnvironment) => {
+            GenericStringObjectFormat::Json(JsonObjectType::AgentEnvironment) => {
                 GraphQLFormat::JsonCloudEnvironment
             }
             GenericStringObjectFormat::Json(JsonObjectType::ScheduledAmbientAgent) => {
                 GraphQLFormat::JsonScheduledAmbientAgent
             }
-            GenericStringObjectFormat::Json(JsonObjectType::CloudAgentConfig) => {
-                unreachable!("JsonCloudAgentConfig is no longer present in GraphQL schema")
+            GenericStringObjectFormat::Json(JsonObjectType::AgentConfig) => {
+                unreachable!("JsonAgentConfig is no longer present in GraphQL schema")
             }
         }
     }

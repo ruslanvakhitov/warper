@@ -1,7 +1,7 @@
 pub mod util;
 
 use crate::{
-    ai::cloud_environments::CloudAmbientAgentEnvironmentModel,
+    ai::cloud_environments::AmbientAgentEnvironmentObjectModel,
     ai::{
         ambient_agents::scheduled::CloudScheduledAmbientAgentModel,
         execution_profiles::CloudAIExecutionProfileModel,
@@ -239,7 +239,7 @@ impl TryFrom<UpdateGenericStringObjectResult> for UpdateCloudObjectResult<Box<dy
                             GenericStringObjectFormat::JsonCloudEnvironment => {
                                 let gso = GenericServerObject::<
                                     GenericStringObjectId,
-                                    CloudAmbientAgentEnvironmentModel,
+                                    AmbientAgentEnvironmentObjectModel,
                                 >::try_from_graphql_fields(
                                     ServerId::from_string_lossy(
                                         rejected

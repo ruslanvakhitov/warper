@@ -294,7 +294,7 @@ impl IntegrationsClient for ServerApi {
         // show the loading state.
         if FeatureFlag::SimulateGithubUnauthed.is_enabled() {
             if let UserGithubInfoResult::GithubConnectedOutput(connected) = &result {
-                let auth_url = format!("{}/oauth/connect/github", ChannelState::server_root_url());
+                let auth_url = String::new();
                 return Ok(UserGithubInfoResult::GithubAuthRequiredOutput(
                     GithubAuthRequiredOutput {
                         auth_url,
