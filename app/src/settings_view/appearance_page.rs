@@ -2641,7 +2641,7 @@ impl SettingsWidget for CreateCustomThemeWidget {
                 .ui_builder()
                 .link(
                     "Create your own custom theme".to_string(),
-                    Some("https://docs.warp.dev/terminal/appearance/custom-themes".to_string()),
+                    None,
                     None,
                     self.mouse_state.clone(),
                 )
@@ -3299,9 +3299,7 @@ impl SettingsWidget for WindowBlurWidget {
         let blur_value = *window_settings.background_blur_radius;
         let label_info = AdditionalInfo {
             mouse_state: self.info_button.clone(),
-            on_click_action: Some(AppearancePageAction::OpenUrl(
-                "https://docs.warp.dev/terminal/appearance/size-opacity-blurring".into(),
-            )),
+            on_click_action: None,
             secondary_text: None,
             tooltip_override_text: None,
         };
@@ -4755,7 +4753,7 @@ impl SettingsWidget for UseLatestUserPromptAsConversationTitleInTabNamesWidget {
     type View = AppearanceSettingsPageView;
 
     fn search_terms(&self) -> &str {
-        "latest user prompt conversation title tab names vertical tabs oz third-party agent"
+        "latest user prompt conversation title tab names vertical tabs third-party agent"
     }
 
     fn render(
@@ -4792,7 +4790,7 @@ impl SettingsWidget for UseLatestUserPromptAsConversationTitleInTabNamesWidget {
                 })
                 .finish(),
             Some(
-                "Show the latest user prompt instead of the generated conversation title for Oz and third-party agent sessions in vertical tabs."
+                "Show the latest user prompt instead of the generated conversation title for agent sessions in vertical tabs."
                     .to_string(),
             ),
         )
@@ -5110,9 +5108,7 @@ impl SettingsWidget for AltScreenPaddingWidget {
             "Use custom padding in alt-screen".into(),
             Some(AdditionalInfo {
                 mouse_state: self.additional_info_mouse_state.clone(),
-                on_click_action: Some(AppearancePageAction::OpenUrl(
-                    "https://docs.warp.dev/terminal/more-features/full-screen-apps#padding".into(),
-                )),
+                on_click_action: None,
                 secondary_text: None,
                 tooltip_override_text: None,
             }),

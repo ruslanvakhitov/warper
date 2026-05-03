@@ -18,7 +18,7 @@ use crate::{
     },
     keyboard::UserDefinedKeybinding,
 };
-use crate::{search_bar::SearchBar, settings::CloudPreferencesSettings};
+use crate::{search_bar::SearchBar, settings::LocalPreferencesSettings};
 use crate::{
     util::bindings::{
         filter_bindings_including_keystroke, reset_keybinding_to_default, set_custom_keybinding,
@@ -1114,7 +1114,7 @@ impl SettingsWidget for KeybindingsWidget {
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
-        let local_only_icon_state = if *CloudPreferencesSettings::as_ref(app).settings_sync_enabled
+        let local_only_icon_state = if *LocalPreferencesSettings::as_ref(app).settings_sync_enabled
         {
             Some(LocalOnlyIconState::Visible {
                 mouse_state: self.local_only_icon_mouse_state.clone(),

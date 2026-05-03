@@ -154,7 +154,7 @@ impl MCPServersEditPageView {
         });
 
         let unshare_button = ctx.add_typed_action_view(|_| {
-            ActionButton::new("Remove from team", DangerNakedTheme)
+            ActionButton::new("Remove", DangerNakedTheme)
                 .with_icon(Icon::MinusCircle)
                 .on_click(|ctx| {
                     ctx.dispatch_typed_action(MCPServersEditPageViewAction::Unshare);
@@ -326,7 +326,12 @@ impl MCPServersEditPageView {
             false,
             self.log_out_icon_button_mouse_handle.clone(),
         )
-        .with_tooltip(move || ui_builder.tool_tip("Log out".to_string()).build().finish())
+        .with_tooltip(move || {
+            ui_builder
+                .tool_tip("Disconnect".to_string())
+                .build()
+                .finish()
+        })
         .build()
         .on_click(|ctx, _, _| ctx.dispatch_typed_action(MCPServersEditPageViewAction::LogOut))
         .finish();

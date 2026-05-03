@@ -35,10 +35,7 @@ pub enum CustomAction {
     ShowAboutWarp,
     ShowSettings,
     ConfigureKeybindings,
-    ShowAccount,
     ShowAppearance,
-    ReferAFriend,
-    ViewChangelog,
     FocusInput,
     ClearBlocks,
     AddNextOccurrence,
@@ -87,7 +84,6 @@ pub enum CustomAction {
     CopyBlock,
     CopyBlockCommand,
     CopyBlockOutput,
-    ViewSharedBlocks,
     CloseTab,
     CloseOtherTabs,
     CloseTabsRight,
@@ -104,20 +100,9 @@ pub enum CustomAction {
     ToggleSyncTerminalInputsInCurrentTab,
     DisableSyncTerminalInputs,
     ReopenClosedSession,
-    ToggleWarpDrive,
     AddWindow,
     CloseCurrentSession,
     CloseWindow,
-    NewPersonalWorkflow,
-    NewPersonalNotebook,
-    NewPersonalEnvVars,
-    NewTeamWorkflow,
-    NewTeamNotebook,
-    NewTeamEnvVars,
-    SearchDrive,
-    OpenTeamSettings,
-    ShareCurrentSession,
-    SharePaneContents,
     #[cfg(windows)]
     WindowsPaste,
     #[cfg(windows)]
@@ -129,8 +114,6 @@ pub enum CustomAction {
     OpenAIFactCollection,
     OpenMCPServerCollection,
     ToggleProjectExplorer,
-    NewPersonalAIPrompt,
-    NewTeamAIPrompt,
     OpenRepository,
     NewTerminalTab,
     NewAgentTab,
@@ -390,16 +373,8 @@ pub fn custom_tag_to_keystroke(custom: CustomTag) -> Option<Keystroke> {
 
         // This is one of the app's hardcoded keybindings.
         CustomAction::AddWindow => Keystroke::parse(cmd_or_ctrl_shift("n")).ok(),
-        CustomAction::ToggleWarpDrive => {
-            if OperatingSystem::get().is_mac() {
-                Keystroke::parse("cmd-\\").ok()
-            } else {
-                Keystroke::parse("ctrl-shift-|").ok()
-            }
-        }
         CustomAction::CloseWindow => mac_only_keystroke("cmd-shift-W"),
         CustomAction::CloseCurrentSession => Keystroke::parse(cmd_or_ctrl_shift("w")).ok(),
-        CustomAction::ViewChangelog => Keystroke::parse(cmd_or_ctrl_shift("alt-o")).ok(),
         CustomAction::NewAgentModePane => Keystroke::parse("ctrl-space").ok(),
         CustomAction::AttachSelectionAsAgentModeContext => {
             Keystroke::parse("ctrl-shift-space").ok()
@@ -444,29 +419,14 @@ pub fn custom_tag_to_keystroke(custom: CustomTag) -> Option<Keystroke> {
         | CustomAction::CloseTab
         | CustomAction::CloseOtherTabs
         | CustomAction::CloseTabsRight
-        | CustomAction::ReferAFriend
-        | CustomAction::ViewSharedBlocks
-        | CustomAction::ShowAccount
         | CustomAction::ShowAppearance
         | CustomAction::SaveCurrentConfig
         | CustomAction::TriggerWelcomeBlock
         | CustomAction::HistorySearch
         | CustomAction::DisableSyncTerminalInputs
         | CustomAction::ToggleSyncAllTerminalInputsInAllTabs
-        | CustomAction::NewPersonalWorkflow
-        | CustomAction::NewPersonalNotebook
-        | CustomAction::NewPersonalEnvVars
-        | CustomAction::NewTeamWorkflow
-        | CustomAction::NewTeamNotebook
-        | CustomAction::NewTeamEnvVars
-        | CustomAction::SearchDrive
-        | CustomAction::OpenTeamSettings
-        | CustomAction::ShareCurrentSession
-        | CustomAction::SharePaneContents
         | CustomAction::OpenAIFactCollection
         | CustomAction::OpenMCPServerCollection
-        | CustomAction::NewPersonalAIPrompt
-        | CustomAction::NewTeamAIPrompt
         | CustomAction::NewAgentTab => None,
     }
 }
@@ -826,7 +786,7 @@ impl BindingGroup {
             Self::Folders => "folders",
             Self::KeyboardShortcuts => "keyboard_shortcuts",
             Self::Close => "close",
-            Self::AutoUpdate => "autoupdate",
+            Self::AutoUpdate => "updates",
             Self::Notifications => "notifications",
             Self::EnvVarCollection => "env_var_collections",
             Self::Terminal => "terminal",

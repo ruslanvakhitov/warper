@@ -1,11 +1,9 @@
-use std::{collections::HashSet, ops::Range};
+use std::ops::Range;
 
 use crate::{
     appearance::Appearance,
     cloud_object::Space,
     search::{
-        notebook_embedding::notebooks::CloudNotebooksDataSource,
-        notebook_embedding::workflows::CloudWorkflowsDataSource,
         result_renderer::{QueryResultRenderer, QueryResultRendererStyles},
         search_bar::{SearchBar, SearchBarEvent, SearchBarState, SearchResultOrdering},
     },
@@ -127,15 +125,6 @@ impl EmbeddingSearchMenu {
     fn reset_embedding_search_mixer(&mut self, ctx: &mut ViewContext<Self>) {
         self.mixer.update(ctx, |mixer, ctx| {
             mixer.reset(ctx);
-
-            mixer.add_sync_source(
-                CloudWorkflowsDataSource::new(self.embedding_space, ctx),
-                HashSet::new(),
-            );
-            mixer.add_sync_source(
-                CloudNotebooksDataSource::new(self.embedding_space, ctx),
-                HashSet::new(),
-            );
             ctx.notify();
         })
     }

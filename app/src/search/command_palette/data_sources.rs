@@ -74,7 +74,6 @@ impl DataSourceStore {
     pub fn reset_search_mixer(
         &mut self,
         mixer: ModelHandle<CommandPaletteMixer>,
-        is_shared_session_viewer: bool,
         ctx: &mut ModelContext<Self>,
     ) {
         mixer.update(ctx, |mixer, ctx| {
@@ -104,7 +103,7 @@ impl DataSourceStore {
                 );
             }
 
-            if FeatureFlag::CommandPaletteFileSearch.is_enabled() && !is_shared_session_viewer {
+            if FeatureFlag::CommandPaletteFileSearch.is_enabled() {
                 let file_search_model = FileSearchModel::as_ref(ctx);
                 let repo_root = file_search_model.repo_root(ctx);
                 let is_in_git_repo = repo_root.is_some();
@@ -170,12 +169,6 @@ impl DataSourceStore {
             ItemSummary::LaunchConfiguration => {
                 // TODO(CLD-205): Launch configurations are not supported in the recent section of the
                 // zero state yet.
-                None
-            }
-            ItemSummary::CloudObject => {
-                // We don't yet support all cloud objects in the command palette but
-                // we have a `ViewInWarpDrive` action that supports all of them, so
-                // this is necessary to make the compiler happy.
                 None
             }
             ItemSummary::NewSession { id } => self
@@ -258,7 +251,3 @@ impl DataSourceStore {
 impl Entity for DataSourceStore {
     type Event = ();
 }
-
-#[cfg(test)]
-#[path = "data_sources_test.rs"]
-mod tests;

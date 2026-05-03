@@ -1,12 +1,10 @@
 use super::workflows::{WorkflowIdentity, WorkflowSearchItem};
 use crate::{
-    ai::AIRequestUsageModel,
     ai_assistant::{
         execution_context::WarpAiExecutionContext, GenerateCommandsFromNaturalLanguageError,
         AI_ASSISTANT_LOGO_COLOR,
     },
     appearance::Appearance,
-    features::FeatureFlag,
     search::{
         command_search::searcher::CommandSearchItemAction,
         data_source::{Query, QueryResult},
@@ -73,21 +71,11 @@ impl SearchItem for WarpAISearchItem {
             Some(highlight) => command_search_background.blend(&highlight),
         };
 
-        let icon = if FeatureFlag::AgentMode.is_enabled() {
-            UIIcon::Oz
-                .to_warpui_icon(
-                    appearance
-                        .theme()
-                        .main_text_color(appearance.theme().accent()),
-                )
-                .finish()
-        } else {
-            let color = (AI_ASSISTANT_LOGO_COLOR).on_background(
-                item_background_color.into_solid(),
-                MinimumAllowedContrast::NonText,
-            );
-            UIIcon::AiAssistant.to_warpui_icon(color.into()).finish()
-        };
+        let color = (AI_ASSISTANT_LOGO_COLOR).on_background(
+            item_background_color.into_solid(),
+            MinimumAllowedContrast::NonText,
+        );
+        let icon = UIIcon::AiAssistant.to_warpui_icon(color.into()).finish();
 
         Container::new(
             ConstrainedBox::new(icon)
@@ -232,10 +220,8 @@ impl AsyncDataSource for WarpAIDataSource {
         })
     }
 
-    fn on_query_finished(&self, app: &mut AppContext) {
-        AIRequestUsageModel::handle(app).update(app, |request_usage_model, ctx| {
-            request_usage_model.refresh_request_usage_async(ctx);
-        });
+    fn on_query_finished(&self, _app: &mut AppContext) {
+        // Warper does not refresh hosted usage, quota, or billing state from command search.
     }
 }
 
@@ -244,7 +230,9 @@ impl DataSourceRunError for GenerateCommandsFromNaturalLanguageError {
         match self {
             Self::BadPrompt => "No results found. Please try again with a more specific query.",
             Self::AiProviderError => "Something went wrong. Please try again.",
-            Self::RateLimited => "Looks like you're out of AI credits. Please try again later.",
+            Self::RateLimited => {
+                "The selected AI provider is rate limited. Please try again later."
+            }
             Self::Other => "Something went wrong. Please try again.",
         }
         .to_string()

@@ -1,3 +1,4 @@
+use super::commands::Registry;
 use super::Availability;
 
 /// Helper: constructs a session context for an agent view in a local session with a repo,
@@ -187,6 +188,24 @@ fn commands_without_ai_enabled_remain_available_when_ai_off() {
     let session_ai_off = Availability::TERMINAL_VIEW | Availability::LOCAL;
     assert!(session_ai_off.contains(command_local));
     assert!(session_ai_off.contains(command_always));
+}
+
+#[test]
+fn hosted_slash_commands_are_absent() {
+    let registry = Registry::new();
+    for command_name in [
+        "/cloud-agent",
+        "/create-environment",
+        "/usage",
+        "/remote-control",
+        "/cost",
+        "/changelog",
+    ] {
+        assert!(
+            registry.get_command_with_name(command_name).is_none(),
+            "{command_name} should not be registered"
+        );
+    }
 }
 
 #[test]

@@ -1,6 +1,5 @@
 use crate::ai::execution_profiles::profiles::AIExecutionProfilesModel;
 use crate::ai::execution_profiles::{ActionPermission, WriteToPtyPermission};
-use crate::drive::settings::WarpDriveSettings;
 use crate::report_if_error;
 use crate::settings::ai::DefaultSessionMode;
 use crate::settings::{AISettings, CodeSettings};
@@ -21,7 +20,7 @@ pub fn apply_onboarding_settings(selected_settings: &SelectedSettings, app: &mut
             ..
         } => {
             apply_agent_settings(agent_settings, app);
-            let is_ai_enabled = !agent_settings.disable_oz;
+            let is_ai_enabled = !agent_settings.disable_agent;
             if let Some(ui) = ui_customization {
                 apply_ui_customization_settings(ui, true, app);
             }
@@ -77,12 +76,6 @@ fn apply_ui_customization_settings(
         report_if_error!(settings
             .show_code_review_button
             .set_value(ui.show_code_review_button, ctx));
-    });
-
-    WarpDriveSettings::handle(app).update(app, |settings, ctx| {
-        report_if_error!(settings
-            .enable_warp_drive
-            .set_value(ui.show_warp_drive, ctx));
     });
 
     CodeSettings::handle(app).update(app, |settings, ctx| {

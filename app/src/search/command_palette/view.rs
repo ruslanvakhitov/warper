@@ -1,5 +1,4 @@
 use crate::appearance::Appearance;
-use crate::drive::CloudObjectTypeAndId;
 use crate::search::binding_source::{BindingFilterFn, BindingSource};
 use crate::search::command_palette::mixer::CommandPaletteItemAction;
 use crate::search::command_palette::SelectedItems;
@@ -101,8 +100,6 @@ pub enum Event {
     InvokeEnvironmentVariables { id: SyncId },
     /// Open a notebook identified by `id`.
     OpenNotebook { id: SyncId },
-    /// View the relevant object in the Warp Drive sidebar.
-    ViewInWarpDrive { id: CloudObjectTypeAndId },
     /// Open a file at the given path.
     OpenFile {
         path: String,
@@ -141,10 +138,6 @@ pub struct View {
 
     /// The current navigation mode.
     navigation_mode: NavigationMode,
-
-    /// Whether the active session is a shared session viewer.
-    /// This is set by the workspace when opening the palette.
-    is_shared_session_viewer: bool,
 }
 
 impl Entity for View {
@@ -276,7 +269,7 @@ impl View {
 
         let mixer = ctx.add_model(|_| CommandPaletteMixer::new());
         data_source_store.update(ctx, |store, ctx| {
-            store.reset_search_mixer(mixer.clone(), false, ctx);
+            store.reset_search_mixer(mixer.clone(), ctx);
             ctx.notify();
         });
 
@@ -318,7 +311,6 @@ impl View {
             placeholder_query_renderer: placeholder_element,
             suggested_binding_ids,
             zero_state_items,
-            is_shared_session_viewer: false,
         }
     }
 
@@ -402,7 +394,6 @@ impl View {
                 | (PaletteMode::LaunchConfig, QueryFilter::LaunchConfigurations)
                 | (PaletteMode::Files, QueryFilter::Files)
                 | (PaletteMode::Conversations, QueryFilter::Conversations)
-                | (PaletteMode::WarpDrive, QueryFilter::Drive)
         )
     }
 
@@ -414,18 +405,6 @@ impl View {
     ) {
         self.session_source.update(ctx, |binding_source, ctx| {
             *binding_source = session_source;
-            ctx.notify();
-        });
-    }
-
-    /// Sets whether the active session is a shared session viewer.
-    /// This should be called by the workspace before opening the palette.
-    pub fn set_is_shared_session_viewer(&mut self, is_viewer: bool, ctx: &mut ViewContext<Self>) {
-        self.is_shared_session_viewer = is_viewer;
-
-        let mixer = self.search_bar.as_ref(ctx).mixer().clone();
-        self.data_source_store.update(ctx, |store, ctx| {
-            store.reset_search_mixer(mixer.clone(), self.is_shared_session_viewer, ctx);
             ctx.notify();
         });
     }
@@ -879,16 +858,6 @@ impl View {
                     },
                 );
             }
-            CommandPaletteItemAction::ExecuteWorkflow { id } => {
-                ctx.emit(Event::ExecuteWorkflow { id })
-            }
-            CommandPaletteItemAction::InvokeEnvironmentVariables { id } => {
-                ctx.emit(Event::InvokeEnvironmentVariables { id })
-            }
-            CommandPaletteItemAction::OpenNotebook { id } => ctx.emit(Event::OpenNotebook { id }),
-            CommandPaletteItemAction::ViewInWarpDrive { id } => {
-                ctx.emit(Event::ViewInWarpDrive { id })
-            }
             CommandPaletteItemAction::NewSession { source } => {
                 self.dispatch_typed_action_on_view(source.action().deref(), ctx);
             }
@@ -938,6 +907,13 @@ impl View {
                     line_and_column_arg: None,
                 });
             }
+            CommandPaletteItemAction::ExecuteWorkflow { id } => {
+                ctx.emit(Event::ExecuteWorkflow { id })
+            }
+            CommandPaletteItemAction::InvokeEnvironmentVariables { id } => {
+                ctx.emit(Event::InvokeEnvironmentVariables { id })
+            }
+            CommandPaletteItemAction::OpenNotebook { id } => ctx.emit(Event::OpenNotebook { id }),
             CommandPaletteItemAction::NewConversationInProject {
                 path: _,
                 project_name,

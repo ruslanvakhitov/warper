@@ -534,10 +534,7 @@ impl TitleWidget {
                 "Configure whether Warp attempts to “Warpify” (add support for blocks, \
                     input modes, etc) certain shells. ",
             ),
-            FormattedTextFragment::hyperlink(
-                "Learn more",
-                "https://docs.warp.dev/terminal/warpify/subshells",
-            ),
+            FormattedTextFragment::hyperlink("Learn more", "about:blank"),
         ];
 
         let warpify_description = FormattedTextElement::new(
@@ -744,9 +741,7 @@ impl SettingsWidget for SSHWidget {
                     "Use Tmux Warpification".into(),
                     Some(AdditionalInfo {
                         mouse_state: self.additional_info_mouse_state.clone(),
-                        on_click_action: Some(WarpifyPageAction::OpenUrl(
-                            "https://docs.warp.dev/terminal/warpify/ssh".into(),
-                        )),
+                        on_click_action: Some(WarpifyPageAction::OpenUrl("about:blank".into())),
                         secondary_text: None,
                         tooltip_override_text: None,
                     }),

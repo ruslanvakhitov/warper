@@ -180,13 +180,7 @@ impl SearchItemIcon for BindingGroup {
     fn icon(&self) -> Icon {
         match self {
             Self::Settings => Icon::Gear,
-            Self::WarpAi => {
-                if !FeatureFlag::AgentMode.is_enabled() {
-                    Icon::AiAssistant
-                } else {
-                    Icon::Oz
-                }
-            }
+            Self::WarpAi => Icon::AiAssistant,
             Self::Close => Icon::X,
             Self::Navigation => Icon::Navigation,
             Self::Workflow => Icon::Workflow,

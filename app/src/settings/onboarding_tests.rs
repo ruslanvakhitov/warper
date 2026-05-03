@@ -119,7 +119,7 @@ fn apply_onboarding_settings_preserves_existing_cloud_profile_on_existing_user_l
                 autonomy: Some(AgentAutonomy::None),
                 cli_agent_toolbar_enabled: true,
                 session_default: onboarding::SessionDefault::Agent,
-                disable_oz: false,
+                disable_agent: false,
                 show_agent_notifications: true,
             },
             project_settings: ProjectOnboardingSettings::default(),

@@ -4,7 +4,7 @@ use super::{
 };
 use crate::server::server_api::ServerApiProvider;
 use crate::{
-    ai::ambient_agents::telemetry::CloudAgentTelemetryEvent,
+    ai::ambient_agents::telemetry::AmbientAgentTelemetryEvent,
     ai::cloud_environments::{AmbientAgentEnvironment, GithubRepo},
     appearance::Appearance,
     editor::{
@@ -19,7 +19,6 @@ use crate::{
         render_warning_box, SubmittableTextInput, SubmittableTextInputEvent,
         WarningBoxButtonConfig, WarningBoxConfig,
     },
-    workspaces::user_workspaces::UserWorkspaces,
     ChannelState,
 };
 use instant::{Duration, Instant};
@@ -164,7 +163,6 @@ impl GithubAuthRedirectTarget {
 pub enum UpdateEnvironmentFormEvent {
     Created {
         environment: AmbientAgentEnvironment,
-        share_with_team: bool,
     },
     Updated {
         env_id: SyncId,
@@ -184,8 +182,6 @@ pub enum UpdateEnvironmentFormAction {
     Cancel,
     Escape,
     FocusSetupCommandsInput,
-
-    ToggleShareWithTeam,
 
     AddRepo,
     RemoveRepo(usize),
@@ -259,7 +255,7 @@ pub enum AuthSource {
     /// Auth initiated from the settings page (default behavior: redirect to settings)
     #[default]
     Settings,
-    /// Auth initiated from cloud agent setup (skip redirect, just refresh in place)
+    /// Auth initiated from agent setup (skip redirect, just refresh in place)
     CloudSetup,
 }
 
@@ -289,11 +285,6 @@ pub struct UpdateEnvironmentForm {
     submit_button: ViewHandle<ActionButton>,
     delete_button: ViewHandle<ActionButton>,
     back_button_mouse_state: MouseStateHandle,
-
-    // Share-with-team checkbox (Create mode only, when user is on a team)
-    share_with_team: bool,
-    share_with_team_checkbox_mouse_state: MouseStateHandle,
-    share_with_team_label_mouse_state: MouseStateHandle,
 
     // GitHub repos dropdown
     github_dropdown_state: GithubReposDropdownState,
@@ -587,9 +578,6 @@ impl UpdateEnvironmentForm {
             submit_button,
             delete_button,
             back_button_mouse_state: MouseStateHandle::default(),
-            share_with_team: false,
-            share_with_team_checkbox_mouse_state: MouseStateHandle::default(),
-            share_with_team_label_mouse_state: MouseStateHandle::default(),
             github_dropdown_state: GithubReposDropdownState::default(),
             dropdown_input_mouse_state: MouseStateHandle::default(),
             remove_repo_mouse_states: Vec::new(),
@@ -724,7 +712,6 @@ impl UpdateEnvironmentForm {
             EnvironmentFormInitArgs::Create => {
                 // Clear form
                 self.form_state = EnvironmentFormValues::default();
-                self.share_with_team = UserWorkspaces::as_ref(ctx).current_team_uid().is_some();
                 self.name_editor.update(ctx, |editor, ctx| {
                     editor.clear_buffer_and_reset_undo_stack(ctx);
                 });
@@ -752,8 +739,6 @@ impl UpdateEnvironmentForm {
                 env_id: _,
                 initial_values,
             } => {
-                self.share_with_team = false;
-
                 // Populate form with initial values
                 self.form_state = initial_values.as_ref().clone();
                 self.name_editor.update(ctx, |editor, ctx| {
@@ -1148,8 +1133,7 @@ impl UpdateEnvironmentForm {
     }
 
     fn github_connect_fallback_url(&self) -> String {
-        let base_url = format!("{}/oauth/connect/github", ChannelState::server_root_url());
-        self.auth_url_with_next(&base_url)
+        String::new()
     }
 
     fn extract_tx_id(auth_url: &str) -> Option<String> {
@@ -1340,7 +1324,7 @@ impl UpdateEnvironmentForm {
         };
 
         send_telemetry_from_ctx!(
-            CloudAgentTelemetryEvent::ImageSuggested {
+            AmbientAgentTelemetryEvent::ImageSuggested {
                 image,
                 needs_custom_image,
             },
@@ -1426,7 +1410,7 @@ impl UpdateEnvironmentForm {
                         warp_graphql::queries::suggest_cloud_environment_image::SuggestCloudEnvironmentImageResult::UserFacingError(_) => {
                             let error_message = "Failed to suggest a Docker image".to_string();
                             send_telemetry_from_ctx!(
-                                CloudAgentTelemetryEvent::ImageSuggestionFailed {
+                                AmbientAgentTelemetryEvent::ImageSuggestionFailed {
                                     error: error_message.clone(),
                                 },
                                 ctx
@@ -1439,7 +1423,7 @@ impl UpdateEnvironmentForm {
                         warp_graphql::queries::suggest_cloud_environment_image::SuggestCloudEnvironmentImageResult::Unknown => {
                             let error_message = "Unknown response from suggestCloudEnvironmentImage".to_string();
                             send_telemetry_from_ctx!(
-                                CloudAgentTelemetryEvent::ImageSuggestionFailed {
+                                AmbientAgentTelemetryEvent::ImageSuggestionFailed {
                                     error: error_message.clone(),
                                 },
                                 ctx
@@ -1453,7 +1437,7 @@ impl UpdateEnvironmentForm {
                     Err(e) => {
                         let error_message = format!("Failed to suggest a Docker image: {}", e);
                         send_telemetry_from_ctx!(
-                            CloudAgentTelemetryEvent::ImageSuggestionFailed {
+                            AmbientAgentTelemetryEvent::ImageSuggestionFailed {
                                 error: error_message.clone(),
                             },
                             ctx
@@ -1474,15 +1458,10 @@ impl UpdateEnvironmentForm {
         // Not supported on WASM
     }
 
-    fn should_show_share_with_team_checkbox(&self, app: &AppContext) -> bool {
-        matches!(self.mode, EnvironmentFormMode::Create)
-            && UserWorkspaces::as_ref(app).current_team_uid().is_some()
-    }
-
     fn render_submit_actions(
         &self,
         appearance: &Appearance,
-        app: &AppContext,
+        _app: &AppContext,
         button_handle: &ViewHandle<ActionButton>,
     ) -> Box<dyn Element> {
         let mut row = Flex::row()
@@ -1490,76 +1469,9 @@ impl UpdateEnvironmentForm {
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_spacing(12.);
 
-        if self.should_show_share_with_team_checkbox(app) {
-            let theme = appearance.theme();
-            let font_family = appearance.ui_font_family();
-            let font_size = appearance.ui_font_size();
-
-            let checkbox = appearance
-                .ui_builder()
-                .checkbox(self.share_with_team_checkbox_mouse_state.clone(), None)
-                .check(self.share_with_team)
-                .with_style(UiComponentStyles {
-                    margin: Some(Coords::uniform(0.)),
-                    ..Default::default()
-                })
-                .build()
-                .on_click(|ctx, _, _| {
-                    ctx.dispatch_typed_action(UpdateEnvironmentFormAction::ToggleShareWithTeam);
-                })
-                .finish();
-
-            let label = Hoverable::new(
-                self.share_with_team_label_mouse_state.clone(),
-                move |state| {
-                    let color = if state.is_mouse_over_element() {
-                        theme.active_ui_text_color().with_opacity(200)
-                    } else {
-                        theme.active_ui_text_color()
-                    };
-
-                    Text::new_inline("Share with team", font_family, font_size)
-                        .with_color(color.into())
-                        .finish()
-                },
-            )
-            .with_cursor(Cursor::PointingHand)
-            .on_click(|ctx, _, _| {
-                ctx.dispatch_typed_action(UpdateEnvironmentFormAction::ToggleShareWithTeam);
-            })
-            .finish();
-
-            row.add_child(
-                Flex::row()
-                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                    .with_spacing(4.)
-                    .with_child(checkbox)
-                    .with_child(label)
-                    .finish(),
-            );
-        }
-
         row.add_child(ChildView::new(button_handle).finish());
 
         row.finish()
-    }
-
-    fn render_share_with_team_warning(
-        &self,
-        appearance: &Appearance,
-        app: &AppContext,
-    ) -> Option<Box<dyn Element>> {
-        if !self.should_show_share_with_team_checkbox(app) || self.share_with_team {
-            return None;
-        }
-
-        Some(render_warning_box(
-            WarningBoxConfig::new(
-                "Personal environments cannot be used with external integrations or team API keys. For the best experience, use shared environments.",
-            )
-            .with_width(DROPDOWN_MAX_WIDTH),
-            appearance,
-        ))
     }
 
     fn render_back_button_and_title(
@@ -2779,20 +2691,8 @@ impl UpdateEnvironmentForm {
                 Some(url.to_string())
             }
             OAuthNextPlatform::Web => {
-                let mut url = Url::parse(&ChannelState::server_root_url()).ok()?;
-                url.set_query(None);
-
-                match target {
-                    GithubAuthRedirectTarget::SettingsEnvironments => {
-                        url.set_path("/settings/environments");
-                        {
-                            let mut pairs = url.query_pairs_mut();
-                            pairs.append_pair("oauth", "github");
-                        }
-                    }
-                }
-
-                Some(url.to_string())
+                let _ = target;
+                None
             }
         }
     }
@@ -3228,15 +3128,15 @@ impl TypedActionView for UpdateEnvironmentForm {
                 let environment = self.form_state.to_ambient_agent_environment();
                 match &self.mode {
                     EnvironmentFormMode::Create => {
-                        send_telemetry_from_ctx!(CloudAgentTelemetryEvent::EnvironmentCreated, ctx);
-                        ctx.emit(UpdateEnvironmentFormEvent::Created {
-                            environment,
-                            share_with_team: self.share_with_team,
-                        });
+                        send_telemetry_from_ctx!(
+                            AmbientAgentTelemetryEvent::EnvironmentCreated,
+                            ctx
+                        );
+                        ctx.emit(UpdateEnvironmentFormEvent::Created { environment });
                     }
                     EnvironmentFormMode::Edit { env_id } => {
                         send_telemetry_from_ctx!(
-                            CloudAgentTelemetryEvent::EnvironmentUpdated {
+                            AmbientAgentTelemetryEvent::EnvironmentUpdated {
                                 environment_id: env_id.into_server(),
                             },
                             ctx
@@ -3251,7 +3151,7 @@ impl TypedActionView for UpdateEnvironmentForm {
             UpdateEnvironmentFormAction::Delete => {
                 if let EnvironmentFormMode::Edit { env_id } = &self.mode {
                     send_telemetry_from_ctx!(
-                        CloudAgentTelemetryEvent::EnvironmentDeleted {
+                        AmbientAgentTelemetryEvent::EnvironmentDeleted {
                             environment_id: env_id.into_server(),
                         },
                         ctx
@@ -3261,14 +3161,6 @@ impl TypedActionView for UpdateEnvironmentForm {
             }
             UpdateEnvironmentFormAction::Cancel => {
                 ctx.emit(UpdateEnvironmentFormEvent::Cancelled);
-            }
-            UpdateEnvironmentFormAction::ToggleShareWithTeam => {
-                if matches!(self.mode, EnvironmentFormMode::Create)
-                    && UserWorkspaces::as_ref(ctx).current_team_uid().is_some()
-                {
-                    self.share_with_team = !self.share_with_team;
-                    ctx.notify();
-                }
             }
             UpdateEnvironmentFormAction::Escape => {
                 if !self.try_close_repos_dropdown(ctx) {
@@ -3379,7 +3271,7 @@ impl TypedActionView for UpdateEnvironmentForm {
             }
             UpdateEnvironmentFormAction::LaunchAgentForSelectedRepos => {
                 send_telemetry_from_ctx!(
-                    CloudAgentTelemetryEvent::LaunchedAgentFromEnvironmentForm,
+                    AmbientAgentTelemetryEvent::LaunchedAgentFromEnvironmentForm,
                     ctx
                 );
 
@@ -3414,7 +3306,7 @@ impl TypedActionView for UpdateEnvironmentForm {
             }
             UpdateEnvironmentFormAction::StartGithubAuth => {
                 send_telemetry_from_ctx!(
-                    CloudAgentTelemetryEvent::GitHubAuthFromEnvironmentForm,
+                    AmbientAgentTelemetryEvent::GitHubAuthFromEnvironmentForm,
                     ctx
                 );
                 self.start_github_auth(ctx);
@@ -3458,9 +3350,6 @@ impl View for UpdateEnvironmentForm {
         // Header row with back button, title, and action button (only when show_header is true)
         if self.show_header {
             page.add_child(self.render_header(appearance, app));
-        }
-        if let Some(warning) = self.render_share_with_team_warning(appearance, app) {
-            page.add_child(warning);
         }
 
         // Form fields
@@ -3514,7 +3403,3 @@ impl View for UpdateEnvironmentForm {
         }
     }
 }
-
-#[cfg(test)]
-#[path = "update_environment_form_tests.rs"]
-mod tests;

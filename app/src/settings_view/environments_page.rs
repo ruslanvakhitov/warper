@@ -7,8 +7,7 @@ use super::{
     },
     editor_text_colors,
     settings_page::{
-        MatchData, PageType, SettingsPageEvent, SettingsPageMeta, SettingsPageViewHandle,
-        SettingsWidget, CONTENT_FONT_SIZE,
+        MatchData, PageType, SettingsPageEvent, SettingsPageMeta, SettingsWidget, CONTENT_FONT_SIZE,
     },
     update_environment_form::{
         EnvironmentFormInitArgs, EnvironmentFormValues, GithubAuthRedirectTarget,
@@ -17,11 +16,11 @@ use super::{
     SettingsSection,
 };
 use crate::{
-    ai::cloud_environments::{self, CloudAmbientAgentEnvironment},
+    ai::cloud_environments::{self, AmbientAgentEnvironmentObject},
     appearance::Appearance,
     cloud_object::{
         model::persistence::{CloudModel, CloudModelEvent},
-        CloudObjectLocation, GenericStringObjectFormat, JsonObjectType, Owner, Space,
+        GenericStringObjectFormat, JsonObjectType, Owner,
     },
     drive::CloudObjectTypeAndId,
     editor::{EditorView, PropagateAndNoOpNavigationKeys, SingleLineEditorOptions, TextOptions},
@@ -30,7 +29,7 @@ use crate::{
         cloud_objects::update_manager::{
             ObjectOperation, OperationSuccessType, UpdateManager, UpdateManagerEvent,
         },
-        ids::{ClientId, ServerId, SyncId},
+        ids::{ClientId, SyncId},
     },
     terminal::view::init_environment::mode_selector::{
         EnvironmentSetupMode, EnvironmentSetupModeSelector, EnvironmentSetupModeSelectorEvent,
@@ -43,7 +42,6 @@ use crate::{
         COPY_FEEDBACK_DURATION,
     },
     workspace::ToastStack,
-    workspaces::user_workspaces::UserWorkspaces,
 };
 use instant::Instant;
 use pathfinder_geometry::vector::vec2f;
@@ -55,10 +53,9 @@ use warp_graphql::scalars::time::ServerTimestamp;
 use warpui::{
     elements::{
         Align, Border, ChildAnchor, Clipped, ConstrainedBox, Container, CornerRadius,
-        CrossAxisAlignment, Element, Empty, Expanded, Flex, Hoverable, MainAxisAlignment,
-        MainAxisSize, MouseStateHandle, OffsetPositioning, ParentAnchor, ParentElement,
-        ParentOffsetBounds, Radius, Shrinkable, SizeConstraintCondition, SizeConstraintSwitch,
-        Stack, Text,
+        CrossAxisAlignment, Element, Expanded, Flex, Hoverable, MainAxisAlignment, MainAxisSize,
+        MouseStateHandle, OffsetPositioning, ParentAnchor, ParentElement, ParentOffsetBounds,
+        Radius, Shrinkable, SizeConstraintCondition, SizeConstraintSwitch, Stack, Text,
     },
     fonts::{Properties, Weight},
     prelude::ChildView,
@@ -129,7 +126,7 @@ struct EnvironmentDisplayData {
 }
 
 impl EnvironmentDisplayData {
-    fn from_cloud_environment(env: &CloudAmbientAgentEnvironment) -> Self {
+    fn from_cloud_environment(env: &AmbientAgentEnvironmentObject) -> Self {
         let model = &env.model().string_model;
 
         // For environments, the server revision timestamp reflects the last successful edit.
@@ -213,7 +210,6 @@ pub struct EnvironmentsPageView {
     current_page: EnvironmentsPage,
     copy_button_mouse_states: HashMap<SyncId, MouseStateHandle>,
     edit_button_mouse_states: HashMap<SyncId, MouseStateHandle>,
-    share_button_mouse_states: HashMap<SyncId, MouseStateHandle>,
     card_hover_mouse_states: HashMap<SyncId, MouseStateHandle>,
     /// Tracks when each env ID was last copied, for showing checkmark feedback
     copy_feedback_times: HashMap<SyncId, Instant>,
@@ -228,8 +224,6 @@ pub struct EnvironmentsPageView {
     pending_create_client_id: Option<ClientId>,
     // Track pending delete to show success toast when complete
     pending_delete_env_id: Option<SyncId>,
-    // Track pending share (personal -> team) to show error toast on failure
-    pending_share_server_id: Option<ServerId>,
     // Delete confirmation dialog
     delete_confirmation_dialog: ViewHandle<DeleteEnvironmentConfirmationDialog>,
     // Agent-assisted environment creation modal
@@ -249,11 +243,10 @@ pub struct EnvironmentsPageView {
 
 impl EnvironmentsPageView {
     fn ensure_environment_mouse_states(&mut self, ctx: &mut ViewContext<Self>) {
-        let environments = CloudAmbientAgentEnvironment::get_all(ctx);
+        let environments = AmbientAgentEnvironmentObject::get_all(ctx);
         for env in &environments {
             self.copy_button_mouse_states.entry(env.id).or_default();
             self.edit_button_mouse_states.entry(env.id).or_default();
-            self.share_button_mouse_states.entry(env.id).or_default();
             self.card_hover_mouse_states.entry(env.id).or_default();
         }
     }
@@ -264,7 +257,7 @@ impl EnvironmentsPageView {
         match &page {
             EnvironmentsPage::Edit { env_id } => {
                 // Extract environment data for edit mode
-                let env_data = CloudAmbientAgentEnvironment::get_by_id(env_id, ctx).map(|env| {
+                let env_data = AmbientAgentEnvironmentObject::get_by_id(env_id, ctx).map(|env| {
                     let model = &env.model().string_model;
                     EnvironmentFormValues {
                         name: model.name.clone(),
@@ -484,16 +477,12 @@ impl EnvironmentsPageView {
         // Initialize mouse states for existing environments
         let mut copy_button_mouse_states = HashMap::new();
         let mut edit_button_mouse_states = HashMap::new();
-        let mut share_button_mouse_states = HashMap::new();
         let mut card_hover_mouse_states = HashMap::new();
-        for env in CloudAmbientAgentEnvironment::get_all(ctx) {
+        for env in AmbientAgentEnvironmentObject::get_all(ctx) {
             copy_button_mouse_states
                 .entry(env.id)
                 .or_insert_with(MouseStateHandle::default);
             edit_button_mouse_states
-                .entry(env.id)
-                .or_insert_with(MouseStateHandle::default);
-            share_button_mouse_states
                 .entry(env.id)
                 .or_insert_with(MouseStateHandle::default);
             card_hover_mouse_states
@@ -514,7 +503,6 @@ impl EnvironmentsPageView {
             current_page: EnvironmentsPage::default(),
             copy_button_mouse_states,
             edit_button_mouse_states,
-            share_button_mouse_states,
             card_hover_mouse_states,
             copy_feedback_times: HashMap::new(),
             search_query: String::new(),
@@ -524,7 +512,6 @@ impl EnvironmentsPageView {
             pending_save_env_id: None,
             pending_create_client_id: None,
             pending_delete_env_id: None,
-            pending_share_server_id: None,
             delete_confirmation_dialog,
             agent_assisted_environment_modal,
             new_env_button,
@@ -670,29 +657,6 @@ impl EnvironmentsPageView {
                 }
             }
         }
-
-        // Check if this is a completion event for our pending share (personal -> team)
-        if matches!(&result.operation, ObjectOperation::MoveToDrive) {
-            let (Some(pending_server_id), Some(result_server_id)) =
-                (self.pending_share_server_id, result.server_id)
-            else {
-                return;
-            };
-
-            if pending_server_id != result_server_id {
-                return;
-            }
-
-            self.pending_share_server_id = None;
-
-            if matches!(result.success_type, OperationSuccessType::Success) {
-                self.show_success_toast("Successfully shared environment".to_string(), ctx);
-            } else {
-                self.show_error_toast("Failed to share environment with team".to_string(), ctx);
-            }
-
-            ctx.notify();
-        }
     }
 
     fn delete_environment(&mut self, env_id: SyncId, ctx: &mut ViewContext<Self>) {
@@ -703,7 +667,7 @@ impl EnvironmentsPageView {
         UpdateManager::handle(ctx).update(ctx, |update_manager, ctx| {
             update_manager.delete_object_by_user(
                 CloudObjectTypeAndId::GenericStringObject {
-                    object_type: GenericStringObjectFormat::Json(JsonObjectType::CloudEnvironment),
+                    object_type: GenericStringObjectFormat::Json(JsonObjectType::AgentEnvironment),
                     id: env_id,
                 },
                 ctx,
@@ -742,19 +706,12 @@ impl EnvironmentsPageView {
         ctx: &mut ViewContext<Self>,
     ) {
         match event {
-            UpdateEnvironmentFormEvent::Created {
-                environment,
-                share_with_team,
-            } => {
+            UpdateEnvironmentFormEvent::Created { environment } => {
                 // Generate a client ID for tracking the create operation
                 let client_id = ClientId::default();
                 self.pending_create_client_id = Some(client_id);
 
-                let owner = if *share_with_team {
-                    cloud_environments::owner_for_new_environment(ctx)
-                } else {
-                    cloud_environments::owner_for_new_personal_environment(ctx)
-                };
+                let owner = cloud_environments::owner_for_new_personal_environment(ctx);
 
                 let Some(owner) = owner else {
                     self.show_error_toast(
@@ -782,7 +739,7 @@ impl EnvironmentsPageView {
                 environment,
             } => {
                 // Verify the environment still exists
-                let Some(existing_env) = CloudAmbientAgentEnvironment::get_by_id(env_id, ctx)
+                let Some(existing_env) = AmbientAgentEnvironmentObject::get_by_id(env_id, ctx)
                 else {
                     self.show_error_toast(
                         "Unable to save: environment no longer exists.".to_string(),
@@ -812,7 +769,7 @@ impl EnvironmentsPageView {
             }
             UpdateEnvironmentFormEvent::DeleteRequested { env_id } => {
                 // Get the environment name for the confirmation dialog
-                if let Some(env) = CloudAmbientAgentEnvironment::get_by_id(env_id, ctx) {
+                if let Some(env) = AmbientAgentEnvironmentObject::get_by_id(env_id, ctx) {
                     let env_name = env.model().string_model.name.clone();
                     self.delete_confirmation_dialog.update(ctx, |dialog, ctx| {
                         dialog.show(*env_id, env_name, ctx);
@@ -893,7 +850,6 @@ pub enum EnvironmentsPageAction {
     OpenCreatePage,
     OpenAgentAssistedCreateModal,
     OpenEnvironmentSetupModeSelector,
-    ShareToTeam(SyncId),
 }
 impl Entity for EnvironmentsPageView {
     type Event = SettingsPageEvent;
@@ -951,40 +907,6 @@ impl TypedActionView for EnvironmentsPageView {
             EnvironmentsPageAction::OpenEnvironmentSetupModeSelector => {
                 self.open_environment_setup_mode_selector(ctx);
             }
-            EnvironmentsPageAction::ShareToTeam(env_id) => {
-                let Some(team_uid) = UserWorkspaces::as_ref(ctx).current_team_uid() else {
-                    self.show_error_toast(
-                        "Unable to share environment: you are not currently on a team.".to_string(),
-                        ctx,
-                    );
-                    return;
-                };
-
-                let SyncId::ServerId(server_id) = *env_id else {
-                    self.show_error_toast(
-                        "Unable to share environment: environment is not yet synced.".to_string(),
-                        ctx,
-                    );
-                    return;
-                };
-
-                self.pending_share_server_id = Some(server_id);
-
-                UpdateManager::handle(ctx).update(ctx, |update_manager, ctx| {
-                    update_manager.move_object_to_location(
-                        CloudObjectTypeAndId::GenericStringObject {
-                            object_type: GenericStringObjectFormat::Json(
-                                JsonObjectType::CloudEnvironment,
-                            ),
-                            id: *env_id,
-                        },
-                        CloudObjectLocation::Space(Space::Team { team_uid }),
-                        ctx,
-                    );
-                });
-
-                ctx.notify();
-            }
         }
     }
 
@@ -1018,15 +940,8 @@ struct EnvironmentsPageWidget;
 struct EnvironmentCardRenderState<'a> {
     copy_button_mouse_states: &'a HashMap<SyncId, MouseStateHandle>,
     edit_button_mouse_states: &'a HashMap<SyncId, MouseStateHandle>,
-    share_button_mouse_states: &'a HashMap<SyncId, MouseStateHandle>,
     card_hover_mouse_states: &'a HashMap<SyncId, MouseStateHandle>,
     copy_feedback_times: &'a HashMap<SyncId, Instant>,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum EnvironmentListScope {
-    Personal,
-    Team,
 }
 
 impl SettingsWidget for EnvironmentsPageWidget {
@@ -1097,7 +1012,7 @@ impl EnvironmentsPageWidget {
         // We keep the owner alongside the display data so we can partition the list into Personal
         // vs Team scoped sections.
         let mut environments: Vec<(Owner, EnvironmentDisplayData)> =
-            CloudAmbientAgentEnvironment::get_all(app)
+            AmbientAgentEnvironmentObject::get_all(app)
                 .iter()
                 .map(|env| {
                     (
@@ -1123,15 +1038,10 @@ impl EnvironmentsPageWidget {
             if environments.is_empty() {
                 page.add_child(Self::render_no_matches_state(appearance));
             } else {
-                let mut personal_environments = Vec::new();
-                let mut team_environments = Vec::new();
-
-                for (owner, env) in environments {
-                    match owner {
-                        Owner::User { .. } => personal_environments.push(env),
-                        Owner::Team { .. } => team_environments.push(env),
-                    }
-                }
+                let mut personal_environments = environments
+                    .into_iter()
+                    .filter_map(|(owner, env)| matches!(owner, Owner::User { .. }).then_some(env))
+                    .collect::<Vec<_>>();
 
                 let sort_by_last_edited_desc = |envs: &mut Vec<EnvironmentDisplayData>| {
                     envs.sort_by(|a, b| match (a.last_edited_ts, b.last_edited_ts) {
@@ -1143,58 +1053,22 @@ impl EnvironmentsPageWidget {
                 };
 
                 sort_by_last_edited_desc(&mut personal_environments);
-                sort_by_last_edited_desc(&mut team_environments);
-
-                let is_user_on_team = UserWorkspaces::as_ref(app).current_team_uid().is_some();
 
                 let card_render_state = EnvironmentCardRenderState {
                     copy_button_mouse_states: &view.copy_button_mouse_states,
                     edit_button_mouse_states: &view.edit_button_mouse_states,
-                    share_button_mouse_states: &view.share_button_mouse_states,
                     card_hover_mouse_states: &view.card_hover_mouse_states,
                     copy_feedback_times: &view.copy_feedback_times,
                 };
 
-                if !personal_environments.is_empty() && !team_environments.is_empty() {
-                    let sections = Flex::column()
-                        .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
-                        .with_spacing(SECTION_SPACING)
-                        .with_child(Self::render_scoped_section(
-                            &personal_environments,
-                            &card_render_state,
-                            appearance,
-                            app,
-                            EnvironmentListScope::Personal,
-                            is_user_on_team,
-                        ))
-                        .with_child(Self::render_section_divider(appearance))
-                        .with_child(Self::render_scoped_section(
-                            &team_environments,
-                            &card_render_state,
-                            appearance,
-                            app,
-                            EnvironmentListScope::Team,
-                            is_user_on_team,
-                        ))
-                        .finish();
-                    page.add_child(sections);
-                } else if !personal_environments.is_empty() {
-                    page.add_child(Self::render_scoped_section(
+                if personal_environments.is_empty() {
+                    page.add_child(Self::render_no_matches_state(appearance));
+                } else {
+                    page.add_child(Self::render_personal_section(
                         &personal_environments,
                         &card_render_state,
                         appearance,
                         app,
-                        EnvironmentListScope::Personal,
-                        is_user_on_team,
-                    ));
-                } else {
-                    page.add_child(Self::render_scoped_section(
-                        &team_environments,
-                        &card_render_state,
-                        appearance,
-                        app,
-                        EnvironmentListScope::Team,
-                        is_user_on_team,
                     ));
                 }
             }
@@ -1291,39 +1165,24 @@ impl EnvironmentsPageWidget {
         .finish()
     }
 
-    fn render_scoped_section(
+    fn render_personal_section(
         environments: &[EnvironmentDisplayData],
         card_render_state: &EnvironmentCardRenderState<'_>,
         appearance: &Appearance,
         app: &AppContext,
-        list_scope: EnvironmentListScope,
-        is_user_on_team: bool,
     ) -> Box<dyn Element> {
         // Keep header-to-card spacing smaller than the overall page/section spacing.
         const HEADER_TO_LIST_SPACING: f32 = 8.;
 
-        let header = match list_scope {
-            EnvironmentListScope::Personal => Self::render_overline_header("Personal", appearance),
-            EnvironmentListScope::Team => {
-                let shared_by_text = UserWorkspaces::as_ref(app)
-                    .current_team()
-                    .map(|team| format!("Shared by Warp and {}", team.name))
-                    .unwrap_or_else(|| "Shared by Warp and your team".to_string());
-                Self::render_overline_header(&shared_by_text, appearance)
-            }
-        };
-
         Flex::column()
             .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
             .with_spacing(HEADER_TO_LIST_SPACING)
-            .with_child(header)
+            .with_child(Self::render_overline_header("Personal", appearance))
             .with_child(Self::render_environments_list(
                 environments,
                 card_render_state,
                 appearance,
                 app,
-                list_scope,
-                is_user_on_team,
             ))
             .finish()
     }
@@ -1338,16 +1197,6 @@ impl EnvironmentsPageWidget {
             appearance.theme(),
             appearance.theme().surface_2(),
         ))
-        .finish()
-    }
-
-    fn render_section_divider(appearance: &Appearance) -> Box<dyn Element> {
-        let theme = appearance.theme();
-        Container::new(
-            Container::new(Empty::new().finish())
-                .with_border(Border::bottom(1.).with_border_fill(theme.outline()))
-                .finish(),
-        )
         .finish()
     }
 
@@ -1670,8 +1519,6 @@ impl EnvironmentsPageWidget {
         card_render_state: &EnvironmentCardRenderState<'_>,
         appearance: &Appearance,
         app: &AppContext,
-        list_scope: EnvironmentListScope,
-        is_user_on_team: bool,
     ) -> Box<dyn Element> {
         let mut list = Flex::column()
             .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
@@ -1683,8 +1530,6 @@ impl EnvironmentsPageWidget {
                 card_render_state,
                 appearance,
                 app,
-                list_scope,
-                is_user_on_team,
             ));
         }
 
@@ -1696,8 +1541,6 @@ impl EnvironmentsPageWidget {
         card_render_state: &EnvironmentCardRenderState<'_>,
         appearance: &Appearance,
         app: &AppContext,
-        list_scope: EnvironmentListScope,
-        is_user_on_team: bool,
     ) -> Box<dyn Element> {
         let theme = appearance.theme();
         let env_id = environment.id;
@@ -1724,12 +1567,6 @@ impl EnvironmentsPageWidget {
             .unwrap_or_else(MouseStateHandle::default);
         let edit_button_mouse_state = card_render_state
             .edit_button_mouse_states
-            .get(&env_id)
-            .cloned()
-            .unwrap_or_else(MouseStateHandle::default);
-
-        let share_button_mouse_state = card_render_state
-            .share_button_mouse_states
             .get(&env_id)
             .cloned()
             .unwrap_or_else(MouseStateHandle::default);
@@ -1866,46 +1703,6 @@ impl EnvironmentsPageWidget {
                 ThemeFill::Solid(warpui::color::ColorU::transparent_black())
             };
 
-            let should_render_share_button = list_scope == EnvironmentListScope::Personal
-                && is_user_on_team
-                && matches!(env_id, SyncId::ServerId(_));
-
-            if should_render_share_button {
-                let share_ui_builder = appearance.ui_builder().clone();
-                let share_button_element = if is_card_hovered {
-                    icon_button_with_color(
-                        appearance,
-                        Icon::Share,
-                        false,
-                        share_button_mouse_state.clone(),
-                        icon_color,
-                    )
-                    .with_tooltip(move || {
-                        share_ui_builder
-                            .tool_tip("Share".to_string())
-                            .build()
-                            .finish()
-                    })
-                    .build()
-                    .on_click(move |ctx, _, _| {
-                        ctx.dispatch_typed_action(EnvironmentsPageAction::ShareToTeam(env_id));
-                    })
-                    .finish()
-                } else {
-                    icon_button_with_color(
-                        appearance,
-                        Icon::Share,
-                        false,
-                        share_button_mouse_state.clone(),
-                        icon_color,
-                    )
-                    .build()
-                    .finish()
-                };
-
-                card_row.add_child(share_button_element);
-            }
-
             let edit_ui_builder = appearance.ui_builder().clone();
             let mut edit_button = icon_button_with_color(
                 appearance,
@@ -1954,17 +1751,11 @@ impl EnvironmentsPageWidget {
 
 impl SettingsPageMeta for EnvironmentsPageView {
     fn section() -> SettingsSection {
-        SettingsSection::CloudEnvironments
+        SettingsSection::Account
     }
     fn on_page_selected(&mut self, _allow_steal_focus: bool, ctx: &mut ViewContext<Self>) {
         self.environment_form.update(ctx, |form, ctx| {
             form.fetch_github_repos(ctx);
-        });
-        // Refresh cloud objects so the environments list reflects recent changes (e.g. a newly
-        // created environment from the terminal flow) without waiting for the next poll.
-        #[cfg(not(any(test, feature = "integration_tests")))]
-        UpdateManager::handle(ctx).update(ctx, |manager, ctx| {
-            manager.refresh_updated_objects(ctx);
         });
     }
 
@@ -2031,13 +1822,3 @@ impl BackingView for EnvironmentsPageView {
         self.page.set_min_page_width(260.);
     }
 }
-
-impl From<ViewHandle<EnvironmentsPageView>> for SettingsPageViewHandle {
-    fn from(view_handle: ViewHandle<EnvironmentsPageView>) -> Self {
-        SettingsPageViewHandle::CloudEnvironments(view_handle)
-    }
-}
-
-#[cfg(test)]
-#[path = "environments_page_tests.rs"]
-mod tests;

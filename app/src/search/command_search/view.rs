@@ -12,11 +12,10 @@ use warpui::{
     accessibility::{AccessibilityContent, WarpA11yRole},
     elements::{
         resizable_state_handle, Align, AnchorPair, Border, ConstrainedBox, Container, CornerRadius,
-        CrossAxisAlignment, Dismiss, Fill, Flex, MouseStateHandle, OffsetPositioning, OffsetType,
-        ParentElement, ParentOffsetBounds, PositionedElementOffsetBounds, PositioningAxis, Radius,
-        Resizable, ResizableStateHandle, SavePosition, ScrollStateHandle, Scrollable,
-        ScrollableElement, Shrinkable, Stack, UniformList, UniformListState, XAxisAnchor,
-        YAxisAnchor,
+        CrossAxisAlignment, Dismiss, Fill, Flex, OffsetPositioning, OffsetType, ParentElement,
+        ParentOffsetBounds, PositionedElementOffsetBounds, PositioningAxis, Radius, Resizable,
+        ResizableStateHandle, SavePosition, ScrollStateHandle, Scrollable, ScrollableElement,
+        Shrinkable, Stack, UniformList, UniformListState, XAxisAnchor, YAxisAnchor,
     },
     presenter::ChildView,
     ui_components::components::{UiComponent, UiComponentStyles},
@@ -29,12 +28,7 @@ use crate::{
         execution_context::WarpAiExecutionContext, GenerateCommandsFromNaturalLanguageError,
     },
     appearance::Appearance,
-    auth::{
-        auth_manager::AuthManager, auth_state::AuthState, auth_view_modal::AuthViewVariant,
-        AuthStateProvider, UserUid,
-    },
     completer::SessionContext,
-    drive::settings::WarpDriveSettings,
     search::{
         command_search::searcher::{CommandSearchItemAction, CommandSearchMixer},
         result_renderer::{QueryResultRenderer, QueryResultRendererStyles},
@@ -42,7 +36,7 @@ use crate::{
         QueryFilter,
     },
     send_telemetry_from_ctx,
-    server::{ids::ServerId, server_api::ai::AIClient, telemetry::TelemetryEvent},
+    server::{server_api::ai::AIClient, telemetry::TelemetryEvent},
     settings::AISettings,
     terminal::{
         input::MenuPositioning,
@@ -50,16 +44,13 @@ use crate::{
         resizable_data::{ModalType, ResizableData, DEFAULT_UNIVERSAL_SEARCH_WIDTH},
         History, HistoryEvent,
     },
-    workspaces::user_workspaces::UserWorkspaces,
 };
 
 use super::{
     ai_queries::AIQueriesDataSource,
-    env_var_collections::EnvVarCollectionDataSource,
     history::history_data_source_for_session,
-    notebooks::notebooks_data_source,
     warp_ai::WarpAIDataSource,
-    workflows::{cloud_workflows_data_source, WorkflowsDataSource},
+    workflows::WorkflowsDataSource,
     zero_state::{CommandSearchZeroStateEvent, CommandSearchZeroStateView},
 };
 
@@ -108,8 +99,6 @@ pub enum CommandSearchAction {
     },
     Close,
     Resize,
-    OpenUpgradeLink(String),
-    AttemptLoginGatedUpgrade,
 }
 
 struct CommandSearchViewState {
@@ -126,7 +115,6 @@ pub struct CommandSearchView {
     zero_state_handle: ViewHandle<CommandSearchZeroStateView>,
     handle: WeakViewHandle<Self>,
     menu_positioning: MenuPositioning,
-    auth_state: Arc<AuthState>,
     ai_client: Arc<dyn AIClient>,
     state: CommandSearchViewState,
     visible_results_range_sender: Sender<Range<usize>>,
@@ -134,7 +122,6 @@ pub struct CommandSearchView {
     search_bar: ViewHandle<SearchBar<CommandSearchItemAction>>,
     search_bar_state: ModelHandle<SearchBarState<CommandSearchItemAction>>,
     mixer: ModelHandle<CommandSearchMixer>,
-    upgrade_link: MouseStateHandle,
 }
 
 impl CommandSearchView {
@@ -201,7 +188,6 @@ impl CommandSearchView {
             });
 
         Self {
-            auth_state: AuthStateProvider::as_ref(ctx).get().clone(),
             ai_client,
             zero_state_handle,
             menu_positioning: Default::default(),
@@ -216,7 +202,6 @@ impl CommandSearchView {
             search_bar,
             search_bar_state,
             mixer,
-            upgrade_link: Default::default(),
         }
     }
 
@@ -251,48 +236,10 @@ impl CommandSearchView {
                 );
             }
 
-            if WarpDriveSettings::is_warp_drive_enabled(ctx) {
-                mixer.add_sync_source(
-                    WorkflowsDataSource::new(session_context.as_ref(), ctx),
-                    HashSet::from([QueryFilter::Workflows]),
-                );
-
-                let mut workflows_filters = HashSet::from([QueryFilter::Workflows]);
-                if AISettings::as_ref(ctx).is_any_ai_enabled(ctx) {
-                    workflows_filters.insert(QueryFilter::AgentModeWorkflows);
-                }
-
-                mixer.add_async_source(
-                    cloud_workflows_data_source(),
-                    workflows_filters,
-                    AddAsyncSourceOptions {
-                        debounce_interval: Some(Duration::from_millis(50)),
-                        run_in_zero_state: true,
-                        run_when_unfiltered: true,
-                    },
-                    ctx,
-                );
-
-                mixer.add_async_source(
-                    notebooks_data_source(),
-                    HashSet::from([QueryFilter::Notebooks]),
-                    AddAsyncSourceOptions {
-                        debounce_interval: Some(Duration::from_millis(50)),
-                        run_in_zero_state: true,
-                        run_when_unfiltered: true,
-                    },
-                    ctx,
-                );
-
-                // EnvVarCollectionDataSource stays synchronous because each match target is
-                // structurally short (title, variable name, description). The per-item fuzzy
-                // match cost is negligible, so offloading to an async task would add complexity
-                // without meaningful performance benefit.
-                mixer.add_sync_source(
-                    EnvVarCollectionDataSource::new(),
-                    HashSet::from([QueryFilter::EnvironmentVariables]),
-                );
-            }
+            mixer.add_sync_source(
+                WorkflowsDataSource::new(session_context.as_ref(), ctx),
+                HashSet::from([QueryFilter::Workflows]),
+            );
 
             if FeatureFlag::AgentMode.is_enabled() && AISettings::as_ref(ctx).is_any_ai_enabled(ctx)
             {
@@ -606,31 +553,8 @@ impl CommandSearchView {
         is_ratelimit_error: bool,
         appearance: &Appearance,
     ) -> Box<dyn Element> {
-        if is_ratelimit_error {
-            let current_user_id = self.auth_state.user_id().unwrap_or_default();
-            if let Some(team) = UserWorkspaces::as_ref(app).current_team() {
-                let current_user_email = self.auth_state.user_email().unwrap_or_default();
-                let has_admin_permissions = team.has_admin_permissions(&current_user_email);
-                if team.billing_metadata.can_upgrade_to_higher_tier_plan() {
-                    if has_admin_permissions {
-                        self.render_error_header_with_upgrade_link(
-                            app,
-                            appearance,
-                            Some(team.uid),
-                            current_user_id,
-                        )
-                    } else {
-                        self.render_error_header_text("Looks like you're out of credits. Contact a team admin to upgrade for more credits.".to_string(), appearance)
-                    }
-                } else {
-                    self.render_error_header_text(message, appearance)
-                }
-            } else {
-                self.render_error_header_with_upgrade_link(app, appearance, None, current_user_id)
-            }
-        } else {
-            self.render_error_header_text(message, appearance)
-        }
+        let _ = (app, is_ratelimit_error);
+        self.render_error_header_text(message, appearance)
     }
 
     fn render_error_header_text(
@@ -661,95 +585,6 @@ impl CommandSearchView {
         .with_padding_bottom(10.)
         .with_padding_top(4.)
         .finish()
-    }
-
-    fn render_error_header_with_upgrade_link(
-        &self,
-        app: &AppContext,
-        appearance: &Appearance,
-        team_uid: Option<ServerId>,
-        user_id: UserUid,
-    ) -> Box<dyn Element> {
-        let mut row = Flex::row()
-            .with_main_axis_size(warpui::elements::MainAxisSize::Max)
-            .with_cross_axis_alignment(CrossAxisAlignment::Center);
-
-        let upgrade_link = team_uid
-            .map(UserWorkspaces::upgrade_link_for_team)
-            .unwrap_or_else(|| UserWorkspaces::upgrade_link(user_id));
-
-        let link = if AuthStateProvider::as_ref(app)
-            .get()
-            .is_anonymous_or_logged_out()
-        {
-            appearance
-                .ui_builder()
-                .link(
-                    "Upgrade".into(),
-                    None,
-                    Some(Box::new(move |ctx| {
-                        ctx.dispatch_typed_action(CommandSearchAction::AttemptLoginGatedUpgrade);
-                    })),
-                    self.upgrade_link.clone(),
-                )
-                .soft_wrap(false)
-        } else {
-            appearance
-                .ui_builder()
-                .link(
-                    "Upgrade".into(),
-                    None,
-                    Some(Box::new(move |ctx| {
-                        ctx.dispatch_typed_action(CommandSearchAction::OpenUpgradeLink(
-                            upgrade_link.clone(),
-                        ));
-                    })),
-                    self.upgrade_link.clone(),
-                )
-                .soft_wrap(false)
-        };
-
-        row.add_child(
-            appearance
-                .ui_builder()
-                .span("Looks like you're out of credits. ")
-                .with_style(UiComponentStyles {
-                    font_size: Some(appearance.monospace_font_size()),
-                    font_family_id: Some(appearance.ui_font_family()),
-                    font_color: Some(appearance.theme().nonactive_ui_text_color().into()),
-                    ..Default::default()
-                })
-                .build()
-                .finish(),
-        );
-        row.add_child(
-            link.with_style(UiComponentStyles {
-                font_size: Some(appearance.monospace_font_size()),
-                font_family_id: Some(appearance.ui_font_family()),
-                ..Default::default()
-            })
-            .build()
-            .finish(),
-        );
-        row.add_child(
-            appearance
-                .ui_builder()
-                .span(" for more credits.")
-                .with_style(UiComponentStyles {
-                    font_size: Some(appearance.monospace_font_size()),
-                    font_family_id: Some(appearance.ui_font_family()),
-                    font_color: Some(appearance.theme().nonactive_ui_text_color().into()),
-                    ..Default::default()
-                })
-                .build()
-                .finish(),
-        );
-
-        Container::new(row.finish())
-            .with_horizontal_padding(16.)
-            .with_padding_bottom(10.)
-            .with_padding_top(4.)
-            .finish()
     }
 
     /// Renders the results pane.
@@ -975,18 +810,6 @@ impl TypedActionView for CommandSearchView {
                 result_action,
             } => self.handle_result_selected(*result_index, *result_action.clone(), ctx),
             Resize => ctx.emit(CommandSearchEvent::Resize),
-            OpenUpgradeLink(upgrade_link) => {
-                ctx.open_url(upgrade_link);
-            }
-            AttemptLoginGatedUpgrade => {
-                AuthManager::handle(ctx).update(ctx, |auth_manager, ctx| {
-                    auth_manager.attempt_login_gated_feature(
-                        "Upgrade AI Usage",
-                        AuthViewVariant::RequireLoginCloseable,
-                        ctx,
-                    )
-                });
-            }
         }
     }
 }
