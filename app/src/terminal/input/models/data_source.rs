@@ -643,8 +643,8 @@ impl SearchItem for ModelSearchItem {
 }
 
 /// Returns true when a promo discount chip should be shown for a model.
-/// Discounts only apply when the user is billing through Warp credits,
-/// so we suppress the chip when the user is routing through their own API key.
+/// Warper routes through explicit user-configured model providers, so hosted
+/// credit discount chips are not shown for BYOK selections.
 fn should_show_discount_chip(discount_percentage: Option<f32>, is_using_byok: bool) -> bool {
     discount_percentage.is_some_and(|p| p > 0.) && !is_using_byok
 }

@@ -26,7 +26,6 @@ use crate::{
         escape_sequences::{self, EscCodes},
         selection::SelectionDirection,
     },
-    terminal::shared_session::SharedSessionStatus,
     terminal::TerminalView,
     util::bindings::CustomAction,
 };
@@ -572,15 +571,6 @@ pub fn init(app: &mut AppContext) {
             id!("Terminal") & id!("TerminalView_NonEmptyBlockList") & !id!("AltScreen"),
         ),
         EditableBinding::new(
-            "terminal:open_share_block_modal",
-            "Share selected block",
-            TerminalAction::OpenShareModal,
-        )
-        .with_custom_action(CustomAction::CreateBlockPermalink)
-        .with_context_predicate(
-            id!("Terminal") & eq!("TerminalView_BlockSelectionCardinality", "One"),
-        ),
-        EditableBinding::new(
             "terminal:bookmark_selected_block",
             "Bookmark selected block",
             TerminalAction::BookmarkSelectedBlock,
@@ -835,9 +825,7 @@ pub fn init(app: &mut AppContext) {
             "Setup Guide",
             TerminalAction::OnboardingFlow(OnboardingVersion::Legacy),
         )
-        .with_context_predicate(
-            id!("Terminal") & id!(SharedSessionStatus::NotShared.as_keymap_context()),
-        ),
+        .with_context_predicate(id!("Terminal") & id!("TerminalLocalSession")),
         // UniversalInput callout debug bindings
         EditableBinding::new(
             "terminal:agent_onboarding_flow_legacy_terminal",
@@ -847,9 +835,7 @@ pub fn init(app: &mut AppContext) {
         .with_enabled(|| {
             FeatureFlag::AgentOnboarding.is_enabled() && ChannelState::enable_debug_features()
         })
-        .with_context_predicate(
-            id!("Terminal") & id!(SharedSessionStatus::NotShared.as_keymap_context()),
-        ),
+        .with_context_predicate(id!("Terminal") & id!("TerminalLocalSession")),
         EditableBinding::new(
             "terminal:agent_onboarding_flow_universal_input_project",
             "[Debug] Onboarding Callout: WarpInput - Project",
@@ -860,9 +846,7 @@ pub fn init(app: &mut AppContext) {
         .with_enabled(|| {
             FeatureFlag::AgentOnboarding.is_enabled() && ChannelState::enable_debug_features()
         })
-        .with_context_predicate(
-            id!("Terminal") & id!(SharedSessionStatus::NotShared.as_keymap_context()),
-        ),
+        .with_context_predicate(id!("Terminal") & id!("TerminalLocalSession")),
         EditableBinding::new(
             "terminal:agent_onboarding_flow_universal_input_no_project",
             "[Debug] Onboarding Callout: WarpInput - No Project",
@@ -873,9 +857,7 @@ pub fn init(app: &mut AppContext) {
         .with_enabled(|| {
             FeatureFlag::AgentOnboarding.is_enabled() && ChannelState::enable_debug_features()
         })
-        .with_context_predicate(
-            id!("Terminal") & id!(SharedSessionStatus::NotShared.as_keymap_context()),
-        ),
+        .with_context_predicate(id!("Terminal") & id!("TerminalLocalSession")),
         // AgentModality callout debug bindings
         EditableBinding::new(
             "terminal:agent_onboarding_flow_modality_project",
@@ -890,9 +872,7 @@ pub fn init(app: &mut AppContext) {
         .with_enabled(|| {
             FeatureFlag::AgentOnboarding.is_enabled() && ChannelState::enable_debug_features()
         })
-        .with_context_predicate(
-            id!("Terminal") & id!(SharedSessionStatus::NotShared.as_keymap_context()),
-        ),
+        .with_context_predicate(id!("Terminal") & id!("TerminalLocalSession")),
         EditableBinding::new(
             "terminal:agent_onboarding_flow_modality_no_project",
             "[Debug] Onboarding Callout: Modality - No Project",
@@ -906,9 +886,7 @@ pub fn init(app: &mut AppContext) {
         .with_enabled(|| {
             FeatureFlag::AgentOnboarding.is_enabled() && ChannelState::enable_debug_features()
         })
-        .with_context_predicate(
-            id!("Terminal") & id!(SharedSessionStatus::NotShared.as_keymap_context()),
-        ),
+        .with_context_predicate(id!("Terminal") & id!("TerminalLocalSession")),
         EditableBinding::new(
             "terminal:agent_onboarding_flow_modality_terminal",
             "[Debug] Onboarding Callout: Modality - Terminal",
@@ -922,9 +900,7 @@ pub fn init(app: &mut AppContext) {
         .with_enabled(|| {
             FeatureFlag::AgentOnboarding.is_enabled() && ChannelState::enable_debug_features()
         })
-        .with_context_predicate(
-            id!("Terminal") & id!(SharedSessionStatus::NotShared.as_keymap_context()),
-        ),
+        .with_context_predicate(id!("Terminal") & id!("TerminalLocalSession")),
     ]);
 
     app.register_editable_bindings([EditableBinding::new(
@@ -1042,36 +1018,6 @@ pub fn init(app: &mut AppContext) {
     )
     .with_enabled(|| FeatureFlag::Projects.is_enabled())
     .with_context_predicate(id!("Workspace") & id!(flags::IS_ANY_AI_ENABLED))]);
-
-    // Register bindings for starting a new cloud agent conversation.
-    {
-        app.register_fixed_bindings([FixedBinding::new_per_platform(
-            PerPlatformKeystroke {
-                mac: "cmd-alt-enter",
-                linux_and_windows: "ctrl-alt-enter",
-            },
-            TerminalAction::EnterCloudAgentView,
-            id!("Terminal") & id!(flags::IS_ANY_AI_ENABLED),
-        )
-        .with_enabled(|| {
-            FeatureFlag::AgentView.is_enabled()
-                && FeatureFlag::CloudMode.is_enabled()
-                && FeatureFlag::CloudModeFromLocalSession.is_enabled()
-        })
-        .with_group(bindings::BindingGroup::WarpAi.as_str())]);
-        if cfg!(target_os = "macos") {
-            // On MacOS, if the user has the 'Option as meta' setting enabled, the cmd-alt-enter
-            // binding above will not match.
-            //
-            // TODO(zachbai): Consider if, for the purposes of fixed bindings, alt/meta should work
-            // fungibly regardless of underlying setting.
-            app.register_fixed_bindings([FixedBinding::new(
-                "cmd-meta-enter",
-                TerminalAction::EnterCloudAgentView,
-                id!("Terminal") & id!(flags::IS_ANY_AI_ENABLED),
-            )]);
-        }
-    }
 }
 
 /// Registers bindings related to input modes.

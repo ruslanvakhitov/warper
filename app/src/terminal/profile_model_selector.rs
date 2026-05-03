@@ -141,14 +141,7 @@ impl ActionButtonTheme for SelectorChipTheme {
     }
 
     fn font_properties(&self) -> Option<warpui::fonts::Properties> {
-        if FeatureFlag::CloudModeInputV2.is_enabled() {
-            Some(warpui::fonts::Properties {
-                weight: warpui::fonts::Weight::Semibold,
-                ..Default::default()
-            })
-        } else {
-            None
-        }
+        None
     }
 }
 
@@ -1371,9 +1364,7 @@ impl ProfileModelSelector {
             .as_ref(app)
             .is_configuring_ambient_agent();
         let terminal_model = self.terminal_model.lock();
-        let has_edit_access = is_composing_ambient_agent
-            || !terminal_model.shared_session_status().is_viewer()
-            || terminal_model.shared_session_status().is_executor();
+        let has_edit_access = true;
         let is_lrc = FeatureFlag::InlineMenuHeaders.is_enabled()
             && terminal_model
                 .block_list()
@@ -1853,18 +1844,9 @@ impl View for ProfileModelSelector {
         let profiles_model = AIExecutionProfilesModel::as_ref(app);
         let has_multiple_profiles = profiles_model.has_multiple_profiles();
 
-        // Check if user is a viewer in a shared session
-        let is_viewer = self
-            .terminal_model
-            .lock()
-            .shared_session_status()
-            .is_viewer();
-
         let mut compact_row = Flex::row().with_cross_axis_alignment(CrossAxisAlignment::Center);
 
-        // Only add profile button to compact layout if there are multiple profiles
-        // and the user is not a viewer (we currently don't support profiles in shared sessions).
-        let should_show_profile_section = has_multiple_profiles && !is_viewer;
+        let should_show_profile_section = has_multiple_profiles;
         if should_show_profile_section {
             let profile_button_with_save_position = SavePosition::new(
                 ChildView::new(&self.profile_compact_button).finish(),

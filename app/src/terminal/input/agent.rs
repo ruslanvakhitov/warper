@@ -63,12 +63,8 @@ const CLOUD_MODE_V2_CHIPS_ROW_TOP_PADDING: f32 = 4.;
 
 impl Input {
     pub fn is_cloud_mode_input_v2_composing(&self, app: &AppContext) -> bool {
-        FeatureFlag::CloudModeInputV2.is_enabled()
-            && FeatureFlag::CloudMode.is_enabled()
-            && self
-                .ambient_agent_view_model
-                .as_ref(app)
-                .is_configuring_ambient_agent()
+        let _ = app;
+        false
     }
 
     /// Renders the input when there is an active `AgentView`.
@@ -116,12 +112,7 @@ impl Input {
             }
         }
 
-        let show_harness_row = FeatureFlag::CloudMode.is_enabled()
-            && FeatureFlag::AgentHarness.is_enabled()
-            && self
-                .ambient_agent_view_model
-                .as_ref(app)
-                .is_configuring_ambient_agent();
+        let show_harness_row = false;
         if show_harness_row {
             // Temporarily render the harness selector in the cloud mode UDI until we fully
             // implement the new designs.
@@ -285,11 +276,9 @@ impl Input {
             let (is_cloud_agent, has_submitted_first_prompt) =
                 match agent_view_controller.agent_view_state() {
                     AgentViewState::Active {
-                        conversation_id,
-                        origin,
-                        ..
+                        conversation_id, ..
                     } => {
-                        let is_cloud_agent = origin.is_cloud_agent();
+                        let is_cloud_agent = false;
                         let has_submitted_first_prompt = if is_cloud_agent {
                             BlocklistAIHistoryModel::as_ref(app)
                                 .conversation(conversation_id)

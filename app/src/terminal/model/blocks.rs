@@ -688,40 +688,6 @@ impl BlockList {
         // since the block will never be finished.
     }
 
-    pub(super) fn load_shared_session_scrollback(&mut self, scrollback: &[SerializedBlock]) {
-        // When we're loading the shared session scrollback, first check
-        // if there's an unfinished block; if there is, finish it because it
-        // will otherwise remain unfinished in perpetuity.
-        if !self.active_block().finished() {
-            self.active_block_mut().finish(0);
-        }
-
-        // Simulate finishing bootstrapping once we get the scrollback, since the scrollback contains the active prompt.
-        self.set_bootstrapped();
-        let mut processor: Processor = Processor::new();
-
-        let Some((active_block, completed_blocks)) = scrollback.split_last() else {
-            return;
-        };
-
-        for block in completed_blocks {
-            if block.start_ts.is_some() && block.completed_ts.is_some() {
-                self.restore_block(block, BootstrapStage::PostBootstrapPrecmd, &mut processor);
-            } else {
-                log::warn!("A non-active scrollback block was either not started or not completed");
-            }
-        }
-
-        // The last block being restored is the active block
-        // (potentially long-running) and has the latest prompt.
-        debug_assert!(active_block.completed_ts.is_none());
-        self.restore_block(
-            active_block,
-            BootstrapStage::PostBootstrapPrecmd,
-            &mut processor,
-        );
-    }
-
     /// This is an important function in the block list lifecycle. After this
     /// is called, there's an invariant where we always have an active block
     /// that's hidden until it's `start`ed.

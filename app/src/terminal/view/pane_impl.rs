@@ -1,7 +1,6 @@
 //! This module contains the implementation of `BackingView` for `TerminalView`, as well as
 //! business logic for integrating the terminal view with the pane infra (`crate::pane_group`).
-use super::shared_session::adapter::Kind as SharedSessionKind;
-use super::{Event, PaneConfiguration, TerminalAction, TerminalViewState, Viewer};
+use super::{Event, PaneConfiguration, TerminalAction, TerminalViewState};
 use crate::ai::agent::conversation::{AIConversation, ConversationStatus};
 use crate::ai::blocklist::agent_view::agent_view_bg_fill;
 use crate::ai::blocklist::agent_view::orchestration_conversation_links::parent_conversation_navigation_card;
@@ -17,27 +16,20 @@ use crate::pane_group::pane::view::header::components::{
     render_three_column_header, CenteredHeaderEdgeWidth,
 };
 use crate::pane_group::pane::PaneStack;
-use crate::pane_group::{pane::view, pane::view::PaneHeaderAction, BackingView, SplitPaneState};
+use crate::pane_group::{pane::view, BackingView, SplitPaneState};
 use crate::terminal::cli_agent_sessions::CLIAgentSessionsModel;
-use crate::terminal::model::terminal_model::ConversationTranscriptViewerStatus;
-use crate::terminal::shared_session::participant_avatar_view::render_participants_and_role_elements;
-use crate::terminal::shared_session::render_util::shared_session_indicator_color;
 use crate::terminal::TerminalManager;
 use crate::terminal::TerminalView;
 use crate::ui_components::blended_colors;
-use crate::ui_components::buttons::icon_button_with_color;
 use crate::ui_components::icons;
 use crate::workspace::tab_settings::TabSettings;
 use warp_core::ui::Icon as WarpIcon;
 use warpui::elements::{
-    ChildAnchor, ConstrainedBox, CrossAxisAlignment, Flex, MainAxisAlignment, MainAxisSize,
-    OffsetPositioning, ParentAnchor, ParentElement, ParentOffsetBounds, Shrinkable, Stack,
+    ConstrainedBox, CrossAxisAlignment, Flex, MainAxisAlignment, MainAxisSize, ParentElement,
+    Shrinkable,
 };
-use warpui::prelude::{vec2f, ChildView, Container, Hoverable};
+use warpui::prelude::{ChildView, Container};
 use warpui::text_layout::ClipConfig;
-use warpui::ui_components::components::UiComponent;
-#[cfg(not(target_arch = "wasm32"))]
-use warpui::ui_components::components::UiComponentStyles;
 use warpui::WeakModelHandle;
 use warpui::{AppContext, Element, ModelHandle, SingletonEntity, TypedActionView, ViewContext};
 
@@ -98,7 +90,6 @@ impl TerminalView {
 
     /// Set the pane title from agent chrome when available, falling back to the regular terminal title.
     pub(super) fn update_pane_configuration(&mut self, ctx: &mut ViewContext<Self>) {
-        let is_ambient_agent = self.is_ambient_agent_session(ctx);
         let selected_conversation_title = self.selected_conversation_display_title(ctx);
         let selected_cli_agent_title = self.selected_cli_agent_title_for_chrome(ctx);
 
@@ -116,13 +107,7 @@ impl TerminalView {
                     self.is_using_conversation_for_pane_header_title = true;
                     conversation_title
                 }
-                None => {
-                    if is_ambient_agent {
-                        default_agent_conversation_title(is_ambient_agent)
-                    } else {
-                        self.terminal_title.clone()
-                    }
-                }
+                None => self.terminal_title.clone(),
             }
         };
         self.pane_configuration.update(ctx, |pane_config, ctx| {
@@ -136,45 +121,8 @@ impl TerminalView {
     }
 
     /// Returns the shareable object for the active agent view conversation, if any.
-    fn agent_view_shareable_object(&self, ctx: &ViewContext<Self>) -> Option<ShareableObject> {
-        // Only set shareable object if CloudConversations feature is enabled
-        if !FeatureFlag::CloudConversations.is_enabled() {
-            return None;
-        }
-
-        // If we're in a shared session, prioritize this to share.
-        if let Some(shared_session) = &self.shared_session {
-            return Some(ShareableObject::Session {
-                handle: ctx.handle(),
-                session_id: *shared_session.session_id(),
-                started_at: *shared_session.started_at(),
-            });
-        }
-
-        // Check if agent view is active
-        let conversation_id = self
-            .agent_view_controller
-            .as_ref(ctx)
-            .agent_view_state()
-            .active_conversation_id()?;
-
-        // Don't show share button for empty conversations
-        let conversation = BlocklistAIHistoryModel::as_ref(ctx).conversation(&conversation_id)?;
-        if conversation.is_empty() {
-            return None;
-        }
-        let exchange_count = conversation.exchange_count();
-        // If there's only one exchange, make sure it's completed (not still streaming)
-        if exchange_count == 1 {
-            if let Some(latest_exchange) = conversation.latest_exchange() {
-                if latest_exchange.output_status.is_streaming() {
-                    return None;
-                }
-            }
-        }
-
-        // Return the ShareableObject with the conversation ID
-        Some(ShareableObject::AIConversation(conversation_id))
+    fn agent_view_shareable_object(&self, _ctx: &ViewContext<Self>) -> Option<ShareableObject> {
+        None
     }
 
     /// Updates the pane header's shareable object based on agent view state.
@@ -184,23 +132,12 @@ impl TerminalView {
             return;
         }
 
-        // In cloud mode, we want to preserve the shared session sharing dialog even after the shared session has ended.
-        // We need this to be able to view and change permissions on a cloud mode shared session that failed before
-        // any conversation started, to view cloud mode sessions that failed during setup.
-        let is_ambient_agent = self.ambient_agent_view_model.as_ref(ctx).is_ambient_agent();
-        if !is_ambient_agent {
-            let shareable_object = self.agent_view_shareable_object(ctx);
-            self.pane_configuration.update(ctx, |pane_config, ctx| {
-                pane_config.set_shareable_object(shareable_object, ctx);
-                pane_config.notify_header_content_changed(ctx);
-                pane_config.refresh_pane_header_overflow_menu_items(ctx);
-            });
-        } else {
-            self.pane_configuration.update(ctx, |pane_config, ctx| {
-                pane_config.notify_header_content_changed(ctx);
-                pane_config.refresh_pane_header_overflow_menu_items(ctx);
-            });
-        }
+        let shareable_object = self.agent_view_shareable_object(ctx);
+        self.pane_configuration.update(ctx, |pane_config, ctx| {
+            pane_config.set_shareable_object(shareable_object, ctx);
+            pane_config.notify_header_content_changed(ctx);
+            pane_config.refresh_pane_header_overflow_menu_items(ctx);
+        });
     }
 
     pub(super) fn is_pane_focused(&self, app: &AppContext) -> bool {
@@ -273,40 +210,7 @@ impl TerminalView {
             ClipConfig::start()
         };
 
-        let should_render_ambient_agent_indicator = {
-            let model = self.model.lock();
-            model.is_shared_ambient_agent_session()
-                || matches!(
-                    model.conversation_transcript_viewer_status(),
-                    Some(ConversationTranscriptViewerStatus::ViewingAmbientConversation(_))
-                )
-        };
-        let pane_indicator = if should_render_ambient_agent_indicator {
-            Some(self.render_ambient_agent_indicator(app))
-        } else if let Some(shared_session) = self.shared_session.as_ref() {
-            if let Some(Viewer {
-                sharer: Some(sharer),
-                ..
-            }) = shared_session.kind().as_viewer()
-            {
-                Some(
-                    Container::new(ChildView::new(&sharer.avatar).finish())
-                        .with_margin_right(4.)
-                        .finish(),
-                )
-            } else {
-                Some(
-                    ConstrainedBox::new(
-                        icons::Icon::Sharing
-                            .to_warpui_icon(shared_session_indicator_color(appearance).into())
-                            .finish(),
-                    )
-                    .with_height(appearance.ui_font_size())
-                    .with_width(appearance.ui_font_size())
-                    .finish(),
-                )
-            }
-        } else if self.is_using_conversation_for_pane_header_title
+        let pane_indicator = if self.is_using_conversation_for_pane_header_title
             || (self.is_long_running()
                 && self
                     .ai_context_model
@@ -382,39 +286,9 @@ impl TerminalView {
             None
         };
 
-        let mut left_of_overflow = self.render_shared_session_header_content(app);
+        let mut left_of_overflow = None;
 
         let mut icon_button_count: u32 = 0;
-
-        if FeatureFlag::CloudMode.is_enabled() {
-            let ambient_agent_model = self.ambient_agent_view_model.as_ref(app);
-            let button_element = if ambient_agent_model.is_ambient_agent()
-                && ambient_agent_model.is_waiting_for_session()
-            {
-                Some(self.render_ambient_agent_cancel_button(app))
-            } else if self.can_show_cloud_mode_details_ui(app) {
-                #[cfg(not(target_arch = "wasm32"))]
-                {
-                    Some(self.render_cloud_mode_details_toggle_button(app))
-                }
-                #[cfg(target_arch = "wasm32")]
-                {
-                    None
-                }
-            } else {
-                None
-            };
-
-            if let Some(button) = button_element {
-                icon_button_count += 1;
-                if let Some(existing) = left_of_overflow {
-                    left_of_overflow =
-                        Some(Flex::row().with_child(existing).with_child(button).finish());
-                } else {
-                    left_of_overflow = Some(button);
-                }
-            }
-        }
 
         let mut right_row = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
@@ -567,7 +441,7 @@ impl BackingView for TerminalView {
     }
 
     fn on_pane_header_overflow_menu_toggled(&mut self, is_open: bool, ctx: &mut ViewContext<Self>) {
-        self.pane_header_overflow_menu_toggled(is_open, ctx);
+        let _ = (is_open, ctx);
     }
 
     fn pane_header_overflow_menu_items(
@@ -593,15 +467,9 @@ impl BackingView for TerminalView {
     }
 
     fn should_render_header(&self, app: &AppContext) -> bool {
-        let is_shared = self
-            .model
-            .lock()
-            .shared_session_status()
-            .is_sharer_or_viewer();
         let is_fullscreen_agent_view = FeatureFlag::AgentView.is_enabled()
             && self.agent_view_controller.as_ref(app).is_fullscreen();
-        is_shared
-            || is_fullscreen_agent_view
+        is_fullscreen_agent_view
             || FeatureFlag::ContextWindowUsageV2.is_enabled()
                 && self.split_pane_state(app).is_in_split_pane()
     }
@@ -633,81 +501,6 @@ impl BackingView for TerminalView {
 }
 
 impl TerminalView {
-    /// Render the cancel button for cancelling the ambient agent task while it's loading.
-    fn render_ambient_agent_cancel_button(&self, app: &AppContext) -> Box<dyn Element> {
-        let appearance = Appearance::as_ref(app);
-        let theme = appearance.theme();
-        let ui_builder = appearance.ui_builder().clone();
-
-        icon_button_with_color(
-            appearance,
-            icons::Icon::StopFilled,
-            false, /* active */
-            self.ambient_agent_cancel_mouse_state.clone(),
-            blended_colors::text_sub(theme, theme.background()).into(),
-        )
-        .with_tooltip(move || ui_builder.tool_tip("Cancel".to_string()).build().finish())
-        .build()
-        .on_click(|ctx, _, _| {
-            ctx.dispatch_typed_action::<PaneHeaderAction<TerminalAction, TerminalAction>>(
-                PaneHeaderAction::CustomAction(TerminalAction::CancelAmbientAgentTask),
-            );
-        })
-        .finish()
-    }
-
-    /// Render the info button for toggling the cloud mode details panel.
-    /// Only available on non-WASM platforms (WASM uses a per-window button instead).
-    #[cfg(not(target_arch = "wasm32"))]
-    fn render_cloud_mode_details_toggle_button(&self, app: &AppContext) -> Box<dyn Element> {
-        let appearance = Appearance::as_ref(app);
-        let theme = appearance.theme();
-        let is_open = self.is_cloud_mode_details_panel_open;
-        let ui_builder = appearance.ui_builder().clone();
-
-        // Use main text color when panel is open (hover-like appearance), sub color when closed
-        let icon_color = if is_open {
-            blended_colors::text_main(theme, theme.background()).into()
-        } else {
-            blended_colors::text_sub(theme, theme.background()).into()
-        };
-
-        let button = icon_button_with_color(
-            appearance,
-            icons::Icon::Info,
-            is_open, // show active background when panel is open
-            self.cloud_mode_details_panel_toggle_mouse_state.clone(),
-            icon_color,
-        );
-
-        // Add explicit background when panel is open
-        let button = if is_open {
-            button.with_style(UiComponentStyles::default().set_background(theme.surface_2().into()))
-        } else {
-            button
-        };
-
-        button
-            .with_tooltip(move || {
-                let tooltip_text = if is_open {
-                    "Hide details"
-                } else {
-                    "Show details"
-                };
-                ui_builder
-                    .tool_tip(tooltip_text.to_string())
-                    .build()
-                    .finish()
-            })
-            .build()
-            .on_click(|ctx, _, _| {
-                ctx.dispatch_typed_action::<PaneHeaderAction<TerminalAction, TerminalAction>>(
-                    PaneHeaderAction::CustomAction(TerminalAction::ToggleCloudModeDetailsPanel),
-                );
-            })
-            .finish()
-    }
-
     /// Render the agent indicator icon for when a conversation is selected.
     fn render_agent_indicator(
         &self,
@@ -725,10 +518,6 @@ impl TerminalView {
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
 
-        // Check if we're configuring or waiting on an ambient agent
-        let is_ambient_agent = FeatureFlag::CloudMode.is_enabled()
-            && self.ambient_agent_view_model.as_ref(app).is_ambient_agent();
-
         // When a long-running command is active, show InProgress
         // instead of the conversation's actual status.
         let status = if is_long_running {
@@ -742,13 +531,9 @@ impl TerminalView {
             && !is_long_running
         {
             ConstrainedBox::new(
-                if is_ambient_agent {
-                    WarpIcon::OzCloud
-                } else {
-                    WarpIcon::Oz
-                }
-                .to_warpui_icon(blended_colors::text_sub(theme, theme.background()).into())
-                .finish(),
+                WarpIcon::Oz
+                    .to_warpui_icon(blended_colors::text_sub(theme, theme.background()).into())
+                    .finish(),
             )
             .with_height(appearance.ui_font_size())
             .with_width(appearance.ui_font_size())
@@ -804,90 +589,9 @@ impl TerminalView {
         None
     }
 
-    fn render_ambient_agent_indicator(&self, app: &AppContext) -> Box<dyn Element> {
-        let appearance = Appearance::as_ref(app);
-        let icon_color = appearance
-            .theme()
-            .main_text_color(appearance.theme().background());
-        let font_size = appearance.ui_font_size();
-        let ui_builder = appearance.ui_builder().clone();
-
-        Hoverable::new(
-            self.mouse_states
-                .ambient_agent_indicator_mouse_handle
-                .clone(),
-            move |state| {
-                let mut stack = Stack::new().with_child(
-                    ConstrainedBox::new(icons::Icon::OzCloud.to_warpui_icon(icon_color).finish())
-                        .with_height(font_size * 1.5)
-                        .with_width(font_size * 1.5)
-                        .finish(),
-                );
-                if state.is_hovered() {
-                    let tooltip = ui_builder
-                        .tool_tip("Cloud agent run".to_string())
-                        .build()
-                        .finish();
-                    stack.add_positioned_overlay_child(
-                        tooltip,
-                        OffsetPositioning::offset_from_parent(
-                            vec2f(0., 3.),
-                            ParentOffsetBounds::WindowByPosition,
-                            ParentAnchor::BottomMiddle,
-                            ChildAnchor::TopMiddle,
-                        ),
-                    );
-                }
-
-                stack.finish()
-            },
-        )
-        .finish()
-    }
-
-    /// Render shared session header content (participant avatars and role controls).
-    fn render_shared_session_header_content(&self, app: &AppContext) -> Option<Box<dyn Element>> {
-        let Some(shared_session) = &self.shared_session else {
-            return None;
-        };
-
-        let presence_manager = shared_session.presence_manager();
-        let role = presence_manager.as_ref(app).role();
-
-        // Get viewer avatars to render
-        let viewers = shared_session.pane_header_viewer_avatars(app);
-
-        // Get role change menu info based on session kind
-        let (role_change_menu, is_role_change_menu_open, mouse_state_handle) =
-            match shared_session.kind() {
-                SharedSessionKind::Viewer(viewer) => (
-                    Some(viewer.role_change_menu.clone()),
-                    viewer.is_role_change_menu_open,
-                    viewer.role_change_menu_button.clone(),
-                ),
-                SharedSessionKind::Sharer(sharer) => {
-                    (None, false, sharer.revoke_all_mouse_state_handle().clone())
-                }
-            };
-
-        // Hide role change button in cloud mode conversations
-        let hide_role_change_button = self.model.lock().is_shared_ambient_agent_session();
-
-        // Render participant avatars and role elements
-        Some(render_participants_and_role_elements(
-            viewers,
-            role,
-            mouse_state_handle,
-            role_change_menu,
-            is_role_change_menu_open,
-            hide_role_change_button,
-            app,
-        ))
-    }
-
     pub fn is_ambient_agent_session(&self, ctx: &AppContext) -> bool {
-        FeatureFlag::CloudMode.is_enabled()
-            && self.ambient_agent_view_model.as_ref(ctx).is_ambient_agent()
+        let _ = ctx;
+        false
     }
 
     fn selected_conversation_for_user_facing_chrome<'a>(
@@ -907,13 +611,12 @@ impl TerminalView {
     fn selected_conversation_display_title_for_chrome(
         &self,
         conversation: &AIConversation,
-        is_ambient_agent: bool,
     ) -> String {
         if FeatureFlag::AgentView.is_enabled() {
             conversation
                 .title()
                 .filter(|title| !title.is_empty())
-                .unwrap_or_else(|| default_agent_conversation_title(is_ambient_agent))
+                .unwrap_or_else(|| default_agent_conversation_title())
         } else {
             conversation
                 .title()
@@ -927,11 +630,6 @@ impl TerminalView {
         let long_running = self.is_long_running();
 
         let Some(conversation) = self.selected_conversation_for_user_facing_chrome(ctx) else {
-            // Ambient agent tabs can show Oz chrome without a filtered "chrome" conversation;
-            // still surface busy while a long-running shell command is active.
-            if long_running && self.is_ambient_agent_session(ctx) {
-                return Some(ConversationStatus::InProgress);
-            }
             return None;
         };
 
@@ -967,11 +665,8 @@ impl TerminalView {
     }
 
     pub fn selected_conversation_display_title(&self, ctx: &AppContext) -> Option<String> {
-        let is_ambient_agent = self.is_ambient_agent_session(ctx);
         self.selected_conversation_for_user_facing_chrome(ctx)
-            .map(|conversation| {
-                self.selected_conversation_display_title_for_chrome(conversation, is_ambient_agent)
-            })
+            .map(|conversation| self.selected_conversation_display_title_for_chrome(conversation))
     }
 
     pub fn selected_conversation_latest_user_prompt_for_tab_name(
@@ -998,10 +693,6 @@ impl TerminalView {
     }
 }
 
-fn default_agent_conversation_title(is_ambient_agent: bool) -> String {
-    if is_ambient_agent {
-        "New cloud agent".to_owned()
-    } else {
-        "New agent conversation".to_owned()
-    }
+fn default_agent_conversation_title() -> String {
+    "New agent conversation".to_owned()
 }

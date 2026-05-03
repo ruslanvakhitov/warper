@@ -15,7 +15,7 @@ pub fn initialize_settings_for_tests_with_mode(
 ) {
     use crate::{
         ai::cloud_agent_settings::CloudAgentSettings,
-        drive::settings::WarpDriveSettings,
+        drive::settings::LocalDriveSettings,
         search::command_search::settings::CommandSearchSettings,
         settings::{
             app_icon::AppIconSettings, init_and_register_user_preferences,
@@ -94,7 +94,7 @@ pub fn initialize_settings_for_tests_with_mode(
     ThemeSettings::register(app);
     UndoCloseSettings::register(app);
     VimBannerSettings::register(app);
-    WarpDriveSettings::register(app);
+    LocalDriveSettings::register(app);
     WindowSettings::register(app);
     SharedSessionSettings::register(app);
     CodeSettings::register(app);

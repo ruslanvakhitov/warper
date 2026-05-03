@@ -6,8 +6,6 @@ use std::path::PathBuf;
 use ai::skills::SkillReference;
 use command_corrections::Correction;
 use pathfinder_geometry::vector::Vector2F;
-use session_sharing_protocol::common::Role;
-use session_sharing_protocol::sharer::RoleUpdateReason;
 use warp_util::user_input::UserInput;
 use warpui::elements::HyperlinkUrl;
 use warpui::event::ModifiersState;
@@ -21,7 +19,6 @@ use crate::code_review::telemetry_event::CodeReviewPaneEntrypoint;
 use crate::server::telemetry::{AgentModeRewindEntrypoint, PaletteSource, ToggleBlockFilterSource};
 use crate::terminal::available_shells::AvailableShell;
 use crate::terminal::model::completions::ShellCompletion;
-use crate::terminal::shared_session::SharedSessionActionSource;
 use crate::terminal::ssh::error::SshErrorBlockAction;
 use crate::terminal::view::inline_banner::AgentModeSetupSpeedbumpBannerAction;
 use crate::terminal::view::passive_suggestions::PromptSuggestionResolution;
@@ -113,9 +110,6 @@ pub enum TerminalAction {
     AltScroll {
         delta: i32,
     },
-    SharedSessionViewerAltScroll {
-        new_scroll_top: Lines,
-    },
     ScrollToTopOfBlock {
         topmost_block: BlockIndex,
     },
@@ -170,7 +164,6 @@ pub enum TerminalAction {
     CopyOutputs,
     CopyCommands,
     CopyGitBranch,
-    OpenShareModal,
     ReinputCommands,
     ReinputCommandsWithSudo,
     ClearBuffer,
@@ -306,20 +299,9 @@ pub enum TerminalAction {
     OpenBlockFilterEditor(BlockIndex),
     OnboardingFlow(OnboardingVersion),
     ImportSettings,
-    StopSharingCurrentSession {
-        source: SharedSessionActionSource,
-    },
     ToggleBlockFilterOnSelectedOrLastBlock(ToggleBlockFilterSource),
-    CopySharedSessionLink {
-        source: SharedSessionActionSource,
-    },
     VimModeBanner(VimModeBannerAction),
     ToggleSnackbarInActivePane,
-    MakeAllParticipantsReaders {
-        reason: RoleUpdateReason,
-    },
-    OpenSharedSessionViewerRoleMenu,
-    RequestSharedSessionRole(Role),
     /// User selected a block inside an AI block's attached block menu so we jump to it and select
     /// it if possible.
     SelectAIAttachedBlock(BlockIndex),
@@ -403,12 +385,7 @@ pub enum TerminalAction {
     ToggleLongRunningCommandControl,
     ToggleHideCliResponses,
     ExitAgentView,
-    EnterCloudAgentView,
     StartNewAgentConversation,
-    /// Toggle the cloud mode conversation details panel
-    ToggleCloudModeDetailsPanel,
-    /// Cancel the ambient agent task while it's loading
-    CancelAmbientAgentTask,
     OpenInlineHistoryMenu,
     OpenModelSelector,
     ResolvePromptSuggestion(PromptSuggestionResolution),
@@ -435,10 +412,6 @@ impl fmt::Debug for TerminalAction {
         match self {
             Scroll { delta } => write!(f, "Scroll {{ delta: {delta} }}"),
             AltScroll { delta } => write!(f, "AltScroll {{ delta: {delta} }}"),
-            SharedSessionViewerAltScroll { new_scroll_top } => write!(
-                f,
-                "SharedSessionViewerAltScroll {{ new_scroll_top: {new_scroll_top} }}"
-            ),
             ScrollToTopOfBlock { topmost_block } => write!(
                 f,
                 "JumpToPreviousCommand {{ topmost_block: {topmost_block} }}"
@@ -491,7 +464,6 @@ impl fmt::Debug for TerminalAction {
             CopyOutputs => f.write_str("CopyOutputs"),
             CopyCommands => f.write_str("CopyCommands"),
             CopyGitBranch => f.write_str("CopyGitBranch"),
-            OpenShareModal => f.write_str("OpenShareModal"),
             ReinputCommands => f.write_str("ReinputCommands"),
             ReinputCommandsWithSudo => f.write_str("ReinputCommandsWithSudo"),
             ClearBuffer => f.write_str("ClearBuffer"),
@@ -585,20 +557,11 @@ impl fmt::Debug for TerminalAction {
             }
             OnboardingFlow(version) => write!(f, "OnboardingFlow({version:?})"),
             ImportSettings => write!(f, "ImportSettings"),
-            StopSharingCurrentSession { source } => {
-                write!(f, "StopSharingCurrentSession({source:?})")
-            }
             ToggleBlockFilterOnSelectedOrLastBlock(_) => {
                 f.write_str("ToggleBlockFilterOnSelectedOrLastBlock")
             }
-            CopySharedSessionLink { .. } => f.write_str("CopySharedSessionLink"),
             VimModeBanner(action) => write!(f, "VimModeBanner({action:?})"),
             ToggleSnackbarInActivePane => write!(f, "ToggleSnackbarInActivePane"),
-            MakeAllParticipantsReaders { reason } => {
-                write!(f, "MakeAllParticipantsReaders {{ reason: {reason:?} }}")
-            }
-            OpenSharedSessionViewerRoleMenu => write!(f, "OpenSharedSessionViewerRoleMenu"),
-            RequestSharedSessionRole(role) => write!(f, "RequestSharedSessionRole({role:?})"),
             MiddleClickOnGrid { position } => {
                 write!(f, "MiddleClickonGrid {{ position: {position:?} }}")
             }
@@ -682,10 +645,7 @@ impl fmt::Debug for TerminalAction {
             }
             ToggleHideCliResponses => write!(f, "ToggleHideCliResponses"),
             ExitAgentView => write!(f, "ExitAgentView"),
-            EnterCloudAgentView => write!(f, "EnterCloudAgentView"),
             StartNewAgentConversation => write!(f, "StartNewAgentConversation"),
-            ToggleCloudModeDetailsPanel => write!(f, "ToggleCloudModeDetailsPanel"),
-            CancelAmbientAgentTask => write!(f, "CancelAmbientAgentTask"),
             OpenInlineHistoryMenu => write!(f, "OpenInlineHistoryMenu"),
             OpenModelSelector => write!(f, "OpenModelSelector"),
             ResolvePromptSuggestion(..) => write!(f, "ResolvePromptSuggestion"),

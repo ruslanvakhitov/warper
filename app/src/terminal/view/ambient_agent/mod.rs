@@ -1,128 +1,227 @@
-mod block;
-mod footer;
-mod harness_selector;
-mod host_selector;
-mod loading_screen;
+//! Local-only ambient agent compatibility surface.
+//!
+//! WARPER-001 amputates hosted Oz/cloud ambient agents. The surrounding terminal
+//! and AI input code still carries model handles for layout decisions, so this
+//! module keeps inert local types while deleting the hosted entrypoints and
+//! server/session polling implementation.
+
 mod model;
-mod model_selector;
-mod progress;
-mod progress_ui_state;
-mod tips;
-mod view_impl;
 
-pub use block::*;
-pub use footer::{render_error_footer, render_loading_footer};
-pub use harness_selector::{HarnessSelector, HarnessSelectorAction, HarnessSelectorEvent};
-pub use host_selector::{
-    Host, HostSelector, HostSelectorAction, HostSelectorEvent, NakedHeaderButtonTheme,
-};
-pub use loading_screen::{render_cloud_mode_error_screen, render_cloud_mode_loading_screen};
-pub use model::{AgentProgress, AmbientAgentViewModel, AmbientAgentViewModelEvent, Status};
-pub use model_selector::{ModelSelector, ModelSelectorAction, ModelSelectorEvent};
-pub use progress::{render_progress, ProgressProps, ProgressStep, ProgressStepState};
-pub use progress_ui_state::AmbientAgentProgressUIState;
-pub use tips::{get_cloud_mode_tips, CloudModeTip};
-use warp_core::features::FeatureFlag;
+pub use model::{AmbientAgentViewModel, AmbientAgentViewModelEvent};
 
-use crate::ai::blocklist::agent_view::{AgentViewController, AgentViewState};
-use crate::ai::blocklist::BlocklistAIHistoryModel;
-use crate::pane_group::TerminalViewResources;
-use crate::terminal::shared_session;
-use crate::terminal::TerminalManager;
-use crate::terminal::TerminalView;
-use warpui::geometry::vector::Vector2F;
-use warpui::{AppContext, ModelHandle, SingletonEntity, ViewHandle, WindowId};
+use std::sync::Arc;
 
-/// Creates a cloud mode terminal view and manager for ambient agent sessions.
-///
-/// This is used when pushing a new ambient agent view onto an existing pane's navigation stack,
-/// or when creating a standalone ambient agent pane.
-pub fn create_cloud_mode_view(
-    resources: TerminalViewResources,
-    view_bounds_size: Vector2F,
-    window_id: WindowId,
-    ctx: &mut AppContext,
-) -> (
-    ViewHandle<TerminalView>,
-    ModelHandle<Box<dyn TerminalManager>>,
-) {
-    // In Cloud Mode, ambient agent prompts are composed in an uninitialized session-sharing
-    // viewer pane. This lets us reuse the terminal input without a backing session, and
-    // then join the ambient agent session once it's ready.
-    let terminal_manager: ModelHandle<Box<dyn TerminalManager>> = ctx.add_model(|ctx| {
-        Box::new(shared_session::viewer::TerminalManager::new_deferred(
-            resources,
-            view_bounds_size,
-            window_id,
-            ctx,
-        )) as Box<dyn TerminalManager>
-    });
+use crate::terminal::input::MenuPositioningProvider;
+use warpui::prelude::Empty;
+use warpui::{AppContext, Element, Entity, ModelHandle, TypedActionView, View, ViewContext};
 
-    let terminal_view = terminal_manager.as_ref(ctx).view();
-
-    // Subscribe to the ambient agent view model to join the session once it's ready.
-    // This ensures that we use the manager corresponding to this specific view.
-    let view_model = terminal_view.as_ref(ctx).ambient_agent_view_model().clone();
-    terminal_manager.update(ctx, |_, ctx| {
-        ctx.subscribe_to_model(&view_model, move |manager, event, ctx| {
-            if let AmbientAgentViewModelEvent::SessionReady { session_id } = event {
-                if let Some(manager) = manager
-                    .as_any_mut()
-                    .downcast_mut::<shared_session::viewer::TerminalManager>()
-                {
-                    manager.connect_to_session(*session_id, ctx);
-                }
-            };
-        });
-    });
-
-    (terminal_view, terminal_manager)
+pub fn is_cloud_agent_pre_first_exchange(
+    _ambient_agent_view_model: &ModelHandle<AmbientAgentViewModel>,
+    _agent_view_controller: &ModelHandle<crate::ai::blocklist::agent_view::AgentViewController>,
+    _app: &AppContext,
+) -> bool {
+    false
 }
 
-/// Returns `true` when a cloud agent shared session is ready but no agent exchange has been
-/// received yet. In this state, we hide the interactive input and render a loading footer
-/// instead.
-pub fn is_cloud_agent_pre_first_exchange(
-    ambient_agent_view_model: &ModelHandle<AmbientAgentViewModel>,
-    agent_view_controller: &ModelHandle<AgentViewController>,
-    app: &AppContext,
-) -> bool {
-    if !(FeatureFlag::CloudMode.is_enabled() && FeatureFlag::AgentView.is_enabled()) {
-        return false;
+pub struct AmbientAgentEntryBlock;
+
+impl View for AmbientAgentEntryBlock {
+    fn ui_name() -> &'static str {
+        "AmbientAgentEntryBlock"
     }
 
-    if !matches!(
-        ambient_agent_view_model.as_ref(app).status(),
-        Status::AgentRunning
-    ) {
-        return false;
+    fn render(&self, _app: &AppContext) -> Box<dyn Element> {
+        Empty::new().finish()
+    }
+}
+
+pub enum AmbientAgentEntryBlockEvent {}
+
+impl Entity for AmbientAgentEntryBlock {
+    type Event = AmbientAgentEntryBlockEvent;
+}
+
+#[derive(Debug)]
+pub enum AmbientAgentEntryBlockAction {}
+
+impl TypedActionView for AmbientAgentEntryBlock {
+    type Action = AmbientAgentEntryBlockAction;
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum HarnessSelectorAction {
+    ToggleMenu,
+}
+
+pub enum HarnessSelectorEvent {
+    MenuVisibilityChanged { open: bool },
+}
+
+pub struct HarnessSelector;
+
+impl HarnessSelector {
+    pub fn new(
+        _menu_positioning_provider: Arc<dyn MenuPositioningProvider>,
+        _ambient_agent_model: ModelHandle<AmbientAgentViewModel>,
+        _ctx: &mut ViewContext<Self>,
+    ) -> Self {
+        Self
     }
 
-    let agent_view_state = agent_view_controller.as_ref(app).agent_view_state().clone();
-    let AgentViewState::Active {
-        conversation_id,
-        origin,
-        ..
-    } = agent_view_state
-    else {
-        return false;
-    };
+    pub fn set_button_theme<T>(&mut self, _theme: T, _ctx: &mut ViewContext<Self>) {}
+}
 
-    if !origin.is_cloud_agent() {
-        return false;
+impl View for HarnessSelector {
+    fn ui_name() -> &'static str {
+        "HarnessSelector"
     }
 
-    // For non-oz harness runs, there is no Oz `AppendedExchange` to key off of, so we also
-    // exit the pre-first-exchange phase when the harness CLI (e.g. `claude`, `gemini`) has
-    // been detected. See `mark_harness_command_started`.
-    if ambient_agent_view_model
-        .as_ref(app)
-        .harness_command_started()
-    {
-        return false;
+    fn render(&self, _app: &AppContext) -> Box<dyn Element> {
+        Empty::new().finish()
+    }
+}
+
+impl Entity for HarnessSelector {
+    type Event = HarnessSelectorEvent;
+}
+
+impl TypedActionView for HarnessSelector {
+    type Action = HarnessSelectorAction;
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Host {
+    Local,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum HostSelectorAction {
+    ToggleMenu,
+}
+
+pub enum HostSelectorEvent {
+    MenuVisibilityChanged { open: bool },
+}
+
+pub struct HostSelector;
+
+impl HostSelector {
+    pub fn new(
+        _menu_positioning_provider: Arc<dyn MenuPositioningProvider>,
+        _ctx: &mut ViewContext<Self>,
+    ) -> Self {
+        Self
+    }
+}
+
+impl View for HostSelector {
+    fn ui_name() -> &'static str {
+        "HostSelector"
     }
 
-    BlocklistAIHistoryModel::as_ref(app)
-        .conversation(&conversation_id)
-        .is_some_and(|conversation| conversation.exchange_count() == 0)
+    fn render(&self, _app: &AppContext) -> Box<dyn Element> {
+        Empty::new().finish()
+    }
+}
+
+impl Entity for HostSelector {
+    type Event = HostSelectorEvent;
+}
+
+impl TypedActionView for HostSelector {
+    type Action = HostSelectorAction;
+}
+
+pub struct NakedHeaderButtonTheme;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ModelSelectorAction {
+    ToggleMenu,
+}
+
+pub enum ModelSelectorEvent {
+    MenuVisibilityChanged { open: bool },
+}
+
+pub struct ModelSelector;
+
+impl ModelSelector {
+    pub fn new(
+        _menu_positioning_provider: Arc<dyn MenuPositioningProvider>,
+        _terminal_view_id: warpui::EntityId,
+        _ctx: &mut ViewContext<Self>,
+    ) -> Self {
+        Self
+    }
+
+    pub fn is_menu_open(&self) -> bool {
+        false
+    }
+}
+
+impl View for ModelSelector {
+    fn ui_name() -> &'static str {
+        "ModelSelector"
+    }
+
+    fn render(&self, _app: &AppContext) -> Box<dyn Element> {
+        Empty::new().finish()
+    }
+}
+
+impl Entity for ModelSelector {
+    type Event = ModelSelectorEvent;
+}
+
+impl TypedActionView for ModelSelector {
+    type Action = ModelSelectorAction;
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SetupCommandState {
+    did_execute_a_setup_command: bool,
+    should_expand_setup_commands: bool,
+}
+
+impl SetupCommandState {
+    pub fn did_execute_a_setup_command(&self) -> bool {
+        self.did_execute_a_setup_command
+    }
+
+    pub fn set_did_execute_a_setup_command(&mut self, value: bool) {
+        self.did_execute_a_setup_command = value;
+    }
+
+    pub fn should_expand(&self) -> bool {
+        self.should_expand_setup_commands
+    }
+
+    pub fn set_should_expand(&mut self, value: bool) {
+        self.should_expand_setup_commands = value;
+    }
+}
+
+pub fn render_loading_footer(
+    _appearance: &warp_core::ui::appearance::Appearance,
+) -> Box<dyn Element> {
+    Empty::new().finish()
+}
+
+pub fn render_error_footer(
+    _error_message: &str,
+    _appearance: &warp_core::ui::appearance::Appearance,
+) -> Box<dyn Element> {
+    Empty::new().finish()
+}
+
+pub struct ProgressProps;
+pub struct ProgressStep;
+pub struct ProgressStepState;
+
+pub fn render_progress(_props: ProgressProps, _app: &AppContext) -> Box<dyn Element> {
+    Empty::new().finish()
+}
+
+impl Entity for AmbientAgentViewModel {
+    type Event = AmbientAgentViewModelEvent;
 }

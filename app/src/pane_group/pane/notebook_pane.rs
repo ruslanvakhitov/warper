@@ -1,4 +1,3 @@
-use anyhow::Context;
 use std::sync::Arc;
 use url::Url;
 
@@ -6,8 +5,7 @@ use warpui::{AppContext, ModelHandle, SingletonEntity, ViewContext, ViewHandle};
 
 use crate::{
     app_state::{LeafContents, NotebookPaneSnapshot},
-    cloud_object::Space,
-    drive::{items::WarpDriveItemId, CloudObjectTypeAndId, OpenWarpDriveObjectSettings},
+    drive::LocalObjectOpenSettings,
     notebooks::{
         link::{LinkEvent, NotebookLinks},
         manager::{NotebookManager, NotebookSource},
@@ -15,7 +13,6 @@ use crate::{
     },
     server::ids::SyncId,
     workflows::{WorkflowSelectionSource, WorkflowSource, WorkflowType},
-    workspaces::user_workspaces::UserWorkspaces,
 };
 
 use super::{
@@ -44,23 +41,17 @@ impl NotebookPane {
         }
     }
 
-    /// Restore a notebook pane given its cloud notebook ID.
+    /// Restore a locally persisted notebook pane by ID.
     pub fn restore(
         notebook_id: Option<SyncId>,
-        settings: &OpenWarpDriveObjectSettings,
+        settings: &LocalObjectOpenSettings,
         ctx: &mut ViewContext<PaneGroup>,
     ) -> anyhow::Result<Self> {
         let window_id = ctx.window_id();
-        let source = match notebook_id {
-            Some(id) => NotebookSource::Existing(id),
-            None => NotebookSource::New {
-                title: None,
-                owner: UserWorkspaces::as_ref(ctx)
-                    .personal_drive(ctx)
-                    .context("personal drive unavailable")?,
-                initial_folder_id: None,
-            },
+        let Some(id) = notebook_id else {
+            anyhow::bail!("Skipping notebook pane restore without a local object ID");
         };
+        let source = NotebookSource::Existing(id);
 
         Ok(NotebookManager::handle(ctx).update(ctx, |manager, ctx| {
             manager.create_pane(&source, settings, window_id, ctx)
@@ -81,7 +72,7 @@ impl PaneContent for NotebookPane {
         let notebook_id = self.notebook_view(app).as_ref(app).notebook_id(app);
         LeafContents::Notebook(NotebookPaneSnapshot::CloudNotebook {
             notebook_id,
-            settings: OpenWarpDriveObjectSettings::default(),
+            settings: LocalObjectOpenSettings::default(),
         })
     }
 
@@ -183,11 +174,7 @@ pub(super) fn subscribe_to_link_model(
                 session: session.clone(),
             })
         }
-        LinkEvent::OpenWarpDriveLink {
-            open_warp_drive_args,
-        } => ctx.emit(crate::pane_group::Event::OpenWarpDriveLink {
-            open_warp_drive_args: open_warp_drive_args.clone(),
-        }),
+        LinkEvent::OpenWarpDriveLink { .. } => {}
         LinkEvent::StartLocalSession { path } => {
             pane_group.add_session_in_directory(
                 Direction::Right,
@@ -230,21 +217,8 @@ fn handle_notebook_event(
         NotebookEvent::EditWorkflow(id) => {
             ctx.emit(crate::pane_group::Event::OpenCloudWorkflowForEdit(*id))
         }
-        NotebookEvent::ViewInWarpDrive(id) => view_in_warp_drive(*id, ctx),
-        NotebookEvent::MoveToSpace {
-            cloud_object_type_and_id,
-            new_space,
-        } => move_to_space(*cloud_object_type_and_id, *new_space, ctx),
+        NotebookEvent::ViewInWarpDrive(_) | NotebookEvent::MoveToSpace { .. } => {}
         NotebookEvent::Pane(pane_event) => group.handle_pane_event(pane_id, pane_event, ctx),
-        NotebookEvent::OpenDriveObjectShareDialog {
-            cloud_object_type_and_id,
-            invitee_email,
-            source,
-        } => ctx.emit(crate::pane_group::Event::OpenDriveObjectShareDialog {
-            source: *source,
-            cloud_object_type_and_id: *cloud_object_type_and_id,
-            invitee_email: invitee_email.clone(),
-        }),
         NotebookEvent::AttachPlanAsContext(ai_document_id) => {
             ctx.emit(crate::pane_group::Event::AttachPlanAsContext {
                 ai_document_id: *ai_document_id,
@@ -267,20 +241,5 @@ fn run_notebook_workflow(
         workflow_source,
         workflow_selection_source: WorkflowSelectionSource::Notebook,
         argument_override: None,
-    });
-}
-
-fn view_in_warp_drive(id: WarpDriveItemId, ctx: &mut ViewContext<PaneGroup>) {
-    ctx.emit(crate::pane_group::Event::ViewInWarpDrive(id))
-}
-
-fn move_to_space(
-    cloud_object_type_and_id: CloudObjectTypeAndId,
-    space: Space,
-    ctx: &mut ViewContext<PaneGroup>,
-) {
-    ctx.emit(crate::pane_group::Event::MoveToSpace {
-        cloud_object_type_and_id,
-        space,
     });
 }

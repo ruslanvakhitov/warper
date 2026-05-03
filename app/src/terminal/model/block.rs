@@ -1485,15 +1485,6 @@ impl Block {
         self.should_hide_output_grid = should_hide;
     }
 
-    /// Returns true iff this block should be used as a scrollback block
-    /// in a shared session context. Note the active block is included in scrollback to get the active prompt.
-    pub fn is_scrollback_block_for_shared_session(
-        &self,
-        agent_view_state: &AgentViewState,
-    ) -> bool {
-        !self.should_hide_block(agent_view_state) && !self.is_restored()
-    }
-
     pub fn index(&self) -> BlockIndex {
         self.block_index
     }

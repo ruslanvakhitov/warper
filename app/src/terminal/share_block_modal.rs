@@ -780,7 +780,7 @@ impl ShareBlockModal {
             .on_click(|ctx, _, _| {
                 ctx.dispatch_typed_action(ShareBlockModalAction::Close);
                 ctx.dispatch_typed_action(WorkspaceAction::ShowSettingsPage(
-                    SettingsSection::SharedBlocks,
+                    SettingsSection::Account,
                 ));
             });
         if matches!(self.request_state, ShareRequestState::Pending(_)) {

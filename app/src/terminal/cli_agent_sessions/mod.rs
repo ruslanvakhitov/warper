@@ -72,7 +72,7 @@ pub enum CLIAgentRichInputCloseReason {
     AutoToggle,
     /// Auto-dismissed after submitting a prompt.
     Submit,
-    /// Closed for another reason (chip removed, session ended, shared session sync).
+    /// Closed for another reason (chip removed, session ended).
     Other,
 }
 
@@ -86,8 +86,6 @@ pub enum CLIAgentInputEntrypoint {
     /// Automatically opened when the CLI agent resumed work (left a blocked state)
     /// and the auto-show setting is enabled.
     AutoShow,
-    /// Rich input was opened to mirror a shared-session participant's state.
-    SharedSessionSync,
 }
 
 impl CLIAgentSessionContext {

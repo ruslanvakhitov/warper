@@ -62,13 +62,9 @@ impl OnboardingPromptBlock {
         let font_size = appearance.monospace_font_size();
         let font_color = current_theme.main_text_color(current_theme.background());
 
-        // Copy - https://docs.google.com/document/d/1zttBLI5Mw07kUupvrMQoC5aTwTXSHIUOIFFnxZ8GQEU/edit
-        const LINE_ONE: &str = "Next, let’s set up your prompt. Warp has a custom prompt builder or you can select PS1 to honor your pre-existing prompt configuration.";
+        const LINE_ONE: &str = "Next, let’s set up your prompt. Warper has a custom prompt builder or you can select PS1 to honor your pre-existing prompt configuration.";
         const LINE_TWO: &str =
-            "Warp works with many custom prompts like oh-my-zsh, Starship, Powerlevel10K. ";
-        const LINK_TEXT: &str = "Learn more";
-        const LINK_DESTINATION: &str =
-            "https://docs.warp.dev/terminal/appearance/prompt#custom-prompt-compatibility-table";
+            "Warper works with many custom prompts like oh-my-zsh, Starship, Powerlevel10K.";
 
         Flex::column()
             .with_children([
@@ -83,7 +79,6 @@ impl OnboardingPromptBlock {
                     FormattedTextElement::new(
                         FormattedText::new([FormattedTextLine::Line(vec![
                             FormattedTextFragment::plain_text(LINE_TWO),
-                            FormattedTextFragment::hyperlink(LINK_TEXT, LINK_DESTINATION),
                         ])]),
                         font_size,
                         font_family,

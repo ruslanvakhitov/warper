@@ -29,10 +29,8 @@ use crate::ai::restored_conversations::RestoredAgentConversations;
 use crate::auth::auth_manager::AuthManager;
 use crate::auth::AuthStateProvider;
 use crate::changelog_model::ChangelogModel;
-use crate::pricing::PricingInfoModel;
 use crate::server::telemetry::context_provider::AppTelemetryContextProvider;
 use crate::suggestions::ignored_suggestions_model::IgnoredSuggestionsModel;
-use crate::terminal::shared_session::permissions_manager::SessionPermissionsManager;
 use crate::terminal::view::inline_banner::ByoLlmAuthBannerSessionState;
 use crate::undo_close::UndoCloseStack;
 use crate::workspace::{OneTimeModalModel, WorkspaceRegistry};
@@ -106,7 +104,6 @@ pub fn initialize_app_for_terminal_view(app: &mut App) {
     app.add_singleton_model(AppTelemetryContextProvider::new_context_provider);
     app.add_singleton_model(AuthManager::new_for_test);
     app.add_singleton_model(LLMPreferences::new);
-    app.add_singleton_model(SessionPermissionsManager::new);
     app.add_singleton_model(DirectoryWatcher::new);
     app.add_singleton_model(|_| DetectedRepositories::default());
     #[cfg(feature = "local_fs")]
@@ -134,7 +131,6 @@ pub fn initialize_app_for_terminal_view(app: &mut App) {
     app.add_singleton_model(OneTimeModalModel::new);
     app.add_singleton_model(|_| WorkspaceRegistry::new());
     app.add_singleton_model(|_| IgnoredSuggestionsModel::new(vec![]));
-    app.add_singleton_model(|_| PricingInfoModel::new());
     app.add_singleton_model(AIDocumentModel::new);
     app.add_singleton_model(ByoLlmAuthBannerSessionState::new);
     app.add_singleton_model(AgentConversationsModel::new);

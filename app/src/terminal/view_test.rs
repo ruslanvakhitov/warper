@@ -373,34 +373,6 @@ fn root_cloud_mode_pane_sets_root_cloud_mode_context_key() {
     });
 }
 
-#[test]
-fn set_input_mode_agent_does_not_enter_local_agent_from_root_cloud_mode_pane() {
-    use crate::terminal::shared_session::SharedSessionStatus;
-
-    App::test((), |mut app| async move {
-        initialize_app_for_terminal_view(&mut app);
-        FeatureFlag::AgentView.set_enabled(true);
-        FeatureFlag::CloudMode.set_enabled(true);
-
-        let terminal = add_window_with_terminal(&mut app, None);
-
-        terminal.update(&mut app, |view, ctx| {
-            view.ambient_agent_view_model().update(ctx, |model, ctx| {
-                model.enter_setup(ctx);
-            });
-            view.model
-                .lock()
-                .set_shared_session_status(SharedSessionStatus::FinishedViewer);
-        });
-
-        terminal.update(&mut app, |view, ctx| {
-            assert!(!view.agent_view_controller().as_ref(ctx).is_active());
-            view.handle_action(&TerminalAction::SetInputModeAgent, ctx);
-            assert!(!view.agent_view_controller().as_ref(ctx).is_active());
-        });
-    });
-}
-
 /// Test clearing of session flag state when terminal is cleared
 #[test]
 fn test_clear_session_flag_state() {
@@ -4020,9 +3992,9 @@ fn cli_session_status_updates_active_child_conversation() {
         let terminal = add_window_with_terminal(&mut app, None);
 
         let child_conversation_id = terminal.update(&mut app, |view, ctx| {
-            let parent_conversation_id =
-                BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, ctx| {
-                    history_model.start_new_conversation(view.view_id, false, false, ctx)
+            let parent_conversation_id = BlocklistAIHistoryModel::handle(ctx)
+                .update(ctx, |history_model, ctx| {
+                    history_model.start_new_conversation(view.view_id, false, ctx)
                 });
             let child_conversation_id =
                 BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, ctx| {

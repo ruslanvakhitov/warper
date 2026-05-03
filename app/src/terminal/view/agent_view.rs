@@ -10,7 +10,7 @@ use crate::{
                 AgentViewEntryOrigin, AutoTriggerBehavior, DismissalStrategy, EnterAgentViewError,
                 EphemeralMessage, ENTER_OR_EXIT_CONFIRMATION_WINDOW,
             },
-            history_model::CloudConversationData,
+            history_model::LocalConversationData,
             BlocklistAIHistoryModel,
         },
     },
@@ -51,14 +51,11 @@ impl TerminalView {
         origin: AgentViewEntryOrigin,
         ctx: &mut ViewContext<Self>,
     ) {
-        // Don't allow starting a new conversation while the agent is in control. 3p cloud
-        // viewers enter agent view to wrap an existing run's content and are not starting a
-        // new conversation, so they are exempt from this guard.
-        if !matches!(origin, AgentViewEntryOrigin::ThirdPartyCloudAgent)
-            && !self
-                .ai_context_model
-                .as_ref(ctx)
-                .can_start_new_conversation()
+        // Don't allow starting a new conversation while the agent is in control.
+        if !self
+            .ai_context_model
+            .as_ref(ctx)
+            .can_start_new_conversation()
         {
             let window_id = ctx.window_id();
             ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
@@ -125,16 +122,16 @@ impl TerminalView {
                     );
                     return;
                 };
-                // For Oz conversations, restore data and then re-enter agent view (the
+                // For local AI conversations, restore data and then re-enter agent view (the
                 // conversation will be in memory after restoration).
                 // For CLI agent conversations, restore the block snapshot only. Because we
                 // don't update the in-memory model in this case, attempting to re-enter agent
                 // view will trigger an infinite loop of fetching and loading conversation data
-                // from the server.
+                // by token.
                 #[allow(clippy::type_complexity)]
                 let on_restored: Box<
                     dyn FnOnce(&mut Self, &mut ViewContext<Self>),
-                > = if matches!(&conversation, CloudConversationData::Oz(_)) {
+                > = if matches!(&conversation, LocalConversationData::AI(_)) {
                     Box::new(move |me, ctx| {
                         me.enter_agent_view_for_conversation(
                             initial_prompt,
@@ -237,7 +234,6 @@ impl TerminalView {
                     controller.send_user_query_in_conversation(
                         initial_prompt,
                         conversation_id,
-                        None,
                         ctx,
                     );
                 });

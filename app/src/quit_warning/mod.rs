@@ -167,26 +167,10 @@ impl QuitScope<'_> {
                 pane_group,
                 pane_id,
                 ..
-            } => pane_group
-                .terminal_view_from_pane_id(*pane_id, ctx)
-                .filter(|view| view.as_ref(ctx).is_sharing_session())
-                .into_iter()
-                .count(),
-            Self::Tabs(ref tabs) => tabs
-                .iter()
-                .filter_map(|tab| tab.upgrade(ctx))
-                .map(|tab| tab.as_ref(ctx).number_of_shared_sessions(ctx))
-                .sum(),
-            Self::Window(window_id) => ctx
-                .views_of_type::<PaneGroup>(*window_id)
-                .map(|views| {
-                    views
-                        .into_iter()
-                        .map(|view| view.as_ref(ctx).number_of_shared_sessions(ctx))
-                        .sum()
-                })
-                .unwrap_or_default(),
-            Self::App => crate::session_management::num_shared_sessions(ctx),
+            } => 0,
+            Self::Tabs(_) => 0,
+            Self::Window(_) => 0,
+            Self::App => 0,
             Self::EditorTab { .. } => 0,
         }
     }

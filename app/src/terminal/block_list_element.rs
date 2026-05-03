@@ -2,7 +2,7 @@ use crate::ai::blocklist::agent_view::{agent_view_bg_fill, AgentViewState};
 use crate::ai::blocklist::{ai_brand_color, ATTACH_AS_AGENT_MODE_CONTEXT_TEXT};
 use crate::ai_assistant::{AI_ASSISTANT_SVG_PATH, ASK_AI_ASSISTANT_TEXT};
 use crate::appearance::Appearance;
-use crate::drive::settings::WarpDriveSettings;
+use crate::drive::settings::LocalDriveSettings;
 use crate::features::FeatureFlag;
 use crate::pane_group::SplitPaneState;
 use crate::settings::{
@@ -35,7 +35,6 @@ use warpui::platform::Cursor;
 use warpui::text::SelectionType;
 
 use pathfinder_color::ColorU;
-use session_sharing_protocol::common::{ParticipantId, Selection};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::mem;
@@ -77,13 +76,9 @@ use super::model::mouse::{MouseAction, MouseButton, MouseState};
 use super::model::session::SessionId;
 use super::model::terminal_model::{SelectedBlocks, WithinBlock, WithinModel};
 use super::model::SecretHandle;
-use super::shared_session::presence_manager::{
-    text_selection_color, PresenceManager, MUTED_PARTICIPANT_COLOR,
-};
-use super::shared_session::render_util::SHARED_SESSION_AVATAR_DIAMETER;
 use super::view::{
-    BlocklistAIRenderContext, InlineBannerId, RichContentMetadata, SeparatorId,
-    SharedSessionBanners, TerminalEditor, TerminalViewRenderContext, BLOCK_BANNER_HEIGHT,
+    BlocklistAIRenderContext, InlineBannerId, RichContentMetadata, SeparatorId, TerminalEditor,
+    TerminalViewRenderContext, BLOCK_BANNER_HEIGHT,
 };
 use super::warpify::render::{draw_flag_pole, render_subshell_flag};
 use super::TerminalModel;
@@ -130,8 +125,6 @@ impl Default for SelectionBorderWidth {
         }
     }
 }
-
-const SHARED_SESSION_PARTICIPANT_SELECTION_BORDER_WIDTH: f32 = 1.5;
 
 const SNACKBAR_HOVER_OPACITY: Opacity = 60;
 
@@ -184,9 +177,7 @@ const SNACKBAR_TOGGLE_BUTTON_WIDTH: f32 = 30.;
 const SNACKBAR_TOGGLE_BUTTON_HEIGHT: f32 = 16.;
 
 /// How far away from the right edge of the blocklist the selected block avatar should be
-const SELECTED_BLOCK_AVATAR_EDGE_OFFSET: f32 = 25.;
 /// Space between multiple avatars on a selected block.
-const SPACE_BETWEEN_SELECTED_BLOCK_AVATARS: f32 = 2.;
 
 const CLI_SUBAGENT_HORIZONTAL_MARGIN: f32 = 8.;
 const CLI_SUBAGENT_VERTICAL_MARGIN: f32 = 8.;
@@ -724,10 +715,6 @@ pub struct BlockListElement {
     rich_content_elements: HashMap<EntityId, Box<dyn Element>>,
     rich_content_metadata: HashMap<EntityId, RichContentMetadata>,
 
-    shared_session_banner_state: SharedSessionBanners,
-    presence_manager: Option<ModelHandle<PresenceManager>>,
-    presence_avatars: HashMap<ParticipantId, Box<dyn Element>>,
-
     horizontal_clipped_scroll_state: ClippedScrollStateHandle,
 
     /// Information about blocks and AI blocks used to render blocklist AI-specific decoration.
@@ -889,7 +876,6 @@ impl BlockListElement {
         cli_subagent_views: HashMap<BlockId, Box<dyn Element>>,
         selection_ranges: Option<Vec1<SelectionRange>>,
         block_banner: Option<Box<dyn Element>>,
-        shared_session_banners: SharedSessionBanners,
         input_size_at_last_frame: Vector2F,
         inline_menu_positioner: ModelHandle<InlineMenuPositioner>,
         cursor_hint_text_element: Option<Box<dyn Element>>,
@@ -965,9 +951,6 @@ impl BlockListElement {
             filtered_blocks: None,
             rich_content_elements: HashMap::new(),
             rich_content_metadata: HashMap::new(),
-            shared_session_banner_state: shared_session_banners,
-            presence_manager: None,
-            presence_avatars: HashMap::new(),
             horizontal_clipped_scroll_state: terminal_view_render_context
                 .horizontal_clipped_scroll_state,
             ai_render_context: terminal_view_render_context.ai_render_context,
@@ -1202,7 +1185,7 @@ impl BlockListElement {
         }
 
         if FeatureFlag::BlockToolbeltSaveAsWorkflow.is_enabled()
-            && WarpDriveSettings::is_warp_drive_enabled(app)
+            && LocalDriveSettings::is_local_drive_enabled(app)
         {
             let icon = Container::new(
                 ConstrainedBox::new(
@@ -1268,16 +1251,6 @@ impl BlockListElement {
             self.save_as_workflow_button = Some(element);
         }
 
-        self
-    }
-
-    pub fn with_shared_session_presence(
-        mut self,
-        presence_avatars: HashMap<ParticipantId, Box<dyn Element>>,
-        presence_manager: ModelHandle<PresenceManager>,
-    ) -> Self {
-        self.presence_avatars = presence_avatars;
-        self.presence_manager = Some(presence_manager);
         self
     }
 
@@ -2112,246 +2085,6 @@ impl BlockListElement {
             // Rendering the snackbar creates a layer that we need to close.
             ctx.scene.stop_layer();
         }
-    }
-
-    fn render_shared_session_participants_selections(
-        &self,
-        origin: Vector2F,
-        block_list: &BlockList,
-        app: &AppContext,
-        ctx: &mut PaintContext<'_>,
-    ) {
-        // Render other shared session participants'
-        if let Some(presence_manager) = &self.presence_manager {
-            let is_self_reconnecting = presence_manager.as_ref(app).is_reconnecting();
-            for participant in presence_manager.as_ref(app).all_present_participants() {
-                let Selection::BlockText {
-                    start,
-                    end,
-                    is_reversed,
-                } = &participant.info.selection
-                else {
-                    continue;
-                };
-                let start = WithinBlock::<IndexPoint>::from_session_sharing_block_point(
-                    start.clone(),
-                    block_list,
-                );
-                let end = WithinBlock::<IndexPoint>::from_session_sharing_block_point(
-                    end.clone(),
-                    block_list,
-                );
-
-                // TODO: if either of these are None, we should probably find the closest, relevant point.
-                // For example, if there is displayed output in our grid and a remote selection is made
-                // starting at an undisplayed row and ends somewhere in a displayed row, the selection should
-                // probably be from the start of the displayed row to its end, rather than no selection at all.
-                let Some((start, end)) = start.zip(end) else {
-                    continue;
-                };
-                let start_block_index = start.block_index;
-                let end_block_index = end.block_index;
-
-                // Don't show highlight ui if this block is hidden.
-                let mut any_hidden = false;
-                for block_index in
-                    BlockIndex::range_as_iter(start_block_index..end_block_index.next())
-                {
-                    if block_list
-                        .block_at(block_index)
-                        .map(|block| block.should_hide_block(block_list.agent_view_state()))
-                        .unwrap_or(true)
-                    {
-                        any_hidden = true;
-                        break;
-                    }
-                }
-                if any_hidden {
-                    continue;
-                }
-
-                let start_block_list_point =
-                    BlockListPoint::from_within_block_point(&start, block_list);
-                let end_block_list_point =
-                    BlockListPoint::from_within_block_point(&end, block_list);
-                let range = SelectionRange::new(start_block_list_point, end_block_list_point);
-                let participant_color = if is_self_reconnecting {
-                    MUTED_PARTICIPANT_COLOR
-                } else {
-                    participant.color
-                };
-                let viewport = self.viewport_state_after_layout(block_list);
-                if viewport.is_range_in_order_in_viewport(&range) {
-                    let selection_cursor_render_location = if *is_reversed {
-                        SelectionCursorRenderLocation::Start
-                    } else {
-                        SelectionCursorRenderLocation::End
-                    };
-                    self.render_selection(
-                        &range,
-                        origin,
-                        block_list,
-                        text_selection_color(participant_color),
-                        selection_cursor_render_location,
-                        ctx,
-                    );
-                } else {
-                    // The start is always before the end from the participant's perspective before it's sent to the server.
-                    // If the start is after the end for us, it means our blocklist is inverted relative to the participant's.
-                    // For example, this happens if the selection spans multiple blocks and they are using waterfall mode but we are not, or vice versa.
-                    self.render_shared_session_participant_selection_relative_inverted_blocklist(
-                        start_block_list_point,
-                        start_block_index,
-                        end_block_list_point,
-                        end_block_index,
-                        *is_reversed,
-                        participant_color,
-                        origin,
-                        block_list,
-                        ctx,
-                    );
-                }
-            }
-        }
-    }
-
-    /// Render a participant's selection when it spans multiple blocks and their blocklist is inverted relative to ours.
-    /// Say the participant selected from S to E across 4 blocks on their screen:
-    ///
-    /// 1.  [ ][ ][S][X][X]
-    ///     [X][X][X][X][X]
-    /// 2.  [X][X][X][X][X]
-    ///     [X][X][X][X][X]
-    /// 3.  [X][X][X][X][X]
-    ///     [X][X][X][X][X]
-    /// 4.  [X][X][E][ ][ ]
-    ///     [ ][ ][ ][ ][ ]
-    ///
-    /// But our blocklist is inverted relative to the participant's. On our screen, the selection should appear like:
-    ///
-    /// 4.  [X][X][E][ ][ ]
-    ///     [ ][ ][ ][ ][ ]
-    /// 3.  [X][X][X][X][X]
-    ///     [X][X][X][X][X]
-    /// 2.  [X][X][X][X][X]
-    ///     [X][X][X][X][X]
-    /// 1.  [ ][ ][S][X][X]
-    ///     [X][X][X][X][X]
-    ///
-    /// Returns Some(()) if the selection was rendered, which will happen as long as the block indices are in bounds.
-    #[allow(clippy::too_many_arguments)]
-    fn render_shared_session_participant_selection_relative_inverted_blocklist(
-        &self,
-        start_block_list_point: BlockListPoint,
-        start_block_index: BlockIndex,
-        end_block_list_point: BlockListPoint,
-        end_block_index: BlockIndex,
-        is_reversed: bool,
-        participant_color: ColorU,
-        origin: Vector2F,
-        block_list: &BlockList,
-        ctx: &mut PaintContext<'_>,
-    ) -> Option<()> {
-        // Render a selection from the start point of the same block that the end point is in, to the end point.
-        // 4.  [X][X][E][ ][ ]
-        //     [ ][ ][ ][ ][ ]
-        let block_start = block_list
-            .block_at(end_block_index)
-            .map(|b| b.start_point().to_within_block_point(end_block_index))?;
-        let range = SelectionRange::new(
-            BlockListPoint::from_within_block_point(&block_start, block_list),
-            end_block_list_point,
-        );
-        let selection_cursor_render_location = if is_reversed {
-            SelectionCursorRenderLocation::None
-        } else {
-            SelectionCursorRenderLocation::End
-        };
-        self.render_selection(
-            &range,
-            origin,
-            block_list,
-            text_selection_color(participant_color),
-            selection_cursor_render_location,
-            ctx,
-        );
-
-        // Any intermediate blocks between start and end points are fully selected.
-        // 3.  [X][X][X][X][X]
-        //     [X][X][X][X][X]
-        // 2.  [X][X][X][X][X]
-        //     [X][X][X][X][X]
-        let (larger_block_index, smaller_block_index) = if start_block_index > end_block_index {
-            (start_block_index, end_block_index)
-        } else {
-            (end_block_index, start_block_index)
-        };
-        if larger_block_index - smaller_block_index > 1.into() {
-            // The intermediate start block index should be whichever is on top in the viewport.
-            // The intermediate end block index is whichever is on bottom in the viewport.
-            let (intermediate_start_block_index, intermediate_end_block_index) =
-                if !self.input_mode.is_inverted_blocklist() {
-                    (
-                        smaller_block_index + 1.into(),
-                        larger_block_index - 1.into(),
-                    )
-                } else {
-                    (
-                        larger_block_index - 1.into(),
-                        smaller_block_index + 1.into(),
-                    )
-                };
-            let intermediate_start =
-                block_list
-                    .block_at(intermediate_start_block_index)
-                    .map(|b| {
-                        b.start_point()
-                            .to_within_block_point(intermediate_start_block_index)
-                    })?;
-
-            let intermediate_end = block_list.block_at(intermediate_end_block_index).map(|b| {
-                b.end_point()
-                    .to_within_block_point(intermediate_end_block_index)
-            })?;
-
-            let range = SelectionRange::new(
-                BlockListPoint::from_within_block_point(&intermediate_start, block_list),
-                BlockListPoint::from_within_block_point(&intermediate_end, block_list),
-            );
-            self.render_selection(
-                &range,
-                origin,
-                block_list,
-                text_selection_color(participant_color),
-                SelectionCursorRenderLocation::None,
-                ctx,
-            );
-        }
-
-        // Render a selection from the start point to the end of the block that the start point is in.
-        // 1.  [ ][ ][S][X][X]
-        //     [X][X][X][X][X]
-        let block_end = block_list
-            .block_at(start_block_index)
-            .map(|b| b.end_point().to_within_block_point(start_block_index))?;
-        let range = SelectionRange::new(
-            start_block_list_point,
-            BlockListPoint::from_within_block_point(&block_end, block_list),
-        );
-        let selection_cursor_render_location = if is_reversed {
-            SelectionCursorRenderLocation::Start
-        } else {
-            SelectionCursorRenderLocation::None
-        };
-        self.render_selection(
-            &range,
-            origin,
-            block_list,
-            text_selection_color(participant_color),
-            selection_cursor_render_location,
-            ctx,
-        );
-        Some(())
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -3520,17 +3253,6 @@ impl Element for BlockListElement {
             );
         }
 
-        for avatar_element in self.presence_avatars.values_mut() {
-            avatar_element.layout(
-                SizeConstraint::new(
-                    vec2f(constraint.min.x(), BLOCK_HOVER_BUTTON_HEIGHT),
-                    vec2f(constraint.max.x(), BLOCK_HOVER_BUTTON_HEIGHT),
-                ),
-                ctx,
-                app,
-            );
-        }
-
         self.visible_blocks = Some(viewport_iter.visible_block_range());
         self.visible_items = Some(Rc::new(visible_items));
         self.subshell_flags = subshell_flags;
@@ -3900,86 +3622,7 @@ impl Element for BlockListElement {
                         draw_border_above_block = false;
                     }
 
-                    // Current block is selected by ourselves or by another shared session participant
-                    let mut is_current_block_selected_by_anyone = is_current_block_selected;
-                    let mut participant_ids_for_avatar_render = vec![];
-                    if let Some(presence_manager) = &self.presence_manager {
-                        let is_self_reconnecting = presence_manager.as_ref(app).is_reconnecting();
-                        // Sort participants by reverse participant ID so we construct participant_ids_for_avatar_render in an ordering that's consistent with the pane header (avatars get rendered from right to left below).
-                        // Sorting here before rendering borders also ensures that the border color that gets rendered is always the color of participant on the furthest left,
-                        // since that is the color that gets rendered last.
-                        for participant in presence_manager
-                            .as_ref(app)
-                            .get_participants_at_selected_block(*block_index, block_list)
-                            .into_iter()
-                            .sorted_by(|a, b| b.participant.info.id.cmp(&a.participant.info.id))
-                        {
-                            if participant.should_show_avatar {
-                                participant_ids_for_avatar_render
-                                    .push(participant.participant.info.id.clone());
-                            }
-                            // Don't render any shared session participant background or border if we're rendering our own selection background and border.
-                            if is_current_block_selected {
-                                continue;
-                            }
-                            let color: Fill = if is_self_reconnecting {
-                                MUTED_PARTICIPANT_COLOR
-                            } else {
-                                participant.participant.color
-                            }
-                            .into();
-                            ctx.scene
-                                .draw_rect_with_hit_recording(RectF::new(
-                                    header_origin,
-                                    Vector2F::new(
-                                        self.bounds
-                                            .expect("bounds must be set at paint time")
-                                            .width(),
-                                        selection_height,
-                                    ),
-                                ))
-                                .with_background(color.with_opacity(10))
-                                .with_border(
-                                    Border::new(SHARED_SESSION_PARTICIPANT_SELECTION_BORDER_WIDTH)
-                                        .with_sides(
-                                            participant.is_top_of_continuous_selection,
-                                            true,
-                                            participant.is_bottom_of_continuous_selection,
-                                            true,
-                                        )
-                                        .with_border_fill(color),
-                                );
-                            // If we drew a colored top border here due to a participant's selection, don't also draw a gray border at the top.
-                            if participant.is_top_of_continuous_selection {
-                                draw_border_above_block = false;
-                            }
-                            is_current_block_selected_by_anyone = true;
-                        }
-                    }
-                    // Render their avatar in the top right of the block.
-                    let mut avatar_origin = vec2f(
-                        header_origin.x()
-                            + self.size_info.pane_width_px().as_f32()
-                            + self.horizontal_clipped_scroll_state.scroll_start().as_f32()
-                            - SELECTED_BLOCK_AVATAR_EDGE_OFFSET
-                            - SHARED_SESSION_AVATAR_DIAMETER,
-                        header_origin.y() - SHARED_SESSION_AVATAR_DIAMETER / 2.,
-                    );
-                    // participant_ids_for_avatar_render is already sorted in reverse order,
-                    // so the ordering will be consistent with the pane header as we go right to left.
-                    for participant_id in participant_ids_for_avatar_render {
-                        if let Some(avatar_element) = self.presence_avatars.get_mut(&participant_id)
-                        {
-                            avatar_element.paint(avatar_origin, ctx, app);
-                            avatar_origin.set_x(
-                                avatar_origin.x()
-                                    - SHARED_SESSION_AVATAR_DIAMETER
-                                    - SPACE_BETWEEN_SELECTED_BLOCK_AVATARS,
-                            );
-                        } else {
-                            log::warn!("Should show avatar for shared session participant at selected block but avatar element was not found")
-                        }
-                    }
+                    let is_current_block_selected_by_anyone = is_current_block_selected;
 
                     // Check if this block is in a subshell. If it is, draw a gray stripe on the
                     // left-hand side.
@@ -4292,21 +3935,7 @@ impl Element for BlockListElement {
                         banner.paint(grid_origin, ctx, app);
                     }
 
-                    // Since the shared session banner gives a border effect,
-                    // we want to avoid drawing a border between the banner and the next block.
-                    // Specifically, if there is a banner, we want to draw the border
-                    // iff it's not a shared session banner.
-                    draw_border_above_block = match self.shared_session_banner_state {
-                        SharedSessionBanners::None => true,
-                        SharedSessionBanners::ActiveShare {
-                            started_banner_id, ..
-                        } => *banner_id != started_banner_id,
-                        SharedSessionBanners::LastShared {
-                            started_banner_id,
-                            ended_banner_id,
-                            ..
-                        } => *banner_id != started_banner_id && *banner_id != ended_banner_id,
-                    };
+                    draw_border_above_block = true;
 
                     grid_origin += vec2f(0., *height);
                 }
@@ -4389,8 +4018,6 @@ impl Element for BlockListElement {
                 );
             }
         };
-        self.render_shared_session_participants_selections(origin, block_list, app, ctx);
-
         if !cli_subagent_views_to_paint.is_empty() {
             for CLISubagentRenderParams {
                 block_id,
@@ -4488,10 +4115,6 @@ impl Element for BlockListElement {
             if let Some(snackbar_toggle_button) = &mut self.snackbar_toggle_button {
                 handled_by_floating_button |=
                     snackbar_toggle_button.dispatch_event(event, ctx, app);
-            }
-
-            for avatar_element in self.presence_avatars.values_mut() {
-                handled_by_floating_button |= avatar_element.dispatch_event(event, ctx, app);
             }
 
             if handled_by_floating_button {

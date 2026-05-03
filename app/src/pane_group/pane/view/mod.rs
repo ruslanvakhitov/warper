@@ -7,7 +7,6 @@ use crate::{
     pane_group::{Direction, SplitPaneState, TabBarHoverIndex},
     server::telemetry::SharingDialogSource,
     settings::{PaneSettings, PaneSettingsChangedEvent},
-    util::bindings::CustomAction,
 };
 
 use super::{
@@ -20,7 +19,6 @@ use warpui::{
         Border, Container, DropTarget, DropTargetData, Flex, MainAxisSize, ParentElement,
         SavePosition, Shrinkable,
     },
-    keymap::EditableBinding,
     presenter::ChildView,
     AppContext, Element, Entity, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext,
     ViewHandle,
@@ -37,15 +35,7 @@ pub use header_content::{
 const HAS_SHARED_OBJECT_CONTEXT_KEY: &str = "PaneView_HasSharedObject";
 
 pub fn init(app: &mut AppContext) {
-    use warpui::keymap::macros::*;
-
-    app.register_editable_bindings([EditableBinding::new(
-        "pane:share_pane_contents",
-        "Share pane",
-        PaneAction::ShareContents,
-    )
-    .with_custom_action(CustomAction::SharePaneContents)
-    .with_context_predicate(id!("PaneView") & id!(HAS_SHARED_OBJECT_CONTEXT_KEY))]);
+    let _ = app;
 }
 
 pub enum PaneViewEvent {
