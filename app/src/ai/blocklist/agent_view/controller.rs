@@ -37,8 +37,6 @@ pub enum ExitAgentViewError {
     LongRunningCommand,
     #[error("Cannot exit conversation as a viewer.")]
     ConversationViewer,
-    #[error("Cannot exit cloud agent.")]
-    AmbientAgent,
 }
 
 /// The display mode for an active agent view.
@@ -119,8 +117,6 @@ pub enum AgentViewEntryOrigin {
     AutoFollowUp,
     /// Entered agent view due to conversation restoration on startup or forking.
     RestoreExistingConversation,
-    /// Entered agent view due to shared-session synchronization.
-    SharedSessionSelection,
     /// Entered agent view due to a server-driven conversation split (StartNewConversation client action).
     AgentRequestedNewConversation,
     /// Entered agent view via accepting a prompt suggestion.
@@ -131,11 +127,6 @@ pub enum AgentViewEntryOrigin {
     AcceptedPassiveCodeDiff,
     /// Entered agent view by starting conversation with an inline code review submission.
     InlineCodeReview,
-    /// Entered agent view through a cloud agent prompt.
-    CloudAgent,
-    /// Entered agent view by opening an existing non-Oz cloud agent run (live shared-session
-    /// viewer or transcript viewer).
-    ThirdPartyCloudAgent,
     /// Entered agent view via the CLI (e.g. `warp agent run`).
     Cli,
     /// Entered agent view by adding an image (drag-and-drop or paste).
@@ -202,10 +193,6 @@ pub enum AutoTriggerBehavior {
 }
 
 impl AgentViewEntryOrigin {
-    pub fn is_cloud_agent(&self) -> bool {
-        matches!(self, Self::CloudAgent)
-    }
-
     pub fn should_autotrigger_request(&self) -> AutoTriggerBehavior {
         match self {
             AgentViewEntryOrigin::Input {
@@ -417,25 +404,13 @@ impl AgentViewController {
     ) -> Result<(), ExitAgentViewError> {
         let model = self.terminal_model.lock();
 
-        let ambient_agent_model = self.ambient_agent_view_model.as_ref(ctx);
         let is_fullscreen_with_long_running = self.agent_view_state.is_fullscreen()
             && model
                 .block_list()
                 .active_block()
                 .is_active_and_long_running();
 
-        // Ambient agent sessions should not allow exiting agent view if it's not backed by a terminal session because there's nothing to escape to.
-        if ambient_agent_model.is_ambient_agent() {
-            if !ambient_agent_model.has_parent_terminal() {
-                return Err(ExitAgentViewError::AmbientAgent);
-            }
-            // But if there is a terminal backing and we're in a LRC, we should be able to escape
-            else if is_fullscreen_with_long_running {
-                return Ok(());
-            }
-        }
-
-        // In a non-ambient agent case, users cannot exit the fullscreen agent view with an active long running command.
+        // Users cannot exit the fullscreen agent view with an active long running command.
         if is_fullscreen_with_long_running {
             return Err(ExitAgentViewError::LongRunningCommand);
         }
@@ -701,9 +676,7 @@ impl AgentViewController {
         origin: AgentViewEntryOrigin,
         ctx: &mut ModelContext<Self>,
     ) -> Result<AIConversationId, EnterAgentViewError> {
-        // Block entry to fullscreen mode if there's an active long-running command. Transcript
-        // viewers and 3p cloud viewers are exempt: in those contexts the long-running block is
-        // either a restored snapshot or the harness CLI we want to wrap in agent-view chrome.
+        // Block entry to fullscreen mode if there's an active long-running command.
         let is_long_running = {
             let terminal_model = self.terminal_model.lock();
             terminal_model
@@ -711,7 +684,6 @@ impl AgentViewController {
                 .active_block()
                 .is_active_and_long_running()
                 && !terminal_model.is_conversation_transcript_viewer()
-                && !matches!(origin, AgentViewEntryOrigin::ThirdPartyCloudAgent)
         };
 
         if is_long_running {
@@ -778,12 +750,7 @@ impl AgentViewController {
             (conversation.id(), conversation.exchange_count())
         } else {
             let id = history_model.update(ctx, |history_model, ctx| {
-                history_model.start_new_conversation(
-                    self.terminal_view_id,
-                    false,
-                    matches!(origin, AgentViewEntryOrigin::CloudAgent),
-                    ctx,
-                )
+                history_model.start_new_conversation(self.terminal_view_id, false, ctx)
             });
             (id, 0)
         };
@@ -801,21 +768,6 @@ impl AgentViewController {
             .lock()
             .block_list_mut()
             .set_agent_view_state(self.agent_view_state.clone());
-
-        if origin == AgentViewEntryOrigin::CloudAgent {
-            // Only enter setup state if there are no existing environments.
-            // If environments exist, the user should go directly to composing.
-            let has_environments =
-                !crate::ai::cloud_environments::CloudAmbientAgentEnvironment::get_all(ctx)
-                    .is_empty();
-            self.ambient_agent_view_model.update(ctx, |model, ctx| {
-                if has_environments {
-                    model.enter_composing_from_setup(ctx);
-                } else {
-                    model.enter_setup(ctx);
-                }
-            });
-        }
 
         ctx.emit(AgentViewControllerEvent::EnteredAgentView {
             conversation_id,
@@ -942,16 +894,6 @@ impl AgentViewController {
             .block_list_mut()
             .set_agent_view_state(self.agent_view_state.clone());
 
-        // Capture ambient agent status before resetting it
-        let was_ambient_agent = self.ambient_agent_view_model.as_ref(ctx).is_ambient_agent();
-
-        // Reset ambient agent status when exiting agent view
-        if was_ambient_agent {
-            self.ambient_agent_view_model.update(ctx, |model, ctx| {
-                model.reset_status(ctx);
-            });
-        }
-
         let history_model = BlocklistAIHistoryModel::handle(ctx);
         let final_exchange_count = history_model
             .as_ref(ctx)
@@ -965,7 +907,7 @@ impl AgentViewController {
             display_mode,
             original_exchange_count: original_conversation_length,
             final_exchange_count,
-            was_ambient_agent,
+            was_ambient_agent: false,
             is_exit_before_new_entrance,
         });
     }

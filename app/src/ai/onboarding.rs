@@ -4,20 +4,17 @@ use ai::LLMId;
 use onboarding::slides::OnboardingModelInfo;
 use onboarding::OnboardingAuthState;
 use warp_core::ui::icons::Icon;
-use warpui::{AppContext, SingletonEntity};
+use warpui::AppContext;
 
-use crate::auth::AuthStateProvider;
-use crate::workspaces::user_workspaces::UserWorkspaces;
-
-use super::llms::{DisableReason, LLMInfo, LLMPreferences};
+use super::llms::{LLMInfo, LLMPreferences};
 
 impl From<&LLMInfo> for OnboardingModelInfo {
     fn from(llm: &LLMInfo) -> Self {
         Self {
             id: llm.id.clone(),
             title: llm.display_name.clone(),
-            icon: llm.provider.icon().unwrap_or(Icon::Oz),
-            requires_upgrade: matches!(llm.disable_reason, Some(DisableReason::RequiresUpgrade)),
+            icon: llm.provider.icon().unwrap_or(Icon::AgentMode),
+            requires_upgrade: false,
             is_default: false,
         }
     }
@@ -37,17 +34,6 @@ pub fn build_onboarding_models(prefs: &LLMPreferences) -> (Vec<OnboardingModelIn
 }
 
 pub fn current_onboarding_auth_state(ctx: &AppContext) -> OnboardingAuthState {
-    let auth_state = AuthStateProvider::as_ref(ctx).get();
-    if auth_state.is_anonymous_or_logged_out() {
-        return OnboardingAuthState::LoggedOut;
-    }
-    let is_on_paid_plan = UserWorkspaces::as_ref(ctx)
-        .current_workspace()
-        .map(|w| w.billing_metadata.is_user_on_paid_plan())
-        .unwrap_or(false);
-    if is_on_paid_plan {
-        OnboardingAuthState::PayingUser
-    } else {
-        OnboardingAuthState::FreeUser
-    }
+    let _ = ctx;
+    OnboardingAuthState::LoggedOut
 }

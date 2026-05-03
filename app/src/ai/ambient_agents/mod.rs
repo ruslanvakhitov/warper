@@ -8,7 +8,6 @@ use std::str::FromStr;
 use uuid::{NonNilUuid, Uuid};
 
 pub mod scheduled;
-pub mod spawn;
 pub mod task;
 pub mod telemetry;
 
@@ -16,10 +15,6 @@ pub use task::{
     cancel_task_with_toast, AgentConfigSnapshot, AgentSource, AmbientAgentTask,
     AmbientAgentTaskState, TaskStatusMessage,
 };
-pub const OUT_OF_CREDITS_TASK_FAILURE_MESSAGE: &str =
-    "Out of credits. Upgrade your Warp plan to continue running cloud agents.";
-pub const SERVER_OVERLOADED_TASK_FAILURE_MESSAGE: &str =
-    "Warp is temporarily overloaded. Please try again shortly.";
 
 #[derive(Debug, thiserror::Error)]
 #[error("Invalid task ID: {0}")]

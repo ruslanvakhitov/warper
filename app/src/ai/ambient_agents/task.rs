@@ -9,7 +9,6 @@ use warp_core::ui::theme::WarpTheme;
 use warpui::color::ColorU;
 
 use crate::ai::artifacts::{deserialize_artifacts, Artifact};
-use crate::server::server_api::ServerApiProvider;
 use crate::ui_components::icons::Icon;
 use crate::view_components::DismissibleToast;
 use crate::workspace::ToastStack;
@@ -156,9 +155,8 @@ pub enum AgentSource {
     Cli,
     ScheduledAgent,
     Interactive,
-    WebApp,
+    RemovedHosted,
     GitHubAction,
-    CloudMode,
 }
 
 impl AgentSource {
@@ -172,9 +170,8 @@ impl AgentSource {
             // The public API's run source for local interactive tasks is named
             // `LOCAL`.
             AgentSource::Interactive => "LOCAL",
-            AgentSource::WebApp => "WEB_APP",
+            AgentSource::RemovedHosted => "REMOVED_HOSTED",
             AgentSource::GitHubAction => "GITHUB_ACTION",
-            AgentSource::CloudMode => "CLOUD_MODE",
         }
     }
 
@@ -186,9 +183,8 @@ impl AgentSource {
             AgentSource::Cli => "CLI",
             AgentSource::ScheduledAgent => "Scheduled",
             AgentSource::Interactive => "Warp (local agent)",
-            AgentSource::WebApp => "Oz Web",
+            AgentSource::RemovedHosted => "Removed hosted agent",
             AgentSource::GitHubAction => "GitHub Action",
-            AgentSource::CloudMode => "Warp (cloud agent)",
         }
     }
 
@@ -196,15 +192,12 @@ impl AgentSource {
     /// (as opposed to automated/programmatic sources like CLI or scheduled runs).
     pub fn is_user_initiated(&self) -> bool {
         match self {
-            AgentSource::Linear
-            | AgentSource::Slack
-            | AgentSource::Interactive
-            | AgentSource::WebApp
-            | AgentSource::CloudMode => true,
+            AgentSource::Linear | AgentSource::Slack | AgentSource::Interactive => true,
             AgentSource::Cli
             | AgentSource::ScheduledAgent
             | AgentSource::AgentWebhook
-            | AgentSource::GitHubAction => false,
+            | AgentSource::GitHubAction
+            | AgentSource::RemovedHosted => false,
         }
     }
 }
@@ -224,9 +217,8 @@ where
             "LOCAL" => Some(AgentSource::Interactive),
             "CLI" => Some(AgentSource::Cli),
             "SCHEDULED_AGENT" => Some(AgentSource::ScheduledAgent),
-            "WEB_APP" => Some(AgentSource::WebApp),
             "GITHUB_ACTION" => Some(AgentSource::GitHubAction),
-            "CLOUD_MODE" => Some(AgentSource::CloudMode),
+            "WEB_APP" | "CLOUD_MODE" => Some(AgentSource::RemovedHosted),
             _ => {
                 report_error!(anyhow!("Unknown AmbientAgentSource: {}", s));
                 None
@@ -463,22 +455,12 @@ pub struct RequestUsage {
 
 /// Cancel an ambient agent task and show a toast with the result.
 pub fn cancel_task_with_toast<V: View>(task_id: AmbientAgentTaskId, ctx: &mut ViewContext<V>) {
-    let ai_client = ServerApiProvider::handle(ctx).as_ref(ctx).get_ai_client();
+    let _ = task_id;
     let window_id = ctx.window_id();
-    ctx.spawn(
-        async move { ai_client.cancel_ambient_agent_task(&task_id).await },
-        move |_view, result, ctx| {
-            let message = match result {
-                Ok(()) => "Task cancelled".to_string(),
-                Err(e) => {
-                    log::error!("Failed to cancel task: {e}");
-                    format!("Failed to cancel task: {e}")
-                }
-            };
-            ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
-                let toast = DismissibleToast::default(message);
-                toast_stack.add_ephemeral_toast(toast, window_id, ctx);
-            });
-        },
-    );
+    ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
+        let toast = DismissibleToast::error(
+            "Hosted ambient agent cancellation is unavailable in local-only Warper".to_string(),
+        );
+        toast_stack.add_ephemeral_toast(toast, window_id, ctx);
+    });
 }

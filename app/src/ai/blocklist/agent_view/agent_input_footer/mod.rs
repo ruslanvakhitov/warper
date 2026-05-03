@@ -34,7 +34,6 @@ use crate::{
         model_events::ModelEvent,
         profile_model_selector::{ProfileModelSelector, ProfileModelSelectorEvent},
         session_settings::{SessionSettings, SessionSettingsChangedEvent, ToolbarChipSelection},
-        shared_session::SharedSessionStatus,
         view::ambient_agent::{AmbientAgentViewModel, ModelSelector},
         view::init::OPEN_CLI_AGENT_RICH_INPUT_KEYBINDING,
         view::TerminalAction,
@@ -1180,12 +1179,9 @@ impl AgentInputFooter {
     fn render_cli_toolbar_item(
         &self,
         item: &AgentToolbarItemKind,
-        shared_status: &SharedSessionStatus,
         app: &AppContext,
     ) -> Option<Box<dyn Element>> {
-        if !item.available_in().is_available_for_cli()
-            || !item.available_to_session_viewer(shared_status, false)
-        {
+        if !item.available_in().is_available_for_cli() {
             return None;
         }
 
@@ -1208,7 +1204,6 @@ impl AgentInputFooter {
                 #[cfg(not(feature = "voice_input"))]
                 None
             }
-            AgentToolbarItemKind::ShareSession => None,
             AgentToolbarItemKind::Settings => Some(ChildView::new(&self.settings_button).finish()),
             // Handled by the available_in() guard above; included for exhaustiveness.
             AgentToolbarItemKind::ModelSelector
@@ -1223,21 +1218,17 @@ impl AgentInputFooter {
         let cli_icon_size = ButtonSize::AgentInputButton.icon_size(appearance, app);
 
         // Extract everything we need from the terminal model up front and drop
-        // the lock before calling into helpers like `should_use_manual_mode`
-        // and `render_cli_toolbar_item`, which may re-lock the same model and
-        // would deadlock since the lock is non-reentrant.
-        let (background_color, shared_status) = {
+        // the lock before calling helpers that may re-lock the same model.
+        let background_color = {
             let terminal_model = self.terminal_model.lock();
-            let background_color = if terminal_model.is_alt_screen_active() {
+            if terminal_model.is_alt_screen_active() {
                 terminal_model
                     .alt_screen()
                     .inferred_bg_color()
                     .unwrap_or_else(|| appearance.theme().surface_1().into_solid())
             } else {
                 appearance.theme().surface_1().into_solid()
-            };
-            let shared_status = terminal_model.shared_session_status().clone();
-            (background_color, shared_status)
+            }
         };
 
         let session_settings = SessionSettings::as_ref(app);
@@ -1300,7 +1291,7 @@ impl AgentInputFooter {
         }
 
         for item in &left_items {
-            if let Some(element) = self.render_cli_toolbar_item(item, &shared_status, app) {
+            if let Some(element) = self.render_cli_toolbar_item(item, app) {
                 left_buttons.add_child(element);
             }
         }
@@ -1311,7 +1302,7 @@ impl AgentInputFooter {
             .with_spacing(4.);
 
         for item in &right_items {
-            if let Some(element) = self.render_cli_toolbar_item(item, &shared_status, app) {
+            if let Some(element) = self.render_cli_toolbar_item(item, app) {
                 right_buttons.add_child(element);
             }
         }
@@ -1695,14 +1686,9 @@ impl AgentInputFooter {
     fn render_toolbar_item(
         &self,
         item: &AgentToolbarItemKind,
-        shared_status: &SharedSessionStatus,
         app: &AppContext,
     ) -> Option<Box<dyn Element>> {
-        let is_cloud_mode = FeatureFlag::CloudModeImageContext.is_enabled()
-            && self.ambient_agent_view_model.as_ref(app).is_ambient_agent();
-        if !item.available_in().is_available_for_agent_view()
-            || !item.available_to_session_viewer(shared_status, is_cloud_mode)
-        {
+        if !item.available_in().is_available_for_agent_view() {
             return None;
         }
         match item {
@@ -1743,7 +1729,6 @@ impl AgentInputFooter {
                         .is_some();
                 has_conversation.then(|| ChildView::new(&self.context_window_button).finish())
             }
-            AgentToolbarItemKind::ShareSession => None,
             AgentToolbarItemKind::FastForwardToggle => FeatureFlag::FastForwardAutoexecuteButton
                 .is_enabled()
                 .then(|| ChildView::new(&self.fast_forward_button).finish()),
@@ -1812,11 +1797,8 @@ impl View for AgentInputFooter {
             .with_run_spacing(4.)
             .with_spacing(4.);
 
-        let terminal_model = self.terminal_model.lock();
-        let shared_status = terminal_model.shared_session_status();
-
         for item in &left_items {
-            if let Some(element) = self.render_toolbar_item(item, shared_status, app) {
+            if let Some(element) = self.render_toolbar_item(item, app) {
                 left_buttons.add_child(element);
             }
         }
@@ -1837,7 +1819,7 @@ impl View for AgentInputFooter {
             );
         } else {
             for item in &right_items {
-                if let Some(element) = self.render_toolbar_item(item, shared_status, app) {
+                if let Some(element) = self.render_toolbar_item(item, app) {
                     right_buttons.add_child(element);
                 }
             }
@@ -1866,11 +1848,14 @@ impl View for AgentInputFooter {
         // If the model chip has switched to show the ftu model options
         // (and this is the first time this has happened)
         // we show a little callout explaining the change.
-        let showing_ftu_model_picker = FeatureFlag::InlineMenuHeaders.is_enabled()
-            && terminal_model
-                .block_list()
-                .active_block()
-                .is_agent_in_control_or_tagged_in();
+        let showing_ftu_model_picker = {
+            let terminal_model = self.terminal_model.lock();
+            FeatureFlag::InlineMenuHeaders.is_enabled()
+                && terminal_model
+                    .block_list()
+                    .active_block()
+                    .is_agent_in_control_or_tagged_in()
+        };
         if showing_ftu_model_picker && self.render_ftu_callout {
             let mut stack = Stack::new();
             stack.add_child(container.finish());
@@ -2275,14 +2260,7 @@ impl ActionButtonTheme for AgentInputButtonTheme {
     }
 
     fn font_properties(&self) -> Option<warpui::fonts::Properties> {
-        if crate::features::FeatureFlag::CloudModeInputV2.is_enabled() {
-            Some(warpui::fonts::Properties {
-                weight: warpui::fonts::Weight::Semibold,
-                ..Default::default()
-            })
-        } else {
-            None
-        }
+        None
     }
 }
 

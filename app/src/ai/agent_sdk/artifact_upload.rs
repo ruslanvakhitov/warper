@@ -2,7 +2,6 @@ use std::env;
 use std::fs::File;
 use std::io::Read as _;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use anyhow::{anyhow, bail, Context, Result};
 use blocking::unblock;
@@ -13,15 +12,10 @@ use super::common::parse_ambient_task_id;
 use crate::ai::agent::api::ServerConversationToken;
 use crate::ai::agent::conversation::ServerAIConversationMetadata;
 use crate::ai::ambient_agents::AmbientAgentTaskId;
-use crate::server::server_api::ai::{
-    AIClient, CreateFileArtifactUploadRequest, CreateFileArtifactUploadResponse,
-    FileArtifactRecord, FileArtifactUploadTargetInfo,
-};
-use crate::server::server_api::presigned_upload::upload_file_to_target;
-use crate::server::server_api::ServerApi;
+use crate::server::server_api::ai::FileArtifactRecord;
 
 const MIME_SNIFF_BYTES: usize = 8 * 1024;
-const OZ_RUN_ID_ENV_VAR: &str = "OZ_RUN_ID";
+const RUN_ID_ENV_VAR: &str = "WARPER_RUN_ID";
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub(crate) struct FileArtifactUploadRequest {
@@ -89,17 +83,11 @@ impl PreparedUploadArtifact {
     }
 }
 
-pub(crate) struct FileArtifactUploader {
-    ai_client: Arc<dyn AIClient>,
-    server_api: Arc<ServerApi>,
-}
+pub(crate) struct FileArtifactUploader;
 
 impl FileArtifactUploader {
-    pub(crate) fn new(ai_client: Arc<dyn AIClient>, server_api: Arc<ServerApi>) -> Self {
-        Self {
-            ai_client,
-            server_api,
-        }
+    pub(crate) fn new() -> Self {
+        Self
     }
 
     pub(crate) async fn upload_with_association(
@@ -107,93 +95,26 @@ impl FileArtifactUploader {
         request: FileArtifactUploadRequest,
         association: ResolvedUploadAssociation,
     ) -> Result<CompletedFileArtifactUpload> {
-        let FileArtifactUploadRequest {
-            path, description, ..
-        } = request;
-
-        let artifact = self.prepare_upload_artifact(path).await?;
-        let create_response = self
-            .create_upload_target(association, description, &artifact)
-            .await?;
-
-        let checksum = self
-            .upload_artifact_bytes(&create_response.upload_target, &artifact)
-            .await?;
-        let uploaded_artifact = self
-            .confirm_upload(create_response.artifact.artifact_uid, checksum)
-            .await?;
-        let size_bytes = i64::try_from(artifact.file_size)
-            .context("Artifact file size exceeds supported range")?;
-
-        Ok(CompletedFileArtifactUpload {
-            artifact: uploaded_artifact,
-            size_bytes,
-        })
+        let _ = (request, association);
+        Err(anyhow!(
+            "Hosted artifact uploads are unavailable in local-only Warper"
+        ))
     }
 
     async fn prepare_upload_artifact(&self, path: PathBuf) -> Result<PreparedUploadArtifact> {
         unblock(move || PreparedUploadArtifact::from_path(path)).await
     }
 
-    async fn create_upload_target(
-        &self,
-        association: ResolvedUploadAssociation,
-        description: Option<String>,
-        artifact: &PreparedUploadArtifact,
-    ) -> Result<CreateFileArtifactUploadResponse> {
-        self.ai_client
-            .create_file_artifact_upload_target(CreateFileArtifactUploadRequest {
-                conversation_id: association
-                    .conversation_id
-                    .as_ref()
-                    .map(|token| token.as_str().to_string()),
-                run_id: association.run_id.as_ref().map(ToString::to_string),
-                filepath: artifact.filepath.clone(),
-                description,
-                mime_type: Some(artifact.mime_type.clone()),
-                size_bytes: artifact.graphql_size_bytes(),
-            })
-            .await
-            .context("Failed to create file artifact upload target")
-    }
-
-    async fn upload_artifact_bytes(
-        &self,
-        target: &FileArtifactUploadTargetInfo,
-        artifact: &PreparedUploadArtifact,
-    ) -> Result<String> {
-        upload_file_to_target(
-            self.server_api.http_client(),
-            target,
-            &artifact.path,
-            artifact.file_size,
-        )
-        .await
-    }
-
-    async fn confirm_upload(
-        &self,
-        artifact_uid: String,
-        checksum: String,
-    ) -> Result<FileArtifactRecord> {
-        self.ai_client
-            .confirm_file_artifact_upload(artifact_uid, checksum)
-            .await
-            .context("Failed to confirm file artifact upload")
-    }
-
     pub(crate) async fn resolve_upload_association(
         &self,
         request: &FileArtifactUploadRequest,
     ) -> Result<ResolvedUploadAssociation> {
-        let conversation_task_id = match (request.run_id.as_ref(), request.conversation_id.as_ref())
-        {
-            // we were given a conversation id, so we need to resolve the task id from the conversation via the api
-            (None, Some(conversation_id)) => {
-                Some(self.resolve_conversation_task_id(conversation_id).await)
-            }
-            _ => None,
-        };
+        let conversation_task_id = request.conversation_id.as_ref().map(|conversation_id| {
+            Err(anyhow!(
+                "Conversation '{}' cannot be resolved because hosted artifact uploads are unavailable in local-only Warper",
+                conversation_id.as_str()
+            ))
+        });
 
         resolve_upload_association_from_sources(
             request.run_id,
@@ -201,32 +122,6 @@ impl FileArtifactUploader {
             conversation_task_id,
             load_env_run_id()?,
         )
-    }
-
-    async fn resolve_conversation_task_id(
-        &self,
-        conversation_id: &ServerConversationToken,
-    ) -> Result<AmbientAgentTaskId> {
-        let metadata = self
-            .ai_client
-            .list_ai_conversation_metadata(Some(vec![conversation_id.as_str().to_string()]))
-            .await
-            .with_context(|| {
-                format!(
-                    "Failed to load conversation '{}' to resolve artifact upload headers",
-                    conversation_id.as_str()
-                )
-            })?;
-
-        let metadata = single_conversation_metadata(conversation_id.as_str(), metadata)
-            .with_context(|| {
-                format!(
-                    "Failed to load conversation '{}' to resolve artifact upload headers",
-                    conversation_id.as_str()
-                )
-            })?;
-
-        ambient_task_id_from_conversation_metadata(conversation_id.as_str(), metadata)
     }
 }
 
@@ -296,21 +191,21 @@ fn parse_run_id(run_id: &str, error_prefix: &str) -> Result<AmbientAgentTaskId> 
 }
 
 fn load_env_run_id() -> Result<Option<String>> {
-    match env::var(OZ_RUN_ID_ENV_VAR) {
+    match env::var(RUN_ID_ENV_VAR) {
         Ok(run_id) => Ok(Some(run_id)),
         Err(env::VarError::NotPresent) => Ok(None),
-        Err(env::VarError::NotUnicode(_)) => Err(anyhow!(
-            "{OZ_RUN_ID_ENV_VAR} is set but is not valid Unicode"
-        )),
+        Err(env::VarError::NotUnicode(_)) => {
+            Err(anyhow!("{RUN_ID_ENV_VAR} is set but is not valid Unicode"))
+        }
     }
 }
 
 fn resolve_env_run_id(env_run_id: Option<String>) -> Result<AmbientAgentTaskId> {
     let Some(run_id) = env_run_id else {
-        bail!("{OZ_RUN_ID_ENV_VAR} is not set");
+        bail!("{RUN_ID_ENV_VAR} is not set");
     };
 
-    parse_run_id(&run_id, "Invalid OZ_RUN_ID")
+    parse_run_id(&run_id, "Invalid WARPER_RUN_ID")
 }
 
 fn resolve_upload_association_from_sources(
@@ -322,8 +217,8 @@ fn resolve_upload_association_from_sources(
     // Precedence is deliberate:
     // 1. An explicit run ID is authoritative and must not silently fall back.
     // 2. A conversation ID stays attached to the artifact even if we have to borrow the ambient
-    //    task ID from `OZ_RUN_ID` because the conversation lacks cloud-task metadata.
-    // 3. `OZ_RUN_ID` becomes the sole source of truth only when the caller supplied nothing else.
+    //    task ID from `WARPER_RUN_ID` because the conversation lacks task metadata.
+    // 3. `WARPER_RUN_ID` becomes the sole source of truth only when the caller supplied nothing else.
     if let Some(run_id) = explicit_run_id {
         let ambient_task_id = run_id;
         return Ok(ResolvedUploadAssociation {
@@ -348,7 +243,7 @@ fn resolve_upload_association_from_sources(
                 let env_err = match resolve_env_run_id(env_run_id) {
                     Ok(ambient_task_id) => {
                         log::warn!(
-                            "Conversation '{}' task resolution failed ({conversation_err}); falling back to {OZ_RUN_ID_ENV_VAR} for ambient task context",
+                            "Conversation '{}' task resolution failed ({conversation_err}); falling back to {RUN_ID_ENV_VAR} for ambient task context",
                             conversation_id.as_str()
                         );
                         return Ok(ResolvedUploadAssociation {
@@ -361,7 +256,7 @@ fn resolve_upload_association_from_sources(
                 };
 
                 return Err(anyhow!(
-                    "Failed to resolve artifact upload association for conversation '{}': {conversation_err}; also failed to use {OZ_RUN_ID_ENV_VAR}: {env_err}",
+                    "Failed to resolve artifact upload association for conversation '{}': {conversation_err}; also failed to use {RUN_ID_ENV_VAR}: {env_err}",
                     conversation_id.as_str()
                 ));
             }
@@ -370,7 +265,7 @@ fn resolve_upload_association_from_sources(
 
     let ambient_task_id = resolve_env_run_id(env_run_id).map_err(|env_err| {
         anyhow!(
-            "Failed to resolve artifact upload association: no usable run or conversation id was provided, and {OZ_RUN_ID_ENV_VAR}: {env_err}"
+            "Failed to resolve artifact upload association: no usable run or conversation id was provided, and {RUN_ID_ENV_VAR}: {env_err}"
         )
     })?;
 

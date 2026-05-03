@@ -1,18 +1,12 @@
-use crate::server::server_api::ServerApiProvider;
 use futures::future;
 use warp_cli::{
     integration::{CreateIntegrationArgs, IntegrationCommand, UpdateIntegrationArgs},
     provider::ProviderType,
     GlobalOptions,
 };
-use warp_graphql::mutations::create_simple_integration::CreateSimpleIntegrationOutput;
-use warp_graphql::queries::get_oauth_connect_tx_status::OauthConnectTxStatus;
-use warp_graphql::queries::get_simple_integrations::SimpleIntegrationsOutput;
 use warpui::{platform::TerminationMode, AppContext, ModelContext, SingletonEntity};
 
 use super::common::{EnvironmentChoice, ResolveConfigurationError};
-use super::integration_output;
-use super::oauth_flow::poll_oauth_until_terminal;
 
 pub fn run(
     ctx: &mut AppContext,
@@ -37,31 +31,9 @@ pub fn run(
 struct IntegrationCommandRunner;
 
 impl IntegrationCommandRunner {
-    fn list(&self, global_options: GlobalOptions, ctx: &mut ModelContext<Self>) {
-        // Hardcoded set of providers that this client knows how to render.
-        let providers = vec![ProviderType::Linear, ProviderType::Slack];
-        let provider_slugs: Vec<String> = providers.into_iter().map(|p| p.slug()).collect();
-
-        let integrations_client = ServerApiProvider::as_ref(ctx).get_integrations_client();
-
-        let list_future = async move {
-            integrations_client
-                .list_simple_integrations(provider_slugs)
-                .await
-        };
-
-        ctx.spawn(
-            list_future,
-            move |_, result: anyhow::Result<SimpleIntegrationsOutput>, ctx| match result {
-                Ok(output) => {
-                    integration_output::print_integrations(&output, global_options.output_format);
-                    ctx.terminate_app(TerminationMode::ForceTerminate, None);
-                }
-                Err(err) => {
-                    ctx.terminate_app(TerminationMode::ForceTerminate, Some(Err(err)));
-                }
-            },
-        );
+    fn list(&self, _global_options: GlobalOptions, ctx: &mut ModelContext<Self>) {
+        println!("Hosted integrations are unavailable in local-only Warper.");
+        ctx.terminate_app(TerminationMode::ForceTerminate, None);
     }
 
     fn create(&self, args: CreateIntegrationArgs, ctx: &mut ModelContext<Self>) {
@@ -193,184 +165,23 @@ impl IntegrationCommandRunner {
     fn start_create_or_update_flow(
         &self,
         ctx: &mut ModelContext<Self>,
-        integration_type: String,
-        environment_uid: Option<String>,
-        base_prompt: Option<String>,
-        model_id: Option<String>,
-        mcp_servers_json: Option<String>,
-        remove_mcp_server_names: Option<Vec<String>>,
-        worker_host: Option<String>,
-        enabled: bool,
+        _integration_type: String,
+        _environment_uid: Option<String>,
+        _base_prompt: Option<String>,
+        _model_id: Option<String>,
+        _mcp_servers_json: Option<String>,
+        _remove_mcp_server_names: Option<Vec<String>>,
+        _worker_host: Option<String>,
+        _enabled: bool,
         is_update: bool,
-        attempt: u32,
+        _attempt: u32,
     ) {
-        const MAX_CREATE_ATTEMPTS: u32 = 8;
         let action = if is_update { "update" } else { "creation" };
-
-        if attempt > MAX_CREATE_ATTEMPTS {
-            ctx.terminate_app(
-                TerminationMode::ForceTerminate,
-                Some(Err(anyhow::anyhow!(
-                    "Exceeded maximum number of integration creation attempts ({}). Retry.",
-                    MAX_CREATE_ATTEMPTS
-                ))),
-            );
-            return;
-        }
-
-        let integrations_client = ServerApiProvider::as_ref(ctx).get_integrations_client();
-
-        let future_integration_type = integration_type.clone();
-        let future_environment_uid = environment_uid.clone();
-        let future_base_prompt = base_prompt.clone();
-        let future_model_id = model_id.clone();
-        let future_mcp_servers_json = mcp_servers_json.clone();
-        let future_remove_mcp_server_names = remove_mcp_server_names.clone();
-        let future_worker_host = worker_host.clone();
-        let future_is_update = is_update;
-
-        let create_future = async move {
-            integrations_client
-                .create_or_update_simple_integration(
-                    future_integration_type,
-                    future_is_update,
-                    future_environment_uid,
-                    future_base_prompt,
-                    future_model_id,
-                    future_mcp_servers_json,
-                    future_remove_mcp_server_names,
-                    future_worker_host,
-                    enabled,
-                )
-                .await
-        };
-
-        ctx.spawn(
-            create_future,
-            move |_runner, result: anyhow::Result<CreateSimpleIntegrationOutput>, ctx| {
-                match result {
-                    Ok(output) => {
-                        println!("{}", output.message);
-
-                        let auth_url = output.auth_url;
-                        let tx_id = output.tx_id;
-
-                        match (auth_url, tx_id) {
-                            (Some(auth_url), Some(tx_id)) => {
-                                // We have another auth step: open URL and poll txId.
-                                println!("Authorize the provider here: {auth_url}\n");
-                                ctx.open_url(&auth_url);
-
-                                let integrations_client = ServerApiProvider::as_ref(ctx)
-                                    .get_integrations_client();
-                                let tx_id = tx_id.into_inner();
-
-                                let poll_future =
-                                    poll_oauth_until_terminal(integrations_client, tx_id);
-
-                                let next_integration_type = integration_type.clone();
-                                let next_environment_uid = environment_uid.clone();
-                                let next_base_prompt = base_prompt.clone();
-                                let next_model_id = model_id.clone();
-                                let next_mcp_servers_json = mcp_servers_json.clone();
-                                let next_remove_mcp_server_names = remove_mcp_server_names.clone();
-                                let next_worker_host = worker_host.clone();
-                                let next_enabled = enabled;
-                                let next_is_update = is_update;
-                                let next_attempt = attempt + 1;
-
-                                ctx.spawn(
-                                    poll_future,
-                                    move |runner, poll_result, ctx| {
-                                        match poll_result {
-                                            Ok(OauthConnectTxStatus::Completed) => {
-                                                // Inner loop done; try create or update again (outer loop).
-                                                // This may happen multiple times if the user needs to authorize multiple services.
-                                                runner.start_create_or_update_flow(
-                                                    ctx,
-                                                    next_integration_type,
-                                                    next_environment_uid,
-                                                    next_base_prompt,
-                                                    next_model_id,
-                                                    next_mcp_servers_json,
-                                                    next_remove_mcp_server_names,
-                                                    next_worker_host,
-                                                    next_enabled,
-                                                    next_is_update,
-                                                    next_attempt,
-                                                );
-                                            }
-                                            Ok(OauthConnectTxStatus::Failed) => {
-                                                ctx.terminate_app(
-                                                    TerminationMode::ForceTerminate,
-                                                    Some(Err(anyhow::anyhow!("OAuth authorization failed."))),
-                                                );
-                                            }
-                                            Ok(OauthConnectTxStatus::Expired) => {
-                                                ctx.terminate_app(
-                                                    TerminationMode::ForceTerminate,
-                                                    Some(Err(anyhow::anyhow!("OAuth authorization expired."))),
-                                                );
-                                            }
-                                            Ok(OauthConnectTxStatus::Pending)
-                                            | Ok(OauthConnectTxStatus::InProgress) => {
-                                                // Should not be returned by poll_oauth_until_terminal.
-                                                ctx.terminate_app(
-                                                    TerminationMode::ForceTerminate,
-                                                    Some(Err(anyhow::anyhow!("Unexpected non-terminal OAuth status returned"))),
-                                                );
-                                            }
-                                            Err(err) => {
-                                                ctx.terminate_app(
-                                                    TerminationMode::ForceTerminate,
-                                                    Some(Err(anyhow::anyhow!("Error polling OAuth status: {err}"))),
-                                                );
-                                            }
-                                        }
-                                    },
-                                );
-                            }
-                            (Some(auth_url), None) => {
-                                println!("Authorize the provider here: {auth_url}\n");
-                                ctx.open_url(&auth_url);
-                                println!(
-                                    "After authorizing, re-run the command to continue the integration {action} process.",
-                                );
-                                ctx.terminate_app(
-                                    TerminationMode::ForceTerminate,
-                                    None,
-                                );
-                            }
-                            (None, Some(_)) => {
-                                ctx.terminate_app(
-                                    TerminationMode::ForceTerminate,
-                                    Some(Err(anyhow::anyhow!("Server did not return an authURL for the integration creation process."))),
-                                );
-                            }
-                            (None, None) => {
-                                // No more auth steps; finalize.
-                                if output.success {
-                                    ctx.terminate_app(
-                                        TerminationMode::ForceTerminate,
-                                        None,
-                                    );
-                                } else {
-                                    ctx.terminate_app(
-                                        TerminationMode::ForceTerminate,
-                                        Some(Err(anyhow::anyhow!("Integration creation reported failure: {}", output.message))),
-                                    );
-                                }
-                            }
-                        }
-                    }
-                    Err(err) => {
-                        ctx.terminate_app(
-                            TerminationMode::ForceTerminate,
-                            Some(Err(err)),
-                        );
-                    }
-                }
-            },
+        ctx.terminate_app(
+            TerminationMode::ForceTerminate,
+            Some(Err(anyhow::anyhow!(
+                "Hosted integration {action} is unavailable in local-only Warper"
+            ))),
         );
     }
 

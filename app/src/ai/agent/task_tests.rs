@@ -36,7 +36,6 @@ fn create_streaming_exchange_with_output() -> AIAgentExchange {
         coding_model_id: LLMId::from(""),
         cli_agent_model_id: LLMId::from(""),
         computer_use_model_id: LLMId::from(""),
-        response_initiator: None,
     }
 }
 

@@ -1,17 +1,14 @@
 use crate::ai::agent::SuggestedLoggingId;
-use crate::drive::items::{ai_fact::WarpDriveAIFact, WarpDriveItem};
-use crate::server::{ids::SyncId, sync_queue::QueueItem};
-use crate::{
-    cloud_object::{
-        model::{
-            generic_string_model::{GenericStringModel, GenericStringObjectId, StringModel},
-            json_model::{JsonModel, JsonSerializer},
-        },
-        GenericCloudObject, GenericStringObjectFormat, GenericStringObjectUniqueKey,
-        JsonObjectType, Revision, ServerCloudObject,
+use crate::cloud_object::{
+    model::{
+        generic_string_model::{GenericStringModel, GenericStringObjectId, StringModel},
+        json_model::{JsonModel, JsonSerializer},
     },
-    drive::CloudObjectTypeAndId,
+    GenericCloudObject, GenericStringObjectFormat, GenericStringObjectUniqueKey, JsonObjectType,
+    Revision, ServerCloudObject,
 };
+use crate::drive::items::WarpDriveItem;
+use crate::server::{ids::SyncId, sync_queue::QueueItem};
 use serde::{Deserialize, Serialize};
 use warp_core::ui::appearance::Appearance;
 
@@ -107,17 +104,11 @@ impl StringModel for AIFact {
 
     fn to_warp_drive_item(
         &self,
-        id: SyncId,
+        _id: SyncId,
         _appearance: &Appearance,
-        ai_fact: &CloudAIFact,
+        _ai_fact: &CloudAIFact,
     ) -> Option<Box<dyn WarpDriveItem>> {
-        Some(Box::new(WarpDriveAIFact::new(
-            CloudObjectTypeAndId::GenericStringObject {
-                object_type: GenericStringObjectFormat::Json(JsonObjectType::AIFact),
-                id,
-            },
-            ai_fact.clone(),
-        )))
+        None
     }
 }
 

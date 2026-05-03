@@ -30,7 +30,6 @@ fn create_test_exchange() -> AIAgentExchange {
         coding_model_id: LLMId::from(""),
         cli_agent_model_id: LLMId::from(""),
         computer_use_model_id: LLMId::from(""),
-        response_initiator: None,
     }
 }
 
@@ -89,7 +88,6 @@ fn create_exchange_with_subagent_call(subtask_id: &TaskId) -> AIAgentExchange {
         coding_model_id: LLMId::from(""),
         cli_agent_model_id: LLMId::from(""),
         computer_use_model_id: LLMId::from(""),
-        response_initiator: None,
     }
 }
 

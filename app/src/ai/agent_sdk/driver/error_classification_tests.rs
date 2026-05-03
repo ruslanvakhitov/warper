@@ -53,9 +53,9 @@ fn not_logged_in_is_error_with_auth_required() {
 }
 
 #[test]
-fn warp_drive_sync_failed_is_error() {
+fn hosted_sync_unavailable_is_error() {
     assert_state_and_code(
-        AgentDriverError::WarpDriveSyncFailed,
+        AgentDriverError::HostedSyncUnavailable,
         AgentTaskState::Error,
         Some(PlatformErrorCode::InternalError),
     );

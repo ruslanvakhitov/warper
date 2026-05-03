@@ -1,27 +1,19 @@
 //! This module contains functions for loading, fetching, and merging conversation data
-//! from local database and server sources.
-
-use std::collections::{HashMap, HashSet};
-use std::future::Future;
-use std::sync::Arc;
+//! from the local database.
 
 use futures::FutureExt;
 use itertools::Itertools as _;
 use persistence::model::AgentConversationRecord;
-use warp_core::features::FeatureFlag;
-use warpui::{AppContext, SingletonEntity};
+use std::collections::HashMap;
+use std::future::Future;
+use warpui::AppContext;
 
-use crate::ai::agent::api::convert_conversation::{
-    convert_conversation_data_to_ai_conversation, RestorationMode,
-};
 use crate::ai::agent::api::ServerConversationToken;
 use crate::ai::agent::conversation::{
-    AIAgentHarness, AIConversation, AIConversationId, ServerAIConversationMetadata,
+    AIConversation, AIConversationId, ServerAIConversationMetadata,
 };
 use crate::ai::agent::task::Task;
 use crate::persistence::model::{AgentConversation, AgentConversationData};
-use crate::server::server_api::ai::AIClient;
-use crate::server::server_api::ServerApiProvider;
 use crate::terminal::model::block::SerializedBlock;
 
 #[cfg(feature = "local_fs")]
@@ -38,13 +30,12 @@ pub struct CLIAgentConversation {
     pub block: SerializedBlock,
 }
 
-/// Representation of the conversation data that can be fetched from cloud storage.
+/// Representation of locally retained conversation data.
 ///
 /// The exact format depends on the agent harness that produced the conversation.
-pub enum CloudConversationData {
-    /// A conversation produced by the Oz harness, which we can materialize into the
-    /// [`AIConversation`] data model.
-    Oz(Box<AIConversation>),
+pub enum LocalConversationData {
+    /// A local conversation that can be materialized into the [`AIConversation`] data model.
+    AI(Box<AIConversation>),
     /// A conversation produced by an external CLI agent harness.
     CLIAgent(Box<CLIAgentConversation>),
 }
@@ -93,95 +84,11 @@ pub fn convert_persisted_conversation_to_ai_conversation_with_metadata(
     }
 }
 
-/// Loads a conversation from the server asynchronously.
-/// This is a free-floating function that can be called without a model reference.
-pub async fn load_conversation_from_server(
-    conversation_id: AIConversationId,
-    server_conversation_token: ServerConversationToken,
-    server_api: Arc<dyn AIClient>,
-) -> Option<CloudConversationData> {
-    if !FeatureFlag::CloudConversations.is_enabled() {
-        return None;
-    }
-
-    log::info!(
-        "Loading full conversation data for {conversation_id} from server using token {}",
-        server_conversation_token.as_str()
-    );
-
-    match server_api
-        .get_ai_conversation(server_conversation_token.clone())
-        .await
-    {
-        Ok((conversation_data, server_metadata)) => {
-            match server_metadata.harness {
-                AIAgentHarness::Oz => {
-                    // Convert Oz conversations to an AIConversation.
-                    match convert_conversation_data_to_ai_conversation(
-                        conversation_id,
-                        &conversation_data,
-                        server_metadata,
-                        RestorationMode::Continue,
-                    ) {
-                        Some(conversation) => {
-                            log::info!("Loaded Oz conversation {conversation_id} from server");
-                            Some(CloudConversationData::Oz(Box::new(conversation)))
-                        }
-                        None => {
-                            log::warn!(
-                                "Failed to convert Oz server conversation data for {conversation_id}"
-                            );
-                            None
-                        }
-                    }
-                }
-                AIAgentHarness::ClaudeCode | AIAgentHarness::Gemini => {
-                    if !FeatureFlag::AgentHarness.is_enabled() {
-                        log::warn!("Ignoring non-Oz conversation {conversation_id}: AgentHarness flag is disabled");
-                        return None;
-                    }
-                    // Fetch snapshot data for third-party harness conversations.
-                    match server_api
-                        .get_block_snapshot(server_conversation_token)
-                        .await
-                    {
-                        Ok(block) => {
-                            log::info!("Loaded CLI agent block snapshot for {conversation_id}");
-                            Some(CloudConversationData::CLIAgent(Box::new(
-                                CLIAgentConversation {
-                                    metadata: server_metadata,
-                                    block,
-                                },
-                            )))
-                        }
-                        Err(e) => {
-                            log::warn!(
-                                "Failed to fetch block snapshot for {conversation_id}: {e:#}"
-                            );
-                            None
-                        }
-                    }
-                }
-                AIAgentHarness::Unknown => {
-                    log::warn!(
-                        "Ignoring conversation {conversation_id}: server reported an unknown harness; this client may be out of date"
-                    );
-                    None
-                }
-            }
-        }
-        Err(e) => {
-            log::warn!("Failed to load conversation {conversation_id} from server: {e:#}");
-            None
-        }
-    }
-}
-
 /// Boxes a future with the right type for the platform.
 /// On WASM, futures must not implement Send.
-fn box_future<F>(f: F) -> warpui::r#async::BoxFuture<'static, Option<CloudConversationData>>
+fn box_future<F>(f: F) -> warpui::r#async::BoxFuture<'static, Option<LocalConversationData>>
 where
-    F: Future<Output = Option<CloudConversationData>> + warpui::r#async::Spawnable,
+    F: Future<Output = Option<LocalConversationData>> + warpui::r#async::Spawnable,
 {
     cfg_if::cfg_if! {
         if #[cfg(target_family = "wasm")] {
@@ -193,13 +100,12 @@ where
 }
 
 impl BlocklistAIHistoryModel {
-    /// Loads conversation data from the appropriate source (DB or server).
+    /// Loads conversation data from local state or the local database.
     ///
     /// This method automatically determines whether to load from the local database or
-    /// the server based on the conversation's metadata:
     /// - If the conversation is already in memory, returns it immediately
     /// - If has_local_data is true, loads from the local database synchronously
-    /// - Otherwise, loads from the server asynchronously
+    /// - Otherwise, returns `None`; hosted conversation fetches are amputated
     ///
     /// Note: This does NOT insert the conversation into memory. Callers are responsible
     /// for inserting the loaded conversation if needed.
@@ -207,10 +113,10 @@ impl BlocklistAIHistoryModel {
         &self,
         conversation_id: AIConversationId,
         ctx: &AppContext,
-    ) -> warpui::r#async::BoxFuture<'static, Option<CloudConversationData>> {
+    ) -> warpui::r#async::BoxFuture<'static, Option<LocalConversationData>> {
         // First check if the conversation is already in memory
         if let Some(conversation) = self.conversations_by_id.get(&conversation_id) {
-            return box_future(futures::future::ready(Some(CloudConversationData::Oz(
+            return box_future(futures::future::ready(Some(LocalConversationData::AI(
                 Box::new(conversation.clone()),
             ))));
         }
@@ -229,33 +135,16 @@ impl BlocklistAIHistoryModel {
             // Load from local database synchronously
             let result = self
                 .load_conversation_from_db(&conversation_id)
-                .map(|c| CloudConversationData::Oz(Box::new(c)));
+                .map(|c| LocalConversationData::AI(Box::new(c)));
             box_future(futures::future::ready(result))
         } else {
-            // Load from server asynchronously
-            if let Some(server_token) = metadata.server_conversation_token {
-                // Extract the server API before creating the async future
-                let server_api = ServerApiProvider::as_ref(ctx).get_ai_client();
-                box_future(load_conversation_from_server(
-                    conversation_id,
-                    server_token,
-                    server_api,
-                ))
-            } else {
-                log::warn!(
-                    "Cannot load conversation {conversation_id}: no local data and no server token"
-                );
-                box_future(futures::future::ready(None))
-            }
+            let _ = ctx;
+            log::warn!("Cannot load conversation {conversation_id}: no local data");
+            box_future(futures::future::ready(None))
         }
     }
 
-    /// Loads a conversation by its server token, with a server fallback.
-    ///
-    /// First attempts to find the conversation in local metadata and load it
-    /// via `load_conversation_data`. If the token is not present locally
-    /// (e.g. cloud metadata hasn't been merged yet), falls back to loading
-    /// the conversation directly from the server.
+    /// Loads a conversation by its retained local token index.
     ///
     /// Note: This does NOT insert the conversation into memory. Callers are responsible
     /// for inserting the loaded conversation if needed.
@@ -263,28 +152,18 @@ impl BlocklistAIHistoryModel {
         &self,
         server_token: &ServerConversationToken,
         ctx: &AppContext,
-    ) -> warpui::r#async::BoxFuture<'static, Option<CloudConversationData>> {
+    ) -> warpui::r#async::BoxFuture<'static, Option<LocalConversationData>> {
         // Fast path: token is known locally.
         if let Some(conversation_id) = self.find_conversation_id_by_server_token(server_token) {
             return self.load_conversation_data(conversation_id, ctx);
         }
 
-        // Fallback: load directly from the server. This handles cases where
-        // cloud metadata hasn't been merged into the local history model yet
-        // (e.g. timing on startup, or conversations only surfaced via
-        // AgentConversationsModel).
         log::warn!(
-            "No local metadata for server token {}, falling back to server fetch",
+            "No local metadata for conversation token {}; hosted fetch is unavailable",
             server_token.as_str()
         );
-        let server_api = ServerApiProvider::as_ref(ctx).get_ai_client();
-        // Ephemeral ID — this conversation is not inserted into the history model.
-        let fallback_id = AIConversationId::new();
-        box_future(load_conversation_from_server(
-            fallback_id,
-            server_token.clone(),
-            server_api,
-        ))
+        let _ = ctx;
+        box_future(futures::future::ready(None))
     }
 
     /// Loads a conversation from local DB and returns it.
@@ -342,94 +221,8 @@ impl BlocklistAIHistoryModel {
         &mut self,
         cloud_metadata_list: Vec<ServerAIConversationMetadata>,
     ) {
-        let local_count = self.all_conversations_metadata.len();
-        let mut local_matched_with_server_count = 0;
-        let mut new_cloud_count = 0;
-        let mut restored_conversations_updated = 0;
-
-        // Build a map from server_conversation_token to conversation_id
-        let mut token_to_conv_id: HashMap<String, AIConversationId> = HashMap::new();
-        for (conv_id, meta) in self.all_conversations_metadata.iter() {
-            if let Some(token) = &meta.server_conversation_token {
-                token_to_conv_id.insert(token.as_str().to_string(), *conv_id);
-            }
-        }
-
-        // Build a map from server_conversation_token to conversation_id for restored conversations,
-        // and collect tokens belonging to child agent conversations so we can skip them.
-        let mut token_to_restored_conv_id: HashMap<String, AIConversationId> = HashMap::new();
-        let mut child_conversation_tokens: HashSet<String> = HashSet::new();
-        for (conv_id, conv) in self.conversations_by_id.iter() {
-            if let Some(token) = conv.server_conversation_token() {
-                token_to_restored_conv_id.insert(token.as_str().to_string(), *conv_id);
-                if conv.is_child_agent_conversation() {
-                    child_conversation_tokens.insert(token.as_str().to_string());
-                }
-            }
-        }
-
-        // Now iterate through cloud metadata once, using the map for O(1) lookups
-        for server_meta in cloud_metadata_list {
-            let server_token = server_meta.server_conversation_token.clone();
-            let server_token_str = server_token.as_str();
-
-            // Child agent conversations are managed by their parent's status card
-            // and should not appear in navigation/history.
-            if child_conversation_tokens.contains(server_token_str) {
-                continue;
-            }
-
-            // Update any already-restored conversations that match by server token
-            if let Some(conv_id) = token_to_restored_conv_id.get(server_token_str) {
-                if let Some(conversation) = self.conversations_by_id.get_mut(conv_id) {
-                    if conversation.server_metadata().is_none() {
-                        conversation.set_server_metadata(server_meta.clone());
-                        restored_conversations_updated += 1;
-                        log::debug!(
-                            "Updated server metadata for restored conversation {conv_id} with token {server_token_str}"
-                        );
-                    }
-                }
-            }
-
-            if let Some(conv_id) = token_to_conv_id.get(server_token_str) {
-                // Found a match by token - update this entry with server metadata
-                let conversation_id = *conv_id;
-                let metadata =
-                    AIConversationMetadata::from_server_metadata(conversation_id, server_meta);
-                self.server_token_to_conversation_id
-                    .insert(server_token.clone(), conversation_id);
-                self.all_conversations_metadata
-                    .insert(conversation_id, metadata);
-                local_matched_with_server_count += 1;
-                log::debug!(
-                    "Matched local conversation {conversation_id} with server token {server_token_str}"
-                );
-            } else {
-                // This is a new cloud-only conversation
-                // We need to create a local AIConversationId for it
-                let conversation_id = AIConversationId::new();
-                let metadata =
-                    AIConversationMetadata::from_server_metadata(conversation_id, server_meta);
-                self.server_token_to_conversation_id
-                    .insert(server_token.clone(), conversation_id);
-                self.all_conversations_metadata
-                    .insert(conversation_id, metadata);
-                new_cloud_count += 1;
-                log::debug!(
-                    "Added new cloud-only conversation with local ID {conversation_id} and server token {server_token_str}"
-                );
-            }
-        }
-
-        log::info!(
-            "Merged cloud conversations: {} local, {} found matched cloud metadata, {} new cloud-only added, {} restored conversations updated. Total: {}",
-            local_count,
-            local_matched_with_server_count,
-            new_cloud_count,
-            restored_conversations_updated,
-            self.all_conversations_metadata.len()
-        );
+        let ignored_count = cloud_metadata_list.len();
+        log::info!("Ignoring {ignored_count} hosted conversation metadata records");
     }
 
     /// Initializes historical conversations from restored agent conversations.
@@ -560,10 +353,6 @@ impl BlocklistAIHistoryModel {
                     .and_then(|data| data.artifacts_json.as_ref())
                     .and_then(|json| serde_json::from_str(json).ok())
                     .unwrap_or_default();
-                let server_conversation_token = conversation_data
-                    .and_then(|data| data.server_conversation_token)
-                    .map(ServerConversationToken::new);
-
                 Some((conversation_id, AIConversationMetadata {
                     id: conversation_id,
                     title,
@@ -571,25 +360,15 @@ impl BlocklistAIHistoryModel {
                     last_modified_at: agent_conv.conversation.last_modified_at,
                     initial_working_directory,
                     credits_spent,
-                    // If we have a server token, the conversation was synced to cloud
-                    has_cloud_data: server_conversation_token.is_some(),
-                    server_conversation_token,
+                    has_cloud_data: false,
+                    server_conversation_token: None,
                     has_local_data: true,
                     artifacts,
-                    // Only populated when loading from server, not from local DB
                     server_conversation_metadata: None,
                 }))
             })
             .collect();
 
-        // Populate the token → conversation reverse index alongside the
-        // forward metadata map.
-        for (conversation_id, metadata) in &collected {
-            if let Some(token) = &metadata.server_conversation_token {
-                self.server_token_to_conversation_id
-                    .insert(token.clone(), *conversation_id);
-            }
-        }
         self.all_conversations_metadata = collected;
     }
 }

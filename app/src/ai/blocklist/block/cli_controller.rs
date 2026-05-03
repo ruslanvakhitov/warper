@@ -393,28 +393,23 @@ impl CLISubagentController {
 
         // Trigger an auto-resume of the conversation when handing control to the agent.
         if let Some(conversation_id) = conversation_id {
-            let is_viewing_shared_session = BlocklistAIHistoryModel::as_ref(ctx)
-                .conversation(&conversation_id)
-                .is_some_and(|conversation| conversation.is_viewing_shared_session());
-            if !is_viewing_shared_session {
-                let resume_context = {
-                    let terminal_model = self.terminal_model.lock();
-                    block_context_from_terminal_model(&terminal_model, &block_id, false)
-                        .map(Box::new)
-                        .map(AIAgentContext::Block)
-                        .into_iter()
-                        .collect()
-                };
-                self.controller.update(ctx, |controller, ctx| {
-                    controller.resume_conversation(
-                        conversation_id,
-                        /*can_attempt_resume_on_error*/ true,
-                        /*is_auto_resume_after_error*/ false,
-                        resume_context,
-                        ctx,
-                    );
-                });
-            }
+            let resume_context = {
+                let terminal_model = self.terminal_model.lock();
+                block_context_from_terminal_model(&terminal_model, &block_id, false)
+                    .map(Box::new)
+                    .map(AIAgentContext::Block)
+                    .into_iter()
+                    .collect()
+            };
+            self.controller.update(ctx, |controller, ctx| {
+                controller.resume_conversation(
+                    conversation_id,
+                    /*can_attempt_resume_on_error*/ true,
+                    /*is_auto_resume_after_error*/ false,
+                    resume_context,
+                    ctx,
+                );
+            });
         }
 
         ctx.emit(CLISubagentEvent::UpdatedControl {
@@ -510,8 +505,7 @@ impl CLISubagentController {
                 drop(terminal_model);
 
                 // When the CLI subagent is first created for a long running command,
-                // the agent now has control. Emit an UpdatedControl event so that
-                // shared-session state can reflect this initial control state.
+                // the agent now has control.
                 ctx.emit(CLISubagentEvent::UpdatedControl {
                     block_id: block_id.clone(),
                     requested_command_action_id: action_id.clone(),

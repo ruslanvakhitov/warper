@@ -1,8 +1,7 @@
 use serde::Serialize;
-use warpui::{AppContext, SingletonEntity};
+use warpui::AppContext;
 
 use crate::ai::llms::LLMId;
-use crate::CloudModel;
 use crate::{
     server::telemetry::AgentModeCitation as CitationForTelemetry,
     terminal::view::block_onboarding::onboarding_agentic_suggestions_block::OnboardingChipType,
@@ -23,16 +22,9 @@ pub trait ForTelemetry {
 impl ForTelemetry for AIAgentCitation {
     type Output = CitationForTelemetry;
 
-    fn for_telemetry(&self, ctx: &AppContext) -> Option<Self::Output> {
+    fn for_telemetry(&self, _ctx: &AppContext) -> Option<Self::Output> {
         match self {
-            Self::WarpDriveObject { uid } => {
-                CloudModel::as_ref(ctx).get_by_uid(uid).map(|object| {
-                    CitationForTelemetry::WarpDriveObject {
-                        object_type: object.object_type(),
-                        uid: object.uid(),
-                    }
-                })
-            }
+            Self::WarpDriveObject { .. } => None,
             Self::WarpDocumentation { path } => {
                 Some(CitationForTelemetry::WarpDocs { page: path.clone() })
             }
@@ -88,7 +80,6 @@ impl EntrypointType {
                 format!("TRIGGER_SUGGEST_PROMPT.{trigger_name}")
             }
             Self::CloneRepository => "CLONE_REPOSITORY".to_string(),
-            Self::SharedSession => "SHARED_SESSION".to_string(),
             Self::ResumeConversation => "RESUME_CONVERSATION".to_string(),
         }
     }

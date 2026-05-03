@@ -53,7 +53,6 @@ use crate::TelemetryEvent;
 use derivative::Derivative;
 use markdown_parser::{parse_markdown, FormattedTable, FormattedText, FormattedTextInline};
 use serde::{Deserialize, Serialize};
-use session_sharing_protocol::common::ParticipantId;
 
 use super::llms::LLMId;
 
@@ -2246,7 +2245,6 @@ pub enum EntrypointType {
     },
     UserInitiated,
     AgentInitiated,
-    SharedSession,
     CloneRepository,
     ResumeConversation,
 }
@@ -2842,10 +2840,6 @@ pub struct AIAgentExchange {
 
     /// The computer use model to which the request was sent.
     pub computer_use_model_id: LLMId,
-
-    /// The participant who initiated this exchange (for shared sessions)
-    /// For non-shared sessions, we just leave this as None.
-    pub response_initiator: Option<ParticipantId>,
 }
 
 impl AIAgentExchange {

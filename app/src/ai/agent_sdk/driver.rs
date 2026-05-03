@@ -43,7 +43,7 @@ use crate::{
             agent_view::AgentViewEntryOrigin, BlocklistAIHistoryEvent, BlocklistAIHistoryModel,
             BlocklistAIPermissions,
         },
-        cloud_environments::{AmbientAgentEnvironment, CloudAmbientAgentEnvironment},
+        cloud_environments::{AmbientAgentEnvironment, AmbientAgentEnvironmentObject},
         execution_profiles::profiles::AIExecutionProfilesModel,
         mcp::{
             file_based_manager::{FileBasedMCPManager, FileBasedMCPManagerEvent},
@@ -297,8 +297,8 @@ pub enum AgentDriverError {
         #[source]
         error: terminal::ShareSessionError,
     },
-    #[error("Hosted workspace sync is unavailable in this build")]
-    WarpDriveSyncFailed,
+    #[error("Hosted sync is unavailable in this build")]
+    HostedSyncUnavailable,
     #[error("Requested environment not found: {0}")]
     EnvironmentNotFound(String),
     #[error("Environment setup failed: {0}")]
@@ -580,7 +580,7 @@ impl AgentDriver {
 
     /// Log all valid environment IDs for the user.
     pub(super) fn log_valid_environments(app: &AppContext) {
-        let environments = CloudAmbientAgentEnvironment::get_all(app);
+        let environments = AmbientAgentEnvironmentObject::get_all(app);
         if environments.is_empty() {
             log::error!("No environments available for this user.");
         } else {
@@ -1718,15 +1718,6 @@ impl Entity for AgentDriver {
 /// The only reason that `AgentDriver` is a singleton entity is to ensure the UI framework
 /// doesn't drop it. Generally, we should not assume there's only one running agent.
 impl SingletonEntity for AgentDriver {}
-
-/// Write the run ID to stdout using the appropriate output format.
-pub(super) fn write_run_started(run_id: &str, output_format: OutputFormat) {
-    report_if_error!(output::with_stdout_buffered(|buf| match output_format {
-        OutputFormat::Json | OutputFormat::Ndjson => output::json::run_started(run_id, buf),
-        OutputFormat::Text | OutputFormat::Pretty => output::text::run_started(run_id, buf),
-    })
-    .context("Failed to write run ID"));
-}
 
 #[cfg(test)]
 #[path = "driver_tests.rs"]

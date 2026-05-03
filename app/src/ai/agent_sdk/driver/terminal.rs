@@ -21,8 +21,8 @@ use crate::{
     pane_group::NewTerminalOptions,
     root_view::{open_new_with_workspace_source, NewWorkspaceSource},
     terminal::{
-        model::block::BlockId, shared_session::IsSharedSessionCreator, shell::ShellType,
-        view::ConversationRestorationInNewPaneType, TerminalView,
+        model::block::BlockId, shell::ShellType, view::ConversationRestorationInNewPaneType,
+        TerminalView,
     },
     util::sync::Condition,
 };
@@ -96,7 +96,6 @@ fn create_terminal_view(
     let (_, root_view) = open_new_with_workspace_source(
         NewWorkspaceSource::Session {
             options: Box::new(NewTerminalOptions {
-                is_shared_session_creator: IsSharedSessionCreator::No,
                 initial_directory: Some(options.working_dir),
                 env_vars: options.env_vars,
                 conversation_restoration: options.conversation_restoration,
@@ -389,8 +388,6 @@ impl TerminalDriver {
             crate::terminal::view::Event::SlowBootstrap => {
                 ctx.emit(TerminalDriverEvent::SlowBootstrap);
             }
-            crate::terminal::view::Event::EstablishedSharedSession { .. }
-            | crate::terminal::view::Event::FailedToShareSession { .. } => {}
             crate::terminal::view::Event::ExecuteCommand(event) => {
                 if let Some((_expected_command, sender)) = self
                     .pending_command_start

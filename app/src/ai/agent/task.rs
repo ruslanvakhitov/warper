@@ -304,7 +304,6 @@ impl Task {
             cli_agent_model_id: existing_exchange.cli_agent_model_id.clone(),
             computer_use_model_id: existing_exchange.computer_use_model_id.clone(),
             request_cost: None,
-            response_initiator: existing_exchange.response_initiator.clone(),
         };
         new_exchange
             .init_output(
@@ -436,7 +435,6 @@ impl Task {
             cli_agent_model_id: existing_exchange.cli_agent_model_id.clone(),
             computer_use_model_id: existing_exchange.computer_use_model_id.clone(),
             request_cost: None,
-            response_initiator: existing_exchange.response_initiator.clone(),
         };
         new_exchange
             .init_output(

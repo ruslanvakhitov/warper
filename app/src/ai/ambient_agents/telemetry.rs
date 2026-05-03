@@ -1,28 +1,12 @@
 use crate::server::ids::ServerId;
-use serde::Serialize;
 use serde_json::{json, Value};
 use strum_macros::{EnumDiscriminants, EnumIter};
-use warp_core::features::FeatureFlag;
 use warp_core::telemetry::{EnablementState, TelemetryEvent, TelemetryEventDesc};
 
-/// The entry point through which Cloud Mode was entered.
-#[derive(Clone, Copy, Debug, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum CloudModeEntryPoint {
-    /// User clicked "New Cloud Agent Tab" or similar action to create a dedicated Cloud Mode tab.
-    NewTab,
-    /// User entered Cloud Mode from an existing local terminal session (e.g., via keyboard shortcut or command).
-    LocalSession,
-    /// User re-entered Cloud Mode by clicking on an ambient agent entry block.
-    EntryBlock,
-}
-
-/// Telemetry events for client interactions with cloud agents.
+/// Telemetry events for retained local environment setup interactions.
 #[derive(Debug, EnumDiscriminants)]
 #[strum_discriminants(derive(EnumIter))]
-pub enum CloudAgentTelemetryEvent {
-    /// User entered Cloud Mode.
-    EnteredCloudMode { entry_point: CloudModeEntryPoint },
+pub enum AmbientAgentTelemetryEvent {
     /// User created a new environment.
     EnvironmentCreated,
     /// User updated an existing environment.
@@ -60,47 +44,44 @@ pub enum CloudAgentTelemetryEvent {
     },
 }
 
-impl TelemetryEvent for CloudAgentTelemetryEvent {
+impl TelemetryEvent for AmbientAgentTelemetryEvent {
     fn name(&self) -> &'static str {
-        CloudAgentTelemetryEventDiscriminants::from(self).name()
+        AmbientAgentTelemetryEventDiscriminants::from(self).name()
     }
 
     fn payload(&self) -> Option<Value> {
         match self {
-            CloudAgentTelemetryEvent::EnteredCloudMode { entry_point } => Some(json!({
-                "entry_point": entry_point,
-            })),
-            CloudAgentTelemetryEvent::EnvironmentCreated => None,
-            CloudAgentTelemetryEvent::EnvironmentUpdated { environment_id } => Some(json!({
+            AmbientAgentTelemetryEvent::EnvironmentCreated => None,
+            AmbientAgentTelemetryEvent::EnvironmentUpdated { environment_id } => Some(json!({
                 "environment_id": environment_id.map(|id| id.to_string()),
             })),
-            CloudAgentTelemetryEvent::EnvironmentDeleted { environment_id } => Some(json!({
+            AmbientAgentTelemetryEvent::EnvironmentDeleted { environment_id } => Some(json!({
                 "environment_id": environment_id.map(|id| id.to_string()),
             })),
-            CloudAgentTelemetryEvent::ImageSuggested {
+            AmbientAgentTelemetryEvent::ImageSuggested {
                 image,
                 needs_custom_image,
             } => Some(json!({
                 "image": image,
                 "needs_custom_image": needs_custom_image,
             })),
-            CloudAgentTelemetryEvent::ImageSuggestionFailed { error } => Some(json!({
+            AmbientAgentTelemetryEvent::ImageSuggestionFailed { error } => Some(json!({
                 "error": error,
             })),
-            CloudAgentTelemetryEvent::LaunchedAgentFromEnvironmentForm => None,
-            CloudAgentTelemetryEvent::GitHubAuthFromEnvironmentForm => None,
-            CloudAgentTelemetryEvent::DispatchFailed { error } => Some(json!({
+            AmbientAgentTelemetryEvent::LaunchedAgentFromEnvironmentForm => None,
+            AmbientAgentTelemetryEvent::GitHubAuthFromEnvironmentForm => None,
+            AmbientAgentTelemetryEvent::DispatchFailed { error } => Some(json!({
                 "error": error,
             })),
         }
     }
 
     fn description(&self) -> &'static str {
-        CloudAgentTelemetryEventDiscriminants::from(self).description()
+        AmbientAgentTelemetryEventDiscriminants::from(self).description()
     }
 
     fn enablement_state(&self) -> EnablementState {
-        CloudAgentTelemetryEventDiscriminants::from(self).enablement_state()
+        AmbientAgentTelemetryEventDiscriminants::from(self).enablement_state()
     }
 
     fn contains_ugc(&self) -> bool {
@@ -112,10 +93,9 @@ impl TelemetryEvent for CloudAgentTelemetryEvent {
     }
 }
 
-impl TelemetryEventDesc for CloudAgentTelemetryEventDiscriminants {
+impl TelemetryEventDesc for AmbientAgentTelemetryEventDiscriminants {
     fn name(&self) -> &'static str {
         match self {
-            Self::EnteredCloudMode => "AmbientAgent.CloudMode.Entered",
             Self::EnvironmentCreated => "AmbientAgent.EnvironmentSettings.CreatedEnvironment",
             Self::EnvironmentUpdated => "AmbientAgent.EnvironmentSettings.UpdatedEnvironment",
             Self::EnvironmentDeleted => "AmbientAgent.EnvironmentSettings.DeletedEnvironment",
@@ -124,18 +104,15 @@ impl TelemetryEventDesc for CloudAgentTelemetryEventDiscriminants {
                 "AmbientAgent.EnvironmentSettings.Image.SuggestionFailed"
             }
             Self::LaunchedAgentFromEnvironmentForm => {
-                "AmbientAgent.CloudMode.EnvironmentSettings.LaunchedAgent"
+                "AmbientAgent.EnvironmentSettings.LaunchedAgent"
             }
-            Self::GitHubAuthFromEnvironmentForm => {
-                "AmbientAgent.CloudMode.EnvironmentSettings.GitHubAuth"
-            }
+            Self::GitHubAuthFromEnvironmentForm => "AmbientAgent.EnvironmentSettings.GitHubAuth",
             Self::DispatchFailed => "AmbientAgent.DispatchFailed",
         }
     }
 
     fn description(&self) -> &'static str {
         match self {
-            Self::EnteredCloudMode => "User entered cloud agent view",
             Self::EnvironmentCreated => "User created a new environment",
             Self::EnvironmentUpdated => "User updated an existing environment",
             Self::EnvironmentDeleted => "User deleted an environment",
@@ -152,8 +129,10 @@ impl TelemetryEventDesc for CloudAgentTelemetryEventDiscriminants {
     }
 
     fn enablement_state(&self) -> EnablementState {
-        EnablementState::Flag(FeatureFlag::CloudMode)
+        EnablementState::ChannelSpecific {
+            channels: Vec::new(),
+        }
     }
 }
 
-warp_core::register_telemetry_event!(CloudAgentTelemetryEvent);
+warp_core::register_telemetry_event!(AmbientAgentTelemetryEvent);

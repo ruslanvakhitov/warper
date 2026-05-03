@@ -1,7 +1,7 @@
 use crate::ai::agent::conversation::AIConversation;
 use crate::ai::agent::conversation_yaml;
 use crate::ai::agent::AIAgentActionResultType;
-use crate::ai::blocklist::history_model::CloudConversationData;
+use crate::ai::blocklist::history_model::LocalConversationData;
 use ai::agent::action_result::FetchConversationResult;
 use futures::future::BoxFuture;
 use futures::FutureExt;
@@ -35,7 +35,7 @@ impl FetchConversationExecutor {
     ) -> impl Into<AnyActionExecution> {
         let ExecuteActionInput { action, .. } = input;
         let AIAgentActionType::FetchConversation { conversation_id } = &action.action else {
-            return ActionExecution::<Option<CloudConversationData>>::InvalidAction;
+            return ActionExecution::<Option<LocalConversationData>>::InvalidAction;
         };
 
         let conversation_id = conversation_id.clone();
@@ -45,10 +45,9 @@ impl FetchConversationExecutor {
         let load_future = history.load_conversation_by_server_token(&server_token, ctx);
 
         ActionExecution::new_async(load_future, move |cloud_conversation, _ctx| {
-            // TODO(REMOTE-1203): FetchConversation can't materialize non-Oz conversation transcripts yet.
             let conversation = cloud_conversation.and_then(|cc| match cc {
-                CloudConversationData::Oz(c) => Some(c),
-                CloudConversationData::CLIAgent(_) => {
+                LocalConversationData::AI(c) => Some(c),
+                LocalConversationData::CLIAgent(_) => {
                     log::warn!("FetchConversation does not support CLI agent conversations");
                     None
                 }

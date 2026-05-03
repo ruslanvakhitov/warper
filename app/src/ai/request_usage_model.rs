@@ -10,9 +10,6 @@ use warpui::{AppContext, Entity, ModelContext, SingletonEntity};
 
 pub use warp_graphql::billing::BonusGrantType;
 
-/// Threshold of ambient-only credits at which we surface upgrade/CTA UI.
-pub const AMBIENT_AGENT_TRIAL_CREDIT_THRESHOLD: i32 = 20;
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum BonusGrantScope {
     User,
@@ -139,16 +136,7 @@ pub struct AIRequestUsageModel {
 }
 
 impl Entity for AIRequestUsageModel {
-    type Event = AIRequestUsageModelEvent;
-}
-
-pub enum AIRequestUsageModelEvent {
-    RequestUsageUpdated,
-    RequestBonusRefunded {
-        requests_refunded: i32,
-        server_conversation_id: String,
-        request_id: String,
-    },
+    type Event = ();
 }
 
 impl AIRequestUsageModel {
@@ -190,17 +178,6 @@ impl AIRequestUsageModel {
         AISettings::handle(ctx).update(ctx, |ai_settings, ctx| {
             ai_settings.update_quota_info(&request_limit_info, ctx);
         });
-
-        ctx.emit(AIRequestUsageModelEvent::RequestUsageUpdated);
-    }
-
-    pub fn provide_negative_feedback_response_for_ai_conversation(
-        &mut self,
-        _client_conversation_id: crate::ai::agent::conversation::AIConversationId,
-        _request_id: String,
-        _client_exchange_id: crate::ai::agent::AIAgentExchangeId,
-        _ctx: &mut ModelContext<Self>,
-    ) {
     }
 
     /// Returns the number of remaining requests the user has based on their latest rate limit info.
@@ -285,45 +262,6 @@ impl AIRequestUsageModel {
             RequestLimitRefreshDuration::EveryTwoWeeks => "biweekly".to_string(),
         }
     }
-
-    pub fn bonus_grants(&self) -> &[BonusGrant] {
-        &self.bonus_grants
-    }
-
-    /// Returns the total remaining ambient-only credits for the user.
-    /// Returns None if the user has never received any ambient-only grants.
-    pub fn ambient_only_credits_remaining(&self) -> Option<i32> {
-        let ambient_grants: Vec<_> = self
-            .bonus_grants
-            .iter()
-            .filter(|g| g.grant_type == BonusGrantType::AmbientOnly)
-            .collect();
-        if ambient_grants.is_empty() {
-            None
-        } else {
-            Some(
-                ambient_grants
-                    .iter()
-                    .map(|g| g.request_credits_remaining)
-                    .sum(),
-            )
-        }
-    }
-
-    pub fn total_workspace_bonus_credits_remaining(&self, uid: WorkspaceUid) -> i32 {
-        let now = Utc::now();
-        self.bonus_grants
-            .iter()
-            .filter(|grant| grant.scope == BonusGrantScope::Workspace(uid))
-            .filter(|grant| grant.expiration.is_none_or(|exp| now < exp))
-            .map(|grant| grant.request_credits_remaining)
-            .sum()
-    }
-
-    pub fn total_current_workspace_bonus_credits_remaining(&self, ctx: &AppContext) -> i32 {
-        let _ = ctx;
-        0
-    }
 }
 
 /// Voice request usage, only available if built with voice input support.
@@ -367,7 +305,3 @@ impl AIRequestUsageModel {
 }
 
 impl SingletonEntity for AIRequestUsageModel {}
-
-#[cfg(test)]
-#[path = "request_usage_model_test.rs"]
-mod tests;

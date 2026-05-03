@@ -8,17 +8,14 @@ mod tests;
 use futures::{future::BoxFuture, FutureExt};
 use warpui::{Entity, EntityId, ModelContext, ModelHandle};
 
-use crate::terminal::model::session::active_session::ActiveSession;
 #[cfg(not(target_family = "wasm"))]
-use crate::{
-    ai::{
-        agent::{AIAgentAction, AIAgentActionResultType, AIAgentActionType, UploadArtifactResult},
-        agent_sdk::artifact_upload::{FileArtifactUploadRequest, FileArtifactUploader},
-        blocklist::{BlocklistAIHistoryModel, BlocklistAIPermissions},
-        paths::host_native_absolute_path,
-    },
-    server::server_api::ServerApiProvider,
+use crate::ai::{
+    agent::{AIAgentAction, AIAgentActionResultType, AIAgentActionType, UploadArtifactResult},
+    agent_sdk::artifact_upload::{FileArtifactUploadRequest, FileArtifactUploader},
+    blocklist::{BlocklistAIHistoryModel, BlocklistAIPermissions},
+    paths::host_native_absolute_path,
 };
+use crate::terminal::model::session::active_session::ActiveSession;
 #[cfg(not(target_family = "wasm"))]
 use warpui::SingletonEntity;
 
@@ -121,13 +118,11 @@ impl UploadArtifactExecutor {
                 model.add_temporary_file_read_permissions(conversation_id, [resolved_path.clone()]);
             });
 
-            let ai_client = ServerApiProvider::as_ref(ctx).get_ai_client();
-            let server_api = ServerApiProvider::as_ref(ctx).get();
             let description = request.description.clone();
 
             ActionExecution::new_async(
                 async move {
-                    let uploader = FileArtifactUploader::new(ai_client, server_api);
+                    let uploader = FileArtifactUploader::new();
                     let request = FileArtifactUploadRequest {
                         path: resolved_path,
                         run_id: None,

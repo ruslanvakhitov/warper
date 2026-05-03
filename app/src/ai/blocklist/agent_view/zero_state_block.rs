@@ -1,23 +1,19 @@
 use itertools::Itertools as _;
-use markdown_parser::{parse_markdown, FormattedText, FormattedTextFragment, FormattedTextLine};
+use markdown_parser::parse_markdown;
 use parking_lot::FairMutex;
-use settings::Setting;
 use std::{borrow::Cow, cmp::Reverse, path::Path, sync::Arc};
 use warp_core::{
     channel::{Channel, ChannelState},
-    features::FeatureFlag,
-    report_if_error,
     ui::Icon,
 };
 use warpui::{
     elements::{
-        Clipped, Container, CornerRadius, CrossAxisAlignment, Flex, FormattedTextElement,
-        HighlightedHyperlink, MainAxisSize, MouseStateHandle, ParentElement, Radius, Shrinkable,
-        Text,
+        Container, CornerRadius, CrossAxisAlignment, Flex, FormattedTextElement, MainAxisSize,
+        MouseStateHandle, ParentElement, Radius, Text,
     },
     fonts::{Properties, Weight},
     keymap::Keystroke,
-    prelude::{Align, ConstrainedBox, Cursor, Empty, Hoverable, MainAxisAlignment, SavePosition},
+    prelude::{ConstrainedBox, Cursor, Empty, Hoverable, SavePosition},
     scene::Border,
     AppContext, Element, Entity, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext,
 };
@@ -30,15 +26,12 @@ use crate::{
             agent_view::{
                 agent_view_bg_color, AgentViewController, AgentViewEntryOrigin,
                 ENTER_AGENT_VIEW_NEW_CONVERSATION_KEYSTROKE,
-                ENTER_CLOUD_AGENT_VIEW_NEW_CONVERSATION_KEYSTROKE,
             },
             history_model::{BlocklistAIHistoryEvent, BlocklistAIHistoryModel},
         },
         conversation_navigation::ConversationNavigationData,
     },
     appearance::Appearance,
-    changelog_model::{self, ChangelogModel},
-    settings::{AISettings, AISettingsChangedEvent},
     terminal::{
         self,
         event::BlockType,
@@ -49,20 +42,11 @@ use crate::{
         },
         model_events::{AnsiHandlerEvent, ModelEvent, ModelEventDispatcher},
         prompt,
-        view::{
-            ambient_agent::{AmbientAgentViewModel, AmbientAgentViewModelEvent},
-            TerminalAction,
-        },
+        view::{ambient_agent::AmbientAgentViewModel, TerminalAction},
         TerminalModel,
     },
     util::time_format::format_approx_duration_from_now_utc,
 };
-
-const CLOUD_AGENT_DOCS_URL: &str = "https://docs.warp.dev/agent-platform/cloud-agents/overview";
-const OZ_UPDATES_SECTION_HEADER: &str = "What's new in Oz";
-
-// The maximum number of Oz updates from the changelog rendered in-line in the 'What's new in Oz section'.
-const MAX_OZ_UPDATE_COUNT: usize = 4;
 
 const MAX_RECENT_CONVERSATION_COUNT: usize = 3;
 
@@ -73,10 +57,7 @@ struct StateHandles {
     switch_model: MouseStateHandle,
     exit: MouseStateHandle,
     init_callout: MouseStateHandle,
-    oz_updates: MouseStateHandle,
-    changelog_link: MouseStateHandle,
     recent_conversations: [MouseStateHandle; MAX_RECENT_CONVERSATION_COUNT],
-    update_hyperlinks: Vec<HighlightedHyperlink>,
 }
 
 /// Zero state view shown when agent view is active but the conversation has no exchanges yet.
@@ -92,7 +73,6 @@ pub struct AgentViewZeroStateBlock {
     should_show_init_callout: bool,
     has_parent_terminal: bool,
     state_handles: StateHandles,
-    is_oz_updates_expanded: bool,
 }
 
 impl AgentViewZeroStateBlock {
@@ -108,7 +88,6 @@ impl AgentViewZeroStateBlock {
         should_show_init_callout: bool,
         ctx: &mut ViewContext<Self>,
     ) -> Self {
-        let cloud_agent_view_model_clone = cloud_agent_view_model.clone();
         let model_events_clone = model_events_dispatcher.clone();
         ctx.subscribe_to_model(
             &BlocklistAIHistoryModel::handle(ctx),
@@ -121,7 +100,6 @@ impl AgentViewZeroStateBlock {
                         me.should_hide = true;
                         ctx.unsubscribe_to_model(&model_events_clone);
                         ctx.unsubscribe_to_model(&history_model);
-                        ctx.unsubscribe_to_model(&cloud_agent_view_model_clone);
                         ctx.notify();
                         return;
                     }
@@ -145,7 +123,6 @@ impl AgentViewZeroStateBlock {
             ctx.notify();
         });
 
-        let cloud_agent_view_model_clone = cloud_agent_view_model.clone();
         ctx.subscribe_to_model(
             model_events_dispatcher,
             move |me, model_events_dispatcher, event, ctx| {
@@ -157,7 +134,6 @@ impl AgentViewZeroStateBlock {
                             me.should_hide = true;
                             ctx.unsubscribe_to_model(&model_events_dispatcher);
                             ctx.unsubscribe_to_model(&BlocklistAIHistoryModel::handle(ctx));
-                            ctx.unsubscribe_to_model(&cloud_agent_view_model_clone);
                             ctx.notify();
                         }
                     }
@@ -171,71 +147,9 @@ impl AgentViewZeroStateBlock {
             },
         );
 
-        let model_events_clone = model_events_dispatcher.clone();
-        ctx.subscribe_to_model(cloud_agent_view_model, move |me, model, event, ctx| {
-            if FeatureFlag::CloudModeSetupV2.is_enabled() {
-                match event {
-                    AmbientAgentViewModelEvent::DispatchedAgent
-                    | AmbientAgentViewModelEvent::Cancelled
-                        if !me.should_hide =>
-                    {
-                        me.should_hide = true;
-                        ctx.unsubscribe_to_model(&model);
-                        ctx.unsubscribe_to_model(&model_events_clone);
-                        ctx.unsubscribe_to_model(&BlocklistAIHistoryModel::handle(ctx));
-                        ctx.notify();
-                    }
-                    _ => (),
-                }
-            } else if model.as_ref(ctx).should_show_status_footer() {
-                me.should_hide = true;
-                ctx.unsubscribe_to_model(&model);
-                ctx.unsubscribe_to_model(&model_events_clone);
-                ctx.unsubscribe_to_model(&BlocklistAIHistoryModel::handle(ctx));
-                ctx.notify();
-            }
-        });
-
-        let cloud_agent_view = cloud_agent_view_model.as_ref(ctx);
-        let has_parent_terminal =
-            !cloud_agent_view.is_ambient_agent() || cloud_agent_view.has_parent_terminal();
-        let changelog_model = ChangelogModel::handle(ctx);
-        ctx.subscribe_to_model(&changelog_model, |me, changelog_model, event, ctx| {
-            if let changelog_model::Event::ChangelogRequestComplete { .. } = event {
-                let oz_update_count = changelog_model
-                    .as_ref(ctx)
-                    .oz_updates
-                    .len()
-                    .min(MAX_OZ_UPDATE_COUNT);
-                if oz_update_count != me.state_handles.update_hyperlinks.len() {
-                    me.state_handles
-                        .update_hyperlinks
-                        .resize(oz_update_count, Default::default());
-                }
-            }
-        });
-        ctx.subscribe_to_model(&AISettings::handle(ctx), |me, _, event, ctx| {
-            let should_rerender_for_oz_updates_visibility = !me.origin.is_cloud_agent()
-                && matches!(
-                    event,
-                    AISettingsChangedEvent::ShouldShowOzUpdatesInZeroState { .. }
-                )
-                && FeatureFlag::OzChangelogUpdates.is_enabled()
-                && !ChangelogModel::as_ref(ctx).oz_updates.is_empty();
-            if should_rerender_for_oz_updates_visibility {
-                ctx.notify();
-            }
-        });
-
-        let mut state_handles = StateHandles::default();
-        state_handles.update_hyperlinks.resize(
-            changelog_model
-                .as_ref(ctx)
-                .oz_updates
-                .len()
-                .min(MAX_OZ_UPDATE_COUNT),
-            Default::default(),
-        );
+        let _ = cloud_agent_view_model;
+        let has_parent_terminal = true;
+        let state_handles = StateHandles::default();
         let current_working_directory = {
             let terminal_model = terminal_model.lock();
             current_working_directory_for_zero_state(&terminal_model)
@@ -259,8 +173,6 @@ impl AgentViewZeroStateBlock {
             should_show_init_callout,
             has_parent_terminal,
             state_handles,
-            is_oz_updates_expanded: !origin.is_cloud_agent()
-                && *AISettings::handle(ctx).as_ref(ctx).should_expand_oz_updates,
         }
     }
 
@@ -389,56 +301,28 @@ impl View for AgentViewZeroStateBlock {
         let theme = appearance.theme();
 
         let is_oss = ChannelState::channel() == Channel::Oss;
-        let header_props = if self.origin.is_cloud_agent() {
-            HeaderProps {
-                title: if is_oss {
-                    "New cloud agent conversation".into()
-                } else {
-                    "New Oz cloud agent conversation".into()
-                },
-                description: AgentViewDescription::CloudModeWithDocsLink,
-                icon: Icon::OzCloud,
-            }
-        } else {
-            let mut local_description =
-                "Send a prompt below to start a new conversation".to_owned();
-            let active_session = self.active_session(app);
-            let location_label = active_session.as_deref().and_then(|session| {
-                format_session_location(session, self.current_working_directory.as_deref())
-            });
-            if let Some(location_label) = location_label {
-                local_description += &format!(" in `{location_label}`");
-            }
+        let mut local_description = "Send a prompt below to start a new conversation".to_owned();
+        let active_session = self.active_session(app);
+        let location_label = active_session.as_deref().and_then(|session| {
+            format_session_location(session, self.current_working_directory.as_deref())
+        });
+        if let Some(location_label) = location_label {
+            local_description += &format!(" in `{location_label}`");
+        };
 
-            HeaderProps {
-                title: if is_oss {
-                    "New agent conversation".into()
-                } else {
-                    "New Oz agent conversation".into()
-                },
-                description: AgentViewDescription::PlainText(vec![local_description.into()]),
-                icon: Icon::Oz,
-            }
+        let header_props = HeaderProps {
+            title: if is_oss {
+                "New agent conversation".into()
+            } else {
+                "New agent conversation".into()
+            },
+            description: AgentViewDescription::PlainText(vec![local_description.into()]),
+            icon: Icon::Oz,
         };
 
         let mut content = Flex::column()
             .with_main_axis_size(MainAxisSize::Min)
             .with_children(render_title_and_description(header_props, app));
-
-        if !is_oss && !self.origin.is_cloud_agent() {
-            if let Some(oz_updates_section) = render_oz_updates(
-                OzUpdatesProps {
-                    is_expanded: self.is_oz_updates_expanded,
-                    state_handles: &self.state_handles,
-                },
-                app,
-            ) {
-                content.add_children([Container::new(oz_updates_section)
-                    .with_margin_top(8.)
-                    .with_margin_bottom(16.)
-                    .finish()]);
-            }
-        }
 
         let active_session = self.active_session(app);
         let body = render_body(
@@ -463,13 +347,12 @@ impl View for AgentViewZeroStateBlock {
         }));
         let content = content.finish();
 
-        let show_bottom_border = !self.origin.is_cloud_agent();
         let content = Container::new(content)
             .with_horizontal_padding(*terminal::view::PADDING_LEFT)
             .with_vertical_padding(styles::CONTAINER_VERTICAL_PADDING)
             .with_border(
                 Border::new(1.)
-                    .with_sides(true, false, show_bottom_border, false)
+                    .with_sides(true, false, true, false)
                     .with_border_fill(theme.outline()),
             )
             .finish();
@@ -495,7 +378,6 @@ impl Entity for AgentViewZeroStateBlock {
 #[derive(Debug, Clone)]
 pub enum AgentViewZeroStateAction {
     ClickedInitCallout,
-    ToggleOzUpdates,
     OpenConversation { conversation_id: AIConversationId },
 }
 
@@ -506,16 +388,6 @@ impl TypedActionView for AgentViewZeroStateBlock {
         match action {
             AgentViewZeroStateAction::ClickedInitCallout => {
                 ctx.emit(AgentViewZeroStateEvent::ClickedInitCallout);
-            }
-            AgentViewZeroStateAction::ToggleOzUpdates => {
-                let is_expanded = self.is_oz_updates_expanded;
-                self.is_oz_updates_expanded = !is_expanded;
-
-                AISettings::handle(ctx).update(ctx, |settings, ctx| {
-                    report_if_error!(settings
-                        .should_expand_oz_updates
-                        .set_value(!is_expanded, ctx));
-                });
             }
             AgentViewZeroStateAction::OpenConversation { conversation_id } => {
                 ctx.emit(AgentViewZeroStateEvent::OpenConversation {
@@ -557,8 +429,6 @@ fn current_working_directory_for_zero_state(terminal_model: &TerminalModel) -> O
 enum AgentViewDescription {
     /// Plain text descriptions (used for local agent mode).
     PlainText(Vec<Cow<'static, str>>),
-    /// Cloud mode description with "Visit docs" hyperlink.
-    CloudModeWithDocsLink,
 }
 
 struct HeaderProps {
@@ -637,50 +507,6 @@ fn render_title_and_description(props: HeaderProps, app: &AppContext) -> Vec<Box
                     .finish()
             }));
         }
-        AgentViewDescription::CloudModeWithDocsLink => {
-            // First line: plain text.
-            items.push(
-                Container::new(
-                    Text::new(
-                        "Run your agent task in an isolated cloud environment.",
-                        appearance.ui_font_family(),
-                        appearance.monospace_font_size(),
-                    )
-                    .with_color(sub_text_color)
-                    .finish(),
-                )
-                .with_margin_bottom(styles::DESCRIPTION_LINE_MARGIN_BOTTOM)
-                .finish(),
-            );
-
-            // Second line: text with "Visit docs" hyperlink.
-            let description_with_link = FormattedText::new([FormattedTextLine::Line(vec![
-                FormattedTextFragment::plain_text(
-                    "Use cloud agents to run parallel agents, build agents that run autonomously, and check in on your agents from anywhere. ",
-                ),
-                FormattedTextFragment::hyperlink("Visit docs", CLOUD_AGENT_DOCS_URL),
-            ])]);
-
-            items.push(
-                Container::new(
-                    FormattedTextElement::new(
-                        description_with_link,
-                        appearance.monospace_font_size(),
-                        appearance.ui_font_family(),
-                        appearance.monospace_font_family(),
-                        sub_text_color,
-                        HighlightedHyperlink::default(),
-                    )
-                    .with_hyperlink_font_color(theme.accent().into_solid())
-                    .register_default_click_handlers(|url, _, ctx| {
-                        ctx.open_url(&url.url);
-                    })
-                    .finish(),
-                )
-                .with_margin_bottom(-12.)
-                .finish(),
-            );
-        }
     }
 
     items
@@ -698,7 +524,7 @@ struct ZeroStateBodyProps<'a> {
 
 fn render_body(props: ZeroStateBodyProps<'_>, app: &AppContext) -> Vec<Box<dyn Element>> {
     let ZeroStateBodyProps {
-        origin,
+        origin: _,
         has_parent_terminal,
         should_show_init_callout,
         recent_conversations,
@@ -707,10 +533,6 @@ fn render_body(props: ZeroStateBodyProps<'_>, app: &AppContext) -> Vec<Box<dyn E
         state_handles,
     } = props;
 
-    // Cloud agent mode doesn't show keyboard shortcuts.
-    if origin.is_cloud_agent() {
-        return vec![];
-    }
     let mut body_items = if let Some(recent_conversations_section) =
         render_recent_conversations_section(
             RecentConversationProps {
@@ -723,7 +545,6 @@ fn render_body(props: ZeroStateBodyProps<'_>, app: &AppContext) -> Vec<Box<dyn E
         ) {
         vec![recent_conversations_section]
     } else {
-        let is_oss = ChannelState::channel() == Channel::Oss;
         let mut body_items = vec![render_standard_message(
             Message::new(vec![MessageItem::clickable(
                 vec![
@@ -737,24 +558,6 @@ fn render_body(props: ZeroStateBodyProps<'_>, app: &AppContext) -> Vec<Box<dyn E
             )]),
             app,
         )];
-
-        if !is_oss {
-            body_items.push(render_standard_message(
-                Message::new(vec![MessageItem::clickable(
-                    vec![
-                        MessageItem::keystroke(
-                            ENTER_CLOUD_AGENT_VIEW_NEW_CONVERSATION_KEYSTROKE.clone(),
-                        ),
-                        MessageItem::text("start a new cloud agent conversation"),
-                    ],
-                    |ctx| {
-                        ctx.dispatch_typed_action(TerminalAction::EnterCloudAgentView);
-                    },
-                    state_handles.start_cloud_conversation.clone(),
-                )]),
-                app,
-            ));
-        }
 
         body_items.push(render_standard_message(
             Message::new(vec![MessageItem::clickable(
@@ -984,263 +787,6 @@ fn render_recent_conversations_section(
     )
 }
 
-struct OzUpdatesProps<'a> {
-    is_expanded: bool,
-    state_handles: &'a StateHandles,
-}
-fn should_render_oz_updates_section(
-    is_oz_changelog_updates_enabled: bool,
-    should_show_oz_updates: bool,
-    has_oz_updates: bool,
-) -> bool {
-    is_oz_changelog_updates_enabled && should_show_oz_updates && has_oz_updates
-}
-
-fn render_oz_updates(props: OzUpdatesProps<'_>, app: &AppContext) -> Option<Box<dyn Element>> {
-    let changelog_model = ChangelogModel::as_ref(app);
-    let should_show_oz_updates = *AISettings::as_ref(app)
-        .should_show_oz_updates_in_zero_state
-        .value();
-    if !should_render_oz_updates_section(
-        FeatureFlag::OzChangelogUpdates.is_enabled(),
-        should_show_oz_updates,
-        !changelog_model.oz_updates.is_empty(),
-    ) {
-        return None;
-    }
-
-    let OzUpdatesProps {
-        is_expanded,
-        state_handles,
-    } = props;
-
-    let appearance = Appearance::as_ref(app);
-    let theme = appearance.theme();
-
-    let section_header = Flex::row()
-        .with_main_axis_size(MainAxisSize::Max)
-        .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
-        .with_cross_axis_alignment(CrossAxisAlignment::Center)
-        .with_child(
-            Shrinkable::new(
-                1.,
-                Clipped::new(
-                    Flex::row()
-                        .with_main_axis_size(MainAxisSize::Min)
-                        .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                        .with_constrain_horizontal_bounds_to_parent(true)
-                        .with_child(
-                            Container::new(
-                                ConstrainedBox::new(
-                                    if is_expanded {
-                                        Icon::ChevronDown
-                                    } else {
-                                        Icon::ChevronRight
-                                    }
-                                    .to_warpui_icon(theme.sub_text_color(theme.background()))
-                                    .finish(),
-                                )
-                                .with_height(appearance.monospace_font_size())
-                                .with_width(appearance.monospace_font_size())
-                                .finish(),
-                            )
-                            .with_margin_right(4.)
-                            .finish(),
-                        )
-                        .with_child(
-                            Container::new(
-                                Text::new(
-                                    OZ_UPDATES_SECTION_HEADER,
-                                    appearance.ui_font_family(),
-                                    appearance.monospace_font_size() - 2.,
-                                )
-                                .with_color(theme.sub_text_color(theme.background()).into_solid())
-                                .with_style(Properties::default().weight(Weight::Semibold))
-                                .finish(),
-                            )
-                            .with_margin_right(8.)
-                            .finish(),
-                        )
-                        .with_child(
-                            Container::new(
-                                Text::new(
-                                    if changelog_model.oz_updates.len() == 1 {
-                                        "1 update".to_owned()
-                                    } else {
-                                        format!(
-                                            "{} updates",
-                                            changelog_model
-                                                .oz_updates
-                                                .len()
-                                                .min(MAX_OZ_UPDATE_COUNT)
-                                        )
-                                    },
-                                    appearance.ui_font_family(),
-                                    appearance.monospace_font_size() - 2.,
-                                )
-                                .with_color(
-                                    theme.disabled_text_color(theme.background()).into_solid(),
-                                )
-                                .finish(),
-                            )
-                            .with_margin_right(16.)
-                            .finish(),
-                        )
-                        .finish(),
-                )
-                .finish(),
-            )
-            .finish(),
-        )
-        .with_child(
-            Shrinkable::new(
-                1.,
-                Clipped::new(
-                    Align::new(
-                        Hoverable::new(state_handles.changelog_link.clone(), |state| {
-                            let text_color = if state.is_hovered() {
-                                theme.sub_text_color(theme.background()).into_solid()
-                            } else {
-                                theme.disabled_text_color(theme.background()).into_solid()
-                            };
-                            Flex::row()
-                                .with_main_axis_alignment(MainAxisAlignment::End)
-                                .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                                .with_constrain_horizontal_bounds_to_parent(true)
-                                .with_child(
-                                    Container::new(
-                                        Text::new(
-                                            "View changelog",
-                                            appearance.ui_font_family(),
-                                            appearance.monospace_font_size() - 2.,
-                                        )
-                                        .with_color(text_color)
-                                        .finish(),
-                                    )
-                                    .with_margin_right(4.)
-                                    .finish(),
-                                )
-                                .with_child(
-                                    ConstrainedBox::new(
-                                        Icon::Share3
-                                            .to_warpui_icon(
-                                                theme.sub_text_color(theme.background()),
-                                            )
-                                            .finish(),
-                                    )
-                                    .with_width(appearance.monospace_font_size() - 2.)
-                                    .with_height(appearance.monospace_font_size() - 2.)
-                                    .finish(),
-                                )
-                                .finish()
-                        })
-                        .with_reset_cursor_after_click()
-                        .on_click(|_, app, _| {
-                            const CHANGELOG_URL: &str = "https://docs.warp.dev/changelog";
-                            app.open_url(CHANGELOG_URL);
-                        })
-                        .with_cursor(Cursor::PointingHand)
-                        .finish(),
-                    )
-                    .right()
-                    .finish(),
-                )
-                .finish(),
-            )
-            .finish(),
-        )
-        .finish();
-
-    let mut body = Flex::column()
-        .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
-        .with_child(if is_expanded {
-            Container::new(section_header)
-                .with_margin_bottom(styles::SECTION_HEADER_MARGIN_BOTTOM)
-                .finish()
-        } else {
-            section_header
-        });
-
-    if is_expanded {
-        for (i, update) in changelog_model
-            .oz_updates
-            .iter()
-            .enumerate()
-            .take(MAX_OZ_UPDATE_COUNT)
-        {
-            let mut text = FormattedTextElement::new(
-                update.clone(),
-                appearance.monospace_font_size() - 2.,
-                appearance.ui_font_family(),
-                appearance.monospace_font_family(),
-                theme
-                    .main_text_color(agent_view_bg_color(app).into())
-                    .into_solid(),
-                state_handles
-                    .update_hyperlinks
-                    .get(i)
-                    .cloned()
-                    .unwrap_or_default(),
-            )
-            .register_default_click_handlers(|url, _, ctx| {
-                ctx.open_url(&url.url);
-            })
-            .with_line_height_ratio(1.2)
-            .finish();
-
-            if i < changelog_model.oz_updates.len().min(MAX_OZ_UPDATE_COUNT) - 1 {
-                text = Container::new(text).with_margin_bottom(8.).finish();
-            }
-            body.add_child(text);
-        }
-    }
-
-    Some(
-        Hoverable::new(state_handles.oz_updates.clone(), |_| {
-            Container::new(body.finish())
-                .with_vertical_padding(8.)
-                .with_horizontal_padding(12.)
-                .with_corner_radius(CornerRadius::with_all(Radius::Pixels(4.)))
-                .with_border(Border::all(1.).with_border_fill(theme.surface_overlay_2()))
-                .finish()
-        })
-        .with_cursor(Cursor::PointingHand)
-        .with_reset_cursor_after_click()
-        .with_defer_events_to_children()
-        .on_click(|ctx, _, _| {
-            ctx.dispatch_typed_action(AgentViewZeroStateAction::ToggleOzUpdates);
-        })
-        .finish(),
-    )
-}
-
-/// Renders the ambient credits banner showing free cloud credits.
-/// If `link_mouse_state` is provided, a "Launch cloud agent" link is shown.
-pub fn render_ambient_credits_banner(credits: i32, app: &AppContext) -> Box<dyn Element> {
-    let appearance = Appearance::as_ref(app);
-    let theme = appearance.theme();
-    let font_family = appearance.ui_font_family();
-    let font_size = styles::CREDITS_BANNER_FONT_SIZE;
-
-    // Use ANSI terminal colors for the pill styling.
-    let text_color = theme.terminal_colors().normal.blue;
-
-    let credits_text = format!("{credits} free cloud agent credits");
-    let text = Text::new(credits_text, font_family, font_size)
-        .with_color(text_color.into())
-        .with_style(Properties::default().weight(Weight::Semibold))
-        .soft_wrap(false)
-        .finish();
-
-    Container::new(text)
-        .with_border(Border::all(1.).with_border_color(text_color.into()))
-        .with_corner_radius(CornerRadius::with_all(Radius::Percentage(50.)))
-        .with_vertical_padding(2.)
-        .with_horizontal_padding(6.)
-        .with_margin_left(8.)
-        .finish()
-}
-
 mod styles {
     use warp_core::ui::appearance::Appearance;
 
@@ -1248,8 +794,6 @@ mod styles {
     pub const TITLE_MARGIN_BOTTOM: f32 = 8.;
     pub const SECTION_HEADER_MARGIN_BOTTOM: f32 = 8.;
     pub const DESCRIPTION_LINE_MARGIN_BOTTOM: f32 = 6.;
-    pub const CREDITS_BANNER_FONT_SIZE: f32 = 12.;
-
     pub fn title_font_size(appearance: &Appearance) -> f32 {
         appearance.monospace_font_size() + 6.
     }

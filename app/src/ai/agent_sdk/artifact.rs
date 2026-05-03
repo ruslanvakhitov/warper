@@ -1,4 +1,4 @@
-use std::{path::PathBuf, sync::Arc};
+use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use serde::Serialize;
@@ -9,11 +9,11 @@ use warp_cli::artifact::{
 use warp_cli::GlobalOptions;
 use warpui::{platform::TerminationMode, AppContext, ModelContext, SingletonEntity};
 
-use crate::ai::artifact_download::{download_artifact_bytes, download_destination};
+#[cfg(test)]
+use crate::ai::artifact_download::download_destination;
+use crate::server::server_api::ai::ArtifactDownloadResponse;
 #[cfg(test)]
 use crate::server::server_api::ai::FileArtifactRecord;
-use crate::server::server_api::ai::{AIClient, ArtifactDownloadResponse};
-use crate::server::server_api::{ServerApi, ServerApiProvider};
 
 use super::artifact_upload::{
     CompletedFileArtifactUpload, FileArtifactUploadRequest, FileArtifactUploader,
@@ -57,21 +57,8 @@ impl ArtifactCommandRunner {
         output_format: OutputFormat,
         ctx: &mut ModelContext<Self>,
     ) {
-        let ai_client = ServerApiProvider::as_ref(ctx).get_ai_client();
-
-        ctx.spawn(
-            async move { get_artifact(ai_client, &args.artifact_uid).await },
-            move |_, result, ctx| match result {
-                Ok(artifact) => {
-                    if let Err(err) = write_get_output(&artifact, output_format) {
-                        super::report_fatal_error(err, ctx);
-                        return;
-                    }
-                    ctx.terminate_app(TerminationMode::ForceTerminate, None);
-                }
-                Err(err) => super::report_fatal_error(err, ctx),
-            },
-        );
+        let _ = (args, output_format);
+        super::report_fatal_error(hosted_artifacts_unavailable(), ctx);
     }
 
     fn download(
@@ -80,22 +67,8 @@ impl ArtifactCommandRunner {
         output_format: OutputFormat,
         ctx: &mut ModelContext<Self>,
     ) {
-        let ai_client = ServerApiProvider::as_ref(ctx).get_ai_client();
-        let server_api = ServerApiProvider::as_ref(ctx).get();
-
-        ctx.spawn(
-            async move { download_artifact(ai_client, server_api, args).await },
-            move |_, result, ctx| match result {
-                Ok(output) => {
-                    if let Err(err) = write_download_output(&output, output_format) {
-                        super::report_fatal_error(err, ctx);
-                        return;
-                    }
-                    ctx.terminate_app(TerminationMode::ForceTerminate, None);
-                }
-                Err(err) => super::report_fatal_error(err, ctx),
-            },
-        );
+        let _ = (args, output_format);
+        super::report_fatal_error(hosted_artifacts_unavailable(), ctx);
     }
 
     fn upload(
@@ -104,15 +77,12 @@ impl ArtifactCommandRunner {
         output_format: OutputFormat,
         ctx: &mut ModelContext<Self>,
     ) {
-        let server_api = ServerApiProvider::as_ref(ctx).get();
-        let ai_client = ServerApiProvider::as_ref(ctx).get_ai_client();
-        let uploader = FileArtifactUploader::new(ai_client, server_api.clone());
+        let uploader = FileArtifactUploader::new();
 
         ctx.spawn(
             async move {
                 let request = FileArtifactUploadRequest::try_from(args)?;
                 let association = uploader.resolve_upload_association(&request).await?;
-                server_api.set_ambient_agent_task_id(Some(association.ambient_task_id));
                 uploader.upload_with_association(request, association).await
             },
             move |_, result, ctx| match result {
@@ -135,26 +105,8 @@ impl warpui::Entity for ArtifactCommandRunner {
 
 impl SingletonEntity for ArtifactCommandRunner {}
 
-async fn get_artifact(
-    ai_client: Arc<dyn AIClient>,
-    artifact_uid: &str,
-) -> Result<ArtifactDownloadResponse> {
-    ai_client
-        .get_artifact_download(artifact_uid)
-        .await
-        .with_context(|| format!("Failed to get artifact '{artifact_uid}'"))
-}
-
-async fn download_artifact(
-    ai_client: Arc<dyn AIClient>,
-    server_api: Arc<ServerApi>,
-    args: DownloadArtifactArgs,
-) -> Result<DownloadArtifactOutput> {
-    let artifact = get_artifact(ai_client, &args.artifact_uid).await?;
-    let path = download_destination(&artifact, args.out);
-    download_artifact_bytes(server_api.http_client(), &artifact, &path).await?;
-    let path = std::path::absolute(&path).unwrap_or(path);
-    Ok(DownloadArtifactOutput::new(&artifact, path))
+fn hosted_artifacts_unavailable() -> anyhow::Error {
+    anyhow::anyhow!("Hosted artifacts are unavailable in local-only Warper")
 }
 
 #[derive(Debug, Serialize)]

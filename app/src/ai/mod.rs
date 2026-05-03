@@ -5,7 +5,6 @@
 pub(crate) mod active_agent_views_model;
 pub(crate) mod agent;
 pub(crate) mod agent_conversations_model;
-pub(crate) mod agent_events;
 pub(crate) mod agent_management;
 pub(crate) mod agent_tips;
 pub(crate) mod ai_document_view;

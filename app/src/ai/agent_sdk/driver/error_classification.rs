@@ -60,10 +60,10 @@ pub fn classify_driver_error(error: &AgentDriverError) -> (AgentTaskState, TaskS
                 ),
             )
         }
-        AgentDriverError::WarpDriveSyncFailed => (
+        AgentDriverError::HostedSyncUnavailable => (
             AgentTaskState::Error,
             TaskStatusUpdate::with_error_code(
-                "Warp Drive failed to sync. Please check your network connection and try again.",
+                "Hosted sync is unavailable in local-only Warper.",
                 PlatformErrorCode::InternalError,
             ),
         ),
@@ -92,7 +92,7 @@ pub fn classify_driver_error(error: &AgentDriverError) -> (AgentTaskState, TaskS
             AgentTaskState::Failed,
             TaskStatusUpdate::with_error_code(
                 format!(
-                    "MCP server {uuid} was not found. Verify the server exists in your Warp Drive and the UUID is correct."
+                    "MCP server {uuid} was not found. Verify the server exists in local MCP configuration and the UUID is correct."
                 ),
                 PlatformErrorCode::EnvironmentSetupFailed,
             ),
@@ -122,7 +122,7 @@ pub fn classify_driver_error(error: &AgentDriverError) -> (AgentTaskState, TaskS
             AgentTaskState::Failed,
             TaskStatusUpdate::with_error_code(
                 format!(
-                    "Agent profile \"{name}\" not found. Check the profile ID and ensure it exists in your team's Warp Drive."
+                    "Agent profile \"{name}\" not found. Check the profile ID and ensure it exists in local configuration."
                 ),
                 PlatformErrorCode::ResourceNotFound,
             ),
@@ -131,7 +131,7 @@ pub fn classify_driver_error(error: &AgentDriverError) -> (AgentTaskState, TaskS
             AgentTaskState::Failed,
             TaskStatusUpdate::with_error_code(
                 format!(
-                    "Saved prompt not found for ID {id}. Verify the prompt exists in your Warp Drive."
+                    "Saved prompt not found for ID {id}. Verify the prompt exists in local configuration."
                 ),
                 PlatformErrorCode::ResourceNotFound,
             ),

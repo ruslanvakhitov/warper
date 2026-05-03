@@ -85,7 +85,6 @@ fn create_exchange_with_query(
         coding_model_id: LLMId::from("test-coding-model"),
         cli_agent_model_id: LLMId::from("test-cli-agent-model"),
         computer_use_model_id: LLMId::from("test-computer-use-model"),
-        response_initiator: None,
     }
 }
 
@@ -136,7 +135,7 @@ fn test_ai_queries_for_terminal_view_up_arrow_history() {
 
         // Start a new conversation and add "live query 1"
         let conversation_id = history_model.update(&mut app, |history_model, ctx| {
-            history_model.start_new_conversation(terminal_view_id, false, false, ctx)
+            history_model.start_new_conversation(terminal_view_id, false, ctx)
         });
 
         let stream_id = ResponseStreamId::new_for_test();
@@ -155,7 +154,6 @@ fn test_ai_queries_for_terminal_view_up_arrow_history() {
                 coding_model_id: exchange.coding_model_id,
                 cli_agent_model_id: exchange.cli_agent_model_id,
                 computer_use_model_id: exchange.computer_use_model_id,
-                shared_session_response_initiator: exchange.response_initiator,
                 request_start_ts: exchange.start_time,
                 supported_tools_override: None,
             };
@@ -178,7 +176,7 @@ fn test_ai_queries_for_terminal_view_up_arrow_history() {
 
         // Start another new conversation and add "live query 2"
         let conversation_id = history_model.update(&mut app, |history_model, ctx| {
-            history_model.start_new_conversation(terminal_view_id, false, false, ctx)
+            history_model.start_new_conversation(terminal_view_id, false, ctx)
         });
 
         history_model.update(&mut app, |history_model, ctx| {
@@ -201,7 +199,6 @@ fn test_ai_queries_for_terminal_view_up_arrow_history() {
                 coding_model_id: exchange.coding_model_id,
                 cli_agent_model_id: exchange.cli_agent_model_id,
                 computer_use_model_id: exchange.computer_use_model_id,
-                shared_session_response_initiator: exchange.response_initiator,
                 request_start_ts: exchange.start_time,
                 supported_tools_override: None,
             };
@@ -238,7 +235,7 @@ fn test_ai_queries_for_terminal_view_up_arrow_history() {
 
         // Start a new conversation after clearing and add "new query after clear"
         let conversation_id = history_model.update(&mut app, |history_model, ctx| {
-            history_model.start_new_conversation(terminal_view_id, false, false, ctx)
+            history_model.start_new_conversation(terminal_view_id, false, ctx)
         });
 
         history_model.update(&mut app, |history_model, ctx| {
@@ -261,7 +258,6 @@ fn test_ai_queries_for_terminal_view_up_arrow_history() {
                 coding_model_id: exchange.coding_model_id,
                 cli_agent_model_id: exchange.cli_agent_model_id,
                 computer_use_model_id: exchange.computer_use_model_id,
-                shared_session_response_initiator: exchange.response_initiator,
                 request_start_ts: exchange.start_time,
                 supported_tools_override: None,
             };
@@ -420,7 +416,7 @@ fn test_merge_cloud_metadata_updates_already_restored_conversations() {
         let terminal_view_id = EntityId::new();
 
         // Create a conversation with a server token and restore it
-        let mut conversation = AIConversation::new(false);
+        let mut conversation = AIConversation::new();
         conversation.set_server_conversation_token("token-1".to_string());
         let conversation_id = conversation.id();
 
@@ -482,7 +478,7 @@ fn test_transcript_viewer_terminal_view_is_not_marked_historical() {
         let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
 
         let conversation_id = history_model.update(&mut app, |history_model, ctx| {
-            history_model.start_new_conversation(terminal_view_id, false, false, ctx)
+            history_model.start_new_conversation(terminal_view_id, false, ctx)
         });
 
         history_model.update(&mut app, |history_model, ctx| {
@@ -501,7 +497,6 @@ fn test_transcript_viewer_terminal_view_is_not_marked_historical() {
                 coding_model_id: exchange.coding_model_id,
                 cli_agent_model_id: exchange.cli_agent_model_id,
                 computer_use_model_id: exchange.computer_use_model_id,
-                shared_session_response_initiator: exchange.response_initiator,
                 request_start_ts: exchange.start_time,
                 supported_tools_override: None,
             };
@@ -632,10 +627,10 @@ fn test_set_parent_for_conversation_populates_index() {
 
         // Create parent and child conversations via start_new_conversation.
         let parent_id = history_model.update(&mut app, |model, ctx| {
-            model.start_new_conversation(terminal_view_id, false, false, ctx)
+            model.start_new_conversation(terminal_view_id, false, ctx)
         });
         let child_id = history_model.update(&mut app, |model, ctx| {
-            model.start_new_conversation(terminal_view_id, false, false, ctx)
+            model.start_new_conversation(terminal_view_id, false, ctx)
         });
 
         // Set the parent-child relationship.
@@ -666,10 +661,10 @@ fn test_set_parent_for_conversation_dedup() {
         let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
 
         let parent_id = history_model.update(&mut app, |model, ctx| {
-            model.start_new_conversation(terminal_view_id, false, false, ctx)
+            model.start_new_conversation(terminal_view_id, false, ctx)
         });
         let child_id = history_model.update(&mut app, |model, ctx| {
-            model.start_new_conversation(terminal_view_id, false, false, ctx)
+            model.start_new_conversation(terminal_view_id, false, ctx)
         });
 
         // Set the same parent-child relationship twice.
@@ -692,13 +687,13 @@ fn test_set_parent_multiple_children() {
         let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
 
         let parent_id = history_model.update(&mut app, |model, ctx| {
-            model.start_new_conversation(terminal_view_id, false, false, ctx)
+            model.start_new_conversation(terminal_view_id, false, ctx)
         });
         let child_a = history_model.update(&mut app, |model, ctx| {
-            model.start_new_conversation(terminal_view_id, false, false, ctx)
+            model.start_new_conversation(terminal_view_id, false, ctx)
         });
         let child_b = history_model.update(&mut app, |model, ctx| {
-            model.start_new_conversation(terminal_view_id, false, false, ctx)
+            model.start_new_conversation(terminal_view_id, false, ctx)
         });
 
         history_model.update(&mut app, |model, _| {
@@ -738,7 +733,7 @@ fn test_restore_conversations_maintains_children_by_parent() {
         let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
 
         let parent_id = AIConversationId::new();
-        let mut child_conv = AIConversation::new(false);
+        let mut child_conv = AIConversation::new();
         child_conv.set_parent_conversation_id(parent_id);
         let child_id = child_conv.id();
 
@@ -761,7 +756,7 @@ fn test_restore_conversations_dedup_children_by_parent() {
         let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
 
         let parent_id = AIConversationId::new();
-        let mut child_conv_a = AIConversation::new(false);
+        let mut child_conv_a = AIConversation::new();
         child_conv_a.set_parent_conversation_id(parent_id);
         let child_id = child_conv_a.id();
         let child_conv_b = child_conv_a.clone();
@@ -790,7 +785,7 @@ fn test_all_cleared_conversations_includes_terminal_view_id() {
         let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
 
         let conversation_id = history_model.update(&mut app, |history_model, ctx| {
-            history_model.start_new_conversation(terminal_view_id, false, false, ctx)
+            history_model.start_new_conversation(terminal_view_id, false, ctx)
         });
 
         history_model.update(&mut app, |history_model, ctx| {
@@ -809,7 +804,6 @@ fn test_all_cleared_conversations_includes_terminal_view_id() {
                 coding_model_id: exchange.coding_model_id,
                 cli_agent_model_id: exchange.cli_agent_model_id,
                 computer_use_model_id: exchange.computer_use_model_id,
-                shared_session_response_initiator: exchange.response_initiator,
                 request_start_ts: exchange.start_time,
                 supported_tools_override: None,
             };
@@ -853,7 +847,7 @@ fn test_toggle_autoexecute_override_persists_updated_conversation_state() {
         let terminal_view_id = EntityId::new();
 
         let conversation_id = history_model.update(&mut app, |history_model, ctx| {
-            history_model.start_new_conversation(terminal_view_id, false, false, ctx)
+            history_model.start_new_conversation(terminal_view_id, false, ctx)
         });
 
         history_model.update(&mut app, |history_model, ctx| {
@@ -918,7 +912,7 @@ fn test_find_by_token_after_restore_conversations() {
         let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
         let terminal_view_id = EntityId::new();
 
-        let mut conversation = AIConversation::new(false);
+        let mut conversation = AIConversation::new();
         conversation.set_server_conversation_token("restored-token".to_string());
         let conversation_id = conversation.id();
 
@@ -1018,7 +1012,7 @@ fn test_find_by_token_after_initialize_output_for_response_stream() {
         let terminal_view_id = EntityId::new();
 
         let conversation_id = history_model.update(&mut app, |history_model, ctx| {
-            history_model.start_new_conversation(terminal_view_id, false, false, ctx)
+            history_model.start_new_conversation(terminal_view_id, false, ctx)
         });
 
         // Prime a pending request so StreamInit can install the token.
@@ -1038,7 +1032,6 @@ fn test_find_by_token_after_initialize_output_for_response_stream() {
                 coding_model_id: exchange.coding_model_id,
                 cli_agent_model_id: exchange.cli_agent_model_id,
                 computer_use_model_id: exchange.computer_use_model_id,
-                shared_session_response_initiator: exchange.response_initiator,
                 request_start_ts: exchange.start_time,
                 supported_tools_override: None,
             };
@@ -1084,7 +1077,7 @@ fn test_find_by_token_after_assign_run_id_for_conversation() {
         let terminal_view_id = EntityId::new();
 
         let conversation_id = history_model.update(&mut app, |history_model, ctx| {
-            let id = history_model.start_new_conversation(terminal_view_id, false, false, ctx);
+            let id = history_model.start_new_conversation(terminal_view_id, false, ctx);
             // Seed a token so assign_run_id has one to forward into the index.
             history_model
                 .conversation_mut(&id)
@@ -1173,7 +1166,7 @@ fn test_find_by_token_after_mark_conversations_historical_for_terminal_view() {
         let terminal_view_id = EntityId::new();
 
         // Needs a real exchange to pass `conversation_would_render_in_blocklist`.
-        let mut conversation = AIConversation::new(false);
+        let mut conversation = AIConversation::new();
         conversation.set_server_conversation_token("historical-token".to_string());
         let conversation_id = conversation.id();
 
@@ -1196,7 +1189,6 @@ fn test_find_by_token_after_mark_conversations_historical_for_terminal_view() {
                 coding_model_id: exchange.coding_model_id,
                 cli_agent_model_id: exchange.cli_agent_model_id,
                 computer_use_model_id: exchange.computer_use_model_id,
-                shared_session_response_initiator: exchange.response_initiator,
                 request_start_ts: exchange.start_time,
                 supported_tools_override: None,
             };
@@ -1244,7 +1236,7 @@ fn test_set_server_conversation_token_rebinds_reverse_index() {
         let terminal_view_id = EntityId::new();
 
         let conversation_id = history_model.update(&mut app, |history_model, ctx| {
-            let id = history_model.start_new_conversation(terminal_view_id, false, false, ctx);
+            let id = history_model.start_new_conversation(terminal_view_id, false, ctx);
             history_model.set_server_conversation_token_for_conversation(id, "old".to_string());
             id
         });

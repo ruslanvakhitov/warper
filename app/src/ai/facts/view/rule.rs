@@ -1,18 +1,11 @@
-use crate::cloud_object::model::generic_string_model::GenericStringObjectId;
-use crate::cloud_object::model::persistence::{CloudModel, CloudModelEvent};
-use crate::cloud_object::{
-    CloudObject, GenericStringObjectFormat, JsonObjectType, Owner, Revision,
-};
-use crate::drive::CloudObjectTypeAndId;
+use crate::cloud_object::CloudObject;
+use crate::cloud_object::Revision;
 use crate::editor::{
     EditorView, Event as EditorEvent, PropagateAndNoOpNavigationKeys, SingleLineEditorOptions,
     TextOptions,
 };
-use crate::network::NetworkStatus;
 use crate::search_bar::SearchBar;
-use crate::server::cloud_objects::update_manager::{UpdateManager, UpdateManagerEvent};
-use crate::server::ids::{ClientId, SyncId};
-use crate::server::sync_queue::SyncQueue;
+use crate::server::ids::SyncId;
 use crate::settings::{AISettings, AISettingsChangedEvent};
 use crate::ui_components::icons::Icon;
 use crate::view_components::{
@@ -20,7 +13,6 @@ use crate::view_components::{
     DismissibleToast,
 };
 use crate::workspace::ToastStack;
-use crate::workspaces::user_workspaces::UserWorkspaces;
 use ai::project_context::model::{ProjectContextModel, ProjectContextModelEvent};
 use markdown_parser::{
     weight::CustomWeight, FormattedText, FormattedTextFragment, FormattedTextLine,
@@ -46,8 +38,8 @@ use warpui::{
     ViewHandle,
 };
 
-use super::{is_edit_allowed, is_syncing, style, AIFact, CloudAIFact, CloudAIFactModel};
-use crate::ai::facts::AIMemory;
+use super::{is_edit_allowed, style, CloudAIFact};
+use crate::ai::facts::{AIFact, AIMemory};
 
 pub const HEADER_TEXT: &str = "Rules";
 const DESCRIPTION_TEXT: &str = "Rules enhance the agent by providing structured guidelines that help maintain consistency, enforce best practices, and adapt to specific workflows, including codebases or broader tasks.";
@@ -145,7 +137,6 @@ impl RuleRow {
 }
 
 pub struct RuleView {
-    owner: Option<Owner>,
     global_rules: Vec<CloudRuleRow>,
     project_rules: Vec<ProjectScopedRow>,
     search_editor: ViewHandle<EditorView>,
@@ -160,23 +151,6 @@ pub struct RuleView {
 
 impl RuleView {
     pub fn new(ctx: &mut ViewContext<Self>) -> Self {
-        let update_manager = UpdateManager::handle(ctx);
-        ctx.subscribe_to_model(&update_manager, |me, _, event, ctx| {
-            me.handle_update_manager_event(event, ctx);
-        });
-
-        let cloud_model = CloudModel::handle(ctx);
-        ctx.subscribe_to_model(&cloud_model, |me, _, event, ctx| {
-            me.handle_cloud_model_event(event, ctx);
-        });
-
-        let network_status = NetworkStatus::handle(ctx);
-        ctx.subscribe_to_model(&network_status, |_me, _, _event, ctx| {
-            ctx.notify();
-        });
-
-        let owner = UserWorkspaces::as_ref(ctx).personal_drive(ctx);
-
         ctx.subscribe_to_model(&AISettings::handle(ctx), |_, _, event, ctx| {
             if matches!(
                 event,
@@ -187,21 +161,7 @@ impl RuleView {
             }
         });
 
-        let ai_rules: Vec<CloudAIFact> = {
-            let cloud_model = CloudModel::handle(ctx);
-            cloud_model
-                .as_ref(ctx)
-                .get_all_objects_of_type::<GenericStringObjectId, CloudAIFactModel>()
-                .cloned()
-                .collect()
-        };
-        let ai_rules: Vec<CloudRuleRow> = ai_rules
-            .into_iter()
-            .map(|fact| CloudRuleRow {
-                fact,
-                mouse_states: Default::default(),
-            })
-            .collect();
+        let ai_rules: Vec<CloudRuleRow> = Vec::new();
 
         let project_context = ProjectContextModel::handle(ctx);
         let project_rules = project_context
@@ -272,7 +232,6 @@ impl RuleView {
         });
 
         Self {
-            owner,
             global_rules: ai_rules,
             project_rules,
             search_editor,
@@ -286,49 +245,7 @@ impl RuleView {
         }
     }
 
-    fn handle_update_manager_event(
-        &mut self,
-        event: &UpdateManagerEvent,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        if let UpdateManagerEvent::ObjectOperationComplete { .. } = event {
-            self.fetch_ai_rules(ctx);
-        }
-    }
-
-    fn handle_cloud_model_event(&mut self, event: &CloudModelEvent, ctx: &mut ViewContext<Self>) {
-        match event {
-            CloudModelEvent::ObjectUpdated { .. }
-            | CloudModelEvent::ObjectTrashed { .. }
-            | CloudModelEvent::ObjectUntrashed { .. }
-            | CloudModelEvent::ObjectCreated { .. }
-            | CloudModelEvent::ObjectDeleted { .. } => {
-                self.fetch_ai_rules(ctx);
-            }
-            _ => {}
-        }
-    }
-
     fn handle_search_editor_event(&mut self, _event: &EditorEvent, ctx: &mut ViewContext<Self>) {
-        ctx.notify();
-    }
-
-    fn fetch_ai_rules(&mut self, ctx: &mut ViewContext<Self>) {
-        let ai_rules: Vec<CloudAIFact> = {
-            let cloud_model = CloudModel::handle(ctx);
-            cloud_model
-                .as_ref(ctx)
-                .get_all_objects_of_type::<GenericStringObjectId, CloudAIFactModel>()
-                .cloned()
-                .collect()
-        };
-        self.global_rules = ai_rules
-            .into_iter()
-            .map(|ai_fact| CloudRuleRow {
-                fact: ai_fact,
-                mouse_states: Default::default(),
-            })
-            .collect();
         ctx.notify();
     }
 
@@ -356,67 +273,23 @@ impl RuleView {
 
     pub fn add_ai_rule(
         &mut self,
-        name: Option<String>,
-        content: String,
-        ctx: &mut ViewContext<Self>,
+        _name: Option<String>,
+        _content: String,
+        _ctx: &mut ViewContext<Self>,
     ) {
-        let update_manager = UpdateManager::handle(ctx);
-        if let Some(owner) = self.owner {
-            let ai_fact = AIFact::Memory(AIMemory {
-                is_autogenerated: false,
-                name,
-                content,
-                suggested_logging_id: None,
-            });
-            update_manager.update(ctx, |update_manager, ctx| {
-                update_manager.create_ai_fact(ai_fact, ClientId::default(), owner, ctx);
-            });
-        }
     }
 
     pub fn edit_ai_rule(
         &mut self,
-        name: Option<String>,
-        content: String,
-        sync_id: SyncId,
-        revision_ts: Option<Revision>,
-        ctx: &mut ViewContext<Self>,
+        _name: Option<String>,
+        _content: String,
+        _sync_id: SyncId,
+        _revision_ts: Option<Revision>,
+        _ctx: &mut ViewContext<Self>,
     ) {
-        let update_manager = UpdateManager::handle(ctx);
-        let (is_autogenerated, suggested_logging_id) = CloudModel::as_ref(ctx)
-            .get_object_of_type::<GenericStringObjectId, CloudAIFactModel>(&sync_id)
-            .map(|ai_fact| {
-                let AIFact::Memory(AIMemory {
-                    is_autogenerated,
-                    suggested_logging_id,
-                    ..
-                }) = ai_fact.model().string_model.clone();
-                (is_autogenerated, suggested_logging_id)
-            })
-            .unwrap_or((false, None));
-        update_manager.update(ctx, |update_manager, ctx| {
-            let ai_fact = AIFact::Memory(AIMemory {
-                is_autogenerated,
-                name,
-                content,
-                suggested_logging_id,
-            });
-            update_manager.update_ai_fact(ai_fact, sync_id, revision_ts, ctx);
-        });
     }
 
-    pub fn delete_ai_rule(&mut self, id: SyncId, ctx: &mut ViewContext<Self>) {
-        let update_manager = UpdateManager::handle(ctx);
-        update_manager.update(ctx, |update_manager, ctx| {
-            update_manager.delete_object_by_user(
-                CloudObjectTypeAndId::GenericStringObject {
-                    object_type: GenericStringObjectFormat::Json(JsonObjectType::AIFact),
-                    id,
-                },
-                ctx,
-            );
-        });
-    }
+    pub fn delete_ai_rule(&mut self, _id: SyncId, _ctx: &mut ViewContext<Self>) {}
 
     fn render_header(&self, appearance: &Appearance) -> Box<dyn Element> {
         Flex::row()
@@ -634,34 +507,8 @@ impl RuleView {
         appearance: &Appearance,
         app: &AppContext,
     ) -> Option<Box<dyn Element>> {
-        // Don't show icon if the syncing is in progress.
-        if is_syncing(ai_row.fact.clone(), app) {
-            return None;
-        }
-
-        let item = ai_row.fact.to_warp_drive_item(appearance)?;
-        let icon = item.sync_status_icon(
-            SyncQueue::as_ref(app).is_dequeueing(),
-            ai_row.mouse_states.sync_status_icon.clone(),
-            appearance,
-        )?;
-
-        Some(
-            Hoverable::new(ai_row.mouse_states.sync_status_hover.clone(), |state| {
-                let mut container = Container::new(icon)
-                    .with_border(Border::all(1.))
-                    .with_uniform_padding(4.);
-                if state.is_hovered() {
-                    container = container
-                        .with_background(appearance.theme().surface_2())
-                        .with_border(
-                            Border::all(1.).with_border_fill(appearance.theme().surface_3()),
-                        );
-                }
-                container.with_margin_right(style::ROW_ICON_MARGIN).finish()
-            })
-            .finish(),
-        )
+        let _ = (ai_row, appearance, app);
+        None
     }
 
     fn render_project_based_row(

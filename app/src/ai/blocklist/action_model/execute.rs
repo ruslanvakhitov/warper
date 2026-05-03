@@ -87,7 +87,6 @@ use crate::{
             AIAgentActionResultType, AIAgentActionType, CancellationReason, FileContext,
             FileLocations, ServerOutputId,
         },
-        ambient_agents::AmbientAgentTaskId,
         get_relevant_files::controller::GetRelevantFilesController,
     },
     terminal::{
@@ -415,12 +414,12 @@ impl BlocklistAIActionExecutor {
 
     pub fn set_ambient_agent_task_id(
         &self,
-        id: Option<AmbientAgentTaskId>,
+        _id: Option<crate::ai::ambient_agents::AmbientAgentTaskId>,
         ctx: &mut ModelContext<Self>,
     ) {
         self.request_computer_use_executor
             .update(ctx, |executor, _| {
-                executor.set_ambient_agent_task_id(id);
+                executor.set_ambient_agent_task_id(None);
             });
     }
 
@@ -430,11 +429,6 @@ impl BlocklistAIActionExecutor {
         conversation_id: AIConversationId,
         ctx: &mut ModelContext<Self>,
     ) -> BoxFuture<'static, ()> {
-        // In view-only mode, we do not need to perform any preprocessing work.
-        if self.is_shared_session_viewer() {
-            return futures::future::ready(()).boxed();
-        }
-
         let input = PreprocessActionInput {
             action,
             conversation_id,
@@ -527,14 +521,6 @@ impl BlocklistAIActionExecutor {
         is_user_initiated: bool,
         ctx: &mut ModelContext<Self>,
     ) -> TryExecuteResult {
-        // We should never actually execute actions in view-only mode.
-        if self.is_shared_session_viewer() {
-            return TryExecuteResult::NotExecuted {
-                reason: NotExecutedReason::WaitingOnSharer,
-                action: Box::new(action),
-            };
-        }
-
         let input = ExecuteActionInput {
             action: &action,
             conversation_id,
@@ -784,10 +770,6 @@ impl BlocklistAIActionExecutor {
         reason: Option<CancellationReason>,
         ctx: &mut ModelContext<Self>,
     ) {
-        // A viewer should not be able to cancel an action.
-        if self.is_shared_session_viewer() {
-            return;
-        }
         if let Some(running) = self.async_executing_actions.remove(action_id) {
             if running.is_shell_command_action() {
                 self.shell_command_executor.update(ctx, |executor, ctx| {
@@ -900,10 +882,6 @@ impl BlocklistAIActionExecutor {
                 .ask_user_question_executor
                 .update(ctx, |executor, ctx| executor.should_autoexecute(input, ctx)),
         }
-    }
-
-    fn is_shared_session_viewer(&self) -> bool {
-        self.terminal_model.lock().is_shared_session_viewer()
     }
 }
 impl Entity for BlocklistAIActionExecutor {

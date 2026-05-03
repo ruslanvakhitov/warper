@@ -4,7 +4,6 @@ use anyhow::anyhow;
 use chrono::{DateTime, Local, TimeDelta};
 use futures::channel::oneshot;
 use uuid::Uuid;
-use warp_multi_agent_api::response_event;
 use warpui::{Entity, ModelContext, SingletonEntity};
 
 use crate::{
@@ -15,20 +14,12 @@ use crate::{
     },
     network::NetworkStatus,
     report_error, send_telemetry_from_ctx,
-    server::server_api::ServerApiProvider,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ResponseStreamId(String);
 
 impl ResponseStreamId {
-    pub fn for_shared_session(init_event: &response_event::StreamInit) -> Self {
-        // Make the stream ID unique per viewing by appending a local UUID
-        // This prevents collisions when replaying the same conversation multiple times
-        // (either on close-and-reopen or when viewing the same shared session from multiple terminals)
-        Self(format!("{}-{}", init_event.request_id, Uuid::new_v4()))
-    }
-
     #[cfg(test)]
     pub fn new_for_test() -> Self {
         Self(Uuid::new_v4().to_string())
@@ -85,21 +76,17 @@ impl ResponseStream {
         can_attempt_resume_on_error: bool,
         ctx: &mut ModelContext<Self>,
     ) -> Self {
-        let server_api = ServerApiProvider::as_ref(ctx).get();
         let (cancellation_tx, cancellation_rx) = oneshot::channel();
         let start_time = Local::now();
 
         let request_id = Uuid::new_v4();
         let params_clone = params.clone();
-        let _ =
-            ctx.spawn(
-                async move {
-                    generate_multi_agent_output(server_api, params_clone, cancellation_rx).await
-                },
-                move |me, stream, ctx| {
-                    me.handle_response_stream_result(request_id, stream, ctx);
-                },
-            );
+        let _ = ctx.spawn(
+            async move { generate_multi_agent_output(params_clone, cancellation_rx).await },
+            move |me, stream, ctx| {
+                me.handle_response_stream_result(request_id, stream, ctx);
+            },
+        );
         Self {
             id: ResponseStreamId(Uuid::new_v4().to_string()),
             params: params.clone(),
@@ -155,9 +142,8 @@ impl ResponseStream {
         let request_id = Uuid::new_v4();
         self.current_request_id = Some(request_id);
         let params = self.params.clone();
-        let server_api = ServerApiProvider::as_ref(ctx).get();
         let _ = ctx.spawn(
-            async move { generate_multi_agent_output(server_api, params, cancellation_rx).await },
+            async move { generate_multi_agent_output(params, cancellation_rx).await },
             move |me, stream, ctx| {
                 me.handle_response_stream_result(request_id, stream, ctx);
             },
@@ -306,32 +292,11 @@ impl ResponseStream {
                     self.should_resume_conversation_after_stream_finished = true;
                 }
 
-                #[cfg(feature = "crash_reporting")]
-                sentry::with_scope(
-                    |scope| {
-                        scope.set_tag(
-                            "has_received_client_actions",
-                            self.has_received_client_actions,
-                        );
-                        scope.set_tag("error", format!("{e:?}"));
-                        scope.set_tag("is_retryable", e.is_retryable());
-                        scope.set_tag("is_online", is_online);
-                        scope.set_tag("retry_count", self.retry_count);
-                    },
-                    || {
-                        report_error!(anyhow!(e.clone()).context(format!(
-                            "MultiAgent request failed after {} retries",
-                            self.retry_count
-                        )));
-                    },
-                );
-                #[cfg(not(feature = "crash_reporting"))]
-                {
-                    report_error!(anyhow!(e.clone()).context(format!(
-                        "MultiAgent request failed after {} retries",
-                        self.retry_count
-                    )));
-                }
+                let _ = is_online;
+                report_error!(anyhow!(e.clone()).context(format!(
+                    "MultiAgent request failed after {} retries",
+                    self.retry_count
+                )));
 
                 ctx.emit(ResponseStreamEvent::ReceivedEvent(Consumable::new(event)));
             }

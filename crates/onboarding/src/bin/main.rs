@@ -83,7 +83,7 @@ impl OnboardingMainView {
             OnboardingModelInfo {
                 id: LLMId::from("auto"),
                 title: "Auto".to_string(),
-                icon: Icon::Oz,
+                icon: Icon::AgentMode,
                 requires_upgrade: false,
                 is_default: true,
             },
@@ -98,7 +98,7 @@ impl OnboardingMainView {
                 id: LLMId::from("gpt-4o"),
                 title: "GPT-4o".to_string(),
                 icon: Icon::OpenAILogo,
-                requires_upgrade: true,
+                requires_upgrade: false,
                 is_default: false,
             },
         ];
@@ -161,13 +161,7 @@ impl OnboardingMainView {
                 self.state = OnboardingMainState::Finished(finished_view);
                 ctx.notify();
             }
-            AgentOnboardingEvent::SyncWithOsToggled { .. }
-            | AgentOnboardingEvent::UpgradeRequested
-            | AgentOnboardingEvent::UpgradeCopyUrlRequested
-            | AgentOnboardingEvent::UpgradePasteTokenFromClipboardRequested
-            | AgentOnboardingEvent::LoginFromWelcomeRequested
-            | AgentOnboardingEvent::PrivacySettingsFromTerminalThemeSlideRequested
-            | AgentOnboardingEvent::AppBecameActive => {
+            AgentOnboardingEvent::SyncWithOsToggled { .. } => {
                 // No-op in the standalone demo binary
             }
         }

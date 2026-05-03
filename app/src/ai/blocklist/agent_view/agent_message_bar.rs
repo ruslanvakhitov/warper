@@ -16,7 +16,6 @@ use crate::ai::agent::{
     AIAgentExchangeId, AIAgentOutputStatus, FinishedAIAgentOutput, RenderableAIError,
 };
 use crate::ai::blocklist::agent_view::shortcuts::AgentShortcutViewModel;
-use crate::ai::blocklist::agent_view::zero_state_block::render_ambient_credits_banner;
 use crate::ai::blocklist::agent_view::{
     agent_view_bg_fill, AgentViewController, AgentViewControllerEvent,
 };
@@ -29,7 +28,6 @@ use crate::ai::mcp::{
     templatable_manager::{FigmaMcpStatus, TemplatableMCPServerManagerEvent},
     TemplatableMCPServerManager,
 };
-use crate::ai::request_usage_model::{AIRequestUsageModel, AIRequestUsageModelEvent};
 use crate::search::slash_command_menu::static_commands::commands;
 use crate::terminal::input::buffer_model::{InputBufferModel, InputBufferUpdateEvent};
 use crate::terminal::input::message_bar::attached_context::{
@@ -214,12 +212,6 @@ impl AgentMessageBar {
             );
         }
 
-        ctx.subscribe_to_model(&AIRequestUsageModel::handle(ctx), |_, _, event, ctx| {
-            if matches!(event, AIRequestUsageModelEvent::RequestUsageUpdated) {
-                ctx.notify();
-            }
-        });
-
         Self {
             agent_view_controller,
             ephemeral_message_model,
@@ -339,21 +331,7 @@ impl View for AgentMessageBar {
             return Empty::new().finish();
         };
 
-        // Show credits banner when user has ambient credits remaining.
-        use crate::ai::request_usage_model::AMBIENT_AGENT_TRIAL_CREDIT_THRESHOLD;
-        let right_element = if cfg!(target_family = "wasm") {
-            None
-        } else if let Some(credits) =
-            AIRequestUsageModel::as_ref(app).ambient_only_credits_remaining()
-        {
-            if credits >= AMBIENT_AGENT_TRIAL_CREDIT_THRESHOLD {
-                Some(render_ambient_credits_banner(credits, app))
-            } else {
-                None
-            }
-        } else {
-            None
-        };
+        let right_element = None;
 
         // Append a Figma MCP chip to the message if applicable.
         match self.figma_button_status(app) {
@@ -445,7 +423,6 @@ impl MessageProvider<AgentMessageArgs<'_>> for BootstrappingMessageProducer {
     fn produce_message(&self, args: AgentMessageArgs<'_>) -> Option<Message> {
         if args.terminal_model.block_list().is_bootstrapped()
             || args.terminal_model.is_dummy_cloud_mode_session()
-            || args.terminal_model.is_shared_ambient_agent_session()
         {
             None
         } else {
@@ -565,11 +542,6 @@ impl MessageProvider<AgentMessageArgs<'_>> for ZeroStateMessageProducer {
             .with_is_disabled(!is_buffer_empty),
         );
 
-        let is_cloud_agent = matches!(
-            agent_view_controller.agent_view_state(),
-            AgentViewState::Active { origin, .. } if origin.is_cloud_agent()
-        );
-
         let plan_count = AIDocumentModel::as_ref(app)
             .get_all_documents_for_conversation(active_conversation.id())
             .len();
@@ -577,7 +549,7 @@ impl MessageProvider<AgentMessageArgs<'_>> for ZeroStateMessageProducer {
         let has_conversation_been_updated_since_agent_view_entry =
             *original_conversation_length != active_conversation.exchange_count();
 
-        if !is_cloud_agent && !has_conversation_been_updated_since_agent_view_entry {
+        if !has_conversation_been_updated_since_agent_view_entry {
             if let Some(conversations_keystroke) =
                 keybinding_name_to_keystroke(commands::CONVERSATIONS.name, app)
             {
@@ -596,7 +568,7 @@ impl MessageProvider<AgentMessageArgs<'_>> for ZeroStateMessageProducer {
 
         // Code review only works locally.
         #[cfg(not(target_family = "wasm"))]
-        if !is_cloud_agent && *TabSettings::as_ref(app).show_code_review_button {
+        if *TabSettings::as_ref(app).show_code_review_button {
             let code_review_keystroke = if OperatingSystem::get().is_mac() {
                 Keystroke::parse("cmd-shift-+").expect("keystroke should parse")
             } else {
@@ -692,10 +664,7 @@ fn should_fork_from_last_known_good_state(
     active_conversation: &AIConversation,
     terminal_model: &TerminalModel,
 ) -> bool {
-    if terminal_model.is_conversation_transcript_viewer()
-        || terminal_model.shared_session_status().is_viewer()
-        || active_conversation.is_viewing_shared_session()
-    {
+    if terminal_model.is_conversation_transcript_viewer() {
         return false;
     }
 

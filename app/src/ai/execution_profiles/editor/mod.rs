@@ -84,9 +84,7 @@ fn render_upgrade_footer(
         Some(Cursor::PointingHand),
         |_is_hovered, _ctx, _app| {},
     )
-    .with_clickable_char_range(upgrade_start..label.len(), move |_modifiers, ctx, _app| {
-        ctx.dispatch_typed_action(WorkspaceAction::ShowUpgrade);
-    })
+    .with_clickable_char_range(upgrade_start..label.len(), move |_modifiers, _ctx, _app| {})
     .finish();
 
     let inner = Container::new(

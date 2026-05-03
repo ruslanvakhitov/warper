@@ -37,8 +37,6 @@ use crate::code::language_server_shutdown_manager::LanguageServerShutdownManager
 #[cfg(feature = "local_fs")]
 use crate::code::lsp_telemetry::LspTelemetryEvent;
 #[cfg(feature = "local_fs")]
-use crate::server::server_api::ServerApiProvider;
-#[cfg(feature = "local_fs")]
 use crate::terminal::local_shell::LocalShellState;
 #[cfg(feature = "local_fs")]
 use crate::{view_components::DismissibleToast, workspace::ToastStack};
@@ -46,6 +44,11 @@ use crate::{view_components::DismissibleToast, workspace::ToastStack};
 use lsp::LspEvent;
 #[cfg(feature = "local_fs")]
 use warp_core::channel::ChannelState;
+
+#[cfg(feature = "local_fs")]
+fn local_http_client() -> Arc<http_client::Client> {
+    Arc::new(http_client::Client::new())
+}
 
 use ai::project_context::model::{ProjectContextModel, ProjectContextModelEvent};
 
@@ -539,7 +542,7 @@ impl PersistedWorkspace {
         let path_future = LocalShellState::handle(ctx).update(ctx, |shell_state, ctx| {
             shell_state.get_interactive_path_env_var(ctx)
         });
-        let http_client = ServerApiProvider::as_ref(ctx).get_http_client();
+        let http_client = local_http_client();
 
         ctx.spawn(
             async move {
@@ -914,7 +917,7 @@ impl PersistedWorkspace {
         let repo_root_clone = repo_root.clone();
         let file_path_clone = file_path.clone();
         let executor = lsp::CommandBuilder::new(path_env_var);
-        let http_client = ServerApiProvider::as_ref(ctx).get_http_client();
+        let http_client = local_http_client();
         ctx.spawn(
             async move {
                 let candidate = server_type.candidate(http_client);
@@ -1039,7 +1042,7 @@ impl PersistedWorkspace {
             );
             let log_relative_path =
                 crate::code::lsp_logs::relative_log_path(server, &workspace_root);
-            let http_client = ServerApiProvider::as_ref(ctx).get_http_client();
+            let http_client = local_http_client();
             let config = LspServerConfig::new(
                 server,
                 workspace_root.clone(),
@@ -1196,7 +1199,7 @@ impl PersistedWorkspace {
                     shell_state.get_interactive_path_env_var(ctx)
                 });
 
-                let http_client = ServerApiProvider::as_ref(ctx).get_http_client();
+                let http_client = local_http_client();
                 ctx.spawn(
                     async move {
                         // Wait for interactive PATH, then check installation

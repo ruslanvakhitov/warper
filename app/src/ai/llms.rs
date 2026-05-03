@@ -18,8 +18,6 @@ use crate::{
         AuthStateProvider,
     },
     network::{NetworkStatus, NetworkStatusEvent, NetworkStatusKind},
-    report_error,
-    server::server_api::ServerApiProvider,
     workspaces::user_workspaces::{UserWorkspaces, UserWorkspacesEvent},
 };
 
@@ -1160,56 +1158,14 @@ impl LLMPreferences {
     }
 
     /// Fetches the latest set of models from the server for the currently logged in user, and updates the model.
-    pub fn refresh_authed_models(&self, ctx: &mut ModelContext<Self>) {
-        if ChannelState::channel() == Channel::Oss
-            || ChannelState::maybe_server_root_url().is_none()
-        {
-            return;
-        }
-
-        // Don't try to fetch auth'd models if the user is not logged in yet.
-        if !AuthStateProvider::as_ref(ctx).get().is_logged_in() {
-            return;
-        }
-
-        let ai_api_client = ServerApiProvider::as_ref(ctx).get_ai_client();
-        ctx.spawn(
-            async move { ai_api_client.get_feature_model_choices().await },
-            |me, result, ctx| match result {
-                Ok(update) => {
-                    if update != me.models_by_feature {
-                        me.on_server_update(update, ctx);
-                    }
-                }
-                Err(e) => {
-                    report_error!(e.context("Failed to fetch LLMs from server"));
-                }
-            },
-        );
+    pub fn refresh_authed_models(&self, _ctx: &mut ModelContext<Self>) {
+        // Hosted Warp model metadata is amputated in local-only Warper. BYOK/OpenRouter
+        // model selection remains local and is handled by the API-key settings path.
     }
 
     /// No auth required (i.e. to populate the pre-login onboarding picker).
-    fn refresh_public_models(&self, ctx: &mut ModelContext<Self>) {
-        if ChannelState::channel() == Channel::Oss
-            || ChannelState::maybe_server_root_url().is_none()
-        {
-            return;
-        }
-
-        let ai_api_client = ServerApiProvider::as_ref(ctx).get_ai_client();
-        ctx.spawn(
-            async move { ai_api_client.get_free_available_models(None).await },
-            |me, result, ctx| match result {
-                Ok(update) => {
-                    if update != me.models_by_feature {
-                        me.on_server_update(update, ctx);
-                    }
-                }
-                Err(e) => {
-                    report_error!(e.context("Failed to fetch free-tier LLMs from server"));
-                }
-            },
-        );
+    fn refresh_public_models(&self, _ctx: &mut ModelContext<Self>) {
+        // Public hosted model metadata is unavailable in local-only Warper.
     }
 
     pub fn refresh_available_models(&self, ctx: &mut ModelContext<Self>) {

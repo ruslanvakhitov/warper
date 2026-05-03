@@ -3,24 +3,15 @@ use crate::model::{
     SelectedSettings,
 };
 use crate::slides::{
-    AgentSlide, AgentSlideEvent, CustomizeUISlide, FreeUserNoAiSlide, IntentionSlide, IntroSlide,
-    IntroSlideEvent, OnboardingModelInfo, OnboardingSlide, ProjectSlide, ThemePickerSlide,
-    ThemePickerSlideEvent, ThirdPartySlide,
+    AgentSlide, CustomizeUISlide, IntentionSlide, IntroSlide, OnboardingModelInfo, OnboardingSlide,
+    ProjectSlide, ThemePickerSlide, ThemePickerSlideEvent, ThirdPartySlide,
 };
 use crate::telemetry::OnboardingEvent;
 use ai::LLMId;
-use instant::Instant;
-use std::time::Duration;
 use warp_core::features::FeatureFlag;
 use warp_core::send_telemetry_from_ctx;
 use warpui::assets::asset_cache::AssetSource;
 use warpui::image_cache::ImageType;
-use warpui::windowing::{
-    state::{ApplicationStage, StateEvent},
-    WindowManager,
-};
-
-const APP_BECAME_ACTIVE_DEBOUNCE: Duration = Duration::from_secs(15);
 
 use pathfinder_geometry::vector::vec2f;
 use ui_components::{button, Component as _, Options as _};
@@ -40,27 +31,10 @@ use warpui::{
 
 #[derive(Clone, Debug)]
 pub enum AgentOnboardingEvent {
-    ThemeSelected {
-        theme_name: String,
-    },
-    SyncWithOsToggled {
-        enabled: bool,
-    },
+    ThemeSelected { theme_name: String },
+    SyncWithOsToggled { enabled: bool },
     OnboardingCompleted(SelectedSettings),
     OnboardingSkipped,
-    LoginFromWelcomeRequested,
-    /// Emitted when the user clicks the "Privacy Settings" link on the terminal
-    /// intention theme slide. The variant name encodes that the event is only
-    /// emitted from the terminal-intention theme slide; consumers (e.g. a
-    /// `LoginSlideView` with `LoginSlideSource::PrivacySettingsFromTerminalIntentionTheme`)
-    /// rely on that to select the right visual / back-routing behavior.
-    PrivacySettingsFromTerminalThemeSlideRequested,
-    UpgradeRequested,
-    UpgradeCopyUrlRequested,
-    UpgradePasteTokenFromClipboardRequested,
-    /// Emitted when the app regains focus (e.g. user returns from the browser).
-    /// The parent should refresh any stale data: available models, workspace/billing metadata, etc.
-    AppBecameActive,
 }
 
 pub struct AgentOnboardingView {
@@ -69,13 +43,11 @@ pub struct AgentOnboardingView {
     theme_picker_slide: ViewHandle<ThemePickerSlide>,
     intention_slide: ViewHandle<IntentionSlide>,
     customize_slide: ViewHandle<CustomizeUISlide>,
-    free_user_no_ai_slide: ViewHandle<FreeUserNoAiSlide>,
     agent_slide: ViewHandle<AgentSlide>,
     third_party_slide: ViewHandle<ThirdPartySlide>,
     project_slide: ViewHandle<ProjectSlide>,
     skippable: bool,
     close_button: button::Button,
-    last_model_refresh: Option<Instant>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -144,9 +116,6 @@ impl AgentOnboardingView {
                 OnboardingStateEvent::Completed => {
                     me.handle_onboarding_completed(ctx);
                 }
-                OnboardingStateEvent::UpgradeRequested => {
-                    ctx.emit(AgentOnboardingEvent::UpgradeRequested);
-                }
                 _ => {}
             }
         });
@@ -155,12 +124,6 @@ impl AgentOnboardingView {
             let onboarding_state = onboarding_state.clone();
             ctx.add_typed_action_view(move |_| IntroSlide::new(onboarding_state))
         };
-
-        ctx.subscribe_to_view(&intro_slide, |_me, _view, event, ctx| match event {
-            IntroSlideEvent::LoginRequested => {
-                ctx.emit(AgentOnboardingEvent::LoginFromWelcomeRequested);
-            }
-        });
 
         let theme_picker_slide = {
             let themes = theme_picker_themes.clone();
@@ -179,11 +142,6 @@ impl AgentOnboardingView {
             let onboarding_state = onboarding_state.clone();
             ctx.add_typed_action_view(move |ctx| CustomizeUISlide::new(onboarding_state, ctx))
         };
-        let free_user_no_ai_slide = {
-            let onboarding_state = onboarding_state.clone();
-            ctx.add_typed_action_view(move |_| FreeUserNoAiSlide::new(onboarding_state))
-        };
-
         ctx.subscribe_to_view(&theme_picker_slide, |me, _view, event, ctx| {
             me.handle_theme_picker_slide_event(event, ctx);
         });
@@ -192,15 +150,6 @@ impl AgentOnboardingView {
             let onboarding_state = onboarding_state.clone();
             ctx.add_typed_action_view(move |ctx| AgentSlide::new(onboarding_state, ctx))
         };
-
-        ctx.subscribe_to_view(&agent_slide, |_me, _view, event, ctx| match event {
-            AgentSlideEvent::CopyUpgradeUrlRequested => {
-                ctx.emit(AgentOnboardingEvent::UpgradeCopyUrlRequested);
-            }
-            AgentSlideEvent::PasteAuthTokenFromClipboardRequested => {
-                ctx.emit(AgentOnboardingEvent::UpgradePasteTokenFromClipboardRequested);
-            }
-        });
 
         let third_party_slide = {
             let onboarding_state = onboarding_state.clone();
@@ -212,38 +161,17 @@ impl AgentOnboardingView {
             ctx.add_typed_action_view(move |_| ProjectSlide::new(onboarding_state))
         };
 
-        // When the app regains focus (e.g. user returning from the upgrade page in the
-        // browser), notify the parent to refresh models and workspace/billing metadata.
-        // Debounced to avoid excessive API calls from rapid alt-tabbing.
-        ctx.subscribe_to_model(&WindowManager::handle(ctx), |me, _wm, event, ctx| {
-            let StateEvent::ValueChanged { current, previous } = event;
-            if previous.stage != ApplicationStage::Active
-                && current.stage == ApplicationStage::Active
-            {
-                let now = Instant::now();
-                let should_refresh = me
-                    .last_model_refresh
-                    .is_none_or(|last| now.duration_since(last) >= APP_BECAME_ACTIVE_DEBOUNCE);
-                if should_refresh {
-                    me.last_model_refresh = Some(now);
-                    ctx.emit(AgentOnboardingEvent::AppBecameActive);
-                }
-            }
-        });
-
         Self {
             onboarding_state,
             intro_slide,
             theme_picker_slide,
             intention_slide,
             customize_slide,
-            free_user_no_ai_slide,
             agent_slide,
             third_party_slide,
             project_slide,
             skippable,
             close_button: button::Button::default(),
-            last_model_refresh: None,
         }
     }
 
@@ -275,9 +203,8 @@ impl AgentOnboardingView {
     }
 
     pub fn free_user_no_ai_experiment(&self, ctx: &AppContext) -> bool {
-        self.onboarding_state
-            .as_ref(ctx)
-            .free_user_no_ai_experiment()
+        let _ = ctx;
+        false
     }
 
     /// The current `use_vertical_tabs` value on the onboarding UI customization.
@@ -305,16 +232,8 @@ impl AgentOnboardingView {
         ctx.notify();
     }
 
-    /// When the user upgrades during the FreeUserNoAi experiment, advance directly
-    /// to the Agent setup step (skipping the intention slide — they've already chosen).
     pub fn advance_to_agent_step(&mut self, ctx: &mut ViewContext<Self>) {
-        let step = self.onboarding_state.as_ref(ctx).step();
-        if matches!(step, OnboardingStep::Intention) {
-            self.onboarding_state.update(ctx, |model, ctx| {
-                model.set_intention_agent_driven_development(ctx);
-                model.next(ctx); // Intention → Agent
-            });
-        }
+        let _ = ctx;
     }
 
     pub fn start_onboarding(&self, ctx: &mut ViewContext<Self>) {
@@ -379,9 +298,6 @@ impl AgentOnboardingView {
             ThemePickerSlideEvent::SyncWithOsToggled { enabled } => {
                 ctx.emit(AgentOnboardingEvent::SyncWithOsToggled { enabled: *enabled });
             }
-            ThemePickerSlideEvent::PrivacySettingsRequested => {
-                ctx.emit(AgentOnboardingEvent::PrivacySettingsFromTerminalThemeSlideRequested);
-            }
         }
     }
 }
@@ -432,17 +348,7 @@ impl View for AgentOnboardingView {
         let slide = match selected_slide {
             OnboardingStep::Intro => ChildView::new(&self.intro_slide).finish(),
             OnboardingStep::ThemePicker => ChildView::new(&self.theme_picker_slide).finish(),
-            OnboardingStep::Intention => {
-                if self
-                    .onboarding_state
-                    .as_ref(app)
-                    .free_user_no_ai_experiment()
-                {
-                    ChildView::new(&self.free_user_no_ai_slide).finish()
-                } else {
-                    ChildView::new(&self.intention_slide).finish()
-                }
-            }
+            OnboardingStep::Intention => ChildView::new(&self.intention_slide).finish(),
             OnboardingStep::Customize => ChildView::new(&self.customize_slide).finish(),
             OnboardingStep::Agent => ChildView::new(&self.agent_slide).finish(),
             OnboardingStep::ThirdParty => ChildView::new(&self.third_party_slide).finish(),
@@ -503,21 +409,9 @@ impl TypedActionView for AgentOnboardingView {
             OnboardingStep::ThemePicker => self.theme_picker_slide.update(ctx, |slide, ctx| {
                 dispatch_onboarding_action_to_slide(slide, *action, ctx)
             }),
-            OnboardingStep::Intention => {
-                if self
-                    .onboarding_state
-                    .as_ref(ctx)
-                    .free_user_no_ai_experiment()
-                {
-                    self.free_user_no_ai_slide.update(ctx, |slide, ctx| {
-                        dispatch_onboarding_action_to_slide(slide, *action, ctx)
-                    })
-                } else {
-                    self.intention_slide.update(ctx, |slide, ctx| {
-                        dispatch_onboarding_action_to_slide(slide, *action, ctx)
-                    })
-                }
-            }
+            OnboardingStep::Intention => self.intention_slide.update(ctx, |slide, ctx| {
+                dispatch_onboarding_action_to_slide(slide, *action, ctx)
+            }),
             OnboardingStep::Customize => self.customize_slide.update(ctx, |slide, ctx| {
                 dispatch_onboarding_action_to_slide(slide, *action, ctx)
             }),

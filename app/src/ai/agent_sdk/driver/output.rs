@@ -523,18 +523,6 @@ pub mod text {
         )
     }
 
-    /// Report the run ID with a link to the Oz dashboard.
-    pub fn run_started<W: Write>(run_id: &str, w: &mut W) -> io::Result<()> {
-        let run_url = super::run_url(run_id);
-        writeln!(w, "Run ID: {run_id}")?;
-        writeln!(w, "Open in Oz: {run_url}\n")
-    }
-
-    /// Report that a shared session has been established.
-    pub fn shared_session_established<W: Write>(join_url: &str, w: &mut W) -> io::Result<()> {
-        writeln!(w, "Sharing session at: {join_url}")
-    }
-
     /// Format a list of query patterns.
     fn format_queries<I: IntoIterator<Item = S>, S: fmt::Display>(queries: I) -> String {
         match queries.into_iter().exactly_one() {
@@ -631,8 +619,6 @@ pub mod json {
     #[serde(tag = "event_type", rename_all = "snake_case")]
     enum JsonSystemEvent<'a> {
         ConversationStarted { conversation_id: &'a str },
-        RunStarted { run_id: &'a str, run_url: &'a str },
-        SharedSessionEstablished { join_url: &'a str },
     }
 
     #[derive(Serialize)]
@@ -1268,34 +1254,11 @@ pub mod json {
         let message = JsonMessage::System(JsonSystemEvent::ConversationStarted { conversation_id });
         write_message(&message, w)
     }
-
-    /// Write a run_started system event to stdout.
-    pub fn run_started<W: Write>(run_id: &str, w: &mut W) -> io::Result<()> {
-        let run_url = super::run_url(run_id);
-        let message = JsonMessage::System(JsonSystemEvent::RunStarted {
-            run_id,
-            run_url: &run_url,
-        });
-        write_message(&message, w)
-    }
-
-    /// Write a shared_session_established system event to stdout.
-    pub fn shared_session_established<W: Write>(join_url: &str, w: &mut W) -> io::Result<()> {
-        let message = JsonMessage::System(JsonSystemEvent::SharedSessionEstablished { join_url });
-        write_message(&message, w)
-    }
 }
 
 use crate::ai::agent::{AIAgentText, AIAgentTextSection};
 use crate::code::editor_management::CodeSource;
 use std::io::{self, BufWriter, Write};
-use warp_core::channel::ChannelState;
-
-/// Constructs the Oz dashboard URL for a given run ID.
-fn run_url(run_id: &str) -> String {
-    let oz_root_url = ChannelState::oz_root_url();
-    format!("{oz_root_url}/runs/{run_id}")
-}
 
 /// Execute a closure with a buffered stdout writer and flush it afterwards.
 pub fn with_stdout_buffered<F>(f: F) -> io::Result<()>

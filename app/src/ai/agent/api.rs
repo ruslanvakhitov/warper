@@ -18,7 +18,6 @@ use serde::Serialize;
 use std::path::Path;
 use std::pin::Pin;
 use std::sync::Arc;
-use warp_core::channel::ChannelState;
 use warp_core::execution_mode::AppExecutionMode;
 use warp_core::features::FeatureFlag;
 
@@ -54,19 +53,11 @@ impl ServerConversationToken {
     }
 
     pub fn debug_link(&self) -> String {
-        format!(
-            "{}/debug/maa/{}",
-            ChannelState::server_root_url(),
-            self.as_str()
-        )
+        format!("local-only-conversation-debug:{}", self.as_str())
     }
 
     pub fn conversation_link(&self) -> String {
-        format!(
-            "{}/conversation/{}",
-            ChannelState::server_root_url(),
-            self.as_str()
-        )
+        format!("local-only-conversation:{}", self.as_str())
     }
 }
 
@@ -165,7 +156,7 @@ impl RequestParams {
     ) -> Self {
         let ai_settings = AISettings::as_ref(app);
         let is_memory_enabled = ai_settings.is_memory_enabled(app);
-        let warp_drive_context_enabled = ai_settings.is_warp_drive_context_enabled(app);
+        let warp_drive_context_enabled = false;
 
         // Build MCP context - either grouped by server or flat lists based on feature flag
         let mcp_context = if FeatureFlag::MCPGroupedServerContext.is_enabled() {
@@ -187,13 +178,6 @@ impl RequestParams {
                         .values(),
                 );
             }
-
-            // Include any ephemeral MCP servers started via the Oz CLI.
-            active_servers.extend(
-                templatable_manager
-                    .get_active_cli_spawned_servers()
-                    .values(),
-            );
 
             let servers: Vec<MCPServer> = active_servers
                 .into_iter()

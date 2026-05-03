@@ -1,5 +1,4 @@
 use crate::ai::active_agent_views_model::ActiveAgentViewsModel;
-use crate::ai::agent::api::ServerConversationToken;
 use crate::ai::agent::conversation::{AIConversationId, ConversationStatus};
 use crate::ai::ambient_agents::AmbientAgentTaskId;
 use crate::ai::ambient_agents::{AgentSource, AmbientAgentTask, AmbientAgentTaskState};
@@ -7,59 +6,19 @@ use crate::ai::artifacts::Artifact;
 use crate::ai::blocklist::{format_credits, BlocklistAIHistoryEvent, BlocklistAIHistoryModel};
 use crate::ai::conversation_navigation::ConversationNavigationData;
 use crate::auth::{AuthStateProvider, UserUid};
-use crate::server::retry_strategies::{
-    is_transient_http_error, OUT_OF_BAND_REQUEST_RETRY_STRATEGY,
-};
-use crate::server::server_api::ServerApiProvider;
+use crate::features::FeatureFlag;
 use crate::ui_components::icons::Icon;
 use crate::workspace::{RestoreConversationLayout, WorkspaceAction};
 use crate::workspaces::user_profiles::UserProfiles;
 use chrono::{DateTime, Utc};
 use clap::ValueEnum;
-use instant::Instant;
 use itertools::Itertools;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use session_sharing_protocol::common::SessionId;
 use std::collections::{HashMap, HashSet};
-use std::time::Duration;
 use warp_cli::agent::Harness;
-use warp_core::features::FeatureFlag;
-use warp_core::report_error;
 use warp_core::ui::theme::{color::internal_colors, WarpTheme};
 use warpui::color::ColorU;
-use warpui::{AppContext, Entity, ModelContext, RequestState, SingletonEntity};
-
-const SESSION_EXPIRATION_TIME: chrono::Duration = chrono::Duration::weeks(1);
-
-/// How long to skip refetching a task that just failed with a transient error
-/// (5xx / 408 / 429 / network). Short cooldown — `spawn_with_retry_on_error_when` already
-/// runs fast exponential retries before bubbling up the failure, so this is just enough to
-/// absorb streaming-driven re-entries from `update_transcript_details_panel_data`.
-const TRANSIENT_FETCH_FAILURE_COOLDOWN: Duration = Duration::from_secs(2);
-
-/// How long to skip refetching a task that just failed with a permanent (non-transient) HTTP
-/// error such as 401/403/404. We don't refuse forever — permissions can change mid-session
-/// (e.g. an ACL grant) — but we wait long enough that streaming bursts and rapid re-entries
-/// can't cause a flood.
-const PERMANENT_FETCH_FAILURE_COOLDOWN: Duration = Duration::from_secs(60);
-
-/// Per-task fetch state for `get_or_async_fetch_task_data`. The three variants are mutually
-/// exclusive: a task id is either being fetched right now, in a short cooldown after a
-/// transient failure, or in a longer cooldown after a permanent (non-transient) failure.
-#[derive(Debug)]
-enum TaskFetchState {
-    /// A retry chain is currently outstanding for this task id. Used to dedupe re-entries
-    /// (e.g. from streaming-driven panel refreshes) so we don't spawn overlapping retry
-    /// chains for the same task id.
-    InFlight,
-    /// The fetch returned a permanent (non-transient) HTTP error such as 401/403/404; remember
-    /// when it failed so we can back off for [`PERMANENT_FETCH_FAILURE_COOLDOWN`] before
-    /// retrying. We don't refuse forever in case permissions change mid-session.
-    PermanentlyFailedAt(Instant),
-    /// The retry chain just exhausted on a transient error; remember when it failed so we
-    /// can back off for [`TRANSIENT_FETCH_FAILURE_COOLDOWN`] before retrying.
-    TransientlyFailedAt(Instant),
-}
+use warpui::{AppContext, Entity, ModelContext, SingletonEntity};
 
 #[derive(PartialEq)]
 pub enum SessionStatus {
@@ -188,16 +147,6 @@ impl AgentManagementFilters {
             || self.environment != EnvironmentFilter::default()
             || self.harness != HarnessFilter::default()
     }
-}
-
-/// Preference for which type of link/action to use for a conversation or task.
-enum LinkPreference {
-    /// Use session link/action
-    Session,
-    /// Use conversation link/action
-    Conversation,
-    /// No link/action available
-    None,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -503,20 +452,6 @@ impl ConversationOrTask<'_> {
         }
     }
 
-    /// Returns the session ID for tasks, if we have one.
-    pub fn session_id(&self) -> Option<SessionId> {
-        match self {
-            ConversationOrTask::Task(task) => task.session_id.as_ref().and_then(|s| {
-                let session_id = s.parse::<SessionId>();
-                if let Err(ref e) = session_id {
-                    log::warn!("Failed to parse shared session ID: {e}");
-                }
-                session_id.ok()
-            }),
-            ConversationOrTask::Conversation(_) => None,
-        }
-    }
-
     pub fn is_ambient_agent_conversation(&self) -> bool {
         matches!(self, ConversationOrTask::Task(_))
     }
@@ -567,16 +502,11 @@ impl ConversationOrTask<'_> {
     /// Resolve the effective execution harness for this run.
     pub fn harness(&self) -> Option<Harness> {
         match self {
-            ConversationOrTask::Task(task) => {
-                task.agent_config_snapshot.as_ref().and_then(|config| {
-                    config
-                        .harness
-                        .as_ref()
-                        .map(|h| h.harness_type)
-                        .or(Some(Harness::Oz))
-                })
-            }
-            ConversationOrTask::Conversation(_) => Some(Harness::Oz),
+            ConversationOrTask::Task(task) => task
+                .agent_config_snapshot
+                .as_ref()
+                .and_then(|config| config.harness.as_ref().map(|h| h.harness_type)),
+            ConversationOrTask::Conversation(_) => None,
         }
     }
 
@@ -599,84 +529,15 @@ impl ConversationOrTask<'_> {
         }
     }
 
-    /// Returns the preferred link type based on cloud conversations and session state.
-    fn link_preference(&self) -> LinkPreference {
-        match self {
-            ConversationOrTask::Task(task) => {
-                // Always open session link if there's a live session.
-                // Without cloud conversations, also open session link as long as it's not expired.
-                // With cloud conversations, even if the link is not expired, we load conversation
-                // data from graphql as long as the session isn't live.
-                if task.is_sandbox_running
-                    || (!FeatureFlag::CloudConversations.is_enabled()
-                        && self.get_session_status() != Some(SessionStatus::Expired))
-                {
-                    LinkPreference::Session
-                } else if FeatureFlag::CloudConversations.is_enabled() {
-                    LinkPreference::Conversation
-                } else {
-                    LinkPreference::None
-                }
-            }
-            ConversationOrTask::Conversation(_) => LinkPreference::Conversation,
-        }
-    }
-
-    /// Get a link to a session or conversation, depending on whether the cloud agent is running
+    /// Hosted task/session/conversation links are amputated in local-only Warper.
     pub fn session_or_conversation_link(&self, app: &AppContext) -> Option<String> {
-        match self.link_preference() {
-            LinkPreference::Session => match self {
-                ConversationOrTask::Task(task) => task.session_link.clone(),
-                ConversationOrTask::Conversation(_) => None,
-            },
-            LinkPreference::Conversation => match self {
-                ConversationOrTask::Task(task) => task
-                    .conversation_id
-                    .as_ref()
-                    .map(|id| ServerConversationToken::new(id.clone()).conversation_link()),
-                ConversationOrTask::Conversation(conversation) => {
-                    let history_model = BlocklistAIHistoryModel::as_ref(app);
-                    history_model
-                        .conversation(&conversation.nav_data.id)
-                        .and_then(|c| c.server_conversation_token())
-                        .map(|t| t.conversation_link())
-                        .or_else(|| {
-                            history_model
-                                .get_conversation_metadata(&conversation.nav_data.id)
-                                .and_then(|m| m.server_conversation_token.as_ref())
-                                .map(|t| t.conversation_link())
-                        })
-                }
-            },
-            LinkPreference::None => None,
-        }
+        let _ = app;
+        None
     }
 
     pub fn get_session_status(&self) -> Option<SessionStatus> {
-        // With cloud conversations, as long as the session link is populated, it is available
-        // If it's not, it's unavailable (no live session link and no conversation data in GCS)
-        if FeatureFlag::CloudConversations.is_enabled() {
-            return match self {
-                ConversationOrTask::Task(task) => {
-                    if task.session_link.is_some() {
-                        Some(SessionStatus::Available)
-                    } else {
-                        Some(SessionStatus::Unavailable)
-                    }
-                }
-                ConversationOrTask::Conversation(_) => None,
-            };
-        }
         match self {
-            ConversationOrTask::Task(task) => {
-                if task.session_id.is_some() {
-                    Some(SessionStatus::Available)
-                } else if (Utc::now() - task.created_at) > SESSION_EXPIRATION_TIME {
-                    Some(SessionStatus::Expired)
-                } else {
-                    Some(SessionStatus::Unavailable)
-                }
-            }
+            ConversationOrTask::Task(_) => Some(SessionStatus::Unavailable),
             ConversationOrTask::Conversation(_) => None,
         }
     }
@@ -742,52 +603,26 @@ impl ConversationOrTask<'_> {
         }
     }
 
-    /// Returns the appropriate `WorkspaceAction` to dispatch when opening this item.
-    /// This encapsulates the decision logic for opening ambient agent sessions vs loading
-    /// cloud conversation data vs navigating to local conversations.
+    /// Returns the appropriate local `WorkspaceAction` to dispatch when opening this item.
     pub fn get_open_action(
         &self,
         restore_layout: Option<RestoreConversationLayout>,
         app: &AppContext,
     ) -> Option<WorkspaceAction> {
-        match self.link_preference() {
-            LinkPreference::Session => match self {
-                ConversationOrTask::Task(task) => {
-                    self.session_id()
-                        .map(|session_id| WorkspaceAction::OpenAmbientAgentSession {
-                            session_id,
-                            task_id: task.task_id,
-                        })
-                }
-                ConversationOrTask::Conversation(_) => None,
-            },
-            LinkPreference::Conversation => match self {
-                ConversationOrTask::Task(task) => task.conversation_id.as_ref().map(|id| {
-                    WorkspaceAction::OpenConversationTranscriptViewer {
-                        conversation_id: ServerConversationToken::new(id.clone()),
-                        ambient_agent_task_id: Some(task.task_id),
-                    }
-                }),
-                ConversationOrTask::Conversation(metadata) => {
-                    let is_active = ActiveAgentViewsModel::as_ref(app)
-                        .is_conversation_open(metadata.nav_data.id, app);
-                    let nav_data = &metadata.nav_data;
-                    Some(WorkspaceAction::RestoreOrNavigateToConversation {
-                        conversation_id: nav_data.id,
-                        window_id: nav_data.window_id,
-                        // Only try to navigate to the pane if the conversation is actually active.
-                        //
-                        // Otherwise, we should open in a new tab or pane according to the user's
-                        // setting.
-                        pane_view_locator: is_active
-                            .then_some(nav_data.pane_view_locator)
-                            .flatten(),
-                        terminal_view_id: nav_data.terminal_view_id,
-                        restore_layout,
-                    })
-                }
-            },
-            LinkPreference::None => None,
+        match self {
+            ConversationOrTask::Task(_) => None,
+            ConversationOrTask::Conversation(metadata) => {
+                let is_active = ActiveAgentViewsModel::as_ref(app)
+                    .is_conversation_open(metadata.nav_data.id, app);
+                let nav_data = &metadata.nav_data;
+                Some(WorkspaceAction::RestoreOrNavigateToConversation {
+                    conversation_id: nav_data.id,
+                    window_id: nav_data.window_id,
+                    pane_view_locator: is_active.then_some(nav_data.pane_view_locator).flatten(),
+                    terminal_view_id: nav_data.terminal_view_id,
+                    restore_layout,
+                })
+            }
         }
     }
 }
@@ -826,10 +661,6 @@ pub struct AgentConversationsModel {
     /// These will appear in the conversation list even if their source is not user-initiated
     /// (and even after they have been closed).
     manually_opened_task_ids: HashSet<AmbientAgentTaskId>,
-    /// Per-task fetch state for `get_or_async_fetch_task_data`. See [`TaskFetchState`] for
-    /// the meaning of each variant. Tasks that have been successfully fetched live in `tasks`
-    /// and are absent from this map.
-    task_fetch_state: HashMap<AmbientAgentTaskId, TaskFetchState>,
 }
 
 pub enum AgentConversationsModelEvent {
@@ -863,7 +694,6 @@ impl AgentConversationsModel {
             tasks: HashMap::new(),
             conversations: HashMap::new(),
             manually_opened_task_ids: HashSet::new(),
-            task_fetch_state: HashMap::new(),
         };
 
         model.sync_conversations(ctx);
@@ -909,22 +739,12 @@ impl AgentConversationsModel {
     /// Returns the local conversation ID represented by the given task, if this task and a
     /// conversation entry both point at the same underlying local run.
     ///
-    /// We first match using the orchestration agent ID (task ID / run ID under v2), and fall back
-    /// to the server conversation token for cases where the task only carries conversation identity
-    /// through `conversation_id`.
+    /// Match using the local orchestration agent ID (task ID / run ID under v2).
     fn conversation_id_shadowed_by_task(
         task: &AmbientAgentTask,
         history_model: &BlocklistAIHistoryModel,
     ) -> Option<AIConversationId> {
-        history_model
-            .conversation_id_for_agent_id(&task.task_id.to_string())
-            .or_else(|| {
-                task.conversation_id.as_ref().and_then(|conversation_id| {
-                    history_model.find_conversation_id_by_server_token(
-                        &ServerConversationToken::new(conversation_id.clone()),
-                    )
-                })
-            })
+        history_model.conversation_id_for_agent_id(&task.task_id.to_string())
     }
 
     fn conversation_ids_shadowed_by_tasks(&self, app: &AppContext) -> HashSet<AIConversationId> {
@@ -1083,101 +903,14 @@ impl AgentConversationsModel {
         self.tasks.get(task_id).cloned()
     }
 
-    /// Get raw task data by task ID, fetching from server if not in memory.
-    /// If the task is already in memory, returns it immediately.
-    /// If not, spawns an async task to fetch it from the server, stores it in memory,
-    /// and emits a TasksUpdated event when ready.
-    ///
-    /// Multiple unrelated callers (the WASM transcript details panel, the cloud-mode details
-    /// panel, and pane-group restoration) can all hit this method, sometimes many times per
-    /// second while an agent is streaming. To avoid spamming `GET /api/v1/agent/runs/{id}` we:
-    /// * dedupe in-flight fetches per task id,
-    /// * back off for [`TRANSIENT_FETCH_FAILURE_COOLDOWN`] after a transient retry chain
-    ///   exhausts (5xx/408/429/network), and
-    /// * back off for [`PERMANENT_FETCH_FAILURE_COOLDOWN`] after a non-transient failure
-    ///   (e.g. 401/403/404). Permanent failures still get retried periodically so we recover
-    ///   if permissions change mid-session.
+    /// Get raw task data by task ID. Local-only Warper never fetches hosted ambient-agent
+    /// tasks from the server; stale restored task IDs fail closed.
     pub fn get_or_async_fetch_task_data(
         &mut self,
         task_id: &AmbientAgentTaskId,
-        ctx: &mut ModelContext<Self>,
+        _ctx: &mut ModelContext<Self>,
     ) -> Option<AmbientAgentTask> {
-        // If we already have it, return it
-        if let Some(task) = self.tasks.get(task_id) {
-            return Some(task.clone());
-        }
-
-        // Consult the per-task fetch state. The three variants are mutually exclusive: at most
-        // one applies to a given id.
-        match self.task_fetch_state.get(task_id) {
-            Some(TaskFetchState::InFlight) => return None,
-            Some(TaskFetchState::PermanentlyFailedAt(failed_at)) => {
-                if failed_at.elapsed() < PERMANENT_FETCH_FAILURE_COOLDOWN {
-                    return None;
-                }
-                // Cooldown has elapsed; clear the entry and fall through to fetch again.
-                self.task_fetch_state.remove(task_id);
-            }
-            Some(TaskFetchState::TransientlyFailedAt(failed_at)) => {
-                if failed_at.elapsed() < TRANSIENT_FETCH_FAILURE_COOLDOWN {
-                    return None;
-                }
-                self.task_fetch_state.remove(task_id);
-            }
-            None => {}
-        }
-
-        // Opportunistically purge other expired entries so the map doesn't grow unbounded.
-        self.task_fetch_state.retain(|_, state| match state {
-            TaskFetchState::TransientlyFailedAt(failed_at) => {
-                failed_at.elapsed() < TRANSIENT_FETCH_FAILURE_COOLDOWN
-            }
-            TaskFetchState::PermanentlyFailedAt(failed_at) => {
-                failed_at.elapsed() < PERMANENT_FETCH_FAILURE_COOLDOWN
-            }
-            TaskFetchState::InFlight => true,
-        });
-
-        // Otherwise, spawn a task to fetch it. Use the `_when` variant so non-transient errors
-        // (e.g. 401/403/404) bail after the first attempt instead of issuing all 4 requests in
-        // the retry chain before being cached.
-        let ai_client = ServerApiProvider::as_ref(ctx).get_ai_client();
-        let task_id_clone = *task_id;
-
-        self.task_fetch_state
-            .insert(task_id_clone, TaskFetchState::InFlight);
-
-        ctx.spawn_with_retry_on_error_when(
-            move || {
-                let ai_client = ai_client.clone();
-                async move { ai_client.get_ambient_agent_task(&task_id_clone).await }
-            },
-            OUT_OF_BAND_REQUEST_RETRY_STRATEGY,
-            is_transient_http_error,
-            move |model, result, ctx| match result {
-                RequestState::RequestSucceeded(task) => {
-                    let fetched_id = task.task_id;
-                    model.tasks.insert(fetched_id, task);
-                    model.task_fetch_state.remove(&fetched_id);
-                    ctx.emit(AgentConversationsModelEvent::TasksUpdated);
-                }
-                RequestState::RequestFailed(e) => {
-                    let now = Instant::now();
-                    let new_state = if is_transient_http_error(&e) {
-                        TaskFetchState::TransientlyFailedAt(now)
-                    } else {
-                        TaskFetchState::PermanentlyFailedAt(now)
-                    };
-                    model.task_fetch_state.insert(task_id_clone, new_state);
-                    report_error!(e);
-                }
-                RequestState::RequestFailedRetryPending(_) => {
-                    // Wait for a terminal outcome before updating dedup/backoff state.
-                }
-            },
-        );
-
-        None
+        self.tasks.get(task_id).cloned()
     }
 
     /// Get a conversation by its AIConversationId
@@ -1238,7 +971,6 @@ impl AgentConversationsModel {
         self.tasks.clear();
         self.conversations.clear();
         self.manually_opened_task_ids.clear();
-        self.task_fetch_state.clear();
     }
 }
 

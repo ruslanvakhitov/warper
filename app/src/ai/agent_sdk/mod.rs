@@ -15,7 +15,6 @@ use warp_cli::{
     mcp::MCPCommand,
     model::ModelCommand,
     provider::ProviderCommand,
-    secret::SecretCommand,
     CliCommand, GlobalOptions,
 };
 use warp_core::features::FeatureFlag;
@@ -35,8 +34,6 @@ pub use driver::AgentDriver;
 use telemetry::CliTelemetryEvent;
 use warp_cli::agent::{Harness, Prompt, RunAgentArgs};
 
-mod agent_config;
-mod ambient;
 mod artifact;
 pub(crate) mod artifact_upload;
 mod common;
@@ -54,7 +51,6 @@ pub mod output;
 mod profiles;
 mod provider;
 pub(crate) mod retry;
-mod secret;
 mod telemetry;
 #[cfg(test)]
 mod test_support;
@@ -91,12 +87,7 @@ fn dispatch_command(
         CliCommand::Integration(_) => Err(anyhow::anyhow!(
             "hosted integrations are unavailable in this build"
         )),
-        CliCommand::Secret(secret_cmd) => {
-            if !FeatureFlag::WarpManagedSecrets.is_enabled() {
-                return Err(anyhow::anyhow!("invalid value 'secret'"));
-            }
-            secret::run(ctx, global_options, secret_cmd)
-        }
+        CliCommand::Secret(_) => Err(anyhow::anyhow!("invalid value 'secret'")),
         CliCommand::Artifact(artifact_cmd) => {
             if !FeatureFlag::ArtifactCommand.is_enabled() {
                 return Err(anyhow::anyhow!("invalid value 'artifact'"));
@@ -175,7 +166,7 @@ fn run_agent(
             Ok(())
         }
         AgentCommand::Profile(sub) => profiles::run(ctx, global_options, sub),
-        AgentCommand::List(args) => agent_config::list_agents(ctx, args),
+        AgentCommand::List(_) => Err(anyhow::anyhow!("invalid value 'list'")),
     }
 }
 
@@ -341,9 +332,6 @@ impl AgentDriverRunner {
         args: &RunAgentArgs,
         working_dir: &Path,
     ) -> Result<Option<ResolvedSkill>, AgentDriverError> {
-        if !FeatureFlag::OzPlatformSkills.is_enabled() {
-            return Ok(None);
-        }
         let Some(skill_spec) = args.skill.clone() else {
             return Ok(None);
         };
@@ -495,12 +483,7 @@ fn command_to_telemetry_event(command: &CliCommand) -> CliTelemetryEvent {
         CliCommand::Provider(ProviderCommand::Setup(_)) => CliTelemetryEvent::ProviderSetup,
         CliCommand::Provider(ProviderCommand::List) => CliTelemetryEvent::ProviderList,
         CliCommand::Integration(_) => CliTelemetryEvent::IntegrationList,
-        CliCommand::Secret(secret_cmd) => match secret_cmd {
-            SecretCommand::Create(_) => CliTelemetryEvent::SecretCreate,
-            SecretCommand::Delete(_) => CliTelemetryEvent::SecretDelete,
-            SecretCommand::Update(_) => CliTelemetryEvent::SecretUpdate,
-            SecretCommand::List(_) => CliTelemetryEvent::SecretList,
-        },
+        CliCommand::Secret(_) => CliTelemetryEvent::SecretList,
         CliCommand::Artifact(artifact_cmd) => match artifact_cmd {
             ArtifactCommand::Upload(_) => CliTelemetryEvent::ArtifactUpload,
             ArtifactCommand::Get(_) => CliTelemetryEvent::ArtifactGet,

@@ -6,7 +6,6 @@ use chrono::{DateTime, Local, NaiveDateTime};
 use itertools::Itertools as _;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use warp_core::features::FeatureFlag;
 use warp_multi_agent_api::response_event::stream_finished::ConversationUsageMetadata;
 use warp_multi_agent_api::{
     client_action::{Action, StartNewConversation},
@@ -32,7 +31,6 @@ use crate::ai::document::ai_document_model::AIDocumentModel;
 use crate::input_suggestions::HistoryOrder;
 use crate::persistence::model::AgentConversationData;
 use crate::persistence::ModelEvent;
-use crate::server::server_api::ServerApiProvider;
 use crate::terminal::model::block::BlockId;
 use crate::terminal::view::blocklist_filter;
 use crate::GlobalResourceHandlesProvider;
@@ -55,8 +53,8 @@ use super::RequestInput;
 
 mod conversation_loader;
 pub use conversation_loader::{
-    convert_persisted_conversation_to_ai_conversation_with_metadata, load_conversation_from_server,
-    CLIAgentConversation, CloudConversationData,
+    convert_persisted_conversation_to_ai_conversation_with_metadata, CLIAgentConversation,
+    LocalConversationData,
 };
 
 pub(super) const MAX_HISTORICAL_CONVERSATIONS: usize = 100;
@@ -161,14 +159,6 @@ impl AIConversationMetadata {
             server_conversation_metadata: Some(server_conversation_metadata),
         }
     }
-
-    /// Whether this conversation is owned by an ambient agent run rather than
-    /// being a direct user conversation.
-    pub fn is_ambient_agent_conversation(&self) -> bool {
-        self.server_conversation_metadata
-            .as_ref()
-            .is_some_and(|m| m.ambient_agent_task_id.is_some())
-    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -212,9 +202,6 @@ pub struct BlocklistAIHistoryModel {
     /// any [`AIConversation`]s take place in the terminal view.
     terminal_view_created_at: HashMap<EntityId, DateTime<Local>>,
 
-    /// A set of terminal views that are shared ambient agent sessions.
-    ambient_agent_terminal_view_ids: HashSet<EntityId>,
-
     /// A set of terminal views that are read-only conversation transcript viewers.
     /// This is view/UI state (not conversation state) and is used to filter transcript viewer
     /// conversations out of local history and navigation.
@@ -225,7 +212,7 @@ pub struct BlocklistAIHistoryModel {
     /// history.
     persisted_queries: Vec<PersistedAIInput>,
 
-    /// Metadata for both local and ambient agent conversations.
+    /// Metadata for conversations.
     /// Does not include the actual content of the conversations.
     all_conversations_metadata: HashMap<AIConversationId, AIConversationMetadata>,
 
@@ -410,8 +397,7 @@ impl BlocklistAIHistoryModel {
         }
 
         let auto_execute = true; // Child auto-executes by default.
-        let conversation_id =
-            self.start_new_conversation(terminal_view_id, auto_execute, false, ctx);
+        let conversation_id = self.start_new_conversation(terminal_view_id, auto_execute, ctx);
         {
             let conversation = self
                 .conversation_mut(&conversation_id)
@@ -767,10 +753,9 @@ impl BlocklistAIHistoryModel {
         &mut self,
         terminal_view_id: EntityId,
         is_autoexecute_override: bool,
-        is_viewing_shared_session: bool,
         ctx: &mut ModelContext<Self>,
     ) -> AIConversationId {
-        let mut new_conversation = AIConversation::new(is_viewing_shared_session);
+        let mut new_conversation = AIConversation::new();
         if is_autoexecute_override {
             new_conversation.toggle_autoexecute_override();
         }
@@ -977,7 +962,7 @@ impl BlocklistAIHistoryModel {
             exchange_ids_to_transfer.len()
         );
 
-        let new_conversation_id = self.start_new_conversation(terminal_view_id, false, false, ctx);
+        let new_conversation_id = self.start_new_conversation(terminal_view_id, false, ctx);
         for exchange_id in exchange_ids_to_transfer {
             let old_conversation = self
                 .conversations_by_id
@@ -1356,49 +1341,6 @@ impl BlocklistAIHistoryModel {
         if let Err(e) = conversation.mark_request_completed(stream_id, terminal_view_id, ctx) {
             log::warn!("Failed to mark exchange as completed: {e}");
         }
-
-        // If this conversation doesn't have server metadata yet, and it has a server conversation token,
-        // fetch the metadata from the server.
-        let should_fetch_metadata = FeatureFlag::CloudConversations.is_enabled()
-            && conversation.server_metadata().is_none()
-            && conversation.server_conversation_token().is_some();
-
-        if should_fetch_metadata {
-            let server_token = conversation
-                .server_conversation_token()
-                .unwrap()
-                .as_str()
-                .to_string();
-
-            let server_api = ServerApiProvider::as_ref(ctx).get_ai_client();
-            ctx.spawn(
-                async move {
-                    server_api
-                        .list_ai_conversation_metadata(Some(vec![server_token]))
-                        .await
-                },
-                move |model, result, ctx| match result {
-                    Ok(mut metadata_list) if !metadata_list.is_empty() => {
-                        if let Some(metadata) = metadata_list.pop() {
-                            model.set_server_metadata_for_conversation(
-                                conversation_id,
-                                metadata,
-                                ctx,
-                            );
-                        }
-                    }
-                    Ok(_) => {
-                        log::warn!("No metadata returned for conversation {}", conversation_id);
-                    }
-                    Err(e) => {
-                        log::warn!(
-                            "Failed to fetch metadata for conversation {}: {e:#}",
-                            conversation_id
-                        );
-                    }
-                },
-            );
-        }
     }
 
     pub fn set_exchange_time_to_first_token(
@@ -1625,11 +1567,6 @@ impl BlocklistAIHistoryModel {
             .any(|conversation_ids| conversation_ids.contains(&conversation_id))
     }
 
-    pub fn mark_terminal_view_as_ambient_agent_session_view(&mut self, terminal_view_id: EntityId) {
-        self.ambient_agent_terminal_view_ids
-            .insert(terminal_view_id);
-    }
-
     pub fn mark_terminal_view_as_conversation_transcript_viewer(
         &mut self,
         terminal_view_id: EntityId,
@@ -1665,11 +1602,6 @@ impl BlocklistAIHistoryModel {
         let mut live_queries_vec = Vec::new();
         for (tv_id, conversation_ids) in self.live_conversation_ids_for_terminal_view.iter() {
             loaded_conversation_ids.extend(conversation_ids);
-
-            // Skip shared ambient agent sessions
-            if self.ambient_agent_terminal_view_ids.contains(tv_id) {
-                continue;
-            }
 
             let history_order = if terminal_view_id.is_some_and(|id| id == *tv_id) {
                 HistoryOrder::CurrentSession
@@ -1783,16 +1715,6 @@ impl BlocklistAIHistoryModel {
         conversation.set_is_exchange_hidden(exchange_id, is_hidden, terminal_view_id, ctx);
     }
 
-    pub fn set_viewing_shared_session_for_conversation(
-        &mut self,
-        conversation_id: AIConversationId,
-        is_viewing_shared_session: bool,
-    ) {
-        if let Some(conversation) = self.conversations_by_id.get_mut(&conversation_id) {
-            conversation.set_is_viewing_shared_session(is_viewing_shared_session);
-        }
-    }
-
     pub fn set_has_code_review_opened_to_true(&mut self, conversation_id: AIConversationId) {
         if let Some(conversation) = self.conversations_by_id.get_mut(&conversation_id) {
             conversation.mark_code_review_as_opened();
@@ -1866,14 +1788,11 @@ impl BlocklistAIHistoryModel {
             .copied()
     }
 
-    /// Returns local conversation metadata,
-    /// (excluding conversations from ambient agent runs).
+    /// Returns local conversation metadata.
     pub fn get_local_conversations_metadata(
         &self,
     ) -> impl Iterator<Item = &AIConversationMetadata> {
-        self.all_conversations_metadata
-            .values()
-            .filter(|m| !m.is_ambient_agent_conversation())
+        self.all_conversations_metadata.values()
     }
 
     /// Returns conversation metadata for a specific conversation ID.
@@ -1922,8 +1841,7 @@ impl BlocklistAIHistoryModel {
     /// O(1) lookup via `server_token_to_conversation_id`, which is maintained
     /// alongside every mutation of `conversations_by_id` /
     /// `all_conversations_metadata` that involves a token. Used to look up
-    /// conversations for ambient agent tasks, which store the server token
-    /// but not the AIConversationId.
+    /// conversations that store the server token but not the AIConversationId.
     pub fn find_conversation_id_by_server_token(
         &self,
         server_token: &ServerConversationToken,
@@ -1933,8 +1851,7 @@ impl BlocklistAIHistoryModel {
         }
 
         // A token miss is the expected outcome whenever a task references a
-        // conversation this client hasn't loaded (shared-session tasks from
-        // other users, pre-sync state).
+        // conversation this client has not loaded.
         log::debug!(
             "No conversation found for server token: {}",
             server_token.as_str()
@@ -2023,7 +1940,6 @@ impl BlocklistAIHistoryModel {
         self.cleared_conversation_ids_for_terminal_view.clear();
         self.conversations_by_id.clear();
         self.active_conversation_for_terminal_view.clear();
-        self.ambient_agent_terminal_view_ids.clear();
         self.conversation_transcript_viewer_terminal_view_ids
             .clear();
         self.persisted_queries.clear();
@@ -2161,9 +2077,9 @@ pub enum BlocklistAIHistoryEvent {
         artifact: Artifact,
     },
 
-    /// Emitted when a conversation first receives its server-assigned conversation token
-    /// (during StreamInit). Used by the StartAgentExecutor to resolve pending StartAgent
-    /// actions for child agent conversations.
+    /// Emitted when a retained local agent identifier is assigned. Used by the
+    /// StartAgentExecutor to resolve pending StartAgent actions for child
+    /// agent conversations.
     ConversationServerTokenAssigned {
         conversation_id: AIConversationId,
         terminal_view_id: EntityId,

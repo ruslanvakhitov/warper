@@ -2,7 +2,6 @@ use std::{collections::HashMap, future::Future, sync::Arc, time::Duration};
 
 use vec1::vec1;
 
-use warp_core::features::FeatureFlag;
 use warp_graphql::managed_secrets::ManagedSecret;
 use warpui::{Entity, SingletonEntity};
 
@@ -46,41 +45,11 @@ impl ManagedSecretManager {
         value: ManagedSecretValue,
         description: Option<String>,
     ) -> impl Future<Output = anyhow::Result<ManagedSecret>> + use<> {
-        let client = self.client.clone();
-        let actor_provider = self.actor_provider.clone();
         async move {
-            if !FeatureFlag::WarpManagedSecrets.is_enabled() {
-                return Err(anyhow::anyhow!("This feature is not enabled"));
-            }
-            // We retrieve all upload keys on demand. These should potentially be fetched and stored
-            // ahead of time instead.
-            let configs = client.get_managed_secret_configs().await?;
-
-            let Some(actor) = actor_provider.actor_uid() else {
-                return Err(anyhow::anyhow!("No authenticated user"));
-            };
-
-            // Chain errors so that we don't hold an `UploadKey` handle across an `.await`.
-            let encrypted_value = owner_public_key(&configs, &owner)
-                .and_then(|public_key| {
-                    UploadKey::import_public_keyset(public_key).map_err(anyhow::Error::from)
-                })
-                .and_then(|public_key| {
-                    public_key
-                        .encrypt_secret(&actor, &name, &value)
-                        .map_err(anyhow::Error::from)
-                })?;
-
-            let managed_secret = client
-                .create_managed_secret(
-                    owner,
-                    name,
-                    value.secret_type(),
-                    encrypted_value,
-                    description,
-                )
-                .await?;
-            Ok(managed_secret)
+            let _ = (owner, name, value, description);
+            Err(anyhow::anyhow!(
+                "Warp-managed secrets are not available in Warper"
+            ))
         }
     }
 
@@ -89,14 +58,11 @@ impl ManagedSecretManager {
         owner: SecretOwner,
         name: String,
     ) -> impl Future<Output = anyhow::Result<()>> + use<> {
-        let client = self.client.clone();
         async move {
-            if !FeatureFlag::WarpManagedSecrets.is_enabled() {
-                return Err(anyhow::anyhow!("This feature is not enabled"));
-            }
-
-            client.delete_managed_secret(owner, name).await?;
-            Ok(())
+            let _ = (owner, name);
+            Err(anyhow::anyhow!(
+                "Warp-managed secrets are not available in Warper"
+            ))
         }
     }
 
@@ -107,41 +73,11 @@ impl ManagedSecretManager {
         value: Option<ManagedSecretValue>,
         description: Option<String>,
     ) -> impl Future<Output = anyhow::Result<ManagedSecret>> + use<> {
-        let client = self.client.clone();
-        let actor_provider = self.actor_provider.clone();
         async move {
-            if !FeatureFlag::WarpManagedSecrets.is_enabled() {
-                return Err(anyhow::anyhow!("This feature is not enabled"));
-            }
-
-            let encrypted_value = if let Some(value) = value {
-                // We retrieve all upload keys on demand. These should potentially be fetched and stored
-                // ahead of time instead.
-                let configs = client.get_managed_secret_configs().await?;
-
-                let Some(actor) = actor_provider.actor_uid() else {
-                    return Err(anyhow::anyhow!("No authenticated user"));
-                };
-
-                // Chain errors so that we don't hold an `UploadKey` handle across an `.await`.
-                let encrypted = owner_public_key(&configs, &owner)
-                    .and_then(|public_key| {
-                        UploadKey::import_public_keyset(public_key).map_err(anyhow::Error::from)
-                    })
-                    .and_then(|public_key| {
-                        public_key
-                            .encrypt_secret(&actor, &name, &value)
-                            .map_err(anyhow::Error::from)
-                    })?;
-                Some(encrypted)
-            } else {
-                None
-            };
-
-            let managed_secret = client
-                .update_managed_secret(owner, name, encrypted_value, description)
-                .await?;
-            Ok(managed_secret)
+            let _ = (owner, name, value, description);
+            Err(anyhow::anyhow!(
+                "Warp-managed secrets are not available in Warper"
+            ))
         }
     }
 

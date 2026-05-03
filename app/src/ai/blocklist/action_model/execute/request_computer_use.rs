@@ -5,7 +5,6 @@ use futures::{future::BoxFuture, FutureExt};
 use warpui::{Entity, EntityId, ModelContext, SingletonEntity};
 
 use crate::ai::agent::{AIAgentActionId, AIAgentActionType};
-use crate::ai::ambient_agents::AmbientAgentTaskId;
 use crate::send_telemetry_from_ctx;
 use crate::server::telemetry::TelemetryEvent;
 
@@ -13,7 +12,6 @@ use super::{ActionExecution, AnyActionExecution, ExecuteActionInput, PreprocessA
 
 pub struct RequestComputerUseExecutor {
     terminal_view_id: EntityId,
-    ambient_agent_task_id: Option<AmbientAgentTaskId>,
     /// Actions that were determined to be auto-executed in should_autoexecute().
     /// Used to determine is_autoexecuted when emitting telemetry in execute().
     autoexecuted_actions: HashSet<AIAgentActionId>,
@@ -23,13 +21,14 @@ impl RequestComputerUseExecutor {
     pub fn new(terminal_view_id: EntityId) -> Self {
         Self {
             terminal_view_id,
-            ambient_agent_task_id: None,
             autoexecuted_actions: HashSet::new(),
         }
     }
 
-    pub fn set_ambient_agent_task_id(&mut self, id: Option<AmbientAgentTaskId>) {
-        self.ambient_agent_task_id = id;
+    pub fn set_ambient_agent_task_id(
+        &mut self,
+        _id: Option<crate::ai::ambient_agents::AmbientAgentTaskId>,
+    ) {
     }
 
     pub(super) fn should_autoexecute(
@@ -74,7 +73,7 @@ impl RequestComputerUseExecutor {
             TelemetryEvent::ComputerUseApproved {
                 conversation_id,
                 is_autoexecuted,
-                ambient_agent_task_id: self.ambient_agent_task_id,
+                ambient_agent_task_id: None,
             },
             ctx
         );

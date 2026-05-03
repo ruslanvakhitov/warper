@@ -15,7 +15,6 @@ use crate::ai::blocklist::{
 };
 use crate::ai::paths::host_native_absolute_path;
 use crate::auth::auth_state::AuthStateProvider;
-use crate::server::server_api::ServerApiProvider;
 use crate::settings::AISettings;
 use crate::terminal::event::{BlockType, UserBlockCompleted};
 use crate::terminal::model::session::active_session::ActiveSession;
@@ -54,9 +53,6 @@ pub enum PassiveSuggestionsEvent {
         /// trigger is not relevant to the suggestion.
         trigger: Option<PassiveSuggestionTrigger>,
         conversation_id: Option<AIConversationId>,
-        /// The server-assigned request token from the passive suggestion
-        /// request. Used to join client-side telemetry with server-side logs.
-        server_request_token: Option<String>,
     },
     NewCodeDiffSuggestion {
         diffs: Vec<FileDiff>,
@@ -70,10 +66,6 @@ pub enum PassiveSuggestionsEvent {
         conversation_id: Option<AIConversationId>,
         request_duration_ms: u64,
         trigger: PassiveSuggestionTrigger,
-        /// The server-assigned request token from the passive suggestion
-        /// request. Used to join client-side telemetry with server-side logs.
-        /// `None` on the legacy code path.
-        server_request_token: Option<String>,
     },
 }
 
@@ -168,13 +160,12 @@ impl PassiveSuggestionsModel {
             return;
         };
 
-        let server_api = ServerApiProvider::as_ref(ctx).get();
         let (cancellation_tx, cancellation_rx) = futures::channel::oneshot::channel();
 
         let stream_handle = ctx.spawn(
             async move {
                 let stream_result =
-                    generate_multi_agent_output(server_api, request_params, cancellation_rx).await;
+                    generate_multi_agent_output(request_params, cancellation_rx).await;
                 extract_suggestion_from_stream(stream_result).await
             },
             move |me, result, ctx| {
@@ -197,10 +188,7 @@ impl PassiveSuggestionsModel {
                     .max(0) as u64;
                 let trigger = latest_request.trigger.clone();
 
-                let StreamExtractionResult {
-                    suggestion: extracted,
-                    server_request_token,
-                } = extracted;
+                let StreamExtractionResult { suggestion: extracted } = extracted;
                 match extracted {
                     ExtractedSuggestion::Prompt {
                         prompt,
@@ -222,7 +210,6 @@ impl PassiveSuggestionsModel {
                             request_duration_ms,
                             trigger,
                             conversation_id: continuable_conversation_id,
-                            server_request_token,
                         });
                     }
                     ExtractedSuggestion::CodeDiff { apply_file_diffs } => {
@@ -293,7 +280,6 @@ impl PassiveSuggestionsModel {
                                     conversation_id: continuable_conversation_id,
                                     request_duration_ms,
                                     trigger,
-                                    server_request_token: server_request_token.clone(),
                                 });
                             },
                         );
@@ -447,18 +433,6 @@ impl PassiveSuggestionsModel {
             return;
         }
 
-        // Startup commands run while bootstrapping an Oz cloud environment, so we skip
-        // passive prompt suggestion generation for them to avoid unnecessary requests.
-        let is_oz_environment_startup_command = FeatureFlag::CloudModeSetupV2.is_enabled()
-            && self
-                .terminal_model
-                .lock()
-                .block_list()
-                .block_at(block_completed.index)
-                .is_some_and(|block| block.is_oz_environment_startup_command());
-        if is_oz_environment_startup_command {
-            return;
-        }
         let is_prompt_suggestions_enabled = is_prompt_suggestions_enabled(ctx);
         let is_passive_code_diffs_enabled = is_passive_code_diffs_enabled(ctx);
         if !is_prompt_suggestions_enabled && !is_passive_code_diffs_enabled {
@@ -567,9 +541,6 @@ impl Entity for PassiveSuggestionsModel {
 /// Result of extracting a suggestion from an out-of-band response stream.
 struct StreamExtractionResult {
     suggestion: ExtractedSuggestion,
-    /// The server-assigned request token from the `StreamInit` event,
-    /// used to correlate client telemetry with server-side logs.
-    server_request_token: Option<String>,
 }
 
 enum ExtractedSuggestion {
@@ -600,19 +571,13 @@ async fn extract_suggestion_from_stream(
         return None;
     };
 
-    // Drain the stream, collecting all client actions and the server token.
+    // Drain the stream, collecting client actions.
     let mut client_actions: Vec<api::ClientAction> = Vec::new();
-    let mut server_request_token: Option<String> = None;
     while let Some(event) = stream.next().await {
         let Ok(response_event) = event else {
             continue;
         };
         match response_event.r#type {
-            Some(api::response_event::Type::Init(init)) => {
-                if !init.request_id.is_empty() {
-                    server_request_token = Some(init.request_id);
-                }
-            }
             Some(api::response_event::Type::ClientActions(actions)) => {
                 client_actions.extend(actions.actions);
             }
@@ -651,7 +616,6 @@ async fn extract_suggestion_from_stream(
                             label,
                             is_trigger_irrelevant: suggest_prompt.is_trigger_irrelevant,
                         },
-                        server_request_token,
                     });
                 }
             }
@@ -660,7 +624,6 @@ async fn extract_suggestion_from_stream(
                     suggestion: ExtractedSuggestion::CodeDiff {
                         apply_file_diffs: apply_file_diffs.clone(),
                     },
-                    server_request_token,
                 });
             }
             _ => {}

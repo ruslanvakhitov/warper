@@ -14,7 +14,6 @@ pub struct UICustomizationSettings {
     pub show_conversation_history: bool,
     pub show_project_explorer: bool,
     pub show_global_search: bool,
-    pub show_warp_drive: bool,
     pub show_code_review_button: bool,
 }
 
@@ -26,7 +25,6 @@ impl UICustomizationSettings {
             show_conversation_history: true,
             show_project_explorer: true,
             show_global_search: true,
-            show_warp_drive: true,
             show_code_review_button: true,
         }
     }
@@ -38,7 +36,6 @@ impl UICustomizationSettings {
             show_conversation_history: false,
             show_project_explorer: false,
             show_global_search: false,
-            show_warp_drive: false,
             show_code_review_button: false,
         }
     }
@@ -51,7 +48,6 @@ impl UICustomizationSettings {
         (conversation_visible && self.show_conversation_history)
             || self.show_project_explorer
             || self.show_global_search
-            || self.show_warp_drive
     }
 }
 
@@ -81,7 +77,7 @@ impl SelectedSettings {
         use warp_core::features::FeatureFlag;
         match self {
             SelectedSettings::AgentDrivenDevelopment { agent_settings, .. } => {
-                !agent_settings.disable_oz
+                !agent_settings.disable_agent
             }
             SelectedSettings::Terminal { .. } => {
                 // With old onboarding (no OpenWarpNewSettingsModes), Terminal
@@ -89,23 +85,6 @@ impl SelectedSettings {
                 // Terminal intent explicitly disables AI.
                 !FeatureFlag::OpenWarpNewSettingsModes.is_enabled()
             }
-        }
-    }
-
-    pub fn is_warp_drive_enabled(&self) -> bool {
-        match self {
-            SelectedSettings::AgentDrivenDevelopment {
-                ui_customization, ..
-            } => ui_customization
-                .as_ref()
-                .map(|ui| ui.show_warp_drive)
-                .unwrap_or(true),
-            SelectedSettings::Terminal {
-                ui_customization, ..
-            } => ui_customization
-                .as_ref()
-                .map(|ui| ui.show_warp_drive)
-                .unwrap_or(false),
         }
     }
 }
@@ -127,7 +106,6 @@ pub(crate) enum OnboardingStateEvent {
     SelectedSlideChanged,
     IntentionChanged,
     Completed,
-    UpgradeRequested,
     AuthStateChanged,
 }
 
@@ -143,14 +121,12 @@ pub(crate) struct OnboardingStateModel {
     workspace_enforces_autonomy: bool,
     /// Whether the AgentView feature flag is enabled.
     agent_modality_enabled: bool,
-    /// Whether the user is in the FreeUserNoAi experiment group (and is free tier).
-    /// When true, the Agent Driven Development option on the intention slide is locked
-    /// behind an upgrade CTA.
+    /// Hosted billing experiments are removed in Warper; retained only to keep
+    /// older callers compiling while always evaluating to false.
     free_user_no_ai_experiment: bool,
-    /// Yearly price per month in USD cents for the agent plan badge.
-    /// When `None`, falls back to a hardcoded default ($18/mo).
+    /// Hosted plan pricing is removed in Warper.
     agent_price_cents: Option<i32>,
-    /// Auth / billing state of the user.
+    /// Hosted auth is removed in Warper.
     auth_state: OnboardingAuthState,
 }
 
@@ -161,9 +137,9 @@ impl OnboardingStateModel {
         default_model_id: LLMId,
         workspace_enforces_autonomy: bool,
         agent_modality_enabled: bool,
-        free_user_no_ai_experiment: bool,
-        agent_price_cents: Option<i32>,
-        auth_state: OnboardingAuthState,
+        _free_user_no_ai_experiment: bool,
+        _agent_price_cents: Option<i32>,
+        _auth_state: OnboardingAuthState,
     ) -> Self {
         Self {
             step: OnboardingStep::Intro,
@@ -174,14 +150,10 @@ impl OnboardingStateModel {
             models,
             workspace_enforces_autonomy,
             agent_modality_enabled,
-            free_user_no_ai_experiment,
-            agent_price_cents,
-            auth_state,
+            free_user_no_ai_experiment: false,
+            agent_price_cents: None,
+            auth_state: OnboardingAuthState::LoggedOut,
         }
-    }
-
-    pub(crate) fn auth_state(&self) -> OnboardingAuthState {
-        self.auth_state
     }
 
     pub(crate) fn set_auth_state(
@@ -221,7 +193,7 @@ impl OnboardingStateModel {
                         },
                         cli_agent_toolbar_enabled: self.agent_settings.cli_agent_toolbar_enabled,
                         session_default: self.agent_settings.session_default,
-                        disable_oz: self.agent_settings.disable_oz,
+                        disable_agent: self.agent_settings.disable_agent,
                         // Agent intention always has notifications enabled (no toggle shown).
                         show_agent_notifications: true,
                     },
@@ -286,18 +258,7 @@ impl OnboardingStateModel {
         self.ui_customization.show_conversation_history = enabled;
         self.ui_customization.show_project_explorer = enabled;
         self.ui_customization.show_global_search = enabled;
-        self.ui_customization.show_warp_drive = enabled;
         ctx.notify();
-    }
-
-    pub(crate) fn free_user_no_ai_experiment(&self) -> bool {
-        self.free_user_no_ai_experiment
-    }
-
-    pub(crate) fn agent_price_badge(&self) -> String {
-        const DEFAULT_AGENT_PRICE_CENTS: i32 = 1800;
-        let cents = self.agent_price_cents.unwrap_or(DEFAULT_AGENT_PRICE_CENTS);
-        format!("Starting at ${}/mo", cents / 100)
     }
 
     pub(crate) fn set_agent_price_cents(
@@ -361,21 +322,6 @@ impl OnboardingStateModel {
         ctx.notify();
     }
 
-    pub(crate) fn set_show_warp_drive(&mut self, value: bool, ctx: &mut ModelContext<Self>) {
-        if self.ui_customization.show_warp_drive == value {
-            return;
-        }
-        send_telemetry_from_ctx!(
-            OnboardingEvent::SettingChanged {
-                setting: "warp_drive".to_string(),
-                value: value.to_string(),
-            },
-            ctx
-        );
-        self.ui_customization.show_warp_drive = value;
-        ctx.notify();
-    }
-
     pub(crate) fn set_cli_agent_toolbar_enabled(
         &mut self,
         value: bool,
@@ -433,18 +379,18 @@ impl OnboardingStateModel {
         ctx.notify();
     }
 
-    pub(crate) fn set_disable_oz(&mut self, value: bool, ctx: &mut ModelContext<Self>) {
-        if self.agent_settings.disable_oz == value {
+    pub(crate) fn set_disable_agent(&mut self, value: bool, ctx: &mut ModelContext<Self>) {
+        if self.agent_settings.disable_agent == value {
             return;
         }
         send_telemetry_from_ctx!(
             OnboardingEvent::SettingChanged {
-                setting: "disable_oz".to_string(),
+                setting: "disable_agent".to_string(),
                 value: value.to_string(),
             },
             ctx
         );
-        self.agent_settings.disable_oz = value;
+        self.agent_settings.disable_agent = value;
         ctx.notify();
     }
 
@@ -456,7 +402,7 @@ impl OnboardingStateModel {
         if self.free_user_no_ai_experiment == value {
             return;
         }
-        self.free_user_no_ai_experiment = value;
+        self.free_user_no_ai_experiment = false;
         ctx.notify();
     }
 
@@ -517,10 +463,6 @@ impl OnboardingStateModel {
             .iter()
             .find(|m| &m.id == model_id)
             .is_some_and(|m| m.requires_upgrade)
-    }
-
-    pub(crate) fn request_upgrade(&mut self, ctx: &mut ModelContext<Self>) {
-        ctx.emit(OnboardingStateEvent::UpgradeRequested);
     }
 
     pub(crate) fn on_user_selected_model(&mut self, model_id: LLMId, ctx: &mut ModelContext<Self>) {
