@@ -1,8 +1,12 @@
-use self::parse_url_paths::{get_item_data_from_warp_link, WarpWebLink};
+use self::parse_url_paths::get_item_data_from_warp_link;
 use super::*;
 use crate::launch_configs::launch_config::make_mock_single_window_launch_config;
 use crate::linear::{LinearAction, LinearIssueWork};
 use crate::ChannelState;
+use warp_core::{
+    channel::{Channel, ChannelConfig, WarpServerConfig},
+    AppId,
+};
 
 #[test]
 fn test_find_matching_config() {
@@ -92,6 +96,25 @@ fn add_mock_config_with_name(name: &str, configs: &mut Vec<LaunchConfig>) {
     configs.push(new_config);
 }
 
+fn set_local_channel_with_server_config() {
+    ChannelState::set(ChannelState::new(
+        Channel::Local,
+        ChannelConfig {
+            app_id: AppId::new("dev", "warper", "Warper"),
+            logfile_name: "".into(),
+            server_config: Some(WarpServerConfig::local_override(
+                Some("http://localhost:8080".into()),
+                Some("ws://localhost:8081/graphql/v2".into()),
+                Some("ws://localhost:8082".into()),
+            )),
+            oz_config: None,
+            telemetry_config: None,
+            autoupdate_config: None,
+            mcp_static_config: None,
+        },
+    ));
+}
+
 #[test]
 fn test_get_launch_config_path() {
     assert_eq!(
@@ -155,14 +178,7 @@ fn test_warp_web_link_notebook() {
             ))
             .unwrap()
         ),
-        Some(WarpWebLink::DriveObject(Box::new(OpenWarpDriveObjectArgs {
-            object_type: ObjectType::Notebook,
-server_id: ServerId::from_string_lossy("LkDlnAe34vfYD2JXsAkssc"),
-            settings: OpenWarpDriveObjectSettings {
-                focused_folder_id: Some(ServerId::from(123)),
-                invitee_email: Some(String::from("test@example.com")),
-            },
-        })))
+        None
     );
 }
 
@@ -177,7 +193,7 @@ fn test_warp_web_link_session() {
             ))
             .unwrap()
         ),
-        Some(WarpWebLink::Session)
+        None
     );
 }
 
@@ -191,11 +207,7 @@ fn test_warp_web_link_workflow() {
             ))
             .unwrap()
         ),
-        Some(WarpWebLink::DriveObject(Box::new(OpenWarpDriveObjectArgs {
-            object_type: ObjectType::Workflow,
-server_id: ServerId::from_string_lossy("ZCJSkai2gpwTqpBFs5HOfZ"),
-            settings: OpenWarpDriveObjectSettings::default(),
-        })))
+        None
     );
 }
 
@@ -240,18 +252,92 @@ fn validate_custom_uri_rejects_hosted_hosts_without_server_config() {
         format!("{}://conversation/abc", ChannelState::url_scheme()),
         format!("{}://drive/notebook?id=abc", ChannelState::url_scheme()),
         format!(
+            "{}://shared_session/join?id=abc",
+            ChannelState::url_scheme()
+        ),
+        format!(
             "{}://settings/billing_and_usage",
             ChannelState::url_scheme()
         ),
+        format!("{}://settings/teams", ChannelState::url_scheme()),
         format!("{}://settings/environments", ChannelState::url_scheme()),
         format!("{}://settings/platform", ChannelState::url_scheme()),
     ] {
         let url = Url::parse(&url).unwrap();
-        let err = validate_custom_uri(&url).unwrap_err();
         assert!(
-            err.to_string()
-                .contains("hosted-service url without Warp server config"),
-            "unexpected error for {url}: {err}"
+            validate_custom_uri(&url).is_err(),
+            "removed hosted URI must fail closed without Warp server config: {url}"
+        );
+    }
+}
+
+#[test]
+fn validate_custom_uri_rejects_hosted_hosts_even_with_stale_server_config() {
+    set_local_channel_with_server_config();
+
+    for url in [
+        format!("{}://auth/desktop_redirect", ChannelState::url_scheme()),
+        format!("{}://team/settings", ChannelState::url_scheme()),
+        format!("{}://conversation/abc", ChannelState::url_scheme()),
+        format!("{}://drive/workflow?id=abc", ChannelState::url_scheme()),
+        format!(
+            "{}://shared_session/join?id=abc",
+            ChannelState::url_scheme()
+        ),
+    ] {
+        let url = Url::parse(&url).unwrap();
+        assert!(
+            validate_custom_uri(&url).is_err(),
+            "removed hosted URI must fail closed even if stale server config exists: {url}"
+        );
+    }
+
+    ChannelState::set(ChannelState::init());
+}
+
+#[test]
+fn validate_custom_uri_rejects_removed_settings_pages() {
+    for page in ["billing_and_usage", "teams", "environments", "platform"] {
+        let url = Url::parse(&format!("{}://settings/{page}", ChannelState::url_scheme())).unwrap();
+        assert!(
+            validate_custom_uri(&url).is_err(),
+            "settings/{page} must fail closed"
+        );
+    }
+}
+
+#[test]
+fn validate_custom_uri_rejects_removed_settings_pages_with_query_or_fragment() {
+    for url in [
+        format!(
+            "{}://settings/billing_and_usage?source=restore",
+            ChannelState::url_scheme()
+        ),
+        format!("{}://settings/teams#members", ChannelState::url_scheme()),
+        format!(
+            "{}://settings/environments?next=cloud-agent",
+            ChannelState::url_scheme()
+        ),
+        format!(
+            "{}://settings/platform?create_api_key=true",
+            ChannelState::url_scheme()
+        ),
+    ] {
+        let url = Url::parse(&url).unwrap();
+        assert!(
+            validate_custom_uri(&url).is_err(),
+            "removed settings URI must fail closed: {url}"
+        );
+    }
+}
+
+#[test]
+fn validate_custom_uri_allows_retained_local_settings_pages() {
+    for page in ["appearance", "mcp"] {
+        let url = Url::parse(&format!("{}://settings/{page}", ChannelState::url_scheme())).unwrap();
+        assert!(
+            validate_custom_uri(&url).is_ok(),
+            "settings/{page} should remain locally openable"
         );
     }
 }
@@ -265,12 +351,33 @@ fn validate_custom_uri_allows_local_actions_without_server_config() {
         format!("{}://action/new_tab?path=/tmp", ChannelState::url_scheme()),
         format!("{}://settings/appearance", ChannelState::url_scheme()),
         format!("{}://mcp/oauth2callback", ChannelState::url_scheme()),
-        format!("{}://codex", ChannelState::url_scheme()),
     ] {
         let url = Url::parse(&url).unwrap();
         assert!(
             validate_custom_uri(&url).is_ok(),
             "expected local URI to be valid: {url}"
+        );
+    }
+}
+
+#[test]
+fn stale_hosted_action_deeplinks_do_not_parse() {
+    for path in [
+        "/login",
+        "/logout",
+        "/reauth",
+        "/open_billing",
+        "/open_warp_drive",
+        "/share_session",
+        "/join_shared_session",
+        "/open_team_settings",
+        "/open_oz",
+        "/cloud_agent",
+    ] {
+        let url = Url::parse(&format!("{}://action{path}", ChannelState::url_scheme())).unwrap();
+        assert!(
+            Action::parse(&url).is_err(),
+            "stale hosted action must not parse: {url}"
         );
     }
 }

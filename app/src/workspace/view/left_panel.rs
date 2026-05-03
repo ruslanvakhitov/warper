@@ -64,8 +64,6 @@ struct MouseStateHandles {
 pub enum LeftPanelAction {
     ProjectExplorer,
     GlobalSearch { entry_focus: GlobalSearchEntryFocus },
-    WarpDrive,
-    ConversationListView,
 }
 
 pub enum LeftPanelEvent {
@@ -89,8 +87,6 @@ pub enum LeftPanelEvent {
 pub enum ToolPanelView {
     ProjectExplorer,
     GlobalSearch { entry_focus: GlobalSearchEntryFocus },
-    WarpDrive,
-    ConversationListView,
 }
 
 /// Encapsulates the active view state to enforce that all mutations go through
@@ -116,12 +112,6 @@ mod active_view_state {
         new_view: ToolPanelView,
         ctx: &mut ViewContext<super::LeftPanelView>,
     ) {
-        let new_view = match new_view {
-            ToolPanelView::WarpDrive | ToolPanelView::ConversationListView => {
-                ToolPanelView::ProjectExplorer
-            }
-            view => view,
-        };
         let _previous = left_panel.active_view.0;
         left_panel.active_view.0 = new_view;
         left_panel.update_button_active_states();
@@ -194,12 +184,10 @@ impl LeftPanelView {
                 resizable_state_handle(600.0)
             }
         };
-        let active_view = match views.first().copied() {
-            Some(ToolPanelView::WarpDrive) | Some(ToolPanelView::ConversationListView) | None => {
-                ToolPanelView::ProjectExplorer
-            }
-            Some(view) => view,
-        };
+        let active_view = views
+            .first()
+            .copied()
+            .unwrap_or(ToolPanelView::ProjectExplorer);
         let toolbelt_buttons = views
             .iter()
             .filter_map(|view| Self::create_toolbelt_button_config(view, ctx))
@@ -366,8 +354,6 @@ impl LeftPanelView {
                     tooltip_keybinding_names,
                 })
             }
-            ToolPanelView::WarpDrive => None,
-            ToolPanelView::ConversationListView => None,
         }
     }
 
@@ -595,10 +581,6 @@ impl LeftPanelView {
                     ctx,
                 );
             }
-            ToolPanelView::WarpDrive => {
-                active_view_state::set(self, ToolPanelView::ConversationListView, ctx);
-            }
-            ToolPanelView::ConversationListView => {}
         }
     }
 
@@ -747,8 +729,6 @@ impl LeftPanelView {
                 LeftPanelAction::GlobalSearch { .. } => {
                     matches!(self.active_view.get(), ToolPanelView::GlobalSearch { .. })
                 }
-                LeftPanelAction::WarpDrive => false,
-                LeftPanelAction::ConversationListView => false,
             };
         }
     }
@@ -866,13 +846,6 @@ impl LeftPanelView {
                     send_telemetry_from_ctx!(TelemetryEvent::GlobalSearchOpened, ctx);
                 }
             }
-            LeftPanelAction::WarpDrive => {
-                let _ = force_open;
-                active_view_state::set(self, ToolPanelView::ProjectExplorer, ctx);
-            }
-            LeftPanelAction::ConversationListView => {
-                let _ = ctx;
-            }
         }
     }
 
@@ -949,8 +922,6 @@ impl View for LeftPanelView {
                         ctx.focus(&view);
                     }
                 }
-                ToolPanelView::WarpDrive => {}
-                ToolPanelView::ConversationListView => {}
             }
         }
     }
@@ -1007,12 +978,6 @@ impl View for LeftPanelView {
                 } else {
                     Shrinkable::new(1.0, Container::new(Empty::new().finish()).finish()).finish()
                 }
-            }
-            ToolPanelView::WarpDrive => {
-                Shrinkable::new(1.0, Container::new(Empty::new().finish()).finish()).finish()
-            }
-            ToolPanelView::ConversationListView => {
-                Shrinkable::new(1.0, Container::new(Empty::new().finish()).finish()).finish()
             }
         };
 

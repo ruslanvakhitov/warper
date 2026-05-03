@@ -1199,42 +1199,10 @@ impl AIClient for ServerApi {
         &self,
         referrer: Option<String>,
     ) -> Result<ModelsByFeature, anyhow::Error> {
-        // This resolver is public; it does not require an auth token. We must NOT go through
-        // `send_graphql_request`, which awaits `get_or_refresh_access_token()`
-        let variables = FreeAvailableModelsVariables {
-            input: FreeAvailableModelsInput { referrer },
-            request_context: get_request_context(),
-        };
-        let operation = FreeAvailableModels::build(variables);
-
-        // Best-effort: if the user has a valid token (e.g. anonymous Firebase), include it;
-        // otherwise send unauthenticated. Either is acceptable for this resolver.
-        let auth_token = self
-            .get_or_refresh_access_token()
-            .await
-            .ok()
-            .and_then(|token| token.bearer_token());
-
-        let response = operation
-            .send_request(
-                self.client.clone(),
-                warp_graphql::client::RequestOptions {
-                    auth_token,
-                    ..default_request_options()
-                },
-            )
-            .await?
-            .data
-            .ok_or_else(|| anyhow!("Missing data in freeAvailableModels response"))?;
-
-        match response.free_available_models {
-            FreeAvailableModelsResult::FreeAvailableModelsOutput(output) => {
-                output.feature_model_choice.try_into()
-            }
-            FreeAvailableModelsResult::Unknown => {
-                Err(anyhow!("Unexpected freeAvailableModels response variant"))
-            }
-        }
+        let _ = referrer;
+        Err(anyhow!(
+            "Hosted model-choice discovery is unavailable in Warper"
+        ))
     }
 
     async fn update_merkle_tree(
@@ -1535,9 +1503,7 @@ impl AIClient for ServerApi {
         &self,
         conversation_ids: Option<Vec<String>>,
     ) -> anyhow::Result<Vec<ServerAIConversationMetadata>> {
-        if !FeatureFlag::CloudConversations.is_enabled() {
-            return Ok(vec![]);
-        }
+        return Ok(vec![]);
         use warp_graphql::queries::list_ai_conversations::{
             ListAIConversationMetadata, ListAIConversationMetadataResult,
             ListAIConversationMetadataVariables, ListAIConversationsInput,
@@ -1961,23 +1927,10 @@ impl AIClient for ServerApi {
         &self,
         request: GenerateCodeReviewContentRequest,
     ) -> Result<GenerateCodeReviewContentResponse, anyhow::Error> {
-        let auth_token = self.get_or_refresh_access_token().await?;
-        let request_builder = self.client.post(format!(
-            "{}/ai/generate_code_review_content",
-            ChannelState::server_root_url()
-        ));
-        let response = if let Some(token) = auth_token.as_bearer_token() {
-            request_builder.bearer_auth(token)
-        } else {
-            request_builder
-        }
-        .json(&request)
-        .send()
-        .await?
-        .error_for_status()?
-        .json()
-        .await?;
-        Ok(response)
+        let _ = request;
+        Err(anyhow::anyhow!(
+            "Hosted code-review generation is unavailable in Warper"
+        ))
     }
 }
 

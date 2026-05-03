@@ -1,6 +1,5 @@
 use super::WorkspaceAction;
 use crate::pane_group::TerminalPaneId;
-use crate::settings_view::SettingsSection;
 use crate::workspace::tab_settings::{
     VerticalTabsDisplayGranularity, VerticalTabsPrimaryInfo, VerticalTabsTabItemMode,
     VerticalTabsViewMode,
@@ -75,26 +74,4 @@ fn pane_name_actions_save_workspace_state() {
 
     assert!(WorkspaceAction::RenamePane(locator).should_save_app_state_on_action());
     assert!(WorkspaceAction::ResetPaneName(locator).should_save_app_state_on_action());
-}
-
-#[test]
-fn hosted_workspace_actions_are_classified() {
-    assert!(WorkspaceAction::AddAmbientAgentTab.requires_hosted_services());
-    assert!(
-        WorkspaceAction::ShowSettingsPage(SettingsSection::BillingAndUsage)
-            .requires_hosted_services()
-    );
-    assert!(
-        WorkspaceAction::ShowSettingsPage(SettingsSection::CloudEnvironments)
-            .requires_hosted_services()
-    );
-}
-
-#[test]
-fn local_workspace_actions_are_not_classified_as_hosted() {
-    assert!(!WorkspaceAction::AddAgentTab.requires_hosted_services());
-    assert!(
-        !WorkspaceAction::ShowSettingsPage(SettingsSection::Appearance).requires_hosted_services()
-    );
-    assert!(!WorkspaceAction::ViewUserDocs.requires_hosted_services());
 }

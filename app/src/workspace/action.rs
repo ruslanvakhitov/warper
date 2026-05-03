@@ -4,21 +4,14 @@ use std::sync::Arc;
 
 use warp_util::path::LineAndColumnArg;
 
-use crate::ai::agent::api::ServerConversationToken;
 use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::agent::AIAgentExchangeId;
-use crate::ai::ambient_agents::AmbientAgentTaskId;
 use crate::ai::document::ai_document_model::{AIDocumentId, AIDocumentVersion};
-use crate::auth::auth_manager::LoginGatedFeature;
-use crate::drive::items::WarpDriveItemId;
-use crate::drive::CloudObjectTypeAndId;
 use crate::palette::PaletteMode;
 use crate::prompt::editor_modal::OpenSource as PromptEditorOpenSource;
 use crate::search;
 use crate::server::ids::SyncId;
-use crate::server::telemetry::{
-    AddTabWithShellSource, AgentModeEntrypoint, PaletteSource, SharingDialogSource,
-};
+use crate::server::telemetry::{AddTabWithShellSource, AgentModeEntrypoint, PaletteSource};
 use crate::settings_view::{SettingsAction as SettingsTabAction, SettingsSection};
 use crate::tab::NewSessionMenuItem;
 use crate::tab_configs::TabConfig;
@@ -28,7 +21,6 @@ use crate::themes::theme::AnsiColorIdentifier;
 use crate::themes::theme_chooser::ThemeChooserMode;
 use crate::workflows::{WorkflowSelectionSource, WorkflowSource, WorkflowType};
 use crate::workspace::PaneViewLocator;
-use session_sharing_protocol::common::SessionId;
 
 use ui_components::lightbox;
 use warpui::accessibility::AccessibilityVerbosity;
@@ -142,7 +134,6 @@ pub enum WorkspaceAction {
         source: AddTabWithShellSource,
     },
     AddGetStartedTab,
-    AddAmbientAgentTab,
     /// Add a new tab that immediately enters agent view with a new conversation.
     AddAgentTab,
     /// Add a new tab running a local Docker sandbox via `sbx`.
@@ -156,7 +147,6 @@ pub enum WorkspaceAction {
         is_vertical_tabs: bool,
     },
     SelectNewSessionMenuItem(NewSessionMenuItem),
-    LogOut,
     CopyVersion(&'static str),
     ConfigureKeybindingSettings {
         keybinding_name: Option<String>,
@@ -185,11 +175,8 @@ pub enum WorkspaceAction {
         mode: PaletteMode,
         source: PaletteSource,
     },
-    ShowUpgrade,
-    ShowReferralSettingsPage,
     JoinSlack,
     ViewUserDocs,
-    ViewLatestChangelog,
     ViewPrivacyPolicy,
     SendFeedback,
     /// Open the log directory in the system file explorer with the current log file selected.
@@ -199,7 +186,6 @@ pub enum WorkspaceAction {
     ToggleBlockSnackbar,
     ToggleErrorUnderlining,
     ToggleSyntaxHighlighting,
-    ExportAllWarpDriveObjects,
     SetA11yVerbosityLevel(AccessibilityVerbosity),
     ToggleNotifications,
     ToggleTabColor {
@@ -216,17 +202,10 @@ pub enum WorkspaceAction {
     ToggleKeybindingsPage,
     ShowCommandSearch(CommandSearchOptions),
     CreatePersonalNotebook,
-    ImportToPersonalDrive,
-    ImportToTeamDrive,
-    CreateTeamNotebook,
     CreatePersonalWorkflow,
-    CreateTeamWorkflow,
     CreatePersonalFolder,
-    CreateTeamFolder,
-    CreateTeamEnvVarCollection,
     CreatePersonalEnvVarCollection,
     CreatePersonalAIPrompt,
-    CreateTeamAIPrompt,
     ToggleMouseReporting,
     ToggleScrollReporting,
     ToggleFocusReporting,
@@ -245,15 +224,8 @@ pub enum WorkspaceAction {
     },
     DropTab,
     FinalizeDropTab,
-    /// Toggles the left panel. In Code Mode V1 this toggles Warp Drive.
-    /// In Code Mode V2 this toggles the left panel which contains both the project explorer and
-    /// Warp Drive. This happens as explicit action from the user.
+    /// Toggles the left panel. This happens as explicit action from the user.
     ToggleLeftPanel,
-    /// Toggles directly to the Warp Drive tab of the left panel in Code Mode V2
-    ToggleWarpDrive,
-    /// Unconditionally opens Warp Drive. This is used in the case of user lifecycle
-    /// events like new user onboarding or when the user joins a team.
-    OpenWarpDrive,
     /// Toggles the right panel. This happens as an explicit action from the user.
     ToggleRightPanel,
     /// Opens the code review panel (right panel) without toggling. If already open,
@@ -273,13 +245,7 @@ pub enum WorkspaceAction {
     /// Closes the focused panel. This happens as an explicit action from the user.
     ClosePanel,
     CopyTextToClipboard(String),
-    /// An action only registered in dev and local builds, which writes the user's current access
-    /// token to the system clipboard to aid debugging and development.
-    CopyAccessTokenToClipboard,
     DismissWorkspaceBanner(WorkspaceBanner),
-    /// An action only registered in dev and local builds, which crashes the
-    /// app (via a Sentry helper method) immediately when called.
-    Crash,
     /// An action only registered in dev and local builds, which triggers a
     /// panic immediately when called.
     Panic,
@@ -310,9 +276,6 @@ pub enum WorkspaceAction {
     ShowHeaderToolbarContextMenu {
         position: Vector2F,
     },
-    Reauth,
-    SignupAnonymousUser,
-    SignInAnonymousWebUser,
     OpenLink(String),
     /// On WASM, opens a given URL in the desktop Warp app (if installed) or redirects to download page.
     #[cfg(target_family = "wasm")]
@@ -326,14 +289,6 @@ pub enum WorkspaceAction {
     FocusLeftPanel,
     /// Moves focus to the panel on the right
     FocusRightPanel,
-    /// An action to view a newly created/edited workflow in WD from the toast
-    ViewObjectInWarpDrive(WarpDriveItemId),
-    /// Open the object's sharing settings in WD.
-    OpenObjectSharingSettings {
-        object_id: CloudObjectTypeAndId,
-        source: SharingDialogSource,
-    },
-    UndoTrash(CloudObjectTypeAndId),
     /// Open a local path in the file explorer.
     OpenInExplorer {
         path: PathBuf,
@@ -374,7 +329,6 @@ pub enum WorkspaceAction {
         /// The type of zero state prompt suggestion to start with (optional).
         zero_state_prompt_suggestion_type: Option<ZeroStatePromptSuggestionType>,
     },
-    AttemptLoginGatedAIUpgrade,
     /// Dismisses the Wayland crash recovery banner and opens a link to our docs page with more
     /// information.
     #[cfg(target_os = "linux")]
@@ -526,9 +480,6 @@ pub enum WorkspaceAction {
     /// Use a local checkout of the opencode-warp plugin (for testing/development).
     #[cfg(debug_assertions)]
     UseLocalOpenCodeWarpPlugin,
-    /// Take a process sample of the app (equivalent to Activity Monitor > Sample Process).
-    #[cfg(target_os = "macos")]
-    SampleProcess,
     ToggleNotificationMailbox {
         select_first: bool,
     },
@@ -548,18 +499,6 @@ pub enum WorkspaceAction {
     ExecuteDeleteConversation {
         conversation_id: AIConversationId,
         terminal_view_id: Option<EntityId>,
-    },
-    /// Open an ambient agent session by joining its shared session.
-    /// Used when the sandbox is running or when we need to view a live session.
-    OpenAmbientAgentSession {
-        session_id: SessionId,
-        task_id: AmbientAgentTaskId,
-    },
-    /// Load cloud conversation data into a transcript viewer.
-    /// Used when CloudConversations is enabled and the sandbox is not running.
-    OpenConversationTranscriptViewer {
-        conversation_id: ServerConversationToken,
-        ambient_agent_task_id: Option<AmbientAgentTaskId>,
     },
     /// Toggle the conversation transcript details panel (WASM-only).
     #[cfg(target_family = "wasm")]
@@ -618,7 +557,7 @@ pub enum WorkspaceAction {
     /// Opens the settings.toml file in a code editor pane.
     OpenSettingsFile,
     /// Opens a new agent session to fix settings.toml errors using the modify-settings skill.
-    FixSettingsWithOz {
+    FixSettingsWithAgent {
         error_description: String,
     },
     /// Opens (or focuses) the in-app network log pane as a right-split of the
@@ -626,101 +565,7 @@ pub enum WorkspaceAction {
     OpenNetworkLogPane,
 }
 
-impl From<&WorkspaceAction> for LoginGatedFeature {
-    fn from(val: &WorkspaceAction) -> LoginGatedFeature {
-        use WorkspaceAction::*;
-        match val {
-            ImportToTeamDrive => "Importing to a team drive",
-            CreateTeamNotebook => "Creating a team notebook",
-            CreateTeamWorkflow => "Creating a team workflow",
-            CreateTeamFolder => "Creating a team folder",
-            CreateTeamEnvVarCollection => "Creating a team environment variable collection",
-            CreateTeamAIPrompt => "Creating a team prompt",
-            _ => "Unknown reason",
-        }
-    }
-}
-
 impl WorkspaceAction {
-    pub fn requires_hosted_services(&self) -> bool {
-        use WorkspaceAction::*;
-
-        matches!(
-            self,
-            LogOut
-                | ExportAllWarpDriveObjects
-                | ShowUpgrade
-                | ShowReferralSettingsPage
-                | ImportToPersonalDrive
-                | ImportToTeamDrive
-                | CreatePersonalNotebook
-                | CreateTeamNotebook
-                | CreatePersonalWorkflow
-                | CreateTeamWorkflow
-                | CreatePersonalFolder
-                | CreateTeamFolder
-                | CreateTeamEnvVarCollection
-                | CreatePersonalEnvVarCollection
-                | CreatePersonalAIPrompt
-                | CreateTeamAIPrompt
-                | OpenWarpDrive
-                | ToggleWarpDrive
-                | Reauth
-                | SignupAnonymousUser
-                | SignInAnonymousWebUser
-                | ViewObjectInWarpDrive(_)
-                | OpenObjectSharingSettings { .. }
-                | UndoTrash(_)
-                | AttemptLoginGatedAIUpgrade
-                | OpenEnvironmentManagementPane
-                | OpenPalette {
-                    mode: PaletteMode::WarpDrive,
-                    ..
-                }
-                | TogglePalette {
-                    mode: PaletteMode::WarpDrive,
-                    ..
-                }
-                | AddAmbientAgentTab
-                | ShowSettingsPage(
-                    SettingsSection::BillingAndUsage
-                        | SettingsSection::Referrals
-                        | SettingsSection::SharedBlocks
-                        | SettingsSection::Teams
-                        | SettingsSection::WarpDrive
-                        | SettingsSection::CloudEnvironments
-                        | SettingsSection::OzCloudAPIKeys,
-                )
-                | ShowSettingsPageWithSearch {
-                    section: Some(
-                        SettingsSection::BillingAndUsage
-                            | SettingsSection::Referrals
-                            | SettingsSection::SharedBlocks
-                            | SettingsSection::Teams
-                            | SettingsSection::WarpDrive
-                            | SettingsSection::CloudEnvironments
-                            | SettingsSection::OzCloudAPIKeys,
-                    ),
-                    ..
-                }
-                | OpenAmbientAgentSession { .. }
-                | OpenConversationTranscriptViewer { .. }
-        )
-    }
-
-    pub fn blocked_for_anonymous_user(&self) -> bool {
-        use WorkspaceAction::*;
-        matches!(
-            self,
-            ImportToTeamDrive
-                | CreateTeamNotebook
-                | CreateTeamWorkflow
-                | CreateTeamFolder
-                | CreateTeamEnvVarCollection
-                | CreateTeamAIPrompt
-        )
-    }
-
     /// Matches what actions require the app state to be saved, and which don't. We match all
     /// actions directly, rather than using _, so we're forced to make a concious decision for each
     /// of them, rather than following some default.
@@ -759,7 +604,6 @@ impl WorkspaceAction {
             | AddTabWithShell { .. }
             | AddGetStartedTab
             | AddAgentTab
-            | AddAmbientAgentTab
             | AddDockerSandboxTab
             | AddWindow
             | AddWindowWithShell { .. }
@@ -782,7 +626,6 @@ impl WorkspaceAction {
             // restarted, the user can continue working
             CopyVersion(_)
             | ConfigureKeybindingSettings { .. }
-            | ExportAllWarpDriveObjects
             | ShowSettings
             | ShowSettingsPage(_)
             | ShowSettingsPageWithSearch { .. }
@@ -796,11 +639,8 @@ impl WorkspaceAction {
             | ResetZoom
             | OpenPalette { .. }
             | TogglePalette { mode: _, source: _ }
-            | ShowUpgrade
-            | ShowReferralSettingsPage
             | JoinSlack
             | ViewUserDocs
-            | ViewLatestChangelog
             | ViewPrivacyPolicy
             | SendFeedback
             | ChangeCursor(_)
@@ -827,18 +667,11 @@ impl WorkspaceAction {
             | ToggleMouseReporting
             | ToggleScrollReporting
             | ToggleFocusReporting
-            | ImportToPersonalDrive
-            | ImportToTeamDrive
             | CreatePersonalNotebook
-            | CreateTeamNotebook
             | CreatePersonalWorkflow
-            | CreateTeamWorkflow
             | CreatePersonalFolder
-            | CreateTeamFolder
-            | CreateTeamEnvVarCollection
             | CreatePersonalEnvVarCollection
             | CreatePersonalAIPrompt
-            | CreateTeamAIPrompt
             | OpenInExplorer { .. }
             | DragTab { .. }
             | HandoffPendingTransfer { .. }
@@ -846,8 +679,6 @@ impl WorkspaceAction {
             | StartTabDrag
             | FinalizeDropTab
             | ToggleLeftPanel
-            | ToggleWarpDrive
-            | OpenWarpDrive
             | ClosePanel
             | ToggleRightPanel
             | OpenCodeReviewPanel(..)
@@ -862,13 +693,11 @@ impl WorkspaceAction {
             | ToggleVerticalTabsShowDetailsOnHover
             | ToggleWelcomeTips
             | CopyTextToClipboard(_)
-            | CopyAccessTokenToClipboard
             | OpenTabConfigRepoPicker { .. }
             | OpenNewWorktreeModal
             | OpenNewWorktreeRepoPicker
             | OpenWorktreeInRepo { .. }
             | OpenWorktreeAddRepoPicker
-            | Crash
             | Panic
             | DumpHeapProfile
             | OpenViewTreeDebugWindow
@@ -886,9 +715,6 @@ impl WorkspaceAction {
             | OpenCLIAgentToolbarEditor
             | OpenHeaderToolbarEditor
             | ShowHeaderToolbarContextMenu { .. }
-            | Reauth
-            | SignupAnonymousUser
-            | LogOut
             | OpenLink(_)
             | ReopenClosedSession
             | FocusLeftPanel
@@ -904,13 +730,8 @@ impl WorkspaceAction {
             | InsertInInput { .. }
             | InsertForkSlashCommand
             | QueuePromptForConversation { .. }
-            | AttemptLoginGatedAIUpgrade
-            | UndoTrash(_)
             | OpenFilePath { .. }
-            | ViewObjectInWarpDrive(_)
-            | OpenObjectSharingSettings { .. }
             | TerminateApp
-            | SignInAnonymousWebUser
             | TabHoverWidthStart { .. }
             | TabHoverWidthEnd
             | OpenAIFactCollection
@@ -933,8 +754,6 @@ impl WorkspaceAction {
             | ShowRewindConfirmationDialog { .. }
             | ExecuteRewindAIConversation { .. }
             | ExecuteDeleteConversation { .. }
-            | OpenAmbientAgentSession { .. }
-            | OpenConversationTranscriptViewer { .. }
             | OpenLightbox { .. }
             | UpdateLightboxImage { .. }
             | StartAgentOnboardingTutorial(_)
@@ -947,7 +766,7 @@ impl WorkspaceAction {
             | TabConfigSidecarEditConfig { .. }
             | TabConfigSidecarRemoveConfig { .. }
             | OpenSettingsFile
-            | FixSettingsWithOz { .. }
+            | FixSettingsWithAgent { .. }
             | OpenNetworkLogPane => false,
             #[cfg(debug_assertions)]
             ShowHoaOnboardingFlow => false,
@@ -959,8 +778,6 @@ impl WorkspaceAction {
             | UseLocalOpenCodeWarpPlugin => false,
             #[cfg(not(target_family = "wasm"))]
             ViewLogs => false,
-            #[cfg(target_os = "macos")]
-            SampleProcess => false,
             #[cfg(target_os = "macos")]
             InstallCLI | UninstallCLI => false,
             #[cfg(feature = "local_fs")]
