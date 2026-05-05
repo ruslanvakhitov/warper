@@ -13,8 +13,8 @@ pub struct WarpAiOsContext {
     pub distribution: Option<String>,
 }
 
-/// The execution context of the active session. This struct
-/// is sent as a JSON blob in our AI prompts.
+/// The execution context of the active session. This struct is sent as a JSON
+/// blob in AI prompts.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WarpAiExecutionContext {
     pub os: WarpAiOsContext,
@@ -35,8 +35,7 @@ impl WarpAiExecutionContext {
             shell_version: session.shell().version().clone(),
         }
     }
-}
-impl WarpAiExecutionContext {
+
     pub fn to_json_string(&self) -> Option<String> {
         serde_json::to_string(self).ok()
     }

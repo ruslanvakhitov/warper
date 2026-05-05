@@ -1,6 +1,5 @@
 use crate::ai::blocklist::agent_view::{agent_view_bg_fill, AgentViewState};
 use crate::ai::blocklist::{ai_brand_color, ATTACH_AS_AGENT_MODE_CONTEXT_TEXT};
-use crate::ai_assistant::{AI_ASSISTANT_SVG_PATH, ASK_AI_ASSISTANT_TEXT};
 use crate::appearance::Appearance;
 use crate::features::FeatureFlag;
 use crate::pane_group::SplitPaneState;
@@ -19,11 +18,10 @@ use crate::terminal::model::selection::{SelectAction, SelectionPoint};
 use crate::terminal::safe_mode_settings::get_secret_obfuscation_mode;
 use crate::terminal::view::TerminalAction;
 use crate::terminal::{grid_renderer, SizeInfo};
-use crate::themes::theme::{Fill, WarpTheme};
+use crate::themes::theme::WarpTheme;
 use crate::ui_components::{self, icons as UIIcon};
 use crate::util::color::Opacity;
 use enum_iterator::Sequence;
-use itertools::Itertools;
 use parking_lot::FairMutex;
 use vec1::Vec1;
 use warp_core::semantic_selection::SemanticSelection;
@@ -630,7 +628,7 @@ pub struct BlockListElement {
     hovered_block_index: Option<BlockIndex>,
     overflow_menu_button: Option<Box<dyn Element>>,
     snackbar_toggle_button: Option<Box<dyn Element>>,
-    ask_ai_assistant_button: Option<Box<dyn Element>>,
+    attach_agent_context_button: Option<Box<dyn Element>>,
     save_as_workflow_button: Option<Box<dyn Element>>,
     restored_session_separator: Option<Box<dyn Element>>,
     inline_banners: HashMap<InlineBannerId, Box<dyn Element>>,
@@ -849,7 +847,7 @@ pub struct BlockListMouseStates {
     pub label_mouse_states: HashMap<BlockIndex, MouseStateHandle>,
     pub bookmark_mouse_states: HashMap<BlockIndex, MouseStateHandle>,
     pub overflow_menu_button_mouse_state: MouseStateHandle,
-    pub ai_assistant_button_mouse_state: MouseStateHandle,
+    pub agent_context_button_mouse_state: MouseStateHandle,
     pub save_as_workflow_button_mouse_state: MouseStateHandle,
     pub filter_mouse_states: HashMap<BlockIndex, MouseStateHandle>,
     pub snackbar_toggle_button_mouse_state: MouseStateHandle,
@@ -916,7 +914,7 @@ impl BlockListElement {
             subshell_separator_height: terminal_spacing.subshell_separator_height,
             hovered_block_index: None,
             overflow_menu_button: None,
-            ask_ai_assistant_button: None,
+            attach_agent_context_button: None,
             save_as_workflow_button: None,
             snackbar_toggle_button: None,
             restored_session_separator: None,
@@ -1118,18 +1116,16 @@ impl BlockListElement {
             .finish(),
         );
 
-        if AISettings::as_ref(app).is_any_ai_enabled(app) {
+        if AISettings::as_ref(app).is_any_ai_enabled(app) && FeatureFlag::AgentMode.is_enabled() {
             let icon = Container::new(
                 ConstrainedBox::new(if FeatureFlag::AgentView.is_enabled() {
                     UIIcon::Icon::Paperclip
                         .to_warpui_icon(icon_color.into())
                         .finish()
-                } else if FeatureFlag::AgentMode.is_enabled() {
+                } else {
                     UIIcon::Icon::Stars
                         .to_warpui_icon(icon_color.into())
                         .finish()
-                } else {
-                    Icon::new(AI_ASSISTANT_SVG_PATH, icon_color).finish()
                 })
                 .with_height(16.)
                 .with_width(16.)
@@ -1139,10 +1135,10 @@ impl BlockListElement {
             .with_padding_left(6.)
             .with_padding_right(4.);
 
-            let (ai_button_action, ai_button_tooltip) = if FeatureFlag::AgentMode.is_enabled() {
-                let active_block = model.block_list().active_block();
-                let has_active_long_running_command = active_block.is_active_and_long_running();
+            let active_block = model.block_list().active_block();
+            let has_active_long_running_command = active_block.is_active_and_long_running();
 
+            let (ai_button_action, ai_button_tooltip) =
                 if has_active_long_running_command && active_block.index() == block_index {
                     (
                         Some(TerminalAction::SetInputModeAgent),
@@ -1150,16 +1146,10 @@ impl BlockListElement {
                     )
                 } else {
                     (
-                        Some(TerminalAction::AskAIAssistant { block_index }),
+                        Some(TerminalAction::AttachBlockAsAgentContext { block_index }),
                         *ATTACH_AS_AGENT_MODE_CONTEXT_TEXT,
                     )
-                }
-            } else {
-                (
-                    Some(TerminalAction::AskAIAssistant { block_index }),
-                    ASK_AI_ASSISTANT_TEXT,
-                )
-            };
+                };
 
             let tooltip = ToolbeltButtonTooltip {
                 label: ai_button_tooltip.to_owned(),
@@ -1171,7 +1161,7 @@ impl BlockListElement {
                 Some(tooltip),
                 false,
                 true,
-                self.mouse_states.ai_assistant_button_mouse_state.clone(),
+                self.mouse_states.agent_context_button_mouse_state.clone(),
                 &self.warp_theme,
                 &self.ui_builder,
                 move |ctx: &mut EventContext, _, _| {
@@ -1180,7 +1170,7 @@ impl BlockListElement {
                     }
                 },
             );
-            self.ask_ai_assistant_button = Some(element);
+            self.attach_agent_context_button = Some(element);
         }
 
         if false {
@@ -2865,8 +2855,8 @@ impl Element for BlockListElement {
                 app,
             );
         }
-        if let Some(ask_ai_assistant_button) = &mut self.ask_ai_assistant_button {
-            ask_ai_assistant_button.layout(
+        if let Some(attach_agent_context_button) = &mut self.attach_agent_context_button {
+            attach_agent_context_button.layout(
                 SizeConstraint::new(
                     vec2f(BLOCK_HOVER_BUTTON_HEIGHT, BLOCK_HOVER_BUTTON_HEIGHT),
                     vec2f(150., 150.),
@@ -3288,7 +3278,8 @@ impl Element for BlockListElement {
 
                     let total_lines = grid_storage_lines + flat_storage_lines;
                     let total_bytes = grid_storage_bytes + flat_storage_bytes;
-                    let text = format!("\
+                    let text = format!(
+                        "\
                             Lines: {total_lines} (grid: {grid_storage_lines}, flat: {flat_storage_lines}); \
                             Size: {:#.1} (grid: {:#.1}, flat: {:#.1})\
                         ",
@@ -3718,7 +3709,7 @@ impl Element for BlockListElement {
                     );
 
                     // We add in increments of 30 as each icon is 26px wide + 4px gap between icons
-                    let ask_ai_assistant_button_origin = block_menu_items_start_origin;
+                    let attach_agent_context_button_origin = block_menu_items_start_origin;
                     let bookmark_button_origin = block_menu_items_start_origin + vec2f(30., 0.);
                     let overflow_menu_button_origin =
                         block_menu_items_start_origin + vec2f(90., 0.);
@@ -3817,9 +3808,14 @@ impl Element for BlockListElement {
                             overflow_icon.paint(overflow_menu_button_origin, ctx, app);
                         }
 
-                        if let Some(ask_ai_assistant_button) = self.ask_ai_assistant_button.as_mut()
+                        if let Some(attach_agent_context_button) =
+                            self.attach_agent_context_button.as_mut()
                         {
-                            ask_ai_assistant_button.paint(ask_ai_assistant_button_origin, ctx, app);
+                            attach_agent_context_button.paint(
+                                attach_agent_context_button_origin,
+                                ctx,
+                                app,
+                            );
                         }
 
                         if FeatureFlag::BlockToolbeltSaveAsWorkflow.is_enabled() {
@@ -4091,9 +4087,9 @@ impl Element for BlockListElement {
                 handled_by_floating_button |= overflow_menu_button.dispatch_event(event, ctx, app);
             }
 
-            if let Some(ask_ai_assistant_button) = &mut self.ask_ai_assistant_button {
+            if let Some(attach_agent_context_button) = &mut self.attach_agent_context_button {
                 handled_by_floating_button |=
-                    ask_ai_assistant_button.dispatch_event(event, ctx, app);
+                    attach_agent_context_button.dispatch_event(event, ctx, app);
             }
 
             if let Some(save_as_workflow_button) = &mut self.save_as_workflow_button {

@@ -1,13 +1,15 @@
 //! This module should houses all horizontal/cross-cutting AI functionality throughout
 //! Warp (including Agent Mode).
 //!
-//! The side panel Warp AI implementation lives in `super::ai_assistant`.
 pub(crate) mod active_agent_views_model;
 pub(crate) mod agent;
 pub(crate) mod agent_conversations_model;
 pub(crate) mod agent_tips;
 pub(crate) mod ai_document_view;
+pub(crate) mod ambient_agents;
+pub(crate) mod api_errors;
 pub mod artifacts;
+pub(crate) mod ask;
 pub(crate) mod attachment_utils;
 #[cfg(not(target_family = "wasm"))]
 pub mod aws_credentials;
@@ -34,7 +36,7 @@ pub use request_limits::*;
 use warpui::AppContext;
 #[cfg(not(target_family = "wasm"))]
 pub mod agent_sdk;
-pub mod cloud_environments;
+pub mod execution_context;
 pub mod execution_profiles;
 pub mod facts;
 pub(crate) mod generate_block_title;
@@ -44,6 +46,7 @@ pub mod mcp;
 pub mod outline;
 
 pub(crate) use ai::paths;
+pub(crate) use ask::AskAIType;
 
 pub fn init(app: &mut AppContext) {
     blocklist::keyboard_navigable_buttons::init(app);

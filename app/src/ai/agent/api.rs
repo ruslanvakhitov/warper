@@ -23,10 +23,8 @@ use warp_core::features::FeatureFlag;
 
 use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::agent::conversation::AmbientAgentTaskId;
-use crate::{
-    ai::{blocklist::SessionContext, llms::LLMId},
-    server::server_api::AIApiError,
-};
+use crate::ai::api_errors::AIApiError;
+use crate::ai::{blocklist::SessionContext, llms::LLMId};
 
 use super::{AIAgentInput, MCPContext, MCPServer, RequestMetadata, Suggestions};
 use crate::ai::blocklist::{BlocklistAIPermissions, RequestInput};
@@ -231,8 +229,7 @@ impl RequestParams {
             .as_ref()
             .map(|model| model.trim().to_owned())
             .filter(|model| !model.is_empty());
-        let allow_use_of_warp_credits_with_byok =
-            *AISettings::as_ref(app).can_use_warp_credits_with_byok;
+        let allow_use_of_warp_credits_with_byok = false;
 
         let app_execution_mode = AppExecutionMode::as_ref(app);
         let autonomy_level = if app_execution_mode.is_autonomous() {

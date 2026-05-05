@@ -65,24 +65,6 @@ fn supported_tools_includes_ask_user_question_when_enabled_and_feature_flag_is_e
 }
 
 #[test]
-fn supported_tools_omit_upload_artifact_even_when_feature_flag_is_enabled() {
-    let _flag = FeatureFlag::ArtifactCommand.override_enabled(true);
-    let params = request_params_with_ask_user_question_enabled(false);
-    let supported_tools = get_supported_tools(&params);
-
-    assert!(!supported_tools.contains(&api::ToolType::UploadFileArtifact));
-}
-
-#[test]
-fn supported_tools_omit_upload_artifact_when_feature_flag_is_disabled() {
-    let _flag = FeatureFlag::ArtifactCommand.override_enabled(false);
-    let params = request_params_with_ask_user_question_enabled(false);
-    let supported_tools = get_supported_tools(&params);
-
-    assert!(!supported_tools.contains(&api::ToolType::UploadFileArtifact));
-}
-
-#[test]
 fn supported_tools_omit_hosted_orchestration_tools_when_orchestration_enabled() {
     let mut params = request_params_with_ask_user_question_enabled(false);
     params.orchestration_enabled = true;

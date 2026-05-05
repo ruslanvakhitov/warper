@@ -18,6 +18,7 @@ use warp_core::features::FeatureFlag;
 
 #[cfg(test)]
 mod suggestion_test;
+use crate::ai::api_errors::AIApiError;
 use crate::ai::block_context::BlockContext;
 use crate::ai::blocklist::block::view_impl::output::are_all_text_sections_empty;
 use crate::ai::skills::SkillDescriptor;
@@ -26,7 +27,6 @@ use crate::code_review::comments::{
     AttachedReviewComment as CodeReviewComment, ReviewCommentBatch,
 };
 use crate::search::slash_command_menu::static_commands::commands;
-use crate::server::server_api::AIApiError;
 use ai::skills::ParsedSkill;
 use chrono::{DateTime, Local, TimeDelta};
 use comment::ReviewComment;
@@ -45,7 +45,7 @@ use uuid::Uuid;
 use warp_multi_agent_api::{diff_hunk as diff_hunk_api, AgentEvent, AgentType};
 
 pub use self::api::{MaybeAIAgentOutputMessage, MessageToAIAgentOutputMessageError};
-use crate::ai_assistant::execution_context::WarpAiExecutionContext;
+use crate::ai::execution_context::WarpAiExecutionContext;
 use crate::terminal::model::block::BlockId;
 use crate::terminal::shell::ShellType;
 use crate::terminal::view::block_onboarding::onboarding_agentic_suggestions_block::OnboardingChipType;
@@ -2381,12 +2381,6 @@ pub enum AIAgentInput {
         display_query: Option<String>,
     },
 
-    CreateEnvironment {
-        context: Arc<[AIAgentContext]>,
-        display_query: Option<String>,
-        repo_paths: Vec<String>,
-    },
-
     TriggerPassiveSuggestion {
         context: Arc<[AIAgentContext]>,
         attachments: Vec<AIAgentAttachment>,
@@ -2527,7 +2521,6 @@ impl Display for AIAgentInput {
             Self::ActionResult { result, .. } => write!(f, "ActionResult: {result}"),
             Self::ResumeConversation { .. } => write!(f, "ResumeConversation"),
             Self::InitProjectRules { .. } => write!(f, "InitProjectRules"),
-            Self::CreateEnvironment { .. } => write!(f, "CreateEnvironment"),
             Self::TriggerPassiveSuggestion { .. } => write!(f, "TriggerSuggestPrompt"),
             Self::CreateNewProject { .. } => write!(f, "CreateNewProject"),
             Self::CloneRepository { .. } => write!(f, "CloneRepository"),
@@ -2578,8 +2571,7 @@ impl AIAgentInput {
                 clone_repo_url: url,
                 ..
             } => Some(url.query.clone()),
-            Self::InitProjectRules { display_query, .. }
-            | Self::CreateEnvironment { display_query, .. } => display_query.clone(),
+            Self::InitProjectRules { display_query, .. } => display_query.clone(),
             Self::CodeReview { .. } => Some("Address these comments".to_string()),
             Self::FetchReviewComments { .. } => Some(commands::PR_COMMENTS.name.to_string()),
             Self::InvokeSkill {
@@ -2704,7 +2696,6 @@ impl AIAgentInput {
             | Self::AutoCodeDiffQuery { context, .. }
             | Self::ResumeConversation { context, .. }
             | Self::InitProjectRules { context, .. }
-            | Self::CreateEnvironment { context, .. }
             | Self::TriggerPassiveSuggestion { context, .. }
             | Self::CreateNewProject { context, .. }
             | Self::CloneRepository { context, .. }
@@ -2736,7 +2727,6 @@ impl AIAgentInput {
             | Self::AutoCodeDiffQuery { .. }
             | Self::ResumeConversation { .. }
             | Self::InitProjectRules { .. }
-            | Self::CreateEnvironment { .. }
             | Self::CreateNewProject { .. }
             | Self::CloneRepository { .. }
             | Self::CodeReview { .. }
@@ -2760,7 +2750,6 @@ impl AIAgentInput {
         matches!(
             self,
             AIAgentInput::InitProjectRules { .. }
-                | AIAgentInput::CreateEnvironment { .. }
                 | AIAgentInput::FetchReviewComments { .. }
                 | AIAgentInput::InvokeSkill { .. }
         )

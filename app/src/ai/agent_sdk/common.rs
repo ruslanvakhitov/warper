@@ -2,7 +2,6 @@
 
 use std::fmt;
 use std::future::Future;
-use std::sync::Arc;
 use std::time::Duration;
 
 use warp_cli::agent::Harness;
@@ -12,8 +11,6 @@ use crate::ai::agent::conversation::AmbientAgentTaskId;
 use crate::ai::agent::conversation::ServerAIConversationMetadata;
 use crate::ai::agent_sdk::driver::AgentDriverError;
 use crate::ai::llms::{LLMId, LLMPreferences};
-use crate::server::server_api::ai::AIClient;
-use crate::workspaces::user_workspaces::Owner;
 
 /// How long to wait for workspace metadata to refresh.
 pub const WORKSPACE_METADATA_REFRESH_TIMEOUT: Duration = Duration::from_secs(10);
@@ -62,21 +59,6 @@ pub(super) fn set_ambient_task_context_from_run_id(
     anyhow::bail!("Hosted ambient-agent task context is unavailable in local-only Warper")
 }
 
-/// Resolve the owner of a new cloud object. This resolution is based on the CLI `--team` and `--personal` flags.
-///
-/// If `team_flag` is true, attempts to get the current team UID (errors if not on a team).
-/// If `user_flag` is true, gets the current user's UID.
-/// Otherwise, defaults to team if available, falling back to user.
-pub fn resolve_owner(
-    _team_flag: bool,
-    _user_flag: bool,
-    _ctx: &AppContext,
-) -> anyhow::Result<Owner> {
-    Err(anyhow::anyhow!(
-        "Hosted cloud objects are unavailable in local-only Warper"
-    ))
-}
-
 /// Refresh workspace metadata before executing an operation.
 ///
 /// This ensures that team state is up-to-date before creating cloud objects or performing
@@ -103,22 +85,12 @@ pub fn refresh_warp_drive(
 /// the harness: `Harness::Oz` default with a Claude conversation id is treated as a mismatch
 /// and errors out.
 pub(super) async fn fetch_and_validate_conversation_harness(
-    _ai_client: Arc<dyn AIClient>,
     conversation_id: &str,
     _args_harness: Harness,
 ) -> Result<ServerAIConversationMetadata, AgentDriverError> {
     Err(AgentDriverError::ConversationLoadFailed(format!(
         "conversation {conversation_id} is unavailable because hosted agent metadata is amputated in local-only Warper"
     )))
-}
-
-/// Format an object owner for display in the CLI.
-pub fn format_owner(owner: &Owner) -> &'static str {
-    // TODO: For potentially-shared objects, consider looking up the particular user/team name.
-    match owner {
-        Owner::User { .. } => "Personal",
-        Owner::Team { .. } => "Team",
-    }
 }
 
 /// An error resolving an agent option, which we may have prompted the user for.

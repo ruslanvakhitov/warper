@@ -519,17 +519,6 @@ fn handle_terminal_view_event(
                     terminal_pane.delete_blocks(ctx);
                 }
             }
-            Event::ShareModalOpened(block_id) => {
-                group.terminal_with_open_share_block_modal = Some(terminal_pane_id);
-                group.share_block_modal.update(ctx, |share_modal, ctx| {
-                    if let Some(session) = group.terminal_view_from_pane_id(pane_id, ctx) {
-                        let model = session.read(ctx, |view, _| view.model.clone());
-                        share_modal.open_with_model_update(model, *block_id, ctx);
-                        ctx.notify();
-                    }
-                });
-                ctx.notify();
-            }
             Event::SendNotification(notification) => {
                 ctx.emit(pane_group::Event::SendNotification {
                     notification: notification.clone(),
@@ -592,9 +581,6 @@ fn handle_terminal_view_event(
             Event::OpenPluginInstructionsPane(agent, kind) => {
                 ctx.emit(pane_group::Event::OpenPluginInstructionsPane(*agent, *kind));
             }
-            Event::AskAIAssistant(ask_type) => {
-                ctx.emit(pane_group::Event::AskAIAssistant(ask_type.to_owned()))
-            }
             Event::SyncInput(sync_event) => {
                 if SyncedInputState::as_ref(ctx)
                     .should_sync_this_pane_group(ctx.view_id(), ctx.window_id())
@@ -616,8 +602,8 @@ fn handle_terminal_view_event(
                     command.clone(),
                 ));
             }
-            Event::OpenWorkflowModalWithCloudWorkflow(workflow_id) => {
-                ctx.emit(pane_group::Event::OpenCloudWorkflowForEdit(*workflow_id));
+            Event::OpenWorkflowModalWithLocalWorkflow(workflow_id) => {
+                ctx.emit(pane_group::Event::OpenLocalWorkflowForEdit(*workflow_id));
             }
             Event::OpenWorkflowModalWithTemporary(workflow) => {
                 ctx.emit(pane_group::Event::OpenWorkflowModalWithTemporary(
@@ -707,10 +693,6 @@ fn handle_terminal_view_event(
             }
             Event::SummarizationCancelDialogToggled { is_open } => {
                 group.terminal_with_open_summarization_dialog = is_open.then_some(terminal_pane_id);
-                ctx.notify();
-            }
-            Event::EnvironmentSetupModeSelectorToggled { is_open } => {
-                group.pane_with_open_environment_setup_mode_selector = is_open.then_some(pane_id);
                 ctx.notify();
             }
             #[cfg(feature = "local_fs")]
@@ -808,9 +790,6 @@ fn handle_terminal_view_event(
                 ctx.emit(crate::pane_group::Event::OpenAddPromptPane {
                     initial_content: initial_content.clone(),
                 });
-            }
-            Event::OpenEnvironmentManagementPane => {
-                ctx.emit(crate::pane_group::Event::OpenEnvironmentManagementPane);
             }
             #[cfg(feature = "local_fs")]
             Event::FileRenamed { old_path, new_path } => {

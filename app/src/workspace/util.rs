@@ -102,11 +102,7 @@ pub struct WorkspaceState {
     pub is_launch_config_save_modal_open: bool,
     pub is_resource_center_open: bool,
     pub is_command_search_open: bool,
-    pub is_warp_drive_open: bool,
-    pub is_ai_assistant_panel_open: bool,
     pub is_agent_management_popup_open: bool,
-    pub is_auth_override_modal_open: bool,
-    pub is_require_login_modal_open: bool,
     pub is_workflow_modal_open: bool,
     pub is_prompt_editor_open: bool,
     pub is_agent_toolbar_editor_open: bool,
@@ -132,11 +128,7 @@ pub struct WorkspaceState {
 
 impl WorkspaceState {
     pub fn is_any_non_terminal_view_open(&self) -> bool {
-        self.is_any_modal_open()
-            || self.is_theme_chooser_open
-            || self.is_ai_assistant_panel_open
-            || self.is_workflow_modal_open
-            || self.is_warp_drive_open
+        self.is_any_modal_open() || self.is_theme_chooser_open || self.is_workflow_modal_open
     }
 
     pub fn is_any_non_palette_modal_open(&self) -> bool {
@@ -187,8 +179,6 @@ impl WorkspaceState {
         self.is_header_toolbar_editor_open = false;
         self.is_import_modal_open = false;
         self.is_shared_objects_creation_denied_modal_open = false;
-        self.is_auth_override_modal_open = false;
-        self.is_require_login_modal_open = false;
         self.is_suggested_rule_modal_open = false;
         self.is_suggested_agent_mode_workflow_modal_open = false;
         self.is_codex_modal_open = false;
@@ -199,7 +189,7 @@ impl WorkspaceState {
     }
 
     pub fn is_right_panel_open(&self) -> bool {
-        self.is_resource_center_open || self.is_ai_assistant_panel_open
+        self.is_resource_center_open
     }
 
     pub fn is_left_panel_open(&self) -> bool {
@@ -207,7 +197,6 @@ impl WorkspaceState {
     }
 
     pub fn close_all_left_panels(&mut self) {
-        self.is_warp_drive_open = false;
         self.is_theme_chooser_open = false;
     }
 

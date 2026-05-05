@@ -33,7 +33,6 @@ use std::collections::HashSet;
 use std::ops::Deref;
 use std::sync::Arc;
 
-use crate::features::FeatureFlag;
 use crate::palette::PaletteMode;
 use crate::root_view::OpenLaunchConfigArg;
 use crate::search::command_palette::data_sources::DataSourceStore;
@@ -59,7 +58,7 @@ lazy_static! {
     /// Set of hardcoded action names that we want to show in the command palette zero state.
     static ref SUGGESTED_ACTIONS: HashSet<&'static str> = HashSet::from_iter(
         [
-            if FeatureFlag::AgentMode.is_enabled() { "input:toggle_input_type" } else { "workspace:toggle_ai_assistant" },
+            "input:toggle_input_type",
             "workspace:show_theme_chooser",
             "workspace:create_personal_workflow",
         ]

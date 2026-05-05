@@ -56,7 +56,6 @@ pub const CAN_FORK_FROM_LAST_KNOWN_GOOD_STATE_KEY: &str = "CanForkFromLastKnownG
 pub const INPUT_BOX_VISIBLE_KEY: &str = "InputVisible";
 pub const KEYBOARD_PROTOCOL_ENABLED_KEY: &str = "KeyboardProtocolEnabled";
 pub const CLI_AGENT_SESSION_ACTIVE_KEY: &str = "CLIAgentSessionActive";
-pub const ROOT_CLOUD_MODE_PANE_KEY: &str = "RootCloudModePane";
 
 /// Some keybindings will do different things in different contexts. We break
 /// these into their own function to ensure we pay special attention to
@@ -727,7 +726,7 @@ pub fn init(app: &mut AppContext) {
 
     app.register_editable_bindings([
         EditableBinding::new(
-            "terminal:ask_ai_assistant",
+            "terminal:attach_agent_context",
             BindingDescription::new("Attach Selected Block as Agent Context")
                 .with_custom_description(
                     bindings::MAC_MENUS_CONTEXT,
@@ -748,7 +747,7 @@ pub fn init(app: &mut AppContext) {
                 & id!(flags::IS_ANY_AI_ENABLED),
         ),
         EditableBinding::new(
-            "terminal:ask_ai_assistant",
+            "terminal:attach_agent_context",
             BindingDescription::new("Attach Selected Text as Agent Context")
                 .with_custom_description(
                     bindings::MAC_MENUS_CONTEXT,
@@ -766,48 +765,6 @@ pub fn init(app: &mut AppContext) {
                 & (id!("ActiveBlockTextSelection") | id!("ActiveAltScreenSelection"))
                 & id!(flags::IS_ANY_AI_ENABLED),
         ),
-        // We register a single binding for either a selected block or selected text
-        // to avoid cluttering the keybindings UI. At the end of the day, these
-        // map to the same logic, and we should be able to distinguish whether
-        // this is a block selection or text selection later on.
-        EditableBinding::new(
-            "terminal:ask_ai_assistant",
-            "Ask Warp AI about Selection",
-            TerminalAction::ContextMenu(ContextMenuAction::AskAI(AskAISource::SelectedBlockOrText)),
-        )
-        .with_enabled(|| !FeatureFlag::AgentMode.is_enabled())
-        .with_custom_action(CustomAction::AttachSelectionAsAgentModeContext)
-        .with_group(bindings::BindingGroup::WarpAi.as_str())
-        .with_context_predicate(
-            id!("Terminal")
-                & id!(flags::IS_ANY_AI_ENABLED)
-                & (eq!("TerminalView_BlockSelectionCardinality", "One")
-                    | id!("ActiveBlockTextSelection")
-                    | id!("ActiveAltScreenSelection")),
-        ),
-    ]);
-
-    app.register_editable_bindings([
-        EditableBinding::new(
-            "terminal:ask_ai_assistant_last_block",
-            "Ask Warp AI about last block",
-            TerminalAction::ContextMenu(ContextMenuAction::AskAI(AskAISource::LastBlock)),
-        )
-        .with_enabled(|| !FeatureFlag::AgentMode.is_enabled())
-        .with_key_binding("ctrl-shift->")
-        .with_group(bindings::BindingGroup::WarpAi.as_str())
-        .with_context_predicate(
-            id!("Terminal") & id!("TerminalView_NonEmptyBlockList") & id!(flags::IS_ANY_AI_ENABLED),
-        ),
-        EditableBinding::new(
-            "terminal:ask_ai_assistant",
-            "Ask Warp AI",
-            TerminalAction::ContextMenu(ContextMenuAction::AskAI(AskAISource::SelectedInputText)),
-        )
-        .with_enabled(|| !FeatureFlag::AgentMode.is_enabled())
-        .with_group(bindings::BindingGroup::WarpAi.as_str())
-        .with_key_binding("ctrl-shift-space")
-        .with_context_predicate(id!("Input") & id!(flags::IS_ANY_AI_ENABLED)),
     ]);
 
     if FeatureFlag::CommandCorrectionKey.is_enabled() {
@@ -1066,7 +1023,6 @@ fn register_input_mode_bindings(app: &mut AppContext) {
         TerminalAction::SetInputModeAgent,
         agent_mode_predicate.clone()
             & !id!("Input")
-            & !id!(ROOT_CLOUD_MODE_PANE_KEY)
             & !id!(flags::HAS_PENDING_PROMPT_SUGGESTION)
             & !id!(SSH_ERROR_BLOCK_VISIBLE_KEY),
     )

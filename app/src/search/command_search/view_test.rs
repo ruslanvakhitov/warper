@@ -5,7 +5,6 @@ use crate::{
     network::NetworkStatus,
     server::{
         cloud_objects::{listener::Listener, update_manager::UpdateManager},
-        server_api::ServerApiProvider,
         sync_queue::SyncQueue,
         telemetry::context_provider::AppTelemetryContextProvider,
     },
@@ -19,8 +18,6 @@ use super::*;
 
 fn initialize_app(app: &mut App) {
     initialize_settings_for_tests(app);
-
-    app.add_singleton_model(|_| ServerApiProvider::new_for_test());
     app.add_singleton_model(|_| AuthStateProvider::new_for_test());
     app.add_singleton_model(AppTelemetryContextProvider::new_context_provider);
     app.add_singleton_model(AuthManager::new_for_test);
@@ -44,7 +41,7 @@ fn test_render_view() {
         initialize_app(&mut app);
 
         let (_window_id, _view) = app.add_window(WindowStyle::NotStealFocus, |ctx| {
-            CommandSearchView::new(ServerApiProvider::as_ref(ctx).get_ai_client(), ctx)
+            CommandSearchView::new(ctx)
         });
 
         app.update(|_| {

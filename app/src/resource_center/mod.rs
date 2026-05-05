@@ -87,7 +87,6 @@ pub enum TipAction {
     CommandSearch,
     AiCommandSearch,
     SaveNewLaunchConfig,
-    WarpAI,
     // Note that this item has been deprecated from the UI and is not in any section.
     // We are leaving it in this enum to ensure that we don't re-use `Workflows` as a
     // value. Since old clients will have this value in their user defaults, we want
@@ -105,7 +104,6 @@ impl TipAction {
             TipAction::AiCommandSearch => "input:toggle_natural_language_command_search",
             TipAction::ThemePicker => "workspace:show_theme_chooser",
             TipAction::SaveNewLaunchConfig => "workspace:open_launch_config_save_modal",
-            TipAction::WarpAI => "workspace:toggle_ai_assistant",
             TipAction::Workflows => "input:toggle_workflows",
         }
     }
