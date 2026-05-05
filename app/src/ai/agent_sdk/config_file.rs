@@ -6,7 +6,7 @@ use serde_json::{Map, Value};
 use warp_cli::agent::Harness;
 use warp_cli::mcp::MCPSpec;
 
-use crate::server::server_api::ai::AgentConfigSnapshot;
+use crate::ai::ambient_agents::AgentConfigSnapshot;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 pub struct HarnessConfig {

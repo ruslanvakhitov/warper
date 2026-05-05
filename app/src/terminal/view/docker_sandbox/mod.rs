@@ -14,8 +14,6 @@ use crate::pane_group::TerminalViewResources;
 #[cfg(feature = "local_tty")]
 use crate::persistence::ModelEvent;
 #[cfg(feature = "local_tty")]
-use crate::server::server_api::ServerApiProvider;
-#[cfg(feature = "local_tty")]
 use crate::terminal::local_tty::docker_sandbox::resolve_sbx_path_from_user_shell;
 #[cfg(feature = "local_tty")]
 use crate::terminal::TerminalManager;
@@ -29,11 +27,8 @@ use super::TerminalView;
 ///
 /// `None` means "let sbx pick its own default template".
 ///
-/// TODO(advait): Replace this with the base image read off the associated
-/// `AmbientAgentEnvironment` (see `BaseImage::DockerImage`). Requires moving
-/// the environment lookup ahead of `create_and_push_docker_sandbox`, which
-/// currently happens asynchronously in `initialize_docker_sandbox_environment`
-/// after the PTY is spawned. Tracked in Ben's review comment on PR #24550.
+/// TODO(advait): Replace this with a local sandbox profile once sandbox
+/// defaults are configurable outside hosted environment flows.
 #[cfg(feature = "local_tty")]
 pub(crate) const DEFAULT_DOCKER_SANDBOX_BASE_IMAGE: Option<&str> = None;
 
@@ -151,7 +146,6 @@ impl TerminalView {
 
         let resources = TerminalViewResources {
             tips_completed: self.tips_completed.clone(),
-            server_api: ServerApiProvider::as_ref(ctx).get(),
             model_event_sender: self.model_event_sender.clone(),
         };
         let pane_configuration = self.pane_configuration().clone();

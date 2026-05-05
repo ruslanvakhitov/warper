@@ -1,5 +1,5 @@
 use crate::ai::agent::RenderableAIError;
-use crate::server::server_api::ai::TaskStatusUpdate;
+use crate::ai::ambient_agents::TaskStatusUpdate;
 use warp_graphql::ai::{AgentTaskState, PlatformErrorCode};
 
 use super::terminal::ShareSessionError;

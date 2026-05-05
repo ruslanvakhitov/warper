@@ -26,9 +26,7 @@ fn single_tab_snapshot(root: PaneNodeSnapshot) -> AppState {
             bounds: None,
             quake_mode: false,
             universal_search_width: None,
-            warp_ai_width: None,
             voltron_width: None,
-            warp_drive_index_width: None,
             left_panel_open: false,
             vertical_tabs_panel_open: false,
             fullscreen_state: Default::default(),
@@ -50,9 +48,7 @@ fn multi_tab_snapshot(active_tab_index: usize, tabs: Vec<TabSnapshot>) -> AppSta
             bounds: None,
             quake_mode: false,
             universal_search_width: None,
-            warp_ai_width: None,
             voltron_width: None,
-            warp_drive_index_width: None,
             left_panel_open: false,
             vertical_tabs_panel_open: false,
             fullscreen_state: Default::default(),
@@ -79,7 +75,7 @@ fn test_config_from_snapshot_flattens_single_pane() {
                 PaneNodeSnapshot::Leaf(LeafSnapshot {
                     is_focused: true,
                     custom_vertical_tabs_title: None,
-                    contents: LeafContents::Notebook(NotebookPaneSnapshot::CloudNotebook {
+                    contents: LeafContents::Notebook(NotebookPaneSnapshot::LocalNotebook {
                         notebook_id: None,
                         settings: LocalObjectOpenSettings::default(),
                     }),
@@ -149,7 +145,7 @@ fn test_config_from_snapshot_filters_panes() {
                 PaneNodeSnapshot::Leaf(LeafSnapshot {
                     is_focused: false,
                     custom_vertical_tabs_title: None,
-                    contents: LeafContents::Notebook(NotebookPaneSnapshot::CloudNotebook {
+                    contents: LeafContents::Notebook(NotebookPaneSnapshot::LocalNotebook {
                         notebook_id: None,
                         settings: LocalObjectOpenSettings::default(),
                     }),
@@ -213,7 +209,7 @@ fn test_config_from_snapshot_filters_tabs() {
             PaneNodeSnapshot::Leaf(LeafSnapshot {
                 is_focused: true,
                 custom_vertical_tabs_title: None,
-                contents: LeafContents::Notebook(NotebookPaneSnapshot::CloudNotebook {
+                contents: LeafContents::Notebook(NotebookPaneSnapshot::LocalNotebook {
                     notebook_id: None,
                     settings: LocalObjectOpenSettings::default(),
                 }),
@@ -283,7 +279,7 @@ fn test_config_with_active_tab_index_and_filtered_tabs() {
                         PaneNodeSnapshot::Leaf(LeafSnapshot {
                             is_focused: true,
                             custom_vertical_tabs_title: None,
-                            contents: LeafContents::Notebook(NotebookPaneSnapshot::CloudNotebook {
+                            contents: LeafContents::Notebook(NotebookPaneSnapshot::LocalNotebook {
                                 notebook_id: None,
                                 settings: LocalObjectOpenSettings::default(),
                             }),
@@ -374,7 +370,7 @@ fn test_config_with_active_tab_being_filtered() {
                         PaneNodeSnapshot::Leaf(LeafSnapshot {
                             is_focused: true,
                             custom_vertical_tabs_title: None,
-                            contents: LeafContents::Notebook(NotebookPaneSnapshot::CloudNotebook {
+                            contents: LeafContents::Notebook(NotebookPaneSnapshot::LocalNotebook {
                                 notebook_id: None,
                                 settings: LocalObjectOpenSettings::default(),
                             }),

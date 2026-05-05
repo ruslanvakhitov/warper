@@ -11,7 +11,6 @@ use crate::ai::llms::LLMId;
 use anyhow::Context;
 use warp_cli::{
     agent::{AgentCommand, AgentProfileCommand, OutputFormat},
-    artifact::ArtifactCommand,
     mcp::MCPCommand,
     model::ModelCommand,
     provider::ProviderCommand,
@@ -22,7 +21,7 @@ use warp_core::features::FeatureFlag;
 use warp_logging::log_file_path;
 use warpui::{platform::TerminationMode, AppContext, ModelSpawner};
 
-use crate::{send_telemetry_sync_from_app_ctx, server::server_api::ai::AgentConfigSnapshot};
+use crate::{ai::ambient_agents::AgentConfigSnapshot, send_telemetry_sync_from_app_ctx};
 use driver::AgentDriverError;
 
 use crate::ai::skills::{resolve_skill_spec, ResolveSkillError, ResolvedSkill};
@@ -34,18 +33,12 @@ pub use driver::AgentDriver;
 use telemetry::CliTelemetryEvent;
 use warp_cli::agent::{Harness, Prompt, RunAgentArgs};
 
-mod artifact;
 mod common;
 pub(crate) mod config_file;
 pub(crate) mod driver;
-#[cfg(any())]
-mod integration;
-#[cfg(not(target_family = "wasm"))]
-mod integration_output;
 mod mcp;
 mod mcp_config;
 mod model;
-mod oauth_flow;
 pub mod output;
 mod profiles;
 mod provider;
@@ -83,16 +76,8 @@ fn dispatch_command(
             }
             provider::run(ctx, global_options, provider_cmd)
         }
-        CliCommand::Integration(_) => Err(anyhow::anyhow!(
-            "hosted integrations are unavailable in this build"
-        )),
         CliCommand::Secret(_) => Err(anyhow::anyhow!("invalid value 'secret'")),
-        CliCommand::Artifact(artifact_cmd) => {
-            if !FeatureFlag::ArtifactCommand.is_enabled() {
-                return Err(anyhow::anyhow!("invalid value 'artifact'"));
-            }
-            artifact::run(ctx, global_options, artifact_cmd)
-        }
+        _ => Err(anyhow::anyhow!("unsupported local-only CLI command")),
     }
 }
 
@@ -383,7 +368,6 @@ impl AgentDriverRunner {
                     idle_on_complete: args.idle_on_complete.map(|d| d.into()),
                     secrets: Default::default(),
                     resume: None,
-                    environment: None,
                     selected_harness: args.harness.map(Into::into).unwrap_or(Harness::Unknown),
                 };
 
@@ -480,13 +464,8 @@ fn command_to_telemetry_event(command: &CliCommand) -> CliTelemetryEvent {
         CliCommand::Model(ModelCommand::List) => CliTelemetryEvent::ModelList,
         CliCommand::Provider(ProviderCommand::Setup(_)) => CliTelemetryEvent::ProviderSetup,
         CliCommand::Provider(ProviderCommand::List) => CliTelemetryEvent::ProviderList,
-        CliCommand::Integration(_) => CliTelemetryEvent::IntegrationList,
         CliCommand::Secret(_) => CliTelemetryEvent::SecretList,
-        CliCommand::Artifact(artifact_cmd) => match artifact_cmd {
-            ArtifactCommand::Upload(_) => CliTelemetryEvent::ArtifactUpload,
-            ArtifactCommand::Get(_) => CliTelemetryEvent::ArtifactGet,
-            ArtifactCommand::Download(_) => CliTelemetryEvent::ArtifactDownload,
-        },
+        _ => CliTelemetryEvent::Unsupported,
     }
 }
 

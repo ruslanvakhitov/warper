@@ -57,8 +57,6 @@ mod profiling;
 mod projects;
 mod prompt;
 mod quit_warning;
-#[allow(dead_code)]
-mod remote_server;
 mod resource_limits;
 mod reward_view;
 mod safe_triangle;
@@ -102,7 +100,6 @@ mod workspaces;
 // in the warp::integration_testing::assertions module (or a sub-module).  These
 // functions will allow us to keep types internal to this crate and expose a
 // simpler API for integration tests to consume.
-pub mod ai_assistant;
 pub mod appearance;
 pub mod channel;
 pub mod editor;
@@ -274,7 +271,7 @@ use warpui::{AppContext, SingletonEntity, WindowId};
 #[include = "async/**"] // Should be kept in sync with ASYNC_ASSETS_DIR.
 #[cfg_attr(target_family = "wasm", exclude = "async/**")]
 // Excludes take precedence.
-// Standalone CLI builds (the `oz` tarball) are headless and never render the
+// Standalone CLI builds are headless and never render the
 // onboarding/theme imagery in `async/`, so we exclude those bytes from the
 // embedded asset set to keep the CLI binary small — mirroring the carve-out
 // already applied for the WASM target above.
@@ -464,14 +461,6 @@ pub fn run() -> Result<()> {
                 panic!("The minidump server is not supported in Warper");
             }
             #[cfg(not(target_family = "wasm"))]
-            warp_cli::Command::Worker(warp_cli::WorkerCommand::RemoteServerProxy) => {
-                return crate::remote_server::run_proxy();
-            }
-            #[cfg(not(target_family = "wasm"))]
-            warp_cli::Command::Worker(warp_cli::WorkerCommand::RemoteServerDaemon) => {
-                return crate::remote_server::run_daemon();
-            }
-            #[cfg(not(target_family = "wasm"))]
             warp_cli::Command::Worker(warp_cli::WorkerCommand::RipgrepSearch {
                 parent,
                 ignore_case,
@@ -534,11 +523,9 @@ pub fn run() -> Result<()> {
         }
     }
 
-    // If running as a standalone CLI binary or invoked as "oz", print help
+    // If running as a standalone CLI binary, print help
     // instead of launching the GUI app.
-    let is_cli_binary = cfg!(feature = "standalone")
-        || warp_cli::binary_name().is_some_and(|name| name.starts_with("oz"))
-        || std::env::var_os("WARP_CLI_MODE").is_some();
+    let is_cli_binary = cfg!(feature = "standalone") || std::env::var_os("WARP_CLI_MODE").is_some();
     if is_cli_binary {
         warp_cli::Args::clap_command().print_help()?;
         return Ok(());
@@ -1002,8 +989,6 @@ fn initialize_app(
 
     ctx.add_singleton_model(|_ctx| SyncedInputState::new());
 
-    ctx.add_singleton_model(remote_server::manager::RemoteServerManager::new);
-
     log::info!(
         "Starting warp with channel state {} and version {:?}",
         ChannelState::debug_str(),
@@ -1088,27 +1073,6 @@ fn initialize_app(
         ctx.add_singleton_model(|ctx| {
             let model = RepoMetadataModel::new(ctx);
 
-            // Subscribe to RemoteServerManager push events so that remote repo
-            // metadata snapshots and incremental updates populate the remote
-            // sub-model and trigger RepoMetadataEvent emissions.
-            {
-                use remote_server::manager::{RemoteServerManager, RemoteServerManagerEvent};
-                let mgr = RemoteServerManager::handle(ctx);
-                ctx.subscribe_to_model(&mgr, |me, event, ctx| match event {
-                    RemoteServerManagerEvent::RepoMetadataSnapshot { host_id, update } => {
-                        me.insert_remote_snapshot(host_id.clone(), update, ctx);
-                    }
-                    RemoteServerManagerEvent::RepoMetadataUpdated { host_id, update }
-                    | RemoteServerManagerEvent::RepoMetadataDirectoryLoaded { host_id, update } => {
-                        me.apply_remote_incremental_update(host_id, update, ctx);
-                    }
-                    RemoteServerManagerEvent::HostDisconnected { host_id } => {
-                        me.remove_remote_repositories_for_host(host_id, ctx);
-                    }
-                    _ => {}
-                });
-            }
-
             model
         });
     }
@@ -1158,7 +1122,6 @@ fn initialize_app(
     tab_configs::params_modal::init(ctx);
     ai::blocklist::init(ctx);
     ai::blocklist::block::status_bar::init(ctx);
-    ai_assistant::panel::init(ctx);
     env_vars::env_var_collection_block::init(ctx);
     terminal::ssh::install_tmux::init(ctx);
     terminal::ssh::warpify::init(ctx);
@@ -1166,7 +1129,6 @@ fn initialize_app(
     context_chips::display_menu::init(ctx);
     context_chips::node_version_popup::init(ctx);
     ai::agent::todos::popup::init(ctx);
-    terminal::view::init_environment::mode_selector::init(ctx);
     coding_entrypoints::project_buttons::init(ctx);
     if FeatureFlag::CodeReviewSaveChanges.is_enabled() {
         code_review::init(ctx);
@@ -1854,10 +1816,6 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::ShellSelector,
         #[cfg(feature = "block_toolbelt_save_as_workflow")]
         FeatureFlag::BlockToolbeltSaveAsWorkflow,
-        #[cfg(feature = "integration_command")]
-        FeatureFlag::IntegrationCommand,
-        #[cfg(feature = "artifact_command")]
-        FeatureFlag::ArtifactCommand,
         #[cfg(all(feature = "simulate_github_unauthed", debug_assertions))]
         FeatureFlag::SimulateGithubUnauthed,
         #[cfg(feature = "full_screen_zen_mode")]
@@ -1874,14 +1832,10 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::SshDragAndDrop,
         #[cfg(feature = "drag_tabs_to_windows")]
         FeatureFlag::DragTabsToWindows,
-        #[cfg(feature = "cycle_next_command_suggestion")]
-        FeatureFlag::CycleNextCommandSuggestion,
         #[cfg(feature = "multi_workspace")]
         FeatureFlag::MultiWorkspace,
         #[cfg(feature = "ime_marked_text")]
         FeatureFlag::ImeMarkedText,
-        #[cfg(feature = "partial_next_command_suggestions")]
-        FeatureFlag::PartialNextCommandSuggestions,
         #[cfg(feature = "iterm_images")]
         FeatureFlag::ITermImages,
         #[cfg(feature = "validate_autosuggestions")]
@@ -1910,8 +1864,6 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::SuggestedAgentModeWorkflows,
         #[cfg(feature = "command_correction_key")]
         FeatureFlag::CommandCorrectionKey,
-        #[cfg(feature = "predict_am_queries")]
-        FeatureFlag::PredictAMQueries,
         #[cfg(feature = "full_source_code_embedding")]
         FeatureFlag::FullSourceCodeEmbedding,
         #[cfg(feature = "use_tantivy_search")]
@@ -1992,8 +1944,6 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::LinkedCodeBlocks,
         #[cfg(feature = "tabbed_editor_view")]
         FeatureFlag::TabbedEditorView,
-        #[cfg(feature = "send_telemetry_to_file")]
-        FeatureFlag::SendTelemetryToFile,
         #[cfg(feature = "undo_closed_panes")]
         FeatureFlag::UndoClosedPanes,
         #[cfg(feature = "multi_profile")]

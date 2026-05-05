@@ -1,16 +1,9 @@
-use std::sync::Arc;
-
 use instant::Instant;
 use warp_cli::agent::Harness;
-use warpui::prelude::Empty;
-use warpui::{
-    AppContext, Element, Entity, EntityId, ModelContext, ModelHandle, TypedActionView, View,
-    ViewContext,
-};
+use warpui::{Entity, EntityId, ModelContext};
 
-use crate::ai::agent::conversation::{AIConversationId, AmbientAgentTaskId};
+use crate::ai::agent::conversation::AIConversationId;
 use crate::server::ids::SyncId;
-use crate::terminal::input::MenuPositioningProvider;
 
 #[derive(Debug, Clone)]
 pub struct AgentProgress {
@@ -32,11 +25,9 @@ pub struct LocalAgentViewModel {
     conversation_id: Option<AIConversationId>,
     harness: Harness,
     setup_commands_state: SetupCommandState,
-    has_inserted_user_query_block: bool,
 }
 
 pub type AmbientAgentViewModel = LocalAgentViewModel;
-pub type AmbientAgentViewModelEvent = LocalAgentViewModelEvent;
 
 impl LocalAgentViewModel {
     pub fn new(
@@ -51,7 +42,6 @@ impl LocalAgentViewModel {
             conversation_id: None,
             harness: Harness::Unknown,
             setup_commands_state: SetupCommandState::default(),
-            has_inserted_user_query_block: false,
         }
     }
 
@@ -121,18 +111,6 @@ impl LocalAgentViewModel {
         false
     }
 
-    pub fn task_id(&self) -> Option<AmbientAgentTaskId> {
-        None
-    }
-
-    pub fn has_inserted_cloud_mode_user_query_block(&self) -> bool {
-        self.has_inserted_user_query_block
-    }
-
-    pub fn set_has_inserted_cloud_mode_user_query_block(&mut self, has_inserted: bool) {
-        self.has_inserted_user_query_block = has_inserted;
-    }
-
     pub fn has_parent_terminal(&self) -> bool {
         self.has_parent_terminal
     }
@@ -193,14 +171,6 @@ impl LocalAgentViewModel {
         ctx.notify();
     }
 
-    pub fn enter_viewing_existing_session(
-        &mut self,
-        _task_id: AmbientAgentTaskId,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        ctx.notify();
-    }
-
     pub fn status(&self) -> Status {
         Status::NotLocalAgent
     }
@@ -208,7 +178,6 @@ impl LocalAgentViewModel {
     pub fn reset_status(&mut self, ctx: &mut ModelContext<Self>) {
         self.environment_id = None;
         self.conversation_id = None;
-        self.has_inserted_user_query_block = false;
         ctx.notify();
     }
 
@@ -245,168 +214,6 @@ impl Entity for LocalAgentViewModel {
     type Event = LocalAgentViewModelEvent;
 }
 
-pub fn is_cloud_agent_pre_first_exchange(
-    _local_agent_view_model: &ModelHandle<LocalAgentViewModel>,
-    _agent_view_controller: &ModelHandle<crate::ai::blocklist::agent_view::AgentViewController>,
-    _app: &AppContext,
-) -> bool {
-    false
-}
-
-pub struct AmbientAgentEntryBlock;
-
-impl View for AmbientAgentEntryBlock {
-    fn ui_name() -> &'static str {
-        "AmbientAgentEntryBlock"
-    }
-
-    fn render(&self, _app: &AppContext) -> Box<dyn Element> {
-        Empty::new().finish()
-    }
-}
-
-pub enum AmbientAgentEntryBlockEvent {}
-
-impl Entity for AmbientAgentEntryBlock {
-    type Event = AmbientAgentEntryBlockEvent;
-}
-
-#[derive(Debug)]
-pub enum AmbientAgentEntryBlockAction {}
-
-impl TypedActionView for AmbientAgentEntryBlock {
-    type Action = AmbientAgentEntryBlockAction;
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum HarnessSelectorAction {
-    ToggleMenu,
-}
-
-pub enum HarnessSelectorEvent {
-    MenuVisibilityChanged { open: bool },
-}
-
-pub struct HarnessSelector;
-
-impl HarnessSelector {
-    pub fn new(
-        _menu_positioning_provider: Arc<dyn MenuPositioningProvider>,
-        _local_agent_model: ModelHandle<LocalAgentViewModel>,
-        _ctx: &mut ViewContext<Self>,
-    ) -> Self {
-        Self
-    }
-
-    pub fn set_button_theme<T>(&mut self, _theme: T, _ctx: &mut ViewContext<Self>) {}
-}
-
-impl View for HarnessSelector {
-    fn ui_name() -> &'static str {
-        "HarnessSelector"
-    }
-
-    fn render(&self, _app: &AppContext) -> Box<dyn Element> {
-        Empty::new().finish()
-    }
-}
-
-impl Entity for HarnessSelector {
-    type Event = HarnessSelectorEvent;
-}
-
-impl TypedActionView for HarnessSelector {
-    type Action = HarnessSelectorAction;
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Host {
-    Local,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum HostSelectorAction {
-    ToggleMenu,
-}
-
-pub enum HostSelectorEvent {
-    MenuVisibilityChanged { open: bool },
-}
-
-pub struct HostSelector;
-
-impl HostSelector {
-    pub fn new(
-        _menu_positioning_provider: Arc<dyn MenuPositioningProvider>,
-        _ctx: &mut ViewContext<Self>,
-    ) -> Self {
-        Self
-    }
-}
-
-impl View for HostSelector {
-    fn ui_name() -> &'static str {
-        "HostSelector"
-    }
-
-    fn render(&self, _app: &AppContext) -> Box<dyn Element> {
-        Empty::new().finish()
-    }
-}
-
-impl Entity for HostSelector {
-    type Event = HostSelectorEvent;
-}
-
-impl TypedActionView for HostSelector {
-    type Action = HostSelectorAction;
-}
-
-pub struct NakedHeaderButtonTheme;
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum ModelSelectorAction {
-    ToggleMenu,
-}
-
-pub enum ModelSelectorEvent {
-    MenuVisibilityChanged { open: bool },
-}
-
-pub struct ModelSelector;
-
-impl ModelSelector {
-    pub fn new(
-        _menu_positioning_provider: Arc<dyn MenuPositioningProvider>,
-        _terminal_view_id: EntityId,
-        _ctx: &mut ViewContext<Self>,
-    ) -> Self {
-        Self
-    }
-
-    pub fn is_menu_open(&self) -> bool {
-        false
-    }
-}
-
-impl View for ModelSelector {
-    fn ui_name() -> &'static str {
-        "ModelSelector"
-    }
-
-    fn render(&self, _app: &AppContext) -> Box<dyn Element> {
-        Empty::new().finish()
-    }
-}
-
-impl Entity for ModelSelector {
-    type Event = ModelSelectorEvent;
-}
-
-impl TypedActionView for ModelSelector {
-    type Action = ModelSelectorAction;
-}
-
 #[derive(Debug, Clone, Copy, Default)]
 pub struct SetupCommandState {
     did_execute_a_setup_command: bool,
@@ -429,25 +236,4 @@ impl SetupCommandState {
     pub fn set_should_expand(&mut self, value: bool) {
         self.should_expand_setup_commands = value;
     }
-}
-
-pub fn render_loading_footer(
-    _appearance: &warp_core::ui::appearance::Appearance,
-) -> Box<dyn Element> {
-    Empty::new().finish()
-}
-
-pub fn render_error_footer(
-    _error_message: &str,
-    _appearance: &warp_core::ui::appearance::Appearance,
-) -> Box<dyn Element> {
-    Empty::new().finish()
-}
-
-pub struct ProgressProps;
-pub struct ProgressStep;
-pub struct ProgressStepState;
-
-pub fn render_progress(_props: ProgressProps, _app: &AppContext) -> Box<dyn Element> {
-    Empty::new().finish()
 }

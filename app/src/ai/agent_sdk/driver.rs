@@ -16,7 +16,6 @@ use std::{
 
 use crate::ai::llms::{LLMId, LLMPreferences};
 use crate::ai::mcp::MCPServerState;
-use crate::ai::skills::{SkillManager, SkillWatcher};
 use crate::ai::{
     agent::conversation::{
         AIConversation, AIConversationId, AmbientAgentTaskId, ConversationStatus,
@@ -41,10 +40,9 @@ use crate::{
             agent_view::AgentViewEntryOrigin, BlocklistAIHistoryEvent, BlocklistAIHistoryModel,
             BlocklistAIPermissions,
         },
-        cloud_environments::AmbientAgentEnvironment,
         execution_profiles::profiles::AIExecutionProfilesModel,
         mcp::{
-            file_based_manager::{FileBasedMCPManager, FileBasedMCPManagerEvent},
+            file_based_manager::FileBasedMCPManager,
             parsing::{normalize_mcp_json, ParsedTemplatableMCPServerResult},
             templatable_manager::TemplatableMCPServerManagerEvent,
             TemplatableMCPServerInstallation, TemplatableMCPServerManager,
@@ -52,7 +50,7 @@ use crate::{
     },
     server::ids::{ServerId, SyncId},
 };
-use anyhow::{anyhow, Context as _};
+use anyhow::Context as _;
 use futures::{
     channel::oneshot,
     future::{self, Either},
@@ -62,20 +60,18 @@ use oneshot::{Canceled, Receiver, Sender};
 use uuid::Uuid;
 use warp_cli::agent::{Harness, OutputFormat};
 use warp_cli::mcp::MCPSpec;
-use warp_core::{features::FeatureFlag, report_error, report_if_error, safe_debug, safe_info};
+use warp_core::{features::FeatureFlag, report_if_error, safe_debug, safe_info};
 use warp_managed_secrets::ManagedSecretValue;
 use warpui::{
     r#async::{FutureExt, TimeoutError},
     AppContext, Entity, ModelContext, ModelHandle, ModelSpawner, SingletonEntity,
 };
 
-pub(crate) mod environment;
 mod error_classification;
 pub(crate) mod harness;
 pub(super) mod output;
 pub(crate) mod terminal;
 
-use environment::PrepareEnvironmentError;
 use terminal::TerminalDriverEvent;
 
 const MCP_SERVER_STARTUP_TIMEOUT: Duration = Duration::from_secs(60);
@@ -179,8 +175,6 @@ pub struct AgentDriverOptions {
     /// If set, resume an existing conversation instead of starting fresh. The variant
     /// is ignored because hosted transcript restoration is removed.
     pub resume: Option<ResumeOptions>,
-    /// Resolved environment configuration, if any.
-    pub environment: Option<AmbientAgentEnvironment>,
     /// Selected execution harness for this run.
     pub selected_harness: Harness,
 }
@@ -210,9 +204,6 @@ pub struct AgentDriver {
 
     // The conversation ID to continue (if provided).
     restored_conversation_id: Option<AIConversationId>,
-
-    /// Resolved environment configuration.
-    environment: Option<AmbientAgentEnvironment>,
 }
 
 pub(crate) enum SDKConversationOutputStatus {
@@ -391,16 +382,6 @@ impl From<warpui::ModelDropped> for AgentDriverError {
     }
 }
 
-impl From<PrepareEnvironmentError> for AgentDriverError {
-    fn from(error: PrepareEnvironmentError) -> Self {
-        match error {
-            PrepareEnvironmentError::InvalidRuntimeState => AgentDriverError::InvalidRuntimeState,
-            PrepareEnvironmentError::TerminalDriver { source } => source,
-            error => AgentDriverError::EnvironmentSetupFailed(error.to_string()),
-        }
-    }
-}
-
 impl AgentDriver {
     pub fn new(
         options: AgentDriverOptions,
@@ -414,7 +395,6 @@ impl AgentDriver {
             idle_on_complete,
             secrets,
             resume,
-            environment,
             selected_harness,
         } = options;
 
@@ -537,7 +517,6 @@ impl AgentDriver {
             harness: None,
             idle_on_complete,
             restored_conversation_id: None,
-            environment,
         })
     }
 
@@ -882,61 +861,6 @@ impl AgentDriver {
         })
     }
 
-    /// Subscribe to [`FileBasedMCPManagerEvent::CloudEnvMcpScanComplete`]
-    /// paths and return a receiver that fires with all discovered server UUIDs once every repo
-    /// reports in. Must be called **before** `prepare_environment` so no events are missed.
-    fn setup_file_based_mcp_discovery(
-        &self,
-        expected_repos: Vec<PathBuf>,
-        ctx: &mut ModelContext<Self>,
-    ) -> Receiver<Vec<Uuid>> {
-        let (tx, rx) = oneshot::channel::<Vec<Uuid>>();
-
-        if expected_repos.is_empty() {
-            let _ = tx.send(vec![]);
-            return rx;
-        }
-
-        log::info!(
-            "Waiting for {} cloud environment repo(s) to report back file-based MCP server UUIDs...",
-            expected_repos.len()
-        );
-
-        let mut tx = Some(tx);
-        let mut pending_repos: HashSet<PathBuf> = HashSet::from_iter(expected_repos);
-        let mut collected_uuids = Vec::<Uuid>::new();
-
-        let file_based_mcp_manager = FileBasedMCPManager::handle(ctx);
-        let manager_clone = file_based_mcp_manager.clone();
-
-        ctx.subscribe_to_model(&file_based_mcp_manager, move |_me, event, ctx| {
-            if let FileBasedMCPManagerEvent::CloudEnvMcpScanComplete {
-                repo_path,
-                server_uuids,
-            } = event
-            {
-                if pending_repos.remove(repo_path) {
-                    collected_uuids.extend(server_uuids.iter().copied());
-                    log::info!(
-                        "Found file-based MCP server UUIDs in repo {repo_path:?}: {server_uuids:?}"
-                    );
-                    // If we've received all UUIDs from all cloud environment repos, send it back to the caller
-                    // and begin waiting for file-based MCP initialization.
-                    if pending_repos.is_empty() {
-                        let uuids = collected_uuids.clone();
-                        if let Some(sender) = tx.take() {
-                            log::info!("Waiting for file-based MCP servers to reach a terminal state: {uuids:?}");
-                            let _ = sender.send(uuids);
-                        }
-                        ctx.unsubscribe_from_model(&manager_clone);
-                    }
-                }
-            }
-        });
-
-        rx
-    }
-
     /// Wait for all file-based MCP servers with the given UUIDs to reach a terminal state
     /// (`Running` or `FailedToStart`). Non-fatal: always completes without returning an error.
     ///
@@ -1048,30 +972,6 @@ impl AgentDriver {
             })
             .await?
             .await?;
-
-        let environment_opt = foreground.spawn(|me, _| me.environment.clone()).await?;
-
-        if let Some(environment) = environment_opt {
-            log::info!("Loading environment...");
-
-            let harness = task.harness.harness();
-            foreground
-                .spawn(move |me, ctx| {
-                    let working_dir = me.working_dir.clone();
-                    me.terminal_driver.update(ctx, |_, ctx| {
-                        environment::prepare_environment(
-                            environment,
-                            working_dir,
-                            false, /* is_sandbox */
-                            harness,
-                            ctx,
-                        )
-                    })
-                })
-                .await?
-                .await
-                .map_err(AgentDriverError::from)?;
-        }
 
         // Run the harness with a prompt
         match task.harness {

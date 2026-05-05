@@ -3,8 +3,6 @@ use clap::Parser;
 use std::ffi::OsString;
 
 use crate::agent::AgentCommand;
-use crate::artifact::ArtifactCommand;
-use crate::integration::IntegrationCommand;
 use crate::provider::ProviderCommand;
 
 fn set_env_var(name: &str, value: &str) -> Option<OsString> {
@@ -98,7 +96,7 @@ fn retained_agent_profile_and_list_parse() {
 }
 
 #[test]
-fn retained_model_provider_integration_and_mcp_parse() {
+fn retained_model_provider_and_mcp_parse() {
     let args = Args::try_parse_from(["warp", "model", "list"]).unwrap();
     let Some(Command::CommandLine(boxed_cmd)) = args.command else {
         panic!("Expected `warp model list` command");
@@ -117,73 +115,20 @@ fn retained_model_provider_integration_and_mcp_parse() {
         CliCommand::Provider(ProviderCommand::List)
     ));
 
-    let args = Args::try_parse_from([
-        "warp",
-        "integration",
-        "create",
-        "slack",
-        "--model",
-        "gpt-4o",
-        "--file",
-        "integration.yml",
-        "--mcp",
-        r#"{"local":{"command":"echo"}}"#,
-    ])
-    .unwrap();
-    let Some(Command::CommandLine(boxed_cmd)) = args.command else {
-        panic!("Expected `warp integration create` command");
-    };
-    let CliCommand::Integration(IntegrationCommand::Create(args)) = boxed_cmd.as_ref() else {
-        panic!("Expected `warp integration create` command");
-    };
-    assert_eq!(args.model.model.as_deref(), Some("gpt-4o"));
-    assert_eq!(
-        args.config_file.file.as_ref().and_then(|p| p.to_str()),
-        Some("integration.yml")
-    );
-    assert_eq!(args.mcp_specs.len(), 1);
-
     assert!(Args::try_parse_from(["warp", "mcp", "list"]).is_ok());
-}
-
-#[test]
-fn retained_artifact_read_commands_parse() {
-    let args = Args::try_parse_from(["warp", "artifact", "get", "artifact-123"]).unwrap();
-    let Some(Command::CommandLine(boxed_cmd)) = args.command else {
-        panic!("Expected `warp artifact get` command");
-    };
-    let CliCommand::Artifact(ArtifactCommand::Get(args)) = boxed_cmd.as_ref() else {
-        panic!("Expected `warp artifact get` command");
-    };
-    assert_eq!(args.artifact_uid, "artifact-123");
-
-    let args = Args::try_parse_from([
-        "warp",
-        "artifact",
-        "download",
-        "artifact-123",
-        "--out",
-        "downloads/file.json",
-    ])
-    .unwrap();
-    let Some(Command::CommandLine(boxed_cmd)) = args.command else {
-        panic!("Expected `warp artifact download` command");
-    };
-    let CliCommand::Artifact(ArtifactCommand::Download(args)) = boxed_cmd.as_ref() else {
-        panic!("Expected `warp artifact download` command");
-    };
-    assert_eq!(args.artifact_uid, "artifact-123");
-    assert_eq!(
-        args.out.as_ref().and_then(|path| path.to_str()),
-        Some("downloads/file.json")
-    );
 }
 
 #[test]
 fn hosted_commands_are_not_registered() {
     for args in [
+        &["artifact"][..],
+        &["artifact", "get", "artifact-123"][..],
+        &["artifact", "download", "artifact-123"][..],
         &["environment"][..],
         &["e"][..],
+        &["integration"][..],
+        &["integration", "create", "slack"][..],
+        &["integration", "list"][..],
         &["schedule"][..],
         &["run"][..],
         &["task"][..],
@@ -298,26 +243,14 @@ fn hosted_url_override_env_vars_are_ignored() {
 }
 
 #[test]
-fn integration_environment_flags_are_not_registered() {
-    for args in [
-        &["integration", "create", "slack", "--environment", "env-1"][..],
-        &["integration", "create", "slack", "-e", "env-1"][..],
-        &["integration", "create", "slack", "--no-environment"][..],
-        &["integration", "update", "slack", "--environment", "env-1"][..],
-        &["integration", "update", "slack", "-e", "env-1"][..],
-        &["integration", "update", "slack", "--remove-environment"][..],
-    ] {
-        assert_parse_fails(args);
-    }
-}
-
-#[test]
 fn help_does_not_expose_hosted_cli_surfaces() {
     warp_core::features::mark_initialized();
 
     let root_help = Args::clap_command().render_help().to_string();
     for removed in [
         "environment",
+        "artifact",
+        "integration",
         "schedule",
         "harness-support",
         "federate",

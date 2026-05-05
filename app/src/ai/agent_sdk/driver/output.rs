@@ -36,7 +36,6 @@ pub mod text {
             | AIAgentInput::InitProjectRules { .. }
             | AIAgentInput::CodeReview { .. }
             | AIAgentInput::FetchReviewComments { .. }
-            | AIAgentInput::CreateEnvironment { .. }
             | AIAgentInput::SummarizeConversation { .. }
             | AIAgentInput::InvokeSkill { .. }
             | AIAgentInput::StartFromAmbientRunPrompt { .. }
@@ -771,7 +770,6 @@ pub mod json {
                 | AIAgentInput::InitProjectRules { .. }
                 | AIAgentInput::CodeReview { .. }
                 | AIAgentInput::FetchReviewComments { .. }
-                | AIAgentInput::CreateEnvironment { .. }
                 | AIAgentInput::SummarizeConversation { .. }
                 | AIAgentInput::InvokeSkill { .. }
                 | AIAgentInput::StartFromAmbientRunPrompt { .. }

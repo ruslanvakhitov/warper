@@ -5,22 +5,18 @@ use std::{env, fmt, path::Path};
 use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 use url::Url;
 
-use warp_core::channel::ChannelState;
-use warp_core::features::FeatureFlag;
-
 use crate::agent::OutputFormat;
+use warp_core::channel::ChannelState;
 
 #[cfg(windows)]
 mod process_handle;
 
-pub mod artifact;
 pub mod scope;
 pub mod skill;
 
 pub mod agent;
 pub mod completions;
 pub mod config_file;
-pub mod integration;
 pub mod json_filter;
 pub mod mcp;
 pub mod model;
@@ -137,14 +133,6 @@ impl Args {
                     std::process::exit(2);
                 }
 
-                if !FeatureFlag::ArtifactCommand.is_enabled() {
-                    if args.len() > 1 && args[1] == "artifact" {
-                        eprintln!("error: unrecognized subcommand 'artifact'\n");
-                        eprintln!("For more information, try '--help'");
-                        std::process::exit(2);
-                    }
-                }
-
                 let command = Self::clap_command();
 
                 command.try_get_matches()
@@ -168,11 +156,6 @@ impl Args {
 
         // Hide hosted Warp-managed secrets from help text.
         command = command.mut_subcommand("secret", |c| c.hide(true));
-
-        // Hide the artifact subcommand from help text.
-        if !FeatureFlag::ArtifactCommand.is_enabled() {
-            command = command.mut_subcommand("artifact", |c| c.hide(true));
-        }
 
         // Substitute the actual binary name into help output. Ideally clap would do this for us.
         let bin_name =
@@ -253,20 +236,6 @@ pub enum WorkerCommand {
         socket_name: std::path::PathBuf,
     },
 
-    /// Run the remote development server proxy over SSH stdio.
-    /// Ensures the daemon is running, then bridges its stdin/stdout
-    /// to the daemon via a Unix domain socket.
-    #[cfg(not(target_family = "wasm"))]
-    #[clap(hide = true)]
-    RemoteServerProxy,
-
-    /// Run the long-lived remote development server daemon.
-    /// Listens on a Unix domain socket and accepts multiple concurrent
-    /// connections from proxy processes.
-    #[cfg(not(target_family = "wasm"))]
-    #[clap(hide = true)]
-    RemoteServerDaemon,
-
     /// Run a headless ripgrep search worker.
     #[cfg(not(target_family = "wasm"))]
     #[clap(hide = true)]
@@ -304,17 +273,9 @@ pub enum CliCommand {
     #[command(subcommand)]
     Provider(crate::provider::ProviderCommand),
 
-    /// Manage integrations.
-    #[command(subcommand)]
-    Integration(crate::integration::IntegrationCommand),
-
     /// Manage secrets.
     #[command(subcommand)]
     Secret(crate::secret::SecretCommand),
-
-    /// Manage artifacts.
-    #[command(subcommand)]
-    Artifact(crate::artifact::ArtifactCommand),
 }
 
 /// A subcommand of the main Warp application. This includes all [`WorkerCommand`]s as well as app-specific debugging tools.

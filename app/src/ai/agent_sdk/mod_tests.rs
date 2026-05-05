@@ -1,12 +1,11 @@
 use serde_json::json;
 use warp_cli::{
     agent::{HiddenComputerUseArgs, PromptArg, RunAgentArgs},
-    artifact::{ArtifactCommand, UploadArtifactArgs},
     CliCommand,
 };
 use warp_core::telemetry::TelemetryEvent;
 
-use super::{command_to_telemetry_event, telemetry::CliTelemetryEvent};
+use super::command_to_telemetry_event;
 
 #[test]
 fn agent_run_telemetry_is_local_only() {
@@ -41,18 +40,4 @@ fn agent_run_telemetry_is_local_only() {
             "harness": "local",
         }))
     );
-}
-
-#[test]
-fn artifact_upload_telemetry_still_maps() {
-    let event = command_to_telemetry_event(&CliCommand::Artifact(ArtifactCommand::Upload(
-        UploadArtifactArgs {
-            path: "artifact.txt".into(),
-            run_id: Some("run-123".to_string()),
-            conversation_id: None,
-            description: None,
-        },
-    )));
-
-    assert!(matches!(event, CliTelemetryEvent::ArtifactUpload));
 }

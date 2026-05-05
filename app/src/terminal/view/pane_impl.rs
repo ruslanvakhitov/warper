@@ -161,11 +161,8 @@ impl TerminalView {
             .and_then(|h| h.upgrade(app))
             .is_some_and(|stack| stack.as_ref(app).depth() > 1);
 
-        let ambient_agent_view = self.ambient_agent_view_model.as_ref(app);
         let is_transcript_viewer = self.model.lock().is_conversation_transcript_viewer();
-        let has_parent_terminal = (ambient_agent_view.is_ambient_agent()
-            && ambient_agent_view.has_parent_terminal())
-            || (!ambient_agent_view.is_ambient_agent() && !is_transcript_viewer);
+        let has_parent_terminal = !is_transcript_viewer;
         let is_fullscreen_agent_view = self.agent_view_controller.as_ref(app).is_fullscreen();
 
         if in_nav_stack || (is_fullscreen_agent_view && has_parent_terminal) {
@@ -278,21 +275,11 @@ impl TerminalView {
             None
         };
 
-        let mut left_of_overflow = None;
-
         let mut icon_button_count: u32 = 0;
 
         let mut right_row = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_main_axis_size(MainAxisSize::Min);
-        if let Some(content) = left_of_overflow {
-            right_row.add_child(content);
-        }
-        let sharing_element = header_ctx.sharing_controls(app, icon_color, button_size);
-        let has_sharing_element = sharing_element.is_some();
-        if let Some(sharing) = sharing_element {
-            right_row.add_child(sharing);
-        }
         let show_close_button = self
             .focus_handle
             .as_ref()
@@ -306,9 +293,7 @@ impl TerminalView {
                 button_size,
             ),
         );
-        icon_button_count += show_close_button as u32
-            + header_ctx.has_overflow_items as u32
-            + has_sharing_element as u32;
+        icon_button_count += show_close_button as u32 + header_ctx.has_overflow_items as u32;
 
         let min_width = header_edge_min_width(icon_button_count);
         (right_row.finish(), min_width)
@@ -579,11 +564,6 @@ impl TerminalView {
         }
 
         None
-    }
-
-    pub fn is_ambient_agent_session(&self, ctx: &AppContext) -> bool {
-        let _ = ctx;
-        false
     }
 
     fn selected_conversation_for_user_facing_chrome<'a>(

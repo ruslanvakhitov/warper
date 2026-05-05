@@ -2,8 +2,6 @@ use serde_json::{json, Value};
 use strum_macros::{EnumDiscriminants, EnumIter};
 use warp_core::telemetry::{EnablementState, TelemetryEvent, TelemetryEventDesc};
 
-use crate::features::FeatureFlag;
-
 #[derive(Debug, EnumDiscriminants)]
 #[strum_discriminants(derive(EnumIter))]
 pub(super) enum CliTelemetryEvent {
@@ -20,14 +18,11 @@ pub(super) enum CliTelemetryEvent {
     ModelList,
     ProviderSetup,
     ProviderList,
-    IntegrationList,
-    ArtifactUpload,
-    ArtifactGet,
-    ArtifactDownload,
     SecretCreate,
     SecretDelete,
     SecretUpdate,
     SecretList,
+    Unsupported,
 }
 
 impl TelemetryEvent for CliTelemetryEvent {
@@ -81,14 +76,11 @@ impl TelemetryEventDesc for CliTelemetryEventDiscriminants {
             CliTelemetryEventDiscriminants::ModelList => "CLI.Execute.Model.List",
             CliTelemetryEventDiscriminants::ProviderSetup => "CLI.Execute.Provider.Setup",
             CliTelemetryEventDiscriminants::ProviderList => "CLI.Execute.Provider.List",
-            CliTelemetryEventDiscriminants::IntegrationList => "CLI.Execute.Integration.List",
-            CliTelemetryEventDiscriminants::ArtifactUpload => "CLI.Execute.Artifact.Upload",
-            CliTelemetryEventDiscriminants::ArtifactGet => "CLI.Execute.Artifact.Get",
-            CliTelemetryEventDiscriminants::ArtifactDownload => "CLI.Execute.Artifact.Download",
             CliTelemetryEventDiscriminants::SecretCreate => "CLI.Execute.Secret.Create",
             CliTelemetryEventDiscriminants::SecretDelete => "CLI.Execute.Secret.Delete",
             CliTelemetryEventDiscriminants::SecretUpdate => "CLI.Execute.Secret.Update",
             CliTelemetryEventDiscriminants::SecretList => "CLI.Execute.Secret.List",
+            CliTelemetryEventDiscriminants::Unsupported => "CLI.Execute.Unsupported",
         }
     }
 
@@ -103,32 +95,18 @@ impl TelemetryEventDesc for CliTelemetryEventDiscriminants {
             CliTelemetryEventDiscriminants::ModelList => "Listed models from the Warp CLI",
             CliTelemetryEventDiscriminants::ProviderSetup => "Set up a provider via the Warp CLI",
             CliTelemetryEventDiscriminants::ProviderList => "Listed providers from the Warp CLI",
-            CliTelemetryEventDiscriminants::IntegrationList => {
-                "Listed integrations from the Warp CLI"
-            }
-            CliTelemetryEventDiscriminants::ArtifactUpload => {
-                "Uploaded an artifact from the Warp CLI"
-            }
-            CliTelemetryEventDiscriminants::ArtifactGet => {
-                "Got artifact metadata from the Warp CLI"
-            }
-            CliTelemetryEventDiscriminants::ArtifactDownload => {
-                "Downloaded an artifact from the Warp CLI"
-            }
             CliTelemetryEventDiscriminants::SecretCreate => "Created a secret from the Warp CLI",
             CliTelemetryEventDiscriminants::SecretDelete => "Deleted a secret from the Warp CLI",
             CliTelemetryEventDiscriminants::SecretUpdate => "Updated a secret from the Warp CLI",
             CliTelemetryEventDiscriminants::SecretList => "Listed secrets from the Warp CLI",
+            CliTelemetryEventDiscriminants::Unsupported => {
+                "Ran an unsupported local-only CLI command"
+            }
         }
     }
 
     fn enablement_state(&self) -> EnablementState {
-        match self {
-            Self::ArtifactUpload | Self::ArtifactGet | Self::ArtifactDownload => {
-                EnablementState::Flag(FeatureFlag::ArtifactCommand)
-            }
-            _ => EnablementState::Always,
-        }
+        EnablementState::Always
     }
 }
 

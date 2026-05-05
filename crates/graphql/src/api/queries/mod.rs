@@ -4,7 +4,6 @@ pub mod free_available_models;
 pub mod get_ai_conversation_format;
 pub mod get_ai_overages_for_workspace;
 pub mod get_blocks_for_user;
-pub mod get_cloud_environments;
 pub mod get_cloud_object;
 pub mod get_conversation_usage;
 pub mod get_discoverable_teams;
