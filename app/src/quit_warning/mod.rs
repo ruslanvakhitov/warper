@@ -50,8 +50,6 @@ pub struct UnsavedStateSummary<'a> {
     /// All terminal sessions in this scope.
     terminal_sessions: Vec<SessionNavigationData>,
 
-    /// The number of live shared sessions.
-    pub shared_sessions: usize,
     /// Whether or not there are unsaved code changes.
     unsaved_code_changes: bool,
 }
@@ -160,21 +158,6 @@ impl QuitScope<'_> {
         }
     }
 
-    /// Count of shared sessions in this scope.
-    fn shared_sessions(&self, ctx: &AppContext) -> usize {
-        match self {
-            Self::Pane {
-                pane_group,
-                pane_id,
-                ..
-            } => 0,
-            Self::Tabs(_) => 0,
-            Self::Window(_) => 0,
-            Self::App => 0,
-            Self::EditorTab { .. } => 0,
-        }
-    }
-
     fn close_target(&self) -> CloseTarget {
         match self {
             Self::Pane { .. } => CloseTarget::Pane,
@@ -242,15 +225,12 @@ impl<'a> UnsavedStateSummary<'a> {
         let code_review_views = scope.code_review_views(ctx);
         let code_review_summary = CodeEditorSummary::new(&code_review_views);
 
-        let num_shared_sessions = scope.shared_sessions(ctx);
-
         UnsavedStateSummary {
             scope,
             total_long_running_commands: sessions_summary.long_running_cmds.len(),
             windows_with_long_running_commands: sessions_summary.windows_running().len(),
             tabs_with_long_running_commands: sessions_summary.tabs_running().len(),
             terminal_sessions: sessions,
-            shared_sessions: num_shared_sessions,
             unsaved_code_changes: !code_editor_summary.unsaved_changes.is_empty()
                 || !code_review_summary.unsaved_changes.is_empty(),
         }
@@ -258,9 +238,7 @@ impl<'a> UnsavedStateSummary<'a> {
 
     pub fn should_display_warning(&self, ctx: &AppContext) -> bool {
         *GeneralSettings::as_ref(ctx).show_warning_before_quitting
-            && (self.total_long_running_commands > 0
-                || self.shared_sessions > 0
-                || self.unsaved_code_changes)
+            && (self.total_long_running_commands > 0 || self.unsaved_code_changes)
     }
 
     pub fn running_sessions(&self) -> RunningSessionSummary<'_> {
@@ -304,14 +282,6 @@ impl<'a> UnsavedStateSummary<'a> {
             }
             process_info_text.push_str(scope_suffix);
             info_text_lines.push(process_info_text);
-        }
-
-        if self.shared_sessions > 0 {
-            info_text_lines.push(format!(
-                "You are sharing {} {}{scope_suffix}",
-                self.shared_sessions,
-                pluralize(self.shared_sessions, "session", "sessions")
-            ));
         }
 
         if self.unsaved_code_changes {
@@ -437,7 +407,6 @@ impl<'a> QuitWarningDialog<'a> {
         send_telemetry_from_app_ctx!(
             TelemetryEvent::QuitModalShown {
                 running_processes: self.state.total_long_running_commands as u32,
-                shared_sessions: self.state.shared_sessions as u32,
                 modal_for: self.state.scope.close_target()
             },
             ctx

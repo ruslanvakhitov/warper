@@ -12,8 +12,7 @@ use std::{
     collections::{HashMap, HashSet},
     time::Duration,
 };
-use warp_core::channel::ChannelState;
-use warp_core::{features::FeatureFlag, report_error};
+use warp_core::report_error;
 use warp_multi_agent_api::ConversationData;
 
 use super::ServerApi;
@@ -51,26 +50,20 @@ use crate::{
         execution_context::WarpAiExecutionContext, requests::GenerateDialogueResult,
         utils::TranscriptPart, AIGeneratedCommand, GenerateCommandsFromNaturalLanguageError,
     },
-    server::graphql::{
-        default_request_options, get_request_context, get_user_facing_error_message,
-    },
+    server::graphql::{get_request_context, get_user_facing_error_message},
 };
 use ai::index::full_source_code_embedding::{
     self,
     store_client::{IntermediateNode, StoreClient},
     CodebaseContextConfig, ContentHash, EmbeddingConfig, NodeHash, RepoMetadata,
 };
-use warp_graphql::client::Operation;
 #[cfg(not(feature = "agent_mode_evals"))]
 use warp_graphql::queries::get_request_limit_info::{
     GetRequestLimitInfo, GetRequestLimitInfoVariables,
 };
 use warp_graphql::{
-    ai::{AgentTaskState, PlatformErrorCode},
+    ai::PlatformErrorCode,
     mutations::{
-        create_agent_task::{
-            CreateAgentTask, CreateAgentTaskInput, CreateAgentTaskResult, CreateAgentTaskVariables,
-        },
         delete_ai_conversation::{
             DeleteAIConversation, DeleteAIConversationVariables, DeleteConversationInput,
             DeleteConversationResult,
@@ -102,10 +95,6 @@ use warp_graphql::{
             ProvideNegativeFeedbackResponseForAiConversationInput,
             ProvideNegativeFeedbackResponseForAiConversationVariables, RequestsRefundedResult,
         },
-        update_agent_task::{
-            AgentTaskStatusMessageInput, UpdateAgentTask, UpdateAgentTaskInput,
-            UpdateAgentTaskResult, UpdateAgentTaskVariables,
-        },
         update_merkle_tree::{
             MerkleTreeNode, UpdateMerkleTree, UpdateMerkleTreeInput, UpdateMerkleTreeResult,
             UpdateMerkleTreeVariables,
@@ -115,23 +104,14 @@ use warp_graphql::{
         codebase_context_config::{
             CodebaseContextConfigQuery, CodebaseContextConfigResult, CodebaseContextConfigVariables,
         },
-        free_available_models::{
-            FreeAvailableModels, FreeAvailableModelsInput, FreeAvailableModelsResult,
-            FreeAvailableModelsVariables,
-        },
         get_feature_model_choices::{GetFeatureModelChoices, GetFeatureModelChoicesVariables},
         get_relevant_fragments::{
             GetRelevantFragmentsQuery, GetRelevantFragmentsResult, GetRelevantFragmentsVariables,
-        },
-        get_scheduled_agent_history::{
-            GetScheduledAgentHistory, GetScheduledAgentHistoryVariables, ScheduledAgentHistory,
-            ScheduledAgentHistoryInput, ScheduledAgentHistoryResult,
         },
         rerank_fragments::{RerankFragments, RerankFragmentsResult, RerankFragmentsVariables},
         sync_merkle_tree::{
             SyncMerkleTree, SyncMerkleTreeInput, SyncMerkleTreeResult, SyncMerkleTreeVariables,
         },
-        task_attachments::{Task as TaskAttachmentsQuery, TaskInput, TaskResult, TaskVariables},
     },
 };
 
@@ -215,21 +195,6 @@ impl AgentSource {
 }
 
 impl AmbientAgentTaskState {
-    pub fn as_query_param(&self) -> Option<&'static str> {
-        match self {
-            AmbientAgentTaskState::Queued => Some("queued"),
-            AmbientAgentTaskState::Pending => Some("pending"),
-            AmbientAgentTaskState::Claimed => Some("claimed"),
-            AmbientAgentTaskState::InProgress => Some("in_progress"),
-            AmbientAgentTaskState::Succeeded => Some("succeeded"),
-            AmbientAgentTaskState::Failed => Some("failed"),
-            AmbientAgentTaskState::Error => Some("error"),
-            AmbientAgentTaskState::Blocked => Some("blocked"),
-            AmbientAgentTaskState::Cancelled => Some("cancelled"),
-            AmbientAgentTaskState::Unknown => None,
-        }
-    }
-
     pub fn is_failure_like(&self) -> bool {
         matches!(
             self,
@@ -335,20 +300,6 @@ impl AmbientAgentTask {
     }
 }
 
-#[derive(Clone, Debug, serde::Serialize)]
-pub struct AttachmentInput {
-    pub file_name: String,
-    pub mime_type: String,
-    pub data: String,
-}
-
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub struct TaskAttachment {
-    pub file_name: String,
-    pub mime_type: String,
-    pub data: String,
-}
-
 const AI_ASSISTANT_REQUEST_TIMEOUT_SECONDS: u64 = 30;
 
 /// A status update for a task, optionally including a platform error code.
@@ -373,112 +324,6 @@ impl TaskStatusUpdate {
             error_code: Some(error_code),
         }
     }
-}
-
-/// JSON payload sent to the public `POST /agent/run` API.
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct SpawnAgentRequest {
-    pub prompt: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub config: Option<AgentConfigSnapshot>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub title: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub team: Option<bool>,
-    /// Use a Claude-compatible skill as the base prompt.
-    /// Format: "repo:skill_name" or just "skill_name".
-    /// The skill is resolved at runtime in the agent environment.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub skill: Option<String>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub attachments: Vec<AttachmentInput>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub interactive: Option<bool>,
-    /// Populated when a cloud agent spawns a child run via the public API.
-    /// Not yet wired through the local start_agent flow.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub parent_run_id: Option<String>,
-    /// Base64-encoded `warp.multi_agent.v1.Skill` payloads to restore as runtime skills.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub runtime_skills: Vec<String>,
-    /// Base64-encoded `warp.multi_agent.v1.Attachment` payloads to restore as referenced attachments.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub referenced_attachments: Vec<String>,
-}
-
-// --- Orchestrations V2 messaging types ---
-
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct SendAgentMessageRequest {
-    pub to: Vec<String>,
-    pub subject: String,
-    pub body: String,
-    pub sender_run_id: String,
-}
-
-#[derive(Debug, Clone)]
-pub struct ListAgentMessagesRequest {
-    pub unread_only: bool,
-    pub since: Option<String>,
-    pub limit: i32,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct SendAgentMessageResponse {
-    pub message_ids: Vec<String>,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct AgentMessageHeader {
-    pub message_id: String,
-    pub sender_run_id: String,
-    pub subject: String,
-    pub sent_at: String,
-    pub delivered_at: Option<String>,
-    pub read_at: Option<String>,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct AgentRunEvent {
-    pub event_type: String,
-    pub run_id: String,
-    pub ref_id: Option<String>,
-    pub execution_id: Option<String>,
-    pub occurred_at: String,
-    pub sequence: i64,
-}
-
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct ReportAgentEventRequest {
-    pub event_type: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub execution_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub ref_id: Option<String>,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct ReportAgentEventResponse {
-    pub sequence: i64,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct ReadAgentMessageResponse {
-    pub message_id: String,
-    pub sender_run_id: String,
-    pub subject: String,
-    pub body: String,
-    pub sent_at: String,
-    pub delivered_at: Option<String>,
-    pub read_at: Option<String>,
-}
-
-#[derive(serde::Deserialize)]
-pub struct SpawnAgentResponse {
-    pub task_id: AmbientAgentTaskId,
-    pub run_id: String,
-    #[serde(default)]
-    pub at_capacity: bool,
 }
 
 /// Response from the artifact endpoint.
@@ -599,57 +444,6 @@ pub struct FileArtifactResponseData {
     pub size_bytes: Option<i64>,
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct AttachmentFileInfo {
-    pub filename: String,
-    pub mime_type: String,
-}
-
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct PrepareAttachmentUploadsRequest {
-    pub files: Vec<AttachmentFileInfo>,
-}
-
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct DownloadAttachmentsRequest {
-    pub attachment_ids: Vec<String>,
-}
-
-#[derive(Debug, Clone, serde::Deserialize)]
-pub struct AttachmentDownloadInfo {
-    pub attachment_id: String,
-    pub download_url: String,
-}
-
-#[derive(Debug, Clone, serde::Deserialize)]
-pub struct DownloadAttachmentsResponse {
-    pub attachments: Vec<AttachmentDownloadInfo>,
-}
-
-#[derive(Debug, Clone, serde::Deserialize)]
-pub struct HandoffSnapshotAttachmentInfo {
-    pub attachment_id: String,
-    pub filename: String,
-    pub download_url: String,
-    pub mime_type: Option<String>,
-}
-
-#[derive(Debug, Clone, serde::Deserialize)]
-pub struct ListHandoffSnapshotAttachmentsResponse {
-    pub attachments: Vec<HandoffSnapshotAttachmentInfo>,
-}
-
-#[derive(Debug, Clone, serde::Deserialize)]
-pub struct AttachmentUploadInfo {
-    pub attachment_id: String,
-    pub upload_url: String,
-}
-
-#[derive(Debug, Clone, serde::Deserialize)]
-pub struct PrepareAttachmentUploadsResponse {
-    pub attachments: Vec<AttachmentUploadInfo>,
-}
-
 #[derive(Debug, Clone)]
 pub struct FileArtifactRecord {
     pub artifact_uid: String,
@@ -657,242 +451,6 @@ pub struct FileArtifactRecord {
     pub description: Option<String>,
     pub mime_type: String,
     pub size_bytes: Option<i32>,
-}
-
-/// Filter parameters for listing ambient agent tasks.
-#[derive(Clone, Debug, Default)]
-pub struct TaskListFilter {
-    pub creator_uid: Option<String>,
-    pub updated_after: Option<DateTime<Utc>>,
-    pub created_after: Option<DateTime<Utc>>,
-    pub created_before: Option<DateTime<Utc>>,
-    pub states: Option<Vec<AmbientAgentTaskState>>,
-    pub source: Option<AgentSource>,
-    pub execution_location: Option<ExecutionLocation>,
-    pub environment_id: Option<String>,
-    pub skill_spec: Option<String>,
-    pub schedule_id: Option<String>,
-    pub ancestor_run_id: Option<String>,
-    pub config_name: Option<String>,
-    pub model_id: Option<String>,
-    pub artifact_type: Option<ArtifactType>,
-    pub search_query: Option<String>,
-    pub sort_by: Option<RunSortBy>,
-    pub sort_order: Option<RunSortOrder>,
-    pub cursor: Option<String>,
-}
-
-/// Execution location filter values accepted by the public API.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ExecutionLocation {
-    Local,
-    Remote,
-}
-
-impl ExecutionLocation {
-    pub fn as_query_param(&self) -> &'static str {
-        match self {
-            ExecutionLocation::Local => "LOCAL",
-            ExecutionLocation::Remote => "REMOTE",
-        }
-    }
-}
-
-/// Artifact type filter values accepted by the public API.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ArtifactType {
-    Plan,
-    PullRequest,
-    Screenshot,
-    File,
-}
-
-impl ArtifactType {
-    pub fn as_query_param(&self) -> &'static str {
-        match self {
-            ArtifactType::Plan => "PLAN",
-            ArtifactType::PullRequest => "PULL_REQUEST",
-            ArtifactType::Screenshot => "SCREENSHOT",
-            ArtifactType::File => "FILE",
-        }
-    }
-}
-
-/// Sort-by values accepted by the public API.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum RunSortBy {
-    UpdatedAt,
-    CreatedAt,
-    Title,
-    Agent,
-}
-
-impl RunSortBy {
-    pub fn as_query_param(&self) -> &'static str {
-        match self {
-            RunSortBy::UpdatedAt => "updated_at",
-            RunSortBy::CreatedAt => "created_at",
-            RunSortBy::Title => "title",
-            RunSortBy::Agent => "agent",
-        }
-    }
-}
-
-/// Sort-order values accepted by the public API.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum RunSortOrder {
-    Asc,
-    Desc,
-}
-
-impl RunSortOrder {
-    pub fn as_query_param(&self) -> &'static str {
-        match self {
-            RunSortOrder::Asc => "asc",
-            RunSortOrder::Desc => "desc",
-        }
-    }
-}
-
-/// Build the path + query string for `GET /api/v1/agent/runs` from a filter.
-pub(crate) fn build_list_agent_runs_url(limit: i32, filter: &TaskListFilter) -> String {
-    let mut url = format!("agent/runs?limit={limit}");
-
-    let mut push = |key: &str, value: &str| {
-        url.push('&');
-        url.push_str(key);
-        url.push('=');
-        url.push_str(urlencoding::encode(value).as_ref());
-    };
-
-    if let Some(creator_uid) = filter.creator_uid.as_deref() {
-        push("creator", creator_uid);
-    }
-    if let Some(updated_after) = filter.updated_after {
-        push("updated_after", &updated_after.to_rfc3339());
-    }
-    if let Some(created_after) = filter.created_after {
-        push("created_after", &created_after.to_rfc3339());
-    }
-    if let Some(created_before) = filter.created_before {
-        push("created_before", &created_before.to_rfc3339());
-    }
-    if let Some(states) = filter.states.as_ref() {
-        for state in states {
-            if let Some(value) = state.as_query_param() {
-                push("state", value);
-            }
-        }
-    }
-    if let Some(source) = filter.source.as_ref() {
-        push("source", source.as_str());
-    }
-    if let Some(execution_location) = filter.execution_location {
-        push("execution_location", execution_location.as_query_param());
-    }
-    if let Some(environment_id) = filter.environment_id.as_deref() {
-        push("environment_id", environment_id);
-    }
-    if let Some(skill_spec) = filter.skill_spec.as_deref() {
-        push("skill_spec", skill_spec);
-    }
-    if let Some(schedule_id) = filter.schedule_id.as_deref() {
-        push("schedule_id", schedule_id);
-    }
-    if let Some(ancestor_run_id) = filter.ancestor_run_id.as_deref() {
-        push("ancestor_run_id", ancestor_run_id);
-    }
-    if let Some(config_name) = filter.config_name.as_deref() {
-        push("name", config_name);
-    }
-    if let Some(model_id) = filter.model_id.as_deref() {
-        push("model_id", model_id);
-    }
-    if let Some(artifact_type) = filter.artifact_type {
-        push("artifact_type", artifact_type.as_query_param());
-    }
-    if let Some(search_query) = filter.search_query.as_deref() {
-        push("q", search_query);
-    }
-    if let Some(sort_by) = filter.sort_by {
-        push("sort_by", sort_by.as_query_param());
-    }
-    if let Some(sort_order) = filter.sort_order {
-        push("sort_order", sort_order.as_query_param());
-    }
-    if let Some(cursor) = filter.cursor.as_deref() {
-        push("cursor", cursor);
-    }
-
-    url
-}
-
-struct ListRunsResponse {
-    runs: Vec<AmbientAgentTask>,
-}
-
-impl<'de> serde::Deserialize<'de> for ListRunsResponse {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        #[derive(serde::Deserialize)]
-        struct RawResponse {
-            runs: Vec<serde_json::Value>,
-        }
-
-        let raw = RawResponse::deserialize(deserializer)?;
-        let mut runs = Vec::with_capacity(raw.runs.len());
-
-        for task_value in raw.runs.into_iter() {
-            match serde_json::from_value::<AmbientAgentTask>(task_value) {
-                Ok(task) => runs.push(task),
-                Err(e) => {
-                    // Log the error and skip this task instead of failing the entire request
-                    report_error!(anyhow!("Failed to deserialize ambient agent task: {}", e));
-                }
-            }
-        }
-
-        Ok(ListRunsResponse { runs })
-    }
-}
-
-/// Source information for an agent skill.
-#[derive(Clone, serde::Deserialize, Debug, PartialEq)]
-pub struct AgentListSource {
-    pub owner: String,
-    pub name: String,
-    pub skill_path: String,
-}
-
-/// Environment information for an agent skill.
-#[derive(Clone, serde::Deserialize, Debug, PartialEq)]
-pub struct AgentListEnvironment {
-    pub uid: String,
-    pub name: String,
-}
-
-/// A variant of an agent skill.
-#[derive(Clone, serde::Deserialize, Debug, PartialEq)]
-pub struct AgentListVariant {
-    pub id: String,
-    pub description: String,
-    pub base_prompt: String,
-    pub source: AgentListSource,
-    pub environments: Vec<AgentListEnvironment>,
-}
-
-/// An agent skill item with its variants.
-#[derive(Clone, serde::Deserialize, Debug, PartialEq)]
-pub struct AgentListItem {
-    pub name: String,
-    pub variants: Vec<AgentListVariant>,
-}
-
-#[derive(serde::Deserialize)]
-struct ListAgentsResponse {
-    agents: Vec<AgentListItem>,
 }
 
 #[cfg_attr(test, automock)]
@@ -949,57 +507,6 @@ pub trait AIClient: 'static + Send + Sync {
         request_ids: Vec<String>,
     ) -> anyhow::Result<i32, anyhow::Error>;
 
-    async fn create_agent_task(
-        &self,
-        prompt: String,
-        environment_uid: Option<String>,
-        parent_run_id: Option<String>,
-        config: Option<AgentConfigSnapshot>,
-    ) -> anyhow::Result<AmbientAgentTaskId, anyhow::Error>;
-
-    async fn update_agent_task(
-        &self,
-        task_id: AmbientAgentTaskId,
-        task_state: Option<AgentTaskState>,
-        session_id: Option<session_sharing_protocol::common::SessionId>,
-        conversation_id: Option<String>,
-        status_message: Option<TaskStatusUpdate>,
-    ) -> anyhow::Result<(), anyhow::Error>;
-
-    async fn spawn_agent(
-        &self,
-        request: SpawnAgentRequest,
-    ) -> anyhow::Result<SpawnAgentResponse, anyhow::Error>;
-
-    async fn list_ambient_agent_tasks(
-        &self,
-        limit: i32,
-        filter: TaskListFilter,
-    ) -> anyhow::Result<Vec<AmbientAgentTask>, anyhow::Error>;
-
-    /// List agent runs and return the raw server JSON response.
-    async fn list_agent_runs_raw(
-        &self,
-        limit: i32,
-        filter: TaskListFilter,
-    ) -> anyhow::Result<serde_json::Value, anyhow::Error>;
-
-    async fn get_ambient_agent_task(
-        &self,
-        task_id: &AmbientAgentTaskId,
-    ) -> anyhow::Result<AmbientAgentTask, anyhow::Error>;
-
-    /// Fetch a single agent run and return the raw server JSON response.
-    async fn get_agent_run_raw(
-        &self,
-        task_id: &AmbientAgentTaskId,
-    ) -> anyhow::Result<serde_json::Value, anyhow::Error>;
-
-    async fn get_scheduled_agent_history(
-        &self,
-        schedule_id: &str,
-    ) -> anyhow::Result<ScheduledAgentHistory, anyhow::Error>;
-
     async fn get_ai_conversation(
         &self,
         server_conversation_token: ServerConversationToken,
@@ -1024,98 +531,6 @@ pub trait AIClient: 'static + Send + Sync {
         &self,
         server_conversation_token: String,
     ) -> anyhow::Result<(), anyhow::Error>;
-
-    async fn list_agents(
-        &self,
-        repo: Option<String>,
-    ) -> anyhow::Result<Vec<AgentListItem>, anyhow::Error>;
-
-    async fn cancel_ambient_agent_task(
-        &self,
-        task_id: &AmbientAgentTaskId,
-    ) -> anyhow::Result<(), anyhow::Error>;
-
-    async fn get_task_attachments(
-        &self,
-        task_id: String,
-    ) -> anyhow::Result<Vec<TaskAttachment>, anyhow::Error>;
-
-    async fn get_artifact_download(
-        &self,
-        artifact_uid: &str,
-    ) -> anyhow::Result<ArtifactDownloadResponse, anyhow::Error>;
-
-    async fn prepare_attachments_for_upload(
-        &self,
-        task_id: &AmbientAgentTaskId,
-        files: &[AttachmentFileInfo],
-    ) -> anyhow::Result<PrepareAttachmentUploadsResponse, anyhow::Error>;
-
-    async fn download_task_attachments(
-        &self,
-        task_id: &AmbientAgentTaskId,
-        attachment_ids: &[String],
-    ) -> anyhow::Result<DownloadAttachmentsResponse, anyhow::Error>;
-
-    async fn get_handoff_snapshot_attachments(
-        &self,
-        task_id: &AmbientAgentTaskId,
-    ) -> anyhow::Result<Vec<TaskAttachment>, anyhow::Error>;
-
-    // --- Orchestrations V2 messaging ---
-
-    async fn send_agent_message(
-        &self,
-        request: SendAgentMessageRequest,
-    ) -> anyhow::Result<SendAgentMessageResponse, anyhow::Error>;
-
-    async fn list_agent_messages(
-        &self,
-        run_id: &str,
-        request: ListAgentMessagesRequest,
-    ) -> anyhow::Result<Vec<AgentMessageHeader>, anyhow::Error>;
-
-    async fn poll_agent_events(
-        &self,
-        run_ids: &[String],
-        since_sequence: i64,
-        limit: i32,
-    ) -> anyhow::Result<Vec<AgentRunEvent>, anyhow::Error>;
-
-    /// Persists the latest observed event sequence number for a run on the
-    /// server. Used to keep the server-side cursor in sync with the client so
-    /// that driver/cloud restores can resume without replaying events the
-    /// parent has already acted on.
-    async fn update_event_sequence_on_server(
-        &self,
-        run_id: &str,
-        sequence: i64,
-    ) -> anyhow::Result<(), anyhow::Error>;
-
-    async fn report_agent_event(
-        &self,
-        run_id: &str,
-        request: ReportAgentEventRequest,
-    ) -> anyhow::Result<ReportAgentEventResponse, anyhow::Error>;
-
-    async fn mark_message_delivered(&self, message_id: &str) -> anyhow::Result<(), anyhow::Error>;
-
-    async fn read_agent_message(
-        &self,
-        message_id: &str,
-    ) -> anyhow::Result<ReadAgentMessageResponse, anyhow::Error>;
-
-    /// Fetch a normalized conversation by conversation ID.
-    async fn get_public_conversation(
-        &self,
-        conversation_id: &str,
-    ) -> anyhow::Result<serde_json::Value, anyhow::Error>;
-
-    /// Fetch a normalized conversation by run ID.
-    async fn get_run_conversation(
-        &self,
-        run_id: &str,
-    ) -> anyhow::Result<serde_json::Value, anyhow::Error>;
 
     /// Generates AI copy for code-review flows: commit messages at dialog-open
     /// time and PR titles / bodies at confirm time. `output_type` in the
@@ -1463,152 +878,6 @@ impl AIClient for ServerApi {
         }
     }
 
-    async fn create_agent_task(
-        &self,
-        prompt: String,
-        environment_uid: Option<String>,
-        parent_run_id: Option<String>,
-        config: Option<AgentConfigSnapshot>,
-    ) -> anyhow::Result<AmbientAgentTaskId, anyhow::Error> {
-        // Serialize the config to JSON if provided
-        let agent_config_snapshot = config
-            .map(|c| serde_json::to_string(&c))
-            .transpose()
-            .map_err(|e| anyhow!("Failed to serialize agent config: {e}"))?;
-
-        let variables = CreateAgentTaskVariables {
-            input: CreateAgentTaskInput {
-                prompt,
-                environment_uid: environment_uid.map(|uid| uid.into()),
-                parent_run_id: parent_run_id.map(|run_id| run_id.into()),
-                agent_config_snapshot,
-            },
-            request_context: get_request_context(),
-        };
-
-        let operation = CreateAgentTask::build(variables);
-        let response = self.send_graphql_request(operation, None).await?;
-
-        match response.create_agent_task {
-            CreateAgentTaskResult::CreateAgentTaskOutput(output) => output
-                .task_id
-                .into_inner()
-                .parse()
-                .map_err(|e| anyhow!("Failed to parse task ID from server: {e}")),
-            CreateAgentTaskResult::UserFacingError(e) => {
-                Err(anyhow!(get_user_facing_error_message(e)))
-            }
-            CreateAgentTaskResult::Unknown => Err(anyhow!("failed to create agent task")),
-        }
-    }
-
-    async fn update_agent_task(
-        &self,
-        task_id: AmbientAgentTaskId,
-        task_state: Option<AgentTaskState>,
-        session_id: Option<session_sharing_protocol::common::SessionId>,
-        conversation_id: Option<String>,
-        status_message: Option<TaskStatusUpdate>,
-    ) -> anyhow::Result<(), anyhow::Error> {
-        let variables = UpdateAgentTaskVariables {
-            input: UpdateAgentTaskInput {
-                task_id: task_id.into(),
-                task_state,
-                session_id: session_id.map(|id| id.to_string().into()),
-                conversation_id: conversation_id.map(|id| id.into()),
-                status_message: status_message.map(|update| AgentTaskStatusMessageInput {
-                    message: update.message,
-                    error_code: update.error_code,
-                }),
-            },
-            request_context: get_request_context(),
-        };
-
-        let operation = UpdateAgentTask::build(variables);
-        let response = self.send_graphql_request(operation, None).await?;
-
-        match response.update_agent_task {
-            UpdateAgentTaskResult::UpdateAgentTaskOutput(_) => Ok(()),
-            UpdateAgentTaskResult::UserFacingError(e) => {
-                Err(anyhow!(get_user_facing_error_message(e)))
-            }
-            UpdateAgentTaskResult::Unknown => Err(anyhow!("failed to update agent task")),
-        }
-    }
-
-    async fn spawn_agent(
-        &self,
-        request: SpawnAgentRequest,
-    ) -> anyhow::Result<SpawnAgentResponse, anyhow::Error> {
-        let response: SpawnAgentResponse = self.post_public_api("agent/run", &request).await?;
-        Ok(response)
-    }
-
-    async fn list_ambient_agent_tasks(
-        &self,
-        limit: i32,
-        filter: TaskListFilter,
-    ) -> anyhow::Result<Vec<AmbientAgentTask>, anyhow::Error> {
-        let url = build_list_agent_runs_url(limit, &filter);
-        let response: ListRunsResponse = self.get_public_api(&url).await?;
-        Ok(response.runs)
-    }
-
-    async fn list_agent_runs_raw(
-        &self,
-        limit: i32,
-        filter: TaskListFilter,
-    ) -> anyhow::Result<serde_json::Value, anyhow::Error> {
-        let url = build_list_agent_runs_url(limit, &filter);
-        let response: serde_json::Value = self.get_public_api(&url).await?;
-        Ok(response)
-    }
-
-    async fn get_ambient_agent_task(
-        &self,
-        task_id: &AmbientAgentTaskId,
-    ) -> anyhow::Result<AmbientAgentTask, anyhow::Error> {
-        let response: AmbientAgentTask = self
-            .get_public_api(&format!("agent/runs/{task_id}"))
-            .await?;
-        Ok(response)
-    }
-
-    async fn get_agent_run_raw(
-        &self,
-        task_id: &AmbientAgentTaskId,
-    ) -> anyhow::Result<serde_json::Value, anyhow::Error> {
-        let response: serde_json::Value = self
-            .get_public_api(&format!("agent/runs/{task_id}"))
-            .await?;
-        Ok(response)
-    }
-
-    async fn get_scheduled_agent_history(
-        &self,
-        schedule_id: &str,
-    ) -> anyhow::Result<ScheduledAgentHistory, anyhow::Error> {
-        let variables = GetScheduledAgentHistoryVariables {
-            request_context: get_request_context(),
-            input: ScheduledAgentHistoryInput {
-                schedule_id: schedule_id.to_string().into(),
-            },
-        };
-
-        let operation = GetScheduledAgentHistory::build(variables);
-        let response = self.send_graphql_request(operation, None).await?;
-
-        match response.scheduled_agent_history {
-            ScheduledAgentHistoryResult::ScheduledAgentHistoryOutput(output) => Ok(output.history),
-            ScheduledAgentHistoryResult::UserFacingError(e) => {
-                Err(anyhow!(get_user_facing_error_message(e)))
-            }
-            ScheduledAgentHistoryResult::Unknown => {
-                Err(anyhow!("failed to get scheduled agent history"))
-            }
-        }
-    }
-
     async fn get_ai_conversation(
         &self,
         server_conversation_token: ServerConversationToken,
@@ -1738,193 +1007,6 @@ impl AIClient for ServerApi {
             }
             DeleteConversationResult::Unknown => Err(anyhow!("Failed to delete AI conversation")),
         }
-    }
-
-    async fn list_agents(
-        &self,
-        repo: Option<String>,
-    ) -> anyhow::Result<Vec<AgentListItem>, anyhow::Error> {
-        let path = match repo {
-            Some(repo) => format!("agent?repo={}", urlencoding::encode(&repo)),
-            None => "agent".to_string(),
-        };
-        let response: ListAgentsResponse = self.get_public_api(&path).await?;
-        Ok(response.agents)
-    }
-
-    async fn cancel_ambient_agent_task(
-        &self,
-        task_id: &AmbientAgentTaskId,
-    ) -> anyhow::Result<(), anyhow::Error> {
-        let _: String = self
-            .post_public_api(&format!("agent/tasks/{task_id}/cancel"), &())
-            .await?;
-        Ok(())
-    }
-
-    async fn get_task_attachments(
-        &self,
-        _task_id: String,
-    ) -> anyhow::Result<Vec<TaskAttachment>, anyhow::Error> {
-        Ok(vec![])
-    }
-
-    async fn get_artifact_download(
-        &self,
-        artifact_uid: &str,
-    ) -> anyhow::Result<ArtifactDownloadResponse, anyhow::Error> {
-        let response: ArtifactDownloadResponse = self
-            .get_public_api(&format!("agent/artifacts/{artifact_uid}"))
-            .await?;
-        Ok(response)
-    }
-
-    async fn prepare_attachments_for_upload(
-        &self,
-        task_id: &AmbientAgentTaskId,
-        files: &[AttachmentFileInfo],
-    ) -> anyhow::Result<PrepareAttachmentUploadsResponse, anyhow::Error> {
-        let request = PrepareAttachmentUploadsRequest {
-            files: files.to_vec(),
-        };
-        let response: PrepareAttachmentUploadsResponse = self
-            .post_public_api(
-                &format!("agent/runs/{task_id}/attachments/prepare"),
-                &request,
-            )
-            .await?;
-        Ok(response)
-    }
-
-    async fn download_task_attachments(
-        &self,
-        task_id: &AmbientAgentTaskId,
-        attachment_ids: &[String],
-    ) -> anyhow::Result<DownloadAttachmentsResponse, anyhow::Error> {
-        let request = DownloadAttachmentsRequest {
-            attachment_ids: attachment_ids.to_vec(),
-        };
-        let response: DownloadAttachmentsResponse = self
-            .post_public_api(
-                &format!("agent/runs/{task_id}/attachments/download"),
-                &request,
-            )
-            .await?;
-        Ok(response)
-    }
-
-    async fn get_handoff_snapshot_attachments(
-        &self,
-        _task_id: &AmbientAgentTaskId,
-    ) -> anyhow::Result<Vec<TaskAttachment>, anyhow::Error> {
-        Ok(vec![])
-    }
-
-    // --- Orchestrations V2 messaging ---
-
-    async fn send_agent_message(
-        &self,
-        request: SendAgentMessageRequest,
-    ) -> anyhow::Result<SendAgentMessageResponse, anyhow::Error> {
-        let response: SendAgentMessageResponse =
-            self.post_public_api("agent/messages", &request).await?;
-        Ok(response)
-    }
-
-    async fn list_agent_messages(
-        &self,
-        run_id: &str,
-        request: ListAgentMessagesRequest,
-    ) -> anyhow::Result<Vec<AgentMessageHeader>, anyhow::Error> {
-        let mut params = vec![format!("limit={}", request.limit)];
-        if request.unread_only {
-            params.push("unread=true".to_string());
-        }
-        if let Some(since) = request.since {
-            params.push(format!("since={}", urlencoding::encode(&since)));
-        }
-
-        let path = format!("agent/messages/{run_id}?{}", params.join("&"));
-        let response: Vec<AgentMessageHeader> = self.get_public_api(&path).await?;
-        Ok(response)
-    }
-
-    async fn poll_agent_events(
-        &self,
-        run_ids: &[String],
-        since_sequence: i64,
-        limit: i32,
-    ) -> anyhow::Result<Vec<AgentRunEvent>, anyhow::Error> {
-        let run_ids_param: String = run_ids
-            .iter()
-            .map(|id| format!("run_ids={}", urlencoding::encode(id)))
-            .collect::<Vec<_>>()
-            .join("&");
-        let url = format!("agent/events?{run_ids_param}&since={since_sequence}&limit={limit}");
-        let events: Vec<AgentRunEvent> = self.get_public_api(&url).await?;
-        Ok(events)
-    }
-
-    async fn update_event_sequence_on_server(
-        &self,
-        run_id: &str,
-        sequence: i64,
-    ) -> anyhow::Result<(), anyhow::Error> {
-        #[derive(serde::Serialize)]
-        struct UpdateBody {
-            sequence: i64,
-        }
-        self.patch_public_api_unit(
-            &format!("agent/runs/{run_id}/event-sequence"),
-            &UpdateBody { sequence },
-        )
-        .await
-    }
-
-    async fn report_agent_event(
-        &self,
-        run_id: &str,
-        request: ReportAgentEventRequest,
-    ) -> anyhow::Result<ReportAgentEventResponse, anyhow::Error> {
-        let response: ReportAgentEventResponse = self
-            .post_public_api(&format!("agent/events/{run_id}"), &request)
-            .await?;
-        Ok(response)
-    }
-
-    async fn mark_message_delivered(&self, message_id: &str) -> anyhow::Result<(), anyhow::Error> {
-        self.post_public_api_unit(&format!("agent/messages/{message_id}/delivered"), &())
-            .await
-    }
-
-    async fn read_agent_message(
-        &self,
-        message_id: &str,
-    ) -> anyhow::Result<ReadAgentMessageResponse, anyhow::Error> {
-        let response: ReadAgentMessageResponse = self
-            .post_public_api(&format!("agent/messages/{message_id}/read"), &())
-            .await?;
-        Ok(response)
-    }
-
-    async fn get_public_conversation(
-        &self,
-        conversation_id: &str,
-    ) -> anyhow::Result<serde_json::Value, anyhow::Error> {
-        let response: serde_json::Value = self
-            .get_public_api(&format!("agent/conversations/{conversation_id}"))
-            .await?;
-        Ok(response)
-    }
-
-    async fn get_run_conversation(
-        &self,
-        run_id: &str,
-    ) -> anyhow::Result<serde_json::Value, anyhow::Error> {
-        let response: serde_json::Value = self
-            .get_public_api(&format!("agent/runs/{run_id}/conversation"))
-            .await?;
-        Ok(response)
     }
 
     async fn generate_code_review_content(

@@ -192,9 +192,9 @@ impl SystemInfo {
         // dump the current heap profiling data locally.
         #[cfg(feature = "heap_usage_tracking")]
         {
-            let breakdown_for_sentry = memory_breakdown.clone();
+            let breakdown_for_heap_profile = memory_breakdown.clone();
             ctx.spawn(
-                crate::profiling::dump_jemalloc_heap_profile(breakdown_for_sentry),
+                crate::profiling::dump_jemalloc_heap_profile(breakdown_for_heap_profile),
                 |_, _, _| {},
             );
         }

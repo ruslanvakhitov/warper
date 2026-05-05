@@ -23,8 +23,7 @@ use crate::util::AsciiDebug;
 pub use crate::terminal::history::HistoryEntry;
 
 use super::ansi::{
-    FinishUpdateValue, InputBufferValue, Mode, PendingHook, TmuxInstallFailedInfo,
-    WarpificationUnavailableReason,
+    InputBufferValue, Mode, PendingHook, TmuxInstallFailedInfo, WarpificationUnavailableReason,
 };
 use super::block::{
     AgentInteractionMetadata, Block, BlockId, BlockMetadata, BlockSize, BlocklistEnvVarMetadata,
@@ -2609,11 +2608,6 @@ impl ansi::Handler for TerminalModel {
                     },
                 )),
         }
-    }
-
-    fn finish_update(&mut self, data: FinishUpdateValue) {
-        self.event_proxy
-            .send_terminal_event(Event::FinishUpdate(data));
     }
 
     fn remote_warpification_is_unavailable(&mut self, data: WarpificationUnavailableReason) {

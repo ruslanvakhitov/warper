@@ -5,7 +5,6 @@ pub mod managed_secrets;
 pub mod team;
 pub mod workspace;
 
-use crate::ai::agent::conversation::AmbientAgentTaskId;
 use crate::ai::get_relevant_files::api::{GetRelevantFiles, GetRelevantFilesResponse};
 use crate::ai::predict::generate_ai_input_suggestions;
 use crate::ai::predict::generate_ai_input_suggestions::GenerateAIInputSuggestionsRequest;
@@ -22,24 +21,15 @@ use warp_managed_secrets::client::ManagedSecretsClient;
 use warpui::{r#async::BoxFuture, ModelContext};
 use workspace::WorkspaceClient;
 
-use crate::server::telemetry::TelemetryApi;
-use crate::settings::PrivacySettingsSnapshot;
-
 use anyhow::{anyhow, Context, Result};
-use parking_lot::{Mutex, RwLock};
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
-use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
-use warp_core::telemetry::TelemetryEvent;
 use warpui::Entity;
 use warpui::SingletonEntity;
 
 pub const FETCH_CHANNEL_VERSIONS_TIMEOUT: std::time::Duration = Duration::from_secs(60);
-const AMBIENT_WORKLOAD_TOKEN_HEADER: &str = "X-Warp-Ambient-Workload-Token";
-const CLOUD_AGENT_ID_HEADER: &str = "X-Warp-Cloud-Agent-ID";
-
 /// We use a special error code header `X-Warp-Error-Code` to allow the server to send
 /// more specific error code information, so that the client can discern between different
 /// errors with the same error code.
@@ -50,12 +40,6 @@ const WARP_ERROR_CODE_HEADER: &str = "X-Warp-Error-Code";
 /// state, but if Cloud Run is overloaded, it can also send 429s that aren't credit-related.
 /// So we use this to distinguish between the two cases.
 const WARP_ERROR_CODE_OUT_OF_CREDITS: &str = "OUT_OF_CREDITS";
-
-/// Error code indicating the user has reached their cloud agent concurrency limit.
-const WARP_ERROR_CODE_AT_CAPACITY: &str = "AT_CLOUD_AGENT_CAPACITY";
-
-/// Header used to communicate the source of an agent run (e.g. "CLI", "GITHUB_ACTION").
-pub(crate) const AGENT_SOURCE_HEADER: &str = "X-Oz-Api-Source";
 
 fn hosted_server_disabled() -> anyhow::Error {
     anyhow!("Warp-hosted server APIs are unavailable in Warper")
@@ -87,14 +71,6 @@ pub struct ClientError {
     // See REMOTE-666
     #[serde(skip_serializing_if = "Option::is_none")]
     pub auth_url: Option<String>,
-}
-
-/// Error when the user is at their cloud agent concurrency limit.
-#[derive(thiserror::Error, Debug, Clone, Deserialize)]
-#[error("{error} (running agents: {running_agents})")]
-pub struct CloudAgentCapacityError {
-    pub error: String,
-    pub running_agents: i32,
 }
 
 /// Wrapper for deserialization errors. This covers both:
@@ -331,15 +307,6 @@ pub struct ServerApi {
     client: Arc<http_client::Client>,
     auth_state: Arc<AuthState>,
     event_sender: async_channel::Sender<ServerApiEvent>,
-    // TODO(jeff): Make `TelemetryApi` another type of client, and move it off `ServerApi`.
-    telemetry_api: TelemetryApi,
-    /// Cached ambient workload token for requests from ambient agents.
-    ambient_workload_token: Arc<Mutex<Option<warp_isolation_platform::WorkloadToken>>>,
-    /// The ambient agent task ID for requests from cloud agents.
-    ambient_agent_task_id: Arc<RwLock<Option<AmbientAgentTaskId>>>,
-    /// The source of agent runs (e.g. CLI, GitHub Action). Set once at startup and immutable.
-    agent_source: Option<ai::AgentSource>,
-
     #[cfg(feature = "agent_mode_evals")]
     eval_user_id: Option<i32>,
 }
@@ -348,7 +315,6 @@ impl ServerApi {
     fn new(
         auth_state: Arc<AuthState>,
         event_sender: async_channel::Sender<ServerApiEvent>,
-        agent_source: Option<ai::AgentSource>,
     ) -> Self {
         // We generate a random user ID for evals so we can run evals in parallel.
         #[cfg(feature = "agent_mode_evals")]
@@ -361,10 +327,6 @@ impl ServerApi {
             client: Arc::new(http_client::Client::new()),
             auth_state,
             event_sender,
-            telemetry_api: TelemetryApi::new(),
-            ambient_workload_token: Arc::new(Mutex::new(None)),
-            ambient_agent_task_id: Arc::new(RwLock::new(None)),
-            agent_source,
             #[cfg(feature = "agent_mode_evals")]
             eval_user_id,
         }
@@ -375,7 +337,7 @@ impl ServerApi {
     /// not create a hosted provider.
     pub fn local_only(auth_state: Arc<AuthState>) -> Self {
         let (event_sender, _) = async_channel::bounded(1);
-        Self::new(auth_state, event_sender, None)
+        Self::new(auth_state, event_sender)
     }
 
     #[cfg(test)]
@@ -386,35 +348,9 @@ impl ServerApi {
             client: Arc::new(http_client::Client::new_for_test()),
             auth_state: Arc::new(AuthState::new_for_test()),
             event_sender: tx,
-            telemetry_api: TelemetryApi::new(),
-            ambient_workload_token: Arc::new(Mutex::new(None)),
-            ambient_agent_task_id: Arc::new(RwLock::new(None)),
-            agent_source: None,
             #[cfg(feature = "agent_mode_evals")]
             eval_user_id: None,
         }
-    }
-
-    /// Sets the ambient agent task ID to be sent with all subsequent requests.
-    pub fn set_ambient_agent_task_id(&self, task_id: Option<AmbientAgentTaskId>) {
-        *self.ambient_agent_task_id.write() = task_id;
-    }
-
-    /// Returns ambient agent headers to attach to requests.
-    async fn ambient_agent_headers(&self) -> Result<Vec<(&'static str, String)>> {
-        let task_id = self
-            .ambient_agent_task_id
-            .read()
-            .as_ref()
-            .map(|id| id.to_string());
-
-        let agent_source = self.agent_source.as_ref().map(|s| s.as_str().to_string());
-
-        Ok(task_id
-            .map(|id| (CLOUD_AGENT_ID_HEADER, id))
-            .into_iter()
-            .chain(agent_source.map(|s| (AGENT_SOURCE_HEADER, s)))
-            .collect())
     }
 
     pub fn send_graphql_request<'a, QF, O: warp_graphql::client::Operation<QF> + Send + 'a>(
@@ -486,11 +422,6 @@ impl ServerApi {
     /// Converts a non-success public API response into the most specific client error available.
     async fn error_from_response(response: http_client::Response) -> anyhow::Error {
         let status = response.status();
-        let is_at_capacity = response
-            .headers()
-            .get(WARP_ERROR_CODE_HEADER)
-            .and_then(|v| v.to_str().ok())
-            == Some(WARP_ERROR_CODE_AT_CAPACITY);
         let is_out_of_credits = response
             .headers()
             .get(WARP_ERROR_CODE_HEADER)
@@ -500,14 +431,6 @@ impl ServerApi {
         // Get the response text first since we may need to try multiple deserializations.
         let response_text = response.text().await.unwrap_or_default();
 
-        // Check for AT_CAPACITY error code header.
-        if is_at_capacity {
-            if let Ok(capacity_error) =
-                serde_json::from_str::<CloudAgentCapacityError>(&response_text)
-            {
-                return capacity_error.into();
-            }
-        }
         if status == StatusCode::TOO_MANY_REQUESTS && is_out_of_credits {
             return AIApiError::QuotaLimit.into();
         }
@@ -559,52 +482,6 @@ impl ServerApi {
     /// that the user is logged in.
     pub async fn notify_login(&self) {
         log::debug!("Skipping hosted login notification in Warper.");
-    }
-
-    /// Drops a [`TelemetryEvent`] through the local telemetry API. Prefer not to call this
-    /// directly; use the macros defined in crate::server::telemetry::macros.
-    pub async fn send_telemetry_event(
-        &self,
-        event: impl TelemetryEvent,
-        settings_snapshot: PrivacySettingsSnapshot,
-    ) -> Result<()> {
-        let user_id = self.auth_state.user_id();
-        let anonymous_id = self.auth_state.anonymous_id();
-        self.telemetry_api
-            .send_telemetry_event(user_id, anonymous_id, event, settings_snapshot)
-            .await
-    }
-
-    /// Drains and drops all queued [`TelemetryEvent`]s. Events are queued using the
-    /// [`send_telemetry_from_ctx`] or [`send_telemetry_from_app_ctx`] macros.
-    ///
-    /// Returns the number of events that were flushed.
-    pub async fn flush_telemetry_events(
-        &self,
-        settings_snapshot: PrivacySettingsSnapshot,
-    ) -> Result<usize> {
-        self.telemetry_api.flush_events(settings_snapshot).await
-    }
-
-    /// Removes a legacy persisted telemetry queue at `path` without uploading it.
-    pub async fn remove_persisted_telemetry_events(
-        &self,
-        path: &Path,
-        settings_snapshot: PrivacySettingsSnapshot,
-    ) -> Result<()> {
-        self.telemetry_api
-            .remove_persisted_telemetry_events(path, settings_snapshot)
-            .await
-    }
-
-    /// Drains all queued [`TelemetryEvent`]s without persisting them.
-    pub fn persist_telemetry_events(
-        &self,
-        max_event_count: usize,
-        settings_snapshot: PrivacySettingsSnapshot,
-    ) -> Result<()> {
-        self.telemetry_api
-            .flush_and_persist_events(max_event_count, settings_snapshot)
     }
 
     /// Hits the /ai/generate_input_suggestions endpoint to get the predicted next action, based on past context.

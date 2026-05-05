@@ -60,15 +60,6 @@ diesel::table! {
 }
 
 diesel::table! {
-    ambient_agent_panes (id) {
-        id -> Integer,
-        kind -> Text,
-        uuid -> Binary,
-        task_id -> Nullable<Text>,
-    }
-}
-
-diesel::table! {
     app (id) {
         id -> Nullable<Integer>,
         active_window_id -> Nullable<Integer>,
@@ -102,13 +93,6 @@ diesel::table! {
         is_local -> Nullable<Bool>,
         agent_view_visibility -> Nullable<Text>,
         git_branch_name -> Nullable<Text>,
-    }
-}
-
-diesel::table! {
-    cloud_objects_refreshes (id) {
-        id -> Integer,
-        time_of_next_refresh -> Timestamp,
     }
 }
 
@@ -501,7 +485,6 @@ diesel::table! {
     }
 }
 
-diesel::joinable!(ambient_agent_panes -> pane_nodes (id));
 diesel::joinable!(app -> windows (active_window_id));
 diesel::joinable!(code_pane_tabs -> code_panes (code_pane_id));
 diesel::joinable!(object_permissions -> object_metadata (object_metadata_id));
@@ -515,7 +498,6 @@ diesel::joinable!(team_settings -> teams (team_id));
 diesel::joinable!(workspace_language_server -> workspace_metadata (workspace_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
-    ambient_agent_panes,
     app,
     pane_branches,
     pane_leaves,

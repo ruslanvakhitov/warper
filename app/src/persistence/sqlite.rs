@@ -28,7 +28,6 @@ use itertools::Itertools;
 use libsqlite3_sys as sqlite3;
 use num_traits::FromPrimitive;
 use pathfinder_geometry::{rect::RectF, vector::Vector2F};
-use persistence::model::AMBIENT_AGENT_PANE_KIND;
 use uuid::Uuid;
 use warpui::platform::FullscreenState;
 use warpui::{AppContext, SingletonEntity};
@@ -675,7 +674,6 @@ fn save_app_state(conn: &mut SqliteConnection, app_state: &AppState) -> Result<(
         diesel::delete(schema::ai_document_panes::dsl::ai_document_panes).execute(conn)?;
         diesel::delete(schema::mcp_server_panes::dsl::mcp_server_panes).execute(conn)?;
         diesel::delete(schema::code_review_panes::dsl::code_review_panes).execute(conn)?;
-        diesel::delete(schema::ambient_agent_panes::dsl::ambient_agent_panes).execute(conn)?;
         diesel::delete(schema::welcome_panes::dsl::welcome_panes).execute(conn)?;
         diesel::delete(schema::pane_leaves::dsl::pane_leaves).execute(conn)?;
         diesel::delete(schema::pane_branches::dsl::pane_branches).execute(conn)?;
@@ -2068,24 +2066,8 @@ fn read_node(conn: &mut SqliteConnection, node: model::PaneNode) -> Result<PaneN
                         title: ai_document_pane.title,
                     })
                 }
-                AMBIENT_AGENT_PANE_KIND => {
-                    let pane = schema::ambient_agent_panes::dsl::ambient_agent_panes
-                        .find(node.id)
-                        .select(model::AmbientAgentPane::as_select())
-                        .first(conn)?;
-
-                    LeafContents::Terminal(TerminalPaneSnapshot {
-                        uuid: pane.uuid,
-                        cwd: None,
-                        shell_launch_data: None,
-                        is_active: false,
-                        is_read_only: false,
-                        input_config: None,
-                        llm_model_override: None,
-                        active_profile_id: None,
-                        conversation_ids_to_restore: Vec::new(),
-                        active_conversation_id: None,
-                    })
+                "ambient_agent" => {
+                    bail!("Hosted ambient-agent panes are not restored in Warper")
                 }
                 other => bail!("Unrecognized pane kind: {other}"),
             };
@@ -2108,10 +2090,17 @@ fn read_node(conn: &mut SqliteConnection, node: model::PaneNode) -> Result<PaneN
 
             let mut children = Vec::new();
             for child_node in child_nodes {
-                children.push((
-                    PaneFlex(child_node.flex.unwrap_or(1.)),
-                    read_node(conn, child_node)?,
-                ));
+                let child_flex = PaneFlex(child_node.flex.unwrap_or(1.));
+                match read_node(conn, child_node) {
+                    Ok(child) => children.push((child_flex, child)),
+                    Err(err) => {
+                        log::warn!("Skipping stale persisted child pane during restore: {err:#}");
+                    }
+                }
+            }
+
+            if children.is_empty() {
+                bail!("No restorable children in persisted pane branch");
             }
 
             let direction = match pane_branch.horizontal {
@@ -2856,24 +2845,6 @@ fn clear_user_profiles(conn: &mut SqliteConnection) -> Result<(), Error> {
     conn.transaction::<(), Error, _>(|conn| {
         diesel::delete(schema::user_profiles::dsl::user_profiles).execute(conn)?;
 
-        Ok(())
-    })
-}
-
-#[cfg(any())]
-fn record_time_of_next_refresh(
-    conn: &mut SqliteConnection,
-    timestamp: DateTime<Utc>,
-) -> Result<(), Error> {
-    use schema::cloud_objects_refreshes::dsl::*;
-    let refresh = NewCloudObjectsRefresh {
-        time_of_next_refresh: timestamp.naive_utc(),
-    };
-    conn.transaction::<(), Error, _>(|conn| {
-        diesel::delete(cloud_objects_refreshes).execute(conn)?;
-        diesel::insert_into(cloud_objects_refreshes)
-            .values(refresh)
-            .execute(conn)?;
         Ok(())
     })
 }

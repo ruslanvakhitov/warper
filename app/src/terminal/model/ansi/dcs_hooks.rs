@@ -66,9 +66,6 @@ pub(super) enum DProtoHook {
     InitSsh {
         value: InitSshValue,
     },
-    FinishUpdate {
-        value: FinishUpdateValue,
-    },
     RemoteWarpificationIsUnavailable {
         // If a value is provided, it's suggesting a way to install TMUX on the remote.
         value: WarpificationUnavailableReason,
@@ -99,7 +96,6 @@ impl DProtoHook {
             DProtoHook::InitSubshell { .. } => "InitSubshell",
             DProtoHook::SourcedRcFileForWarp { .. } => "SourcedRcFileForWarp",
             DProtoHook::InitSsh { .. } => "InitSsh",
-            DProtoHook::FinishUpdate { .. } => "FinishUpdate",
             DProtoHook::RemoteWarpificationIsUnavailable { .. } => {
                 "RemoteWarpificationIsUnavailable"
             }
@@ -147,9 +143,6 @@ impl DProtoHook {
                 value: Default::default(),
             }),
             "InitSsh" => Some(DProtoHook::InitSsh {
-                value: Default::default(),
-            }),
-            "FinishUpdate" => Some(DProtoHook::FinishUpdate {
                 value: Default::default(),
             }),
             "SshTmuxInstaller" => Some(DProtoHook::SshTmuxInstaller {
@@ -318,14 +311,6 @@ impl DProtoHook {
             DProtoHook::Clear { .. } => {
                 log::warn!("Tried to add unknown field {key} to Clear hook");
             }
-            DProtoHook::FinishUpdate { value } => match key.as_ref() {
-                "update_id" => {
-                    value.update_id = v;
-                }
-                _ => {
-                    log::warn!("Tried to add unknown field {key} to FinishUpdate hook");
-                }
-            },
             DProtoHook::InputBuffer { value } => match key.as_ref() {
                 "buffer" => {
                     value.buffer = v;
@@ -670,13 +655,6 @@ pub struct InputBufferValue {
 /// the `clear` command or ctrl-l).
 #[derive(Debug, Default, Deserialize, Serialize)]
 pub struct ClearValue {}
-
-/// Received from the pty when warp_finish_update is called at the end of an
-/// assisted auto-update.
-#[derive(Debug, Clone, Deserialize, Serialize, Default)]
-pub struct FinishUpdateValue {
-    pub update_id: String,
-}
 
 /// Received from the pty right before the remote shell exits (via `exit`,
 /// `logout`, Ctrl-D on an empty prompt, etc.). Lets the Warp client drop

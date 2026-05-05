@@ -2,7 +2,6 @@ mod action;
 mod active_session;
 #[cfg(target_os = "macos")]
 mod cli_install;
-mod close_session_confirmation_dialog;
 pub mod delete_conversation_confirmation_dialog;
 mod global_actions;
 pub mod header_toolbar_editor;
@@ -143,12 +142,8 @@ pub fn init(app: &mut AppContext) {
                 WorkspaceAction::LogReviewCommentSendStatusForActiveTab,
             )
             .with_context_predicate(id!("Workspace")),
-            EditableBinding::new(
-                "workspace:panic",
-                "Trigger a panic (for testing sentry-rust)",
-                WorkspaceAction::Panic,
-            )
-            .with_context_predicate(id!("Workspace")),
+            EditableBinding::new("workspace:panic", "Trigger a panic", WorkspaceAction::Panic)
+                .with_context_predicate(id!("Workspace")),
             EditableBinding::new(
                 "workspace:open_view_tree_debug_view",
                 "Open view tree debugger",

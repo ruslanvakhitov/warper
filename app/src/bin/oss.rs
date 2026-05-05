@@ -15,10 +15,6 @@ fn main() -> Result<()> {
         ChannelConfig {
             app_id: AppId::new("dev", "warper", "Warper"),
             logfile_name: "warper.log".into(),
-            server_config: None,
-            oz_config: None,
-            telemetry_config: None,
-            autoupdate_config: None,
             mcp_static_config: None,
         },
     );

@@ -17,7 +17,7 @@ use warpui::SingletonEntity;
 use warpui::{Entity, ModelContext, ModelHandle};
 
 use super::event::SshLoginStatus;
-use super::model::ansi::{FinishUpdateValue, WarpificationUnavailableReason};
+use super::model::ansi::WarpificationUnavailableReason;
 use super::model::block::BlockId;
 use super::model::completions::ShellCompletion;
 use super::model::terminal_model::{ExitReason, TmuxControlModeContext, TmuxInstallationState};
@@ -286,7 +286,6 @@ impl ModelEventDispatcher {
             Event::PromptUpdated => ModelEvent::PromptUpdated,
             Event::HonorPS1OutOfSync => ModelEvent::HonorPS1OutOfSync,
             Event::Typeahead => ModelEvent::Typeahead,
-            Event::FinishUpdate(data) => ModelEvent::FinishUpdate(data),
             Event::TextSelectionChanged => ModelEvent::SelectedTextChanged,
             Event::ShellSpawned(shell_type) => ModelEvent::ShellSpawned(shell_type),
             Event::SendCompletionsPrompt => ModelEvent::SendCompletionsPrompt,
@@ -458,7 +457,6 @@ pub enum ModelEvent {
     /// handling logic is mostly executed on that event loop thread, they would otherwise be
     /// inaccessible to views/models.
     Handler(AnsiHandlerEvent),
-    FinishUpdate(FinishUpdateValue),
     SelectedTextChanged,
     ShellSpawned(ShellType),
     CompletionsFinished(Vec<ShellCompletion>),

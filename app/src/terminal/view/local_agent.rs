@@ -10,7 +10,6 @@ use warpui::{
 
 use crate::ai::agent::conversation::{AIConversationId, AmbientAgentTaskId};
 use crate::server::ids::SyncId;
-use crate::server::server_api::ai::{AttachmentInput, SpawnAgentRequest};
 use crate::terminal::input::MenuPositioningProvider;
 
 #[derive(Debug, Clone)]
@@ -54,10 +53,6 @@ impl LocalAgentViewModel {
             setup_commands_state: SetupCommandState::default(),
             has_inserted_user_query_block: false,
         }
-    }
-
-    pub fn request(&self) -> Option<&SpawnAgentRequest> {
-        None
     }
 
     pub fn setup_command_state(&self) -> &SetupCommandState {
@@ -219,23 +214,6 @@ impl LocalAgentViewModel {
 
     pub fn set_conversation_id(&mut self, id: Option<AIConversationId>) {
         self.conversation_id = id;
-    }
-
-    pub fn spawn_agent(
-        &mut self,
-        _prompt: String,
-        _attachments: Vec<AttachmentInput>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        ctx.notify();
-    }
-
-    pub fn spawn_agent_with_request(
-        &mut self,
-        _request: SpawnAgentRequest,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        ctx.notify();
     }
 
     pub fn cancel_task(&mut self, ctx: &mut ModelContext<Self>) {

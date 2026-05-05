@@ -8,15 +8,15 @@ use serde::{Deserialize, Deserializer, Serialize};
 use warp_multi_agent_api::{self as api, response_event::stream_finished};
 
 use super::schema::{
-    active_mcp_servers, agent_conversations, agent_tasks, ai_document_panes, ai_memory_panes,
-    ambient_agent_panes, app, blocks, cloud_objects_refreshes, code_pane_tabs, code_panes,
-    code_review_panes, commands, current_user_information, env_var_collection_panes, folders,
-    generic_string_objects, ignored_suggestions, mcp_environment_variables,
-    mcp_server_installations, mcp_server_panes, notebook_panes, notebooks, object_actions,
-    object_metadata, object_permissions, pane_branches, pane_leaves, pane_nodes, panels,
-    project_rules, projects, server_experiments, settings_panes, tabs, team_members, team_settings,
-    teams, terminal_panes, user_profiles, welcome_panes, windows, workflow_panes, workflows,
-    workspace_language_server, workspace_metadata, workspace_teams, workspaces,
+    active_mcp_servers, agent_conversations, agent_tasks, ai_document_panes, ai_memory_panes, app,
+    blocks, code_pane_tabs, code_panes, code_review_panes, commands, current_user_information,
+    env_var_collection_panes, folders, generic_string_objects, ignored_suggestions,
+    mcp_environment_variables, mcp_server_installations, mcp_server_panes, notebook_panes,
+    notebooks, object_actions, object_metadata, object_permissions, pane_branches, pane_leaves,
+    pane_nodes, panels, project_rules, projects, server_experiments, settings_panes, tabs,
+    team_members, team_settings, teams, terminal_panes, user_profiles, welcome_panes, windows,
+    workflow_panes, workflows, workspace_language_server, workspace_metadata, workspace_teams,
+    workspaces,
 };
 
 #[derive(Insertable)]
@@ -566,9 +566,6 @@ pub const GET_STARTED_PANE_KIND: &str = "get_started";
 /// The [`pane_leaves::kind`] value for AI document panes.
 pub const AI_DOCUMENT_PANE_KIND: &str = "ai_document";
 
-/// The [`pane_leaves::kind`] value for ambient agent (cloud mode) panes.
-pub const AMBIENT_AGENT_PANE_KIND: &str = "ambient_agent";
-
 #[derive(Insertable)]
 #[diesel(table_name = terminal_panes)]
 pub struct NewTerminalPane {
@@ -658,24 +655,6 @@ pub struct NewMCPServerPane {
 pub struct NewWelcomePane {
     pub id: i32,
     pub startup_directory: Option<String>,
-}
-
-#[derive(Identifiable, Queryable, Selectable)]
-#[diesel(table_name = ambient_agent_panes)]
-#[diesel(primary_key(id))]
-pub struct AmbientAgentPane {
-    pub id: i32,
-    pub kind: String,
-    pub uuid: Vec<u8>,
-    pub task_id: Option<String>,
-}
-
-#[derive(Insertable)]
-#[diesel(table_name = ambient_agent_panes)]
-pub struct NewAmbientAgentPane {
-    pub id: i32,
-    pub uuid: Vec<u8>,
-    pub task_id: Option<String>,
 }
 
 #[derive(Insertable)]
@@ -806,19 +785,6 @@ pub struct UserProfile {
     pub photo_url: String,
     pub email: String,
     pub display_name: Option<String>,
-}
-
-#[derive(Insertable)]
-#[diesel(table_name = cloud_objects_refreshes)]
-pub struct NewCloudObjectsRefresh {
-    pub time_of_next_refresh: NaiveDateTime,
-}
-
-#[derive(Identifiable, Queryable)]
-#[diesel(table_name = cloud_objects_refreshes)]
-pub struct CloudObjectsRefresh {
-    pub id: i32,
-    pub time_of_next_refresh: NaiveDateTime,
 }
 
 #[derive(Insertable)]

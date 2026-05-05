@@ -1,4 +1,4 @@
-use std::{collections::HashMap, ffi::OsString, path::PathBuf, sync::Arc};
+use std::{collections::HashMap, ffi::OsString, path::PathBuf};
 
 use shell_words::quote as shell_quote;
 use uuid::Uuid;
@@ -8,12 +8,10 @@ use warp_managed_secrets::ManagedSecretValue;
 use crate::ai::{
     agent::conversation::AmbientAgentTaskId,
     agent_sdk::{
-        config_file::HarnessConfig, driver::AgentDriverError, task_env_vars,
-        validate_cli_installed, ClaudeHarness, ThirdPartyHarness,
+        driver::AgentDriverError, task_env_vars, validate_cli_installed, ClaudeHarness,
+        ThirdPartyHarness,
     },
 };
-use crate::server::server_api::ai::AIClient;
-use crate::server::server_api::ai::AgentConfigSnapshot;
 use crate::terminal::cli_agent_sessions::plugin_manager::plugin_manager_for;
 use crate::terminal::shell::ShellType;
 
@@ -58,23 +56,12 @@ pub(super) fn build_local_opencode_child_command(prompt: &str) -> String {
     format!("opencode --prompt {quoted_prompt}")
 }
 
-fn local_child_task_config(harness: Harness) -> Option<AgentConfigSnapshot> {
-    match harness {
-        Harness::Oz | Harness::OpenCode | Harness::Gemini | Harness::Unknown => None,
-        Harness::Claude => Some(AgentConfigSnapshot {
-            harness: Some(HarnessConfig::from_harness_type(harness)),
-            ..Default::default()
-        }),
-    }
-}
-
 pub(super) async fn prepare_local_harness_child_launch(
     prompt: String,
     harness_type: String,
     parent_run_id: Option<String>,
     shell_type: Option<ShellType>,
     startup_directory: Option<PathBuf>,
-    ai_client: Arc<dyn AIClient>,
 ) -> Result<PreparedLocalHarnessLaunch, String> {
     let Some(harness) = normalize_local_child_harness(&harness_type) else {
         let harness_name = harness_type.trim();
@@ -127,20 +114,10 @@ pub(super) async fn prepare_local_harness_child_launch(
         Harness::Gemini => unreachable!("normalize_local_child_harness filters out Gemini"),
     };
 
-    let task_id = ai_client
-        .create_agent_task(
-            prompt.clone(),
-            None,
-            parent_run_id.clone(),
-            local_child_task_config(harness),
-        )
-        .await
-        .map_err(|error| {
-            format!(
-                "Failed to create local {} child task: {error}",
-                harness.display_name()
-            )
-        })?;
+    let task_id = Uuid::new_v4()
+        .to_string()
+        .parse::<AmbientAgentTaskId>()
+        .map_err(|error| format!("Failed to create local child task id: {error}"))?;
 
     Ok(PreparedLocalHarnessLaunch {
         command,

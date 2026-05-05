@@ -18,7 +18,7 @@ use crate::terminal::ClipboardType;
 use crate::util::AsciiDebug;
 
 use super::history::HistoryEntry;
-use super::model::ansi::{FinishUpdateValue, WarpificationUnavailableReason};
+use super::model::ansi::WarpificationUnavailableReason;
 use super::model::block::BlockId;
 use super::model::session::{SessionId, SessionInfo};
 use super::model::terminal_model::{BlockIndex, ExitReason, TmuxInstallationState};
@@ -134,9 +134,6 @@ pub enum Event {
         session_id: SessionId,
         error: String,
     },
-    /// Emitted when the assisted auto-update has completed and we're ready to
-    /// relaunch the app.
-    FinishUpdate(FinishUpdateValue),
     TextSelectionChanged,
     ShellSpawned(ShellType),
     SendCompletionsPrompt,
@@ -489,7 +486,6 @@ impl Debug for Event {
                     "RemoteServerFailed(session: {session_id:?}, error: {error})"
                 )
             }
-            Event::FinishUpdate(data) => write!(f, "FinishUpdate({})", data.update_id),
             Event::TextSelectionChanged => write!(f, "TextSelectionChanged"),
             Event::ShellSpawned(shell_type) => write!(f, "ShellSpawned({shell_type:?})"),
             Event::SendCompletionsPrompt => write!(f, "SendCompletionsPrompt"),

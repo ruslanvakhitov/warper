@@ -23,7 +23,6 @@ pub trait RegexDisplayInfo {
 }
 
 pub const TELEMETRY_ENABLED_DEFAULTS_KEY: &str = "TelemetryEnabled";
-pub const CRASH_REPORTING_ENABLED_DEFAULTS_KEY: &str = "CrashReportingEnabled";
 pub const CLOUD_CONVERSATION_STORAGE_ENABLED_DEFAULTS_KEY: &str = "CloudConversationStorageEnabled";
 
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
@@ -91,16 +90,6 @@ define_settings_group!(LocalPrivacySettings, settings: [
         toml_path: "privacy.telemetry_enabled",
         description: "Whether anonymous usage telemetry is collected locally.",
     },
-    is_crash_reporting_enabled: IsCrashReportingEnabled {
-        type: bool,
-        default: false,
-        supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Never,
-        private: false,
-        storage_key: "CrashReportingEnabled",
-        toml_path: "privacy.crash_reporting_enabled",
-        description: "Whether local crash diagnostics are enabled.",
-    },
     is_cloud_conversation_storage_enabled: IsCloudConversationStorageEnabled {
         type: bool,
         default: false,
@@ -135,7 +124,6 @@ maybe_define_setting!(HasInitializedDefaultSecretRegexes, group: PrivacySettings
 /// settings, or send crash diagnostics to hosted services.
 pub struct PrivacySettings {
     pub is_telemetry_enabled: bool,
-    pub is_crash_reporting_enabled: bool,
     pub is_cloud_conversation_storage_enabled: bool,
     pub has_initialized_default_secret_regexes: HasInitializedDefaultSecretRegexes,
     /// List of user defined secret regexes.
@@ -156,7 +144,6 @@ pub struct PrivacySettings {
 #[derive(Clone, Copy)]
 pub struct PrivacySettingsSnapshot {
     is_telemetry_enabled: bool,
-    is_crash_reporting_enabled: bool,
     is_telemetry_force_enabled: bool,
     should_collect_ai_ugc_telemetry: bool,
     // This is an option so that, if a user has not set this value (and it's set to its default value of true),
@@ -172,10 +159,6 @@ impl PrivacySettingsSnapshot {
 
     pub fn is_telemetry_enabled(&self) -> bool {
         self.is_telemetry_enabled
-    }
-
-    pub fn is_crash_reporting_enabled(&self) -> bool {
-        self.is_crash_reporting_enabled
     }
 
     pub fn is_telemetry_force_enabled(&self) -> bool {
@@ -198,7 +181,6 @@ impl PrivacySettingsSnapshot {
         Self {
             cloud_conversation_storage_enabled: None,
             is_telemetry_enabled: true,
-            is_crash_reporting_enabled: true,
             is_telemetry_force_enabled: true,
             should_collect_ai_ugc_telemetry: true,
         }
@@ -232,13 +214,6 @@ impl PrivacySettings {
             .and_then(|s| serde_json::from_str(&s).ok())
             .unwrap_or(false);
 
-        let is_crash_reporting_enabled: bool = ctx
-            .private_user_preferences()
-            .read_value(CRASH_REPORTING_ENABLED_DEFAULTS_KEY)
-            .unwrap_or_default()
-            .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or(false);
-
         let is_cloud_conversation_storage_enabled: bool = ctx
             .private_user_preferences()
             .read_value(CLOUD_CONVERSATION_STORAGE_ENABLED_DEFAULTS_KEY)
@@ -254,11 +229,6 @@ impl PrivacySettings {
                 .expect("is_telemetry_enabled is a boolean."),
         );
         let _ = ctx.private_user_preferences().write_value(
-            CRASH_REPORTING_ENABLED_DEFAULTS_KEY,
-            serde_json::to_string(&is_crash_reporting_enabled)
-                .expect("is_crash_reporting_enabled is a boolean."),
-        );
-        let _ = ctx.private_user_preferences().write_value(
             CLOUD_CONVERSATION_STORAGE_ENABLED_DEFAULTS_KEY,
             serde_json::to_string(&is_cloud_conversation_storage_enabled)
                 .expect("is_cloud_conversation_storage_enabled is a boolean."),
@@ -271,12 +241,6 @@ impl PrivacySettings {
                 LocalPrivacySettingsChangedEvent::IsTelemetryEnabled { .. } => {
                     me.set_is_telemetry_enabled(
                         *privacy_settings.is_telemetry_enabled.value(),
-                        ctx,
-                    );
-                }
-                LocalPrivacySettingsChangedEvent::IsCrashReportingEnabled { .. } => {
-                    me.set_is_crash_reporting_enabled(
-                        *privacy_settings.is_crash_reporting_enabled.value(),
                         ctx,
                     );
                 }
@@ -297,7 +261,6 @@ impl PrivacySettings {
             HasInitializedDefaultSecretRegexes::new_from_storage(ctx);
 
         Self {
-            is_crash_reporting_enabled,
             is_telemetry_enabled,
             is_cloud_conversation_storage_enabled,
             user_secret_regex_list,
@@ -368,7 +331,6 @@ impl PrivacySettings {
     pub fn refresh_to_default(&mut self) {
         // TODO(zach): this seems incorrect - should we also update the values on disk?
         self.is_telemetry_enabled = false;
-        self.is_crash_reporting_enabled = false;
         self.is_cloud_conversation_storage_enabled = false;
         self.is_telemetry_force_enabled = false;
         self.is_enterprise_secret_redaction_enabled = false;
@@ -384,7 +346,6 @@ impl PrivacySettings {
     #[cfg(test)]
     pub fn mock(_ctx: &mut ModelContext<Self>) -> Self {
         Self {
-            is_crash_reporting_enabled: false,
             is_telemetry_enabled: false,
             is_cloud_conversation_storage_enabled: false,
             user_secret_regex_list: CustomSecretRegexList::new(None),
@@ -404,40 +365,11 @@ impl PrivacySettings {
             cloud_conversation_storage_enabled: (!self.is_cloud_conversation_storage_enabled)
                 .then_some(false),
             is_telemetry_enabled: self.is_telemetry_enabled,
-            is_crash_reporting_enabled: self.is_crash_reporting_enabled,
             is_telemetry_force_enabled: self.is_telemetry_force_enabled,
             should_collect_ai_ugc_telemetry: should_collect_ai_ugc_telemetry(
                 app,
                 self.is_telemetry_enabled,
             ),
-        }
-    }
-
-    /// Sets `is_crash_reporting_enabled` to the given value.
-    ///
-    /// Additionally, this writes the given value to local settings.
-    /// Finally, emits a `PrivacySettingsEvent::UpdateIsCrashReportingEnabled` event.
-    pub fn set_is_crash_reporting_enabled(
-        &mut self,
-        new_value: bool,
-        ctx: &mut ModelContext<PrivacySettings>,
-    ) {
-        let old_value = self.is_crash_reporting_enabled;
-        if new_value != old_value {
-            self.is_crash_reporting_enabled = new_value;
-
-            LocalPrivacySettings::handle(ctx).update(ctx, |settings, ctx| {
-                log::info!("Setting is_crash_reporting_enabled to {new_value}");
-                let _ = settings
-                    .is_crash_reporting_enabled
-                    .set_value(new_value, ctx);
-            });
-
-            ctx.emit(PrivacySettingsChangedEvent::UpdateIsCrashReportingEnabled {
-                old_value,
-                new_value,
-            });
-            ctx.notify();
         }
     }
 
@@ -583,10 +515,6 @@ impl PrivacySettings {
 #[derive(Clone, Copy)]
 pub enum PrivacySettingsChangedEvent {
     UpdateIsTelemetryEnabled {
-        old_value: bool,
-        new_value: bool,
-    },
-    UpdateIsCrashReportingEnabled {
         old_value: bool,
         new_value: bool,
     },

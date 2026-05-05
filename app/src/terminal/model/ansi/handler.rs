@@ -291,10 +291,6 @@ pub trait Handler {
     /// Callback emitted during the initialization process for ssh sessions
     fn init_ssh(&mut self, _data: InitSshValue) {}
 
-    /// Callback emitted to notify the app that we're ready to complete an
-    /// assisted auto-update.
-    fn finish_update(&mut self, _data: FinishUpdateValue) {}
-
     /// Callback emitted from the warpify_ssh_session script if it's discovered
     /// that we can't warpify the remote session.
     fn remote_warpification_is_unavailable(&mut self, _data: WarpificationUnavailableReason) {}

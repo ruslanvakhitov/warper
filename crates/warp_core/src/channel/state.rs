@@ -1,11 +1,10 @@
 use lazy_static::lazy_static;
 use parking_lot::Mutex;
 use std::{borrow::Cow, collections::HashSet};
-use url::{ParseError, Url};
 
 use crate::AppId;
 use crate::{
-    channel::config::{ChannelConfig, McpOAuthProviderConfig, WarpServerConfig},
+    channel::config::{ChannelConfig, McpOAuthProviderConfig},
     features::FeatureFlag,
 };
 
@@ -17,8 +16,6 @@ lazy_static! {
 
 #[cfg(feature = "test-util")]
 lazy_static! {
-    static ref MOCK_SERVER: mockito::ServerGuard = mockito::Server::new();
-    static ref MOCK_SERVER_URL: String = MOCK_SERVER.url();
     static ref APP_VERSION: Mutex<Option<&'static str>> = Mutex::new(None);
 }
 
@@ -45,10 +42,6 @@ impl ChannelState {
             config: ChannelConfig {
                 app_id,
                 logfile_name: "".into(),
-                server_config: None,
-                oz_config: None,
-                telemetry_config: None,
-                autoupdate_config: None,
                 mcp_static_config: None,
             },
         }
@@ -82,67 +75,8 @@ impl ChannelState {
         cfg!(debug_assertions) || matches!(Self::channel(), Channel::Local | Channel::Dev)
     }
 
-    pub fn override_server_root_url(url: impl Into<Cow<'static, str>>) -> Result<(), ParseError> {
-        let url = url.into();
-        Url::parse(&url)?;
-        let mut state = CHANNEL_STATE.lock();
-        if !state.channel.allows_server_url_overrides() {
-            return Ok(());
-        }
-        match state.config.server_config.as_mut() {
-            Some(server_config) => server_config.server_root_url = Some(url),
-            None => {
-                state.config.server_config =
-                    Some(WarpServerConfig::local_override(Some(url), None, None));
-            }
-        }
-        Ok(())
-    }
-
-    pub fn override_ws_server_url(url: impl Into<Cow<'static, str>>) -> Result<(), ParseError> {
-        let url = url.into();
-        Url::parse(&url)?;
-        let mut state = CHANNEL_STATE.lock();
-        if !state.channel.allows_server_url_overrides() {
-            return Ok(());
-        }
-        match state.config.server_config.as_mut() {
-            Some(server_config) => server_config.rtc_server_url = Some(url),
-            None => {
-                state.config.server_config =
-                    Some(WarpServerConfig::local_override(None, Some(url), None));
-            }
-        }
-        Ok(())
-    }
-
-    pub fn override_session_sharing_server_url(
-        url: impl Into<Cow<'static, str>>,
-    ) -> Result<(), ParseError> {
-        let url = url.into();
-        Url::parse(&url)?;
-        let mut state = CHANNEL_STATE.lock();
-        if !state.channel.allows_server_url_overrides() {
-            return Ok(());
-        }
-        match state.config.server_config.as_mut() {
-            Some(server_config) => server_config.session_sharing_server_url = Some(url),
-            None => {
-                state.config.server_config =
-                    Some(WarpServerConfig::local_override(None, None, Some(url)));
-            }
-        }
-        Ok(())
-    }
-
     pub fn uses_staging_server() -> bool {
-        let Some(server_root_url) = Self::maybe_server_root_url() else {
-            return false;
-        };
-        let Ok(url) = Url::parse(server_root_url.as_ref()) else {
-            return false;
-        };
-        url.host_str() == Some("staging.warp.dev")
+        false
     }
 
     /// Returns the canonical identifier for the application.
@@ -201,29 +135,20 @@ impl ChannelState {
     }
 
     pub fn telemetry_file_name() -> Cow<'static, str> {
-        CHANNEL_STATE
-            .lock()
-            .config
-            .telemetry_config
-            .as_ref()
-            .map(|tc| tc.telemetry_file_name.clone())
-            .unwrap_or_default()
+        Cow::Borrowed("")
     }
 
-    /// Returns whether this build has a telemetry config and can therefore ship
-    /// telemetry events. Builds like OpenWarp intentionally ship with
-    /// `telemetry_config: None`, in which case UI that controls telemetry
-    /// should be hidden since the toggle has no effect.
+    /// Returns whether this build can ship telemetry events.
     pub fn is_telemetry_available() -> bool {
-        CHANNEL_STATE.lock().config.telemetry_config.is_some()
+        false
     }
 
     pub fn is_warp_server_available() -> bool {
-        CHANNEL_STATE.lock().config.server_config.is_some()
+        false
     }
 
     pub fn is_oz_available() -> bool {
-        CHANNEL_STATE.lock().config.oz_config.is_some()
+        false
     }
 
     pub fn releases_base_url() -> Cow<'static, str> {
@@ -231,13 +156,7 @@ impl ChannelState {
     }
 
     pub fn maybe_releases_base_url() -> Option<Cow<'static, str>> {
-        CHANNEL_STATE
-            .lock()
-            .config
-            .autoupdate_config
-            .as_ref()
-            .map(|ac| ac.releases_base_url.clone())
-            .filter(|url| !url.is_empty())
+        None
     }
 
     pub fn firebase_api_key() -> Cow<'static, str> {
@@ -245,103 +164,36 @@ impl ChannelState {
     }
 
     pub fn maybe_firebase_api_key() -> Option<Cow<'static, str>> {
-        CHANNEL_STATE
-            .lock()
-            .config
-            .server_config
-            .as_ref()
-            .and_then(|config| config.firebase_auth_api_key.clone())
-            .filter(|key| !key.is_empty())
+        None
     }
 
     pub fn maybe_ws_server_url() -> Option<Cow<'static, str>> {
-        CHANNEL_STATE
-            .lock()
-            .config
-            .server_config
-            .as_ref()
-            .and_then(|config| config.rtc_server_url.clone())
-            .filter(|url| !url.is_empty())
+        None
     }
 
     pub fn maybe_server_root_url() -> Option<Cow<'static, str>> {
-        cfg_if::cfg_if! {
-            if #[cfg(feature = "test-util")] {
-                Some(Cow::Owned(MOCK_SERVER_URL.clone()))
-            } else {
-                CHANNEL_STATE
-                    .lock()
-                    .config
-                    .server_config
-                    .as_ref()
-                    .and_then(|config| config.server_root_url.clone())
-                    .filter(|url| !url.is_empty())
-            }
-        }
+        None
     }
 
     pub fn maybe_oz_root_url() -> Option<Cow<'static, str>> {
-        CHANNEL_STATE
-            .lock()
-            .config
-            .oz_config
-            .as_ref()
-            .map(|config| config.oz_root_url.clone())
-            .filter(|url| !url.is_empty())
+        None
     }
 
     pub fn maybe_workload_audience_url() -> Option<Cow<'static, str>> {
-        let state = CHANNEL_STATE.lock();
-        match &state.config.oz_config {
-            Some(oz_config) => match &oz_config.workload_audience_url {
-                Some(url) if !url.is_empty() => Some(url.clone()),
-                _ => {
-                    drop(state);
-                    Self::maybe_server_root_url()
-                }
-            },
-            None => None,
-        }
+        None
     }
 
     pub fn ws_server_url() -> Cow<'static, str> {
         Self::maybe_ws_server_url().expect("Warp RTC server config is unavailable")
     }
 
-    /// Returns the HTTP(S) root URL for the RTC server. Used for HTTP endpoints
-    /// served by warp-server-rtc (e.g. the agent event SSE stream).
-    ///
-    /// Derived from [`ws_server_url`] by rewriting the scheme (`wss`→`https`,
-    /// `ws`→`http`) and stripping the path. Falls back to [`server_root_url`]
-    /// when the WS URL cannot be parsed or uses an unexpected scheme — this
-    /// keeps override paths (e.g. `WARP_WS_SERVER_URL=...`) working without a
-    /// separate override for the HTTP variant.
+    /// Returns the HTTP(S) root URL for the RTC server.
     pub fn rtc_http_url() -> Cow<'static, str> {
-        cfg_if::cfg_if! {
-            if #[cfg(feature = "test-util")] {
-                Cow::Owned(MOCK_SERVER_URL.clone())
-            } else {
-                match derive_http_origin_from_ws_url(&Self::ws_server_url()) {
-                    Some(origin) => Cow::Owned(origin),
-                    None => Self::server_root_url(),
-                }
-            }
-        }
+        panic!("Warp RTC server config is unavailable")
     }
 
     pub fn session_sharing_server_url() -> Option<Cow<'static, str>> {
-        cfg_if::cfg_if! {
-            if #[cfg(feature = "test-util")] {
-                Some(Cow::Borrowed("fake_session_sharing_url"))
-            } else {
-                CHANNEL_STATE
-                    .lock()
-                    .config
-                    .server_config
-                    .as_ref()
-                    .and_then(|config| config.session_sharing_server_url.clone())
-            }
-        }
+        None
     }
 
     pub fn oz_root_url() -> Cow<'static, str> {
@@ -378,13 +230,7 @@ impl ChannelState {
     }
 
     pub fn show_autoupdate_menu_items() -> bool {
-        CHANNEL_STATE
-            .lock()
-            .config
-            .autoupdate_config
-            .as_ref()
-            .map(|ac| ac.show_autoupdate_menu_items)
-            .unwrap_or_default()
+        false
     }
 
     /// Returns the MCP OAuth provider config matching the given client ID, if any.
@@ -420,26 +266,6 @@ impl ChannelState {
             Channel::Oss => "warper",
         }
     }
-}
-
-/// Derives an HTTP(S) origin URL from a WebSocket URL by rewriting the scheme
-/// (`wss`→`https`, `ws`→`http`) and stripping the path, query, and fragment.
-/// Returns [`None`] when the input cannot be parsed as a URL or uses a scheme
-/// other than `ws` or `wss`.
-#[cfg(not(feature = "test-util"))]
-fn derive_http_origin_from_ws_url(ws_url: &str) -> Option<String> {
-    let url = Url::parse(ws_url).ok()?;
-    let http_scheme = match url.scheme() {
-        "wss" => "https",
-        "ws" => "http",
-        _ => return None,
-    };
-    let host = url.host_str()?;
-    let mut origin = format!("{http_scheme}://{host}");
-    if let Some(port) = url.port() {
-        origin.push_str(&format!(":{port}"));
-    }
-    Some(origin)
 }
 
 #[cfg(all(test, not(feature = "test-util")))]
