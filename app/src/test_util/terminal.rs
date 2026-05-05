@@ -57,10 +57,7 @@ use crate::{
     },
     workflows::local_workflows::LocalWorkflows,
     workspace::{sync_inputs::SyncedInputState, ActiveSession},
-    workspaces::{
-        team_tester::TeamTesterStatus, update_manager::TeamUpdateManager,
-        user_workspaces::UserWorkspaces,
-    },
+    workspaces::user_workspaces::UserWorkspaces,
 };
 use repo_metadata::watcher::DirectoryWatcher;
 
@@ -76,8 +73,6 @@ pub fn initialize_app_for_terminal_view(app: &mut App) {
     app.add_singleton_model(SyncQueue::mock);
     app.add_singleton_model(CloudModel::mock);
     app.add_singleton_model(UserWorkspaces::default_mock);
-    app.add_singleton_model(TeamTesterStatus::mock);
-    app.add_singleton_model(TeamUpdateManager::mock);
     app.add_singleton_model(UpdateManager::mock);
     app.add_singleton_model(MCPGalleryManager::new);
     app.add_singleton_model(Listener::mock);

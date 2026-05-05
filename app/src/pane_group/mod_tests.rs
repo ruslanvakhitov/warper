@@ -50,10 +50,7 @@ use crate::{
     workspace::{
         sync_inputs::SyncedInputState, ActiveSession, OneTimeModalModel, WorkspaceRegistry,
     },
-    workspaces::{
-        team_tester::TeamTesterStatus, update_manager::TeamUpdateManager,
-        user_profiles::UserProfiles, user_workspaces::UserWorkspaces,
-    },
+    workspaces::{user_profiles::UserProfiles, user_workspaces::UserWorkspaces},
     AgentNotificationsModel, GlobalResourceHandles, GlobalResourceHandlesProvider,
 };
 #[cfg(feature = "local_fs")]
@@ -88,8 +85,6 @@ fn initialize_app(app: &mut App) {
     app.add_singleton_model(SyncQueue::mock);
     app.add_singleton_model(CloudModel::mock);
     app.add_singleton_model(UserWorkspaces::default_mock);
-    app.add_singleton_model(TeamTesterStatus::mock);
-    app.add_singleton_model(TeamUpdateManager::mock);
     app.add_singleton_model(Listener::mock);
     app.add_singleton_model(UpdateManager::mock);
 

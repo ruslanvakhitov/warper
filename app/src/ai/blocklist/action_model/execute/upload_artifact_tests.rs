@@ -24,7 +24,7 @@ use crate::terminal::model_events::{ModelEvent, ModelEventDispatcher};
 use crate::terminal::shell::ShellType;
 use crate::terminal::ShellLaunchData;
 use crate::test_util::settings::initialize_settings_for_tests;
-use crate::workspaces::{team_tester::TeamTesterStatus, user_workspaces::UserWorkspaces};
+use crate::workspaces::user_workspaces::UserWorkspaces;
 use crate::LaunchMode;
 
 use super::*;
@@ -55,7 +55,6 @@ fn initialize_upload_artifact_test(
     app.add_singleton_model(|_| AuthStateProvider::new_for_test());
     app.add_singleton_model(SyncQueue::mock);
     app.add_singleton_model(|_| NetworkStatus::new());
-    app.add_singleton_model(TeamTesterStatus::mock);
     app.add_singleton_model(|_| TemplatableMCPServerManager::default());
     app.add_singleton_model(UserWorkspaces::default_mock);
     let profiles = app.add_singleton_model(|ctx| {

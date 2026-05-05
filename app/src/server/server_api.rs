@@ -1,9 +1,6 @@
 pub mod ai;
 pub mod block;
 pub mod integrations;
-pub mod managed_secrets;
-pub mod team;
-pub mod workspace;
 
 use crate::ai::get_relevant_files::api::{GetRelevantFiles, GetRelevantFilesResponse};
 use crate::ai::predict::generate_ai_input_suggestions;
@@ -14,12 +11,8 @@ use crate::ai::predict::predict_am_queries::{PredictAMQueriesRequest, PredictAMQ
 use crate::ai::voice::transcribe::{TranscribeRequest, TranscribeResponse};
 use crate::auth::auth_state::AuthState;
 use ai::AIClient;
-use block::BlockClient;
-use team::TeamClient;
 use warp_core::errors::{register_error, AnyhowErrorExt, ErrorExt};
-use warp_managed_secrets::client::ManagedSecretsClient;
 use warpui::{r#async::BoxFuture, ModelContext};
-use workspace::WorkspaceClient;
 
 use anyhow::{anyhow, Context, Result};
 use reqwest::StatusCode;
@@ -576,27 +569,7 @@ impl ServerApiProvider {
         self.server_api.clone()
     }
 
-    pub fn get_block_client(&self) -> Arc<dyn BlockClient> {
-        self.server_api.clone()
-    }
-
-    pub fn get_workspace_client(&self) -> Arc<dyn WorkspaceClient> {
-        self.server_api.clone()
-    }
-
-    pub fn get_team_client(&self) -> Arc<dyn TeamClient> {
-        crate::workspaces::user_workspaces::UserWorkspaces::local_only_team_client()
-    }
-
     pub fn get_ai_client(&self) -> Arc<dyn AIClient> {
-        self.server_api.clone()
-    }
-
-    pub fn get_integrations_client(&self) -> Arc<dyn integrations::IntegrationsClient> {
-        self.server_api.clone()
-    }
-
-    pub fn get_managed_secrets_client(&self) -> Arc<dyn ManagedSecretsClient> {
         self.server_api.clone()
     }
 

@@ -51,7 +51,6 @@ use crate::{
     workflows::{workflow::Workflow, WorkflowSource, WorkflowType},
     workspace::ActiveSession,
     workspaces::{
-        team_tester::TeamTesterStatus,
         user_profiles::{UserProfileWithUID, UserProfiles},
         user_workspaces::UserWorkspaces,
     },
@@ -78,7 +77,6 @@ fn initialize_app(app: &mut App) {
     app.add_singleton_model(PrivacySettings::mock);
     app.add_singleton_model(UserWorkspaces::default_mock);
     app.add_singleton_model(SyncQueue::mock);
-    app.add_singleton_model(TeamTesterStatus::mock);
     app.add_singleton_model(UpdateManager::mock);
     app.add_singleton_model(CloudViewModel::mock);
     app.add_singleton_model(|_| UserProfiles::new(vec![]));

@@ -12,10 +12,7 @@ use crate::{
     settings_view::keybindings::KeybindingChangedNotifier,
     system::SystemStats,
     test_util::settings::initialize_settings_for_tests,
-    workspaces::{
-        team_tester::TeamTesterStatus, update_manager::TeamUpdateManager,
-        user_workspaces::UserWorkspaces,
-    },
+    workspaces::user_workspaces::UserWorkspaces,
 };
 
 use super::*;
@@ -32,8 +29,6 @@ fn initialize_app(app: &mut App) {
     app.add_singleton_model(SyncQueue::mock);
     app.add_singleton_model(CloudModel::mock);
     app.add_singleton_model(UserWorkspaces::default_mock);
-    app.add_singleton_model(TeamTesterStatus::mock);
-    app.add_singleton_model(TeamUpdateManager::mock);
     app.add_singleton_model(Listener::mock);
     app.add_singleton_model(UpdateManager::mock);
     app.add_singleton_model(|_| Appearance::mock());

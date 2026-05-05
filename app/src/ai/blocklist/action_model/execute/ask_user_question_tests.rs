@@ -11,7 +11,7 @@ use crate::auth::AuthStateProvider;
 use crate::network::NetworkStatus;
 use crate::server::sync_queue::SyncQueue;
 use crate::test_util::settings::initialize_settings_for_tests;
-use crate::workspaces::{team_tester::TeamTesterStatus, user_workspaces::UserWorkspaces};
+use crate::workspaces::user_workspaces::UserWorkspaces;
 use crate::LaunchMode;
 use ai::agent::action::AskUserQuestionItem;
 use ai::agent::action_result::{AskUserQuestionAnswerItem, AskUserQuestionResult};
@@ -76,7 +76,6 @@ fn initialize_ask_user_question_test(
     app.add_singleton_model(|_| AuthStateProvider::new_for_test());
     app.add_singleton_model(SyncQueue::mock);
     app.add_singleton_model(|_| NetworkStatus::new());
-    app.add_singleton_model(TeamTesterStatus::mock);
     app.add_singleton_model(|_| TemplatableMCPServerManager::default());
     app.add_singleton_model(UserWorkspaces::default_mock);
     let profiles = app.add_singleton_model(|ctx| {

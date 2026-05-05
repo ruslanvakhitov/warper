@@ -26,9 +26,7 @@ use crate::{
     terminal::keys::TerminalKeybindings,
     test_util::settings::initialize_settings_for_tests,
     workspace::ActiveSession,
-    workspaces::{
-        team_tester::TeamTesterStatus, user_profiles::UserProfiles, user_workspaces::UserWorkspaces,
-    },
+    workspaces::{user_profiles::UserProfiles, user_workspaces::UserWorkspaces},
     GlobalResourceHandles, GlobalResourceHandlesProvider,
 };
 
@@ -79,7 +77,6 @@ fn initialize_app(app: &mut App) -> TestState {
     app.add_singleton_model(|_| Appearance::mock());
     app.add_singleton_model(PrivacySettings::mock);
     app.add_singleton_model(UserWorkspaces::default_mock);
-    app.add_singleton_model(TeamTesterStatus::mock);
     app.add_singleton_model(|_| UserProfiles::new(vec![]));
     app.add_singleton_model(|_| ServerApiProvider::new_for_test());
     app.add_singleton_model(|_| ActiveSession::default());

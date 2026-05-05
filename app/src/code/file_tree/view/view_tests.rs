@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use repo_metadata::entry::{DirectoryEntry, Entry, FileMetadata};
 use repo_metadata::file_tree_store::FileTreeState;
 use repo_metadata::local_model::IndexedRepoState;
@@ -11,7 +9,6 @@ use warp_core::ui::appearance::Appearance;
 use warpui::{platform::WindowStyle, App, ModelHandle};
 
 use crate::auth::AuthStateProvider;
-use crate::server::server_api::{team::MockTeamClient, workspace::MockWorkspaceClient};
 use crate::settings_view::keybindings::KeybindingChangedNotifier;
 use crate::test_util::settings::initialize_settings_for_tests;
 use crate::vim_registers::VimRegisters;
@@ -40,11 +37,7 @@ fn initialize_app(
     app.add_singleton_model(|_| KeybindingChangedNotifier::mock());
     app.add_singleton_model(|_| AuthStateProvider::new_for_test());
 
-    let team_client = Arc::new(MockTeamClient::new());
-    let workspace_client = Arc::new(MockWorkspaceClient::new());
-    app.add_singleton_model(|ctx| {
-        UserWorkspaces::mock(team_client.clone(), workspace_client.clone(), vec![], ctx)
-    });
+    app.add_singleton_model(|ctx| UserWorkspaces::mock(vec![], ctx));
 
     let detected_repositories = app.add_singleton_model(|_| DetectedRepositories::default());
     let repository_metadata_model = app.add_singleton_model(RepoMetadataModel::new);

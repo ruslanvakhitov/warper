@@ -21,7 +21,6 @@ use crate::ai::llms::{
     is_openrouter_custom_model_query, is_using_api_key_for_provider, DisableReason, LLMId, LLMInfo,
     LLMPreferences, LLMProvider, LLMSpec,
 };
-use crate::auth::AuthStateProvider;
 use crate::channel::{Channel, ChannelState};
 use crate::features::FeatureFlag;
 use crate::search::data_source::{Query, QueryFilter, QueryResult};
@@ -520,16 +519,6 @@ impl SearchItem for ModelSearchItem {
             .with_child(scores);
 
         if self.disable_reason.as_ref() == Some(&DisableReason::RequiresUpgrade) {
-            let upgrade_url = if let Some(team) = UserWorkspaces::as_ref(app).current_team() {
-                UserWorkspaces::upgrade_link_for_team(team.uid)
-            } else {
-                let user_id = AuthStateProvider::as_ref(app)
-                    .get()
-                    .user_id()
-                    .unwrap_or_default();
-                UserWorkspaces::upgrade_link(user_id)
-            };
-
             let mut display_name = self.display_text.clone();
             if let Some(first) = display_name.get_mut(..1) {
                 first.make_ascii_uppercase();
@@ -546,17 +535,14 @@ impl SearchItem for ModelSearchItem {
                         | LLMProvider::OpenRouter
                 );
 
-            let mut text_fragments = vec![
-                FormattedTextFragment::plain_text(format!(
-                    "{display_name} is not available for free users. "
-                )),
-                FormattedTextFragment::hyperlink("Upgrade", upgrade_url),
-            ];
+            let mut text_fragments = vec![FormattedTextFragment::plain_text(format!(
+                "{display_name} is unavailable."
+            ))];
 
             if byok_available {
-                text_fragments.push(FormattedTextFragment::plain_text(" or ".to_string()));
+                text_fragments.push(FormattedTextFragment::plain_text(" ".to_string()));
                 text_fragments.push(FormattedTextFragment::hyperlink_action(
-                    "bring your own key",
+                    "Bring your own key",
                     WorkspaceAction::ShowSettingsPageWithSearch {
                         search_query: "api".to_string(),
                         section: Some(SettingsSection::WarpAgent),

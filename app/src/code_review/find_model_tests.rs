@@ -7,7 +7,6 @@ use crate::code_review::code_review_view::CodeReviewView;
 use crate::code_review::diff_state::DiffStateModel;
 use crate::code_review::GlobalCodeReviewModel;
 use crate::pane_group::WorkingDirectoriesModel;
-use crate::server::server_api::{team::MockTeamClient, workspace::MockWorkspaceClient};
 use crate::server::telemetry::context_provider::AppTelemetryContextProvider;
 use crate::settings_view::keybindings::KeybindingChangedNotifier;
 use crate::test_util::settings::initialize_settings_for_tests;
@@ -18,7 +17,6 @@ use crate::workspaces::user_workspaces::UserWorkspaces;
 use crate::NotebookKeybindings;
 use repo_metadata::repositories::DetectedRepositories;
 use std::path::PathBuf;
-use std::sync::Arc;
 use string_offset::CharOffset;
 use warp_core::ui::appearance::Appearance;
 use warp_editor::content::buffer::InitialBufferState;
@@ -153,14 +151,7 @@ fn initialize_test_app(app: &mut App) {
     app.add_singleton_model(|_| KeybindingChangedNotifier::mock());
     app.add_singleton_model(|_| DetectedRepositories::default());
     app.add_singleton_model(|_| GlobalCodeReviewModel);
-    app.add_singleton_model(|ctx| {
-        UserWorkspaces::mock(
-            Arc::new(MockTeamClient::new()),
-            Arc::new(MockWorkspaceClient::new()),
-            vec![],
-            ctx,
-        )
-    });
+    app.add_singleton_model(|ctx| UserWorkspaces::mock(vec![], ctx));
 
     // Add mocks required by rich text editor (used in the CommentEditor)
     app.add_singleton_model(CloudModel::mock);

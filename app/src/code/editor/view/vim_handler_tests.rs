@@ -5,7 +5,6 @@ use crate::notebooks::editor::keys::NotebookKeybindings;
 use crate::workspace::ActiveSession;
 use crate::{
     code::editor::view::{CodeEditorView, CodeEditorViewAction},
-    server::server_api::{team::MockTeamClient, workspace::MockWorkspaceClient},
     settings::AppEditorSettings,
     settings_view::keybindings::KeybindingChangedNotifier,
     test_util::settings::initialize_settings_for_tests,
@@ -13,7 +12,6 @@ use crate::{
     workspace::sync_inputs::SyncedInputState,
     workspaces::user_workspaces::UserWorkspaces,
 };
-use std::sync::Arc;
 use unindent::Unindent;
 use vim::vim::{MotionType, VimMode};
 use warp_core::{features::FeatureFlag, settings::Setting, ui::appearance::Appearance};
@@ -56,17 +54,7 @@ fn initialize_code_editor_app(app: &mut App) {
     app.add_singleton_model(|_| ActiveSession::default());
     app.add_singleton_model(NotebookKeybindings::new);
 
-    // Add UserWorkspaces mock (required by CodeEditorView)
-    let team_client_mock = Arc::new(MockTeamClient::new());
-    let workspace_client_mock = Arc::new(MockWorkspaceClient::new());
-    app.add_singleton_model(|ctx| {
-        UserWorkspaces::mock(
-            team_client_mock.clone(),
-            workspace_client_mock.clone(),
-            vec![],
-            ctx,
-        )
-    });
+    app.add_singleton_model(|ctx| UserWorkspaces::mock(vec![], ctx));
 
     // Enable vim mode in editor settings
     app.update_model(

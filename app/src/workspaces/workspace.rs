@@ -538,7 +538,7 @@ impl BillingMetadata {
             | CustomerType::SelfServe => true,
             CustomerType::Business => {
                 // Legacy Business has a non-SelfServe service agreement type;
-                // Build Business uses SelfServe. See gql_convert.rs for context.
+                // Build Business uses SelfServe.
                 !matches!(
                     self.service_agreements.first().map(|sa| &sa.type_),
                     Some(ServiceAgreementType::SelfServe)
