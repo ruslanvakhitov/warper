@@ -36,6 +36,7 @@ pub enum SharedSessionActionSource {
 
 use crate::ai::agent::api::ServerConversationToken;
 use crate::ai::agent::conversation::AIConversationId;
+use crate::ai::agent::conversation::AmbientAgentTaskId;
 use crate::ai::agent::AIAgentActionId;
 use crate::ai::agent::AIAgentExchangeId;
 use crate::ai::agent::AIAgentInput as FullAIAgentInput;
@@ -44,8 +45,6 @@ use crate::ai::agent::EntrypointType;
 use crate::ai::agent::PassiveSuggestionTrigger;
 use crate::ai::agent::ServerOutputId;
 use crate::ai::agent::SuggestedLoggingId;
-use crate::ai::agent_management::notifications::NotificationSourceAgent;
-use crate::ai::ambient_agents::AmbientAgentTaskId;
 use crate::ai::blocklist::agent_view::AgentViewEntryOrigin;
 use crate::ai::blocklist::AIBlockResponseRating;
 use crate::ai::blocklist::CommandExecutionPermissionAllowedReason;
@@ -54,16 +53,10 @@ use crate::ai::mcp::TemplateVariable;
 use crate::ai::predict::generate_ai_input_suggestions::GenerateAIInputSuggestionsRequest;
 use crate::ai::predict::generate_ai_input_suggestions::GenerateAIInputSuggestionsResponseV2;
 use crate::ai::predict::next_command_model::HistoryBasedAutosuggestionState;
-use crate::auth::auth_manager::LoginGatedFeature;
+type LoginGatedFeature = &'static str;
 use crate::channel::Channel;
-use crate::cloud_object::{
-    model::generic_string_model::GenericStringObjectId, GenericStringObjectFormat, ObjectType,
-    Space,
-};
 #[cfg(feature = "local_fs")]
 use crate::code::editor_management::CodeSource;
-use crate::drive::CloudObjectTypeAndId;
-use crate::drive::DriveSortOrder;
 use crate::features::FeatureFlag;
 use crate::launch_configs::save_modal::SaveState;
 use crate::notebooks::telemetry::NotebookTelemetryAction;
@@ -119,6 +112,49 @@ use crate::workspace::tab_settings::WorkspaceDecorationVisibility;
 use crate::workspace::TabMovement;
 use session_sharing_protocol::sharer::SessionSourceType;
 use warp_core::interval_timer::TimingDataPoint;
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+pub enum GenericStringObjectFormat {
+    Removed,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+pub enum ObjectType {
+    Notebook,
+    Workflow,
+    Folder,
+    GenericStringObject(GenericStringObjectFormat),
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+pub enum Space {
+    Personal,
+    Team { team_uid: ServerId },
+    Shared,
+}
+
+pub type GenericStringObjectId = ServerId;
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+pub enum CloudObjectTypeAndId {
+    Notebook(ServerId),
+    Workflow(ServerId),
+    Folder(ServerId),
+    GenericStringObject {
+        object_type: GenericStringObjectFormat,
+        id: ServerId,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+pub enum DriveSortOrder {
+    Removed,
+}
+
+pub enum NotificationSourceAgent {
+    Oz,
+    CLI(CLIAgentInputEntrypoint),
+}
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct BootstrappingInfo {
@@ -537,7 +573,7 @@ impl From<NotificationSourceAgent> for NotificationAgentVariant {
     fn from(agent: NotificationSourceAgent) -> Self {
         match agent {
             NotificationSourceAgent::Oz => Self::Oz,
-            NotificationSourceAgent::CLI(cli_agent) => Self::CLIAgent(cli_agent.into()),
+            NotificationSourceAgent::CLI(_cli_agent) => Self::CLIAgent(CLIAgentType::Unknown),
         }
     }
 }
@@ -589,8 +625,6 @@ pub enum CommandSearchResultType {
     Workflow,
     OpenWarpAI,
     TranslateUsingWarpAI,
-    Notebook,
-    EnvVarCollection,
     ViewInWarpDrive,
     AIQuery,
     Project,
@@ -602,8 +636,6 @@ impl From<&CommandSearchItemAction> for CommandSearchResultType {
         match action {
             AcceptHistory(_) | ExecuteHistory(_) => Self::History,
             AcceptWorkflow(_) => Self::Workflow,
-            AcceptNotebook(_) => Self::Notebook,
-            AcceptEnvVarCollection(_) => Self::EnvVarCollection,
             OpenWarpAI => Self::OpenWarpAI,
             TranslateUsingWarpAI => Self::TranslateUsingWarpAI,
             AcceptAIQuery(_) | RunAIQuery(_) => Self::AIQuery,

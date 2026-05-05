@@ -7,13 +7,10 @@ use instant::Instant;
 use pathfinder_geometry::vector::vec2f;
 
 use crate::{
-    ai::cloud_environments::AmbientAgentEnvironmentObject,
-    cloud_object::model::generic_string_model::StringModel,
     editor::{
         EditorOptions, EditorView, Event as EditorEvent, PropagateAndNoOpNavigationKeys,
         TextOptions,
     },
-    server::ids::{ClientId, HashableId, ServerId, SyncId},
     ui_components::icons::Icon,
     view_components::copyable_text_field::{
         render_copyable_text_field, CopyButtonPlacement, CopyableTextFieldConfig,
@@ -554,42 +551,13 @@ impl DisplayChipMenu {
             && self.selected_index < self.filtered_items.len()
     }
 
-    fn parse_sync_id_lossy(s: &str) -> SyncId {
-        if let Some(hashed) = ClientId::from_hash(s) {
-            SyncId::ClientId(hashed)
-        } else {
-            SyncId::ServerId(ServerId::from_string_lossy(s))
-        }
-    }
-
     fn environment_sidecar_data(&self, app: &AppContext) -> Option<EnvironmentSidecarData> {
+        let _ = app;
         if !self.should_show_environment_sidecar() {
             return None;
         }
 
-        let item = self.filtered_items.get(self.selected_index)?.item.clone();
-        let sync_id = Self::parse_sync_id_lossy(&item.action_data());
-        let env = AmbientAgentEnvironmentObject::get_by_id(&sync_id, app)?;
-
-        let repo_names = env
-            .model()
-            .string_model
-            .github_repos
-            .iter()
-            .map(|repo| repo.repo.clone())
-            .collect::<Vec<_>>();
-        let repos_text = if repo_names.is_empty() {
-            "(none)".to_string()
-        } else {
-            repo_names.join(", ")
-        };
-
-        Some(EnvironmentSidecarData {
-            name: env.model().string_model.display_name(),
-            id: env.id.to_string(),
-            image: env.model().string_model.base_image.to_string(),
-            repos_text,
-        })
+        None
     }
 
     fn environment_sidecar_anchor_id(&self) -> Option<String> {

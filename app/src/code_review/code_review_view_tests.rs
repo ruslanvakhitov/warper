@@ -1,6 +1,6 @@
 use super::*;
 use crate::ai::persisted_workspace::PersistedWorkspace;
-use crate::ai::request_usage_model::AIRequestUsageModel;
+use crate::ai::request_limits::AIRequestUsageModel;
 use crate::auth::AuthStateProvider;
 use crate::cloud_object::model::persistence::CloudModel;
 use crate::code::editor::view::{CodeEditorRenderOptions, CodeEditorView};
