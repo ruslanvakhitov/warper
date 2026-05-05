@@ -1,6 +1,4 @@
 use crate::appearance::Appearance;
-use crate::drive::cloud_object_styling::warp_drive_icon_color;
-use crate::drive::DriveObjectType;
 use crate::search::FilterChipRenderer as CommonFilterChipRenderer;
 use crate::search::QueryFilter;
 use crate::util::color::{ContrastingColor, MinimumAllowedContrast};
@@ -121,10 +119,10 @@ impl FilterChipRenderer for QueryFilter {
                 .theme()
                 .main_text_color(appearance.theme().surface_2())
                 .into_solid(),
-            QueryFilter::Workflows => warp_drive_icon_color(appearance, DriveObjectType::Workflow),
-            QueryFilter::AgentModeWorkflows => {
-                warp_drive_icon_color(appearance, DriveObjectType::AgentModeWorkflow)
-            }
+            QueryFilter::Workflows | QueryFilter::AgentModeWorkflows => appearance
+                .theme()
+                .main_text_color(appearance.theme().surface_2())
+                .into_solid(),
         }
     }
 }

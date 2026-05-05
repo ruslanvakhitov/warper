@@ -5,22 +5,18 @@ use serde::{Deserialize, Serialize};
 use settings_value::SettingsValue;
 use warp_core::{
     define_settings_group,
-    settings::{RespectUserSyncSetting, Setting, SupportedPlatforms, SyncToCloud},
+    settings::{Setting, SupportedPlatforms, SyncToCloud},
 };
-use warpui::{AppContext, ModelContext, SingletonEntity};
+use warpui::{AppContext, ModelContext};
 
-use crate::{
-    cloud_object::model::persistence::{CloudModel, CloudModelEvent},
-    drive::CloudObjectTypeAndId,
-    server::ids::SyncId,
-};
+use crate::server::ids::SyncId;
 
 define_settings_group!(WorkflowAliases, settings: [
     aliases: Aliases {
         type: Vec<WorkflowAlias>,
         default: vec![],
         supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        sync_to_cloud: SyncToCloud::Never,
         private: true,
         storage_key: "WorkflowAliases",
     }
@@ -41,20 +37,9 @@ pub struct WorkflowAlias {
 
 impl WorkflowAliases {
     /// Call once to subscribe to UpdateManager notifications that a workflow has been deleted.
-    pub fn connect(&self, ctx: &mut ModelContext<Self>) {
-        ctx.subscribe_to_model(&CloudModel::handle(ctx), |me, event, ctx| {
-            let result = match event {
-                CloudModelEvent::ObjectTrashed {
-                    type_and_id: CloudObjectTypeAndId::Workflow(server_id),
-                    ..
-                } => me.remove_aliases_for_workflow(*server_id, ctx),
-                _ => Result::Ok(()),
-            };
-
-            if let Err(e) = result {
-                log::error!("Error removing aliases for workflow: {e:?}");
-            }
-        });
+    pub fn connect(&self, _ctx: &mut ModelContext<Self>) {
+        // Workflow aliases are local-only in Warper. Hosted Warp Drive deletion events do not
+        // exist after WARPER-001.
     }
 
     pub fn get_all_aliases(&self) -> &[WorkflowAlias] {

@@ -452,12 +452,7 @@ impl CommandSearchView {
             let was_immediately_executed = match &result_action {
                 ExecuteHistory(_) | RunAIQuery(_) => true,
 
-                AcceptHistory(_)
-                | AcceptWorkflow(_)
-                | AcceptNotebook(_)
-                | OpenWarpAI
-                | AcceptEnvVarCollection(_)
-                | TranslateUsingWarpAI
+                AcceptHistory(_) | AcceptWorkflow(_) | OpenWarpAI | TranslateUsingWarpAI
                 | AcceptAIQuery(_) => false,
             };
 

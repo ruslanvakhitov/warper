@@ -6,13 +6,14 @@ use warp_cli::agent::Harness;
 use warp_managed_secrets::ManagedSecretValue;
 
 use crate::ai::{
+    agent::conversation::AmbientAgentTaskId,
     agent_sdk::{
-        driver::AgentDriverError, task_env_vars, validate_cli_installed, ClaudeHarness,
-        ThirdPartyHarness,
+        config_file::HarnessConfig, driver::AgentDriverError, task_env_vars,
+        validate_cli_installed, ClaudeHarness, ThirdPartyHarness,
     },
-    ambient_agents::{task::HarnessConfig, AgentConfigSnapshot, AmbientAgentTaskId},
 };
 use crate::server::server_api::ai::AIClient;
+use crate::server::server_api::ai::AgentConfigSnapshot;
 use crate::terminal::cli_agent_sessions::plugin_manager::plugin_manager_for;
 use crate::terminal::shell::ShellType;
 

@@ -43,7 +43,6 @@ use crate::{
     appearance::Appearance,
     completer::SessionAgnosticContext,
     debounce::debounce,
-    drive::workflows::arguments::ArgumentsState,
     editor::InteractionState,
     notebooks::{
         styles::block_footer_action_button,
@@ -565,9 +564,8 @@ impl NotebookCommand {
     /// containing `NotebookView` fills in its title.
     pub fn to_workflow(&self, ctx: &AppContext) -> Option<NotebookWorkflow> {
         let command = self.command(ctx)?;
-        let args_state = ArgumentsState::for_command_workflow(&Default::default(), command.clone());
         // TODO: Once notebook workflows have their own metadata, we can populate the title here.
-        let workflow = Workflow::new(String::new(), command).with_arguments(args_state.arguments);
+        let workflow = Workflow::new(String::new(), command);
         Some(NotebookWorkflow {
             workflow: UserInput::new(Arc::new(WorkflowType::Notebook(workflow))),
             source: None,

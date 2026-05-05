@@ -20,9 +20,7 @@ use warpui::{
 use crate::util::file::external_editor::EditorSettings;
 #[cfg(feature = "local_fs")]
 use crate::util::openable_file_type::{is_supported_image_file, resolve_file_target, FileTarget};
-use crate::{
-    drive::LocalObjectOpenArgs, terminal::model::session::Session, workspace::ActiveSession,
-};
+use crate::{terminal::model::session::Session, workspace::ActiveSession};
 
 use super::file::is_markdown_file;
 
@@ -397,9 +395,6 @@ pub enum LinkEvent {
     OpenFileNotebook {
         path: PathBuf,
         session: Arc<Session>,
-    },
-    OpenWarpDriveLink {
-        open_warp_drive_args: LocalObjectOpenArgs,
     },
     /// This event tells the parent pane group to open a new terminal session in the given
     /// directory.

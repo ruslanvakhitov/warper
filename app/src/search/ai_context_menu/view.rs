@@ -18,8 +18,6 @@ use crate::search::ai_context_menu::files::data_source::{
 use crate::search::ai_context_menu::mixer::AIContextMenuMixer;
 use crate::search::ai_context_menu::mixer::AIContextMenuSearchableAction;
 #[cfg(not(target_family = "wasm"))]
-use crate::search::ai_context_menu::rules::data_source::RulesDataSource;
-#[cfg(not(target_family = "wasm"))]
 use crate::search::ai_context_menu::skills::data_source::SkillsDataSource;
 use crate::search::data_source::QueryResult;
 use crate::search::data_source::{Query, QueryFilter};
@@ -906,9 +904,7 @@ impl AIContextMenu {
             }
             #[cfg(not(target_family = "wasm"))]
             NavigationState::Category(AIContextMenuCategory::Rules) => {
-                let rules_data_source = ctx.add_model(|_| RulesDataSource::new());
                 self.mixer.update(ctx, |mixer, ctx| {
-                    mixer.add_sync_source(rules_data_source, [QueryFilter::Rules]);
                     mixer.run_query(
                         Query {
                             text: "".into(),
@@ -1050,12 +1046,7 @@ impl AIContextMenu {
                         );
                     });
                 }
-                AIContextMenuCategory::Rules => {
-                    let rules_data_source = ctx.add_model(|_| RulesDataSource::new());
-                    self.mixer.update(ctx, |mixer, _ctx| {
-                        mixer.add_sync_source(rules_data_source, [QueryFilter::Rules]);
-                    });
-                }
+                AIContextMenuCategory::Rules => {}
                 AIContextMenuCategory::DiffSet => {
                     let diffset_data_source = ctx.add_model(|_| DiffSetDataSource);
                     self.mixer.update(ctx, |mixer, _ctx| {

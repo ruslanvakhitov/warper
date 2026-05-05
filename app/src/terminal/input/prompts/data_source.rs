@@ -17,7 +17,6 @@ use crate::terminal::input::inline_menu::{
     default_navigation_message_items, InlineMenuAction, InlineMenuMessageArgs, InlineMenuType,
 };
 use crate::terminal::input::message_bar::Message;
-use crate::workflows::CloudWorkflow;
 
 #[derive(Clone, Debug)]
 pub struct AcceptPrompt {
@@ -66,15 +65,6 @@ struct PromptSearchItem {
 }
 
 impl PromptSearchItem {
-    fn from_workflow(workflow: &CloudWorkflow) -> Self {
-        Self {
-            id: workflow.id,
-            name: workflow.model().data.name().to_owned(),
-            name_match_result: None,
-            score: OrderedFloat(f64::MIN),
-        }
-    }
-
     fn with_name_match_result(mut self, result: Option<FuzzyMatchResult>) -> Self {
         self.name_match_result = result;
         self

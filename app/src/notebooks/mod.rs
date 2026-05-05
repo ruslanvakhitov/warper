@@ -1,186 +1,15 @@
-pub mod active_notebook_data;
 mod context_menu;
 pub mod editor;
 pub mod file;
 pub mod link;
-pub mod manager;
-pub mod notebook;
 mod styles;
 pub mod telemetry;
-
-use std::sync::Arc;
 
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use warpui::AppContext;
 
-use crate::server::cloud_objects::update_manager::InitiatedBy;
-use crate::{
-    ai::document::ai_document_model::AIDocumentId,
-    appearance::Appearance,
-    cloud_object::{
-        CloudModelType, CloudObjectEventEntrypoint, GenericCloudObject, ObjectType, Owner,
-        Revision, ServerCloudObject,
-    },
-    drive::{
-        items::{notebook::WarpDriveNotebook, WarpDriveItem},
-        CloudObjectTypeAndId,
-    },
-    persistence::ModelEvent,
-    server::{
-        ids::{ServerId, SyncId},
-        sync_queue::{QueueItem, SerializedModel},
-    },
-};
-
-/// Serialized representation of a notebook for sync queue
-/// The AIDocumentID and ConversationID are stored here to avoid polluting the
-/// generic local object creation payload.
-#[derive(Serialize, Deserialize)]
-pub(crate) struct SerializedNotebook {
-    pub(crate) data: String,
-    pub(crate) ai_document_id: Option<String>,
-    pub(crate) conversation_id: Option<String>,
-}
-
-/// `CloudNotebook` is a notebook retrieved from the server.
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct CloudNotebookModel {
-    pub title: String,
-    pub data: String,
-    pub ai_document_id: Option<AIDocumentId>,
-    /// This is the server-generated conversation token, not the client-side AIConversationId.
-    pub conversation_id: Option<String>,
-}
-
-pub type CloudNotebook = GenericCloudObject<NotebookId, CloudNotebookModel>;
-
-impl CloudModelType for CloudNotebookModel {
-    type CloudObjectType = CloudNotebook;
-    type IdType = NotebookId;
-
-    fn model_type_name(&self) -> &'static str {
-        if self.ai_document_id.is_some() {
-            "Plan"
-        } else {
-            "Notebook"
-        }
-    }
-
-    fn object_type(&self) -> ObjectType {
-        ObjectType::Notebook
-    }
-
-    fn cloud_object_type_and_id(&self, id: SyncId) -> CloudObjectTypeAndId {
-        CloudObjectTypeAndId::Notebook(id)
-    }
-
-    fn display_name(&self) -> String {
-        self.title.clone()
-    }
-
-    fn set_display_name(&mut self, name: &str) {
-        name.clone_into(&mut self.title);
-    }
-
-    fn upsert_event(&self, notebook: &CloudNotebook) -> ModelEvent {
-        ModelEvent::UpsertNotebook {
-            notebook: notebook.clone(),
-        }
-    }
-
-    fn bulk_upsert_event(objects: &[CloudNotebook]) -> ModelEvent {
-        ModelEvent::UpsertNotebooks(objects.to_vec())
-    }
-
-    fn create_object_queue_item(
-        &self,
-        notebook: &CloudNotebook,
-        entrypoint: CloudObjectEventEntrypoint,
-        initiated_by: InitiatedBy,
-    ) -> Option<QueueItem> {
-        if let SyncId::ClientId(client_id) = notebook.id {
-            let title = Some(notebook.model().display_name())
-                .filter(|name| !name.is_empty())
-                .map(Arc::new);
-
-            let serialized_model = Some(Arc::new(notebook.model().serialized()));
-
-            return Some(QueueItem::CreateObject {
-                object_type: self.object_type(),
-                owner: notebook.permissions.owner,
-                id: client_id,
-                title,
-                serialized_model,
-                initial_folder_id: notebook.metadata.folder_id,
-                entrypoint,
-                initiated_by,
-            });
-        }
-        None
-    }
-
-    fn update_object_queue_item(
-        &self,
-        revision_ts: Option<Revision>,
-        notebook: &CloudNotebook,
-    ) -> QueueItem {
-        QueueItem::UpdateNotebook {
-            // Note that this is intentionally a deep clone of the model because we are grabbing
-            // a snapshot to update at a moment in time.
-            model: notebook.model().clone().into(),
-            id: notebook.id,
-            revision: revision_ts.or_else(|| notebook.metadata.revision.clone()),
-        }
-    }
-
-    fn should_update_after_server_conflict(&self) -> bool {
-        true
-    }
-
-    fn new_from_server_update(&self, server_cloud_object: &ServerCloudObject) -> Option<Self> {
-        if let ServerCloudObject::Notebook(server_notebook) = server_cloud_object {
-            return Some(CloudNotebookModel {
-                title: server_notebook.model.title.clone(),
-                data: server_notebook.model.data.clone(),
-                ai_document_id: server_notebook.model.ai_document_id,
-                conversation_id: None, // conversation_id is not returned from server, just used for initial plan artifact creation
-            });
-        }
-        None
-    }
-
-    fn serialized(&self) -> SerializedModel {
-        let serialized = SerializedNotebook {
-            data: self.data.clone(),
-            ai_document_id: self.ai_document_id.as_ref().map(|id| id.to_string()),
-            conversation_id: self.conversation_id.clone(),
-        };
-        let json = serde_json::to_string(&serialized).expect("Failed to serialize notebook");
-        SerializedModel::new(json)
-    }
-
-    fn renders_in_warp_drive(&self) -> bool {
-        true
-    }
-
-    fn can_export(&self) -> bool {
-        true
-    }
-
-    fn to_warp_drive_item(
-        &self,
-        id: SyncId,
-        _appearance: &Appearance,
-        notebook: &CloudNotebook,
-    ) -> Option<Box<dyn WarpDriveItem>> {
-        Some(Box::new(WarpDriveNotebook::new(
-            self.cloud_object_type_and_id(id),
-            notebook.clone(),
-            notebook.model().ai_document_id.is_some(),
-        )))
-    }
-}
+use crate::server::ids::{ServerId, SyncId};
 
 /// This is the notebook_id in the database associated with this notebook.
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
@@ -206,19 +35,8 @@ pub enum NotebookLocation {
     RemoteFile,
 }
 
-impl From<Owner> for NotebookLocation {
-    fn from(owner: Owner) -> Self {
-        // TODO(ben): Account for shared objects in notebook telemetry.
-        match owner {
-            Owner::User { .. } => NotebookLocation::PersonalCloud,
-            Owner::Team { .. } => NotebookLocation::Team,
-        }
-    }
-}
-
 /// Initialize notebooks-related keybindings.
 pub fn init(app: &mut AppContext) {
-    self::notebook::init(app);
     self::file::init(app);
     self::editor::view::init(app);
 }

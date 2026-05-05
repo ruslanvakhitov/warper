@@ -18,7 +18,7 @@ use crate::{
             conversation::{AIConversationId, ConversationStatus},
             LifecycleEventType, StartAgentExecutionMode,
         },
-        ambient_agents::{task::HarnessConfig, AgentConfigSnapshot},
+        agent_sdk::config_file::HarnessConfig,
         blocklist::{
             agent_view::AgentViewEntryOrigin, orchestration_events::OrchestrationEventService,
             BlocklistAIHistoryModel,
@@ -33,6 +33,7 @@ use crate::{
     },
     pane_group::{self, Direction, Event::OpenConversationHistory, PaneGroup},
     persistence::{BlockCompleted, ModelEvent},
+    server::server_api::ai::AgentConfigSnapshot,
     server::server_api::ai::SpawnAgentRequest,
     session_management::SessionNavigationData,
     terminal::cli_agent_sessions::CLIAgentSessionsModel,

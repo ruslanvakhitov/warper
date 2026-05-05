@@ -232,11 +232,6 @@ impl<P: BackingView> PaneView<P> {
                 });
                 ctx.notify();
             }
-            PaneConfigurationEvent::ShareableObjectChanged(object) => {
-                self.header.update(ctx, |header, ctx| {
-                    header.set_shareable_object(object.clone(), ctx);
-                });
-            }
             PaneConfigurationEvent::ToggleSharingDialog(source) => {
                 self.header.update(ctx, |header, ctx| {
                     header.share_pane_contents(*source, ctx);

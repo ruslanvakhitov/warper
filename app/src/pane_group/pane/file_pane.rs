@@ -6,15 +6,20 @@ use warpui::{AppContext, ModelHandle, SingletonEntity, View, ViewContext, ViewHa
 use crate::code::editor_management::CodeSource;
 use crate::{
     app_state::{LeafContents, NotebookPaneSnapshot},
-    notebooks::file::{FileNotebookEvent, FileNotebookView},
+    notebooks::{
+        file::{FileNotebookEvent, FileNotebookView},
+        link::{LinkEvent, NotebookLinks},
+    },
     terminal::model::session::Session,
     workflows::WorkflowSelectionSource,
     workspace::ActiveSession,
 };
 
 use super::{
-    notebook_pane::subscribe_to_link_model, view::PaneView, DetachType, PaneConfiguration,
-    PaneContent, PaneGroup, PaneId, ShareableLink, ShareableLinkError,
+    super::{DefaultSessionModeBehavior, Direction},
+    view::PaneView,
+    DetachType, PaneConfiguration, PaneContent, PaneGroup, PaneId, ShareableLink,
+    ShareableLinkError,
 };
 
 pub struct FilePane {
@@ -76,6 +81,45 @@ impl FilePane {
     pub fn file_view(&self, ctx: &AppContext) -> ViewHandle<FileNotebookView> {
         self.view.as_ref(ctx).child(ctx)
     }
+}
+
+fn subscribe_to_link_model(
+    pane_id: PaneId,
+    handle: &ModelHandle<NotebookLinks>,
+    ctx: &mut ViewContext<PaneGroup>,
+) {
+    ctx.subscribe_to_model(handle, move |pane_group, _, event, ctx| match event {
+        LinkEvent::OpenFileNotebook { path, session } => {
+            ctx.emit(crate::pane_group::Event::OpenFileInWarp {
+                path: path.clone(),
+                session: session.clone(),
+            })
+        }
+        LinkEvent::StartLocalSession { path } => {
+            pane_group.add_session_in_directory(
+                Direction::Right,
+                Some(pane_id),
+                None,
+                Some(path.clone()),
+                None,
+                DefaultSessionModeBehavior::Apply,
+                ctx,
+            );
+        }
+        #[cfg(feature = "local_fs")]
+        LinkEvent::OpenFileWithTarget {
+            path,
+            target,
+            line_col,
+        } => {
+            ctx.emit(crate::pane_group::Event::OpenFileWithTarget {
+                path: path.clone(),
+                target: target.clone(),
+                line_col: *line_col,
+            });
+        }
+        LinkEvent::RefreshLinks => {}
+    });
 }
 
 impl PaneContent for FilePane {
