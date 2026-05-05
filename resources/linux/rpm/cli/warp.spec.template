@@ -2,22 +2,14 @@
 # Package Spec
 ###############################################################################
 
-Summary:     The orchestration platform for cloud agents.
-Name:        oz@@CHANNEL_SUFFIX@@
+Summary:     Warp command line interface.
+Name:        warp-cli@@CHANNEL_SUFFIX@@
 Version:     @@VERSION@@
 Release:     @@RELEASE@@
 Vendor:      Denver Technologies, Inc.
 Url:         https://warp.dev
 Packager:    Warp Linux Maintainers <linux-maintainers@warp.dev>
 License:     https://warp.dev/terms-of-service
-Obsoletes:   warp-cli@@CHANNEL_SUFFIX@@ < %{version}
-Obsoletes:   oz = v0.2026.02.09.06.06.stable_00
-Obsoletes:   oz = v0.2026.02.09.06.06.stable_02
-Obsoletes:   oz = v0.2026.02.10.11.37.stable_00
-Obsoletes:   oz = v0.2026.02.10.11.37.stable_01
-Obsoletes:   oz = v0.2026.02.11.08.23.stable_00
-
-
 # The prefix specifies where the majority of the application files are,
 # allowing the package to be relocatable.
 prefix:      /opt
@@ -31,12 +23,11 @@ prefix:      /opt
 ###############################################################################
 
 %description
-The Oz CLI is a tool for running, managing, and orchestrating coding agents at scale.
+The Warp CLI is a tool for launching and managing local Warp command line workflows.
 Use the CLI to:
-* Launch and inspect cloud agents
-* Schedule cloud agents to run in the future
-* Manage the environments that cloud agents run in
-* Upload secrets to Oz's secure storage
+* Open Warp from scripts
+* Start local agent workflows
+* Manage local command line integrations
 
 ###############################################################################
 # Build rule - how does the package get built?

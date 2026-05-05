@@ -508,7 +508,7 @@ impl TerminalView {
             && !is_long_running
         {
             ConstrainedBox::new(
-                WarpIcon::Oz
+                WarpIcon::Warp
                     .to_warpui_icon(blended_colors::text_sub(theme, theme.background()).into())
                     .finish(),
             )

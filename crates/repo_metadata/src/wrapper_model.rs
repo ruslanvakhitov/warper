@@ -69,7 +69,7 @@ impl RepoMetadataModel {
     }
 
     /// Creates a new `RepoMetadataModel` with incremental update emission
-    /// enabled on the local sub-model. Used by the remote server.
+    /// enabled on the local sub-model. Used by remote sessions.
     pub fn new_with_incremental_updates(ctx: &mut ModelContext<Self>) -> Self {
         let local = ctx.add_model(|ctx| {
             let mut model = LocalRepoMetadataModel::new(ctx);

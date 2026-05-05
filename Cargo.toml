@@ -452,10 +452,9 @@ debug-assertions = true
 [profile.rltoda]
 inherits = "release-lto-debug_assertions"
 
-# A profile tuned for the `oz` CLI tarball. The CLI is shipped over the network
-# and run headlessly, so we trade some compile time and a small amount of
-# runtime perf for a smaller binary by mirroring the size-leaning settings used
-# by `release-wasm`.
+# A profile tuned for CLI tarballs. We trade some compile time and a small
+# amount of runtime perf for a smaller binary by mirroring the size-leaning
+# settings used by `release-wasm`.
 [profile.release-cli]
 inherits = "release-lto"
 opt-level = "s"
@@ -477,8 +476,8 @@ codegen-units = 1
 inherits = "release-wasm"
 debug-assertions = true
 
-# A dev profile optimized for remote server deployment. Strips symbols to
-# reduce binary size and improve rsync delta transfer efficiency.
+# A dev profile optimized for remote-session helper deployment. Strips symbols
+# to reduce binary size and improve rsync delta transfer efficiency.
 [profile.dev-remote]
 inherits = "dev"
 strip = "symbols"

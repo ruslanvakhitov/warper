@@ -35,7 +35,7 @@ pub(crate) enum IconWithStatusVariant {
     },
     /// A pre-built icon element on an overlay background.
     NeutralElement { icon_element: Box<dyn Element> },
-    /// An Oz agent icon on the theme background.
+    /// A Warp agent icon on the theme background.
     OzAgent {
         status: Option<ConversationStatus>,
         is_ambient: bool,
@@ -85,9 +85,9 @@ pub(crate) fn render_icon_with_status(
         }
         IconWithStatusVariant::OzAgent { status, is_ambient } => {
             let icon = if is_ambient {
-                WarpIcon::OzCloud
+                WarpIcon::Warp
             } else {
-                WarpIcon::Oz
+                WarpIcon::Warp
             };
             let inner = ConstrainedBox::new(
                 icon.to_warpui_icon(theme.main_text_color(theme.background()))

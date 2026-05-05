@@ -91,9 +91,9 @@ impl HiddenComputerUseArgs {
 /// The execution harness for an agent run.
 #[derive(Debug, Copy, Clone, ValueEnum, Eq, PartialEq, Default)]
 pub enum Harness {
-    /// Legacy hosted harness.
+    /// Built-in Warp agent harness.
     #[default]
-    #[value(name = "oz")]
+    #[value(name = "warp-agent")]
     Oz,
     /// Delegate to the `claude` CLI.
     #[value(name = "claude", alias = "claude-code")]
@@ -147,7 +147,7 @@ impl Harness {
 
     pub fn display_name(self) -> &'static str {
         match self {
-            Self::Oz => "Oz",
+            Self::Oz => "Warp Agent",
             Self::Claude => "Claude Code",
             Self::OpenCode => "OpenCode",
             Self::Gemini => "Gemini CLI",
@@ -159,7 +159,7 @@ impl Harness {
 impl fmt::Display for Harness {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let name = match self {
-            Harness::Oz => "oz",
+            Harness::Oz => "warp-agent",
             Harness::Claude => "claude",
             Harness::OpenCode => "opencode",
             Harness::Gemini => "gemini",

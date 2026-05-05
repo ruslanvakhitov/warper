@@ -56,7 +56,7 @@ When the user provides a Figma URL, extract the file key and node ID to pass as 
 
 When using the `figma-desktop` MCP and the user has NOT provided a URL, the tools automatically use the currently selected node from the open Figma file in the desktop app.
 
-**Note:** Selection-based prompting only works with the `figma-desktop` MCP server. The remote server requires a link to a frame or layer to extract context. The user must have the Figma desktop app open with a node selected.
+**Note:** Selection-based prompting only works with the `figma-desktop` MCP server. Link-based MCP extraction requires a link to a frame or layer to extract context. The user must have the Figma desktop app open with a node selected.
 
 ### Step 2: Fetch Design Context
 

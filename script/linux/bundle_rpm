@@ -16,11 +16,7 @@
 set -e
 
 # Extract channel suffix from BINARY_NAME
-if [ "$ARTIFACT" = "cli" ]; then
-  CHANNEL_SUFFIX="${BINARY_NAME#oz}"
-else
-  CHANNEL_SUFFIX="${BINARY_NAME#warp}"
-fi
+CHANNEL_SUFFIX="${BINARY_NAME#warp}"
 if [ "$RELEASE_CHANNEL" = "oss" ]; then
   CHANNEL_SUFFIX=""
   REPO_NAME="warper"
@@ -44,7 +40,7 @@ elif [ "$ARTIFACT" = "cli" ]; then
   if [ "$RELEASE_CHANNEL" = "oss" ]; then
     PACKAGE_NAME="warper-cli"
   else
-    PACKAGE_NAME="oz$CHANNEL_SUFFIX"
+    PACKAGE_NAME="warp-cli$CHANNEL_SUFFIX"
   fi
 else
   echo "::error ::Unknown ARTIFACT: $ARTIFACT (expected 'app' or 'cli')"
