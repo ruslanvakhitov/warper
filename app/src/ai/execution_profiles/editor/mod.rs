@@ -753,7 +753,7 @@ impl ExecutionProfileEditorView {
 
         let workspace = UserWorkspaces::handle(ctx);
         ctx.subscribe_to_model(&workspace, |me, workspace, event, ctx| {
-            if let UserWorkspacesEvent::TeamsChanged = event {
+            if let UserWorkspacesEvent::LocalPoliciesChanged = event {
                 Self::update_all_editor_interaction_states(me, workspace, ctx);
                 ctx.notify();
             }

@@ -26,10 +26,7 @@ use crate::{
     view_components::{Dropdown, SubmittableTextInput},
 };
 use settings::Setting;
-use warp_core::{
-    settings::SyncToCloud,
-    ui::{color::blend::Blend, theme::color::internal_colors},
-};
+use warp_core::{settings::SyncToCloud, ui::theme::color::internal_colors};
 use warpui::{
     elements::{
         new_scrollable::{ClippedAxisConfiguration, DualAxisConfig, SingleAxisConfig},
@@ -59,7 +56,6 @@ pub(super) const HEADER_FONT_SIZE: f32 = 23.;
 pub const SUBHEADER_FONT_SIZE: f32 = 16.;
 const ALTERNATING_LIST_CLOSE_BUTTON_DIAMETER: f32 = 20.0;
 const ALTERNATING_LIST_ITEM_PADDING: f32 = 8.0;
-const GREY_TEXT_OPACITY: u8 = 60;
 const MIN_PAGE_WIDTH: f32 = 520.;
 const MAX_PAGE_WIDTH: f32 = 800.;
 
@@ -184,36 +180,6 @@ pub enum SettingsPageEvent {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PaneEventWrapper {
     Close,
-}
-
-pub fn render_customer_type_badge(appearance: &Appearance, text: String) -> Box<dyn Element> {
-    Container::new(
-        Text::new_inline(text, appearance.ui_font_family(), appearance.ui_font_size())
-            .with_color(
-                appearance
-                    .theme()
-                    .background()
-                    .blend(
-                        &appearance
-                            .theme()
-                            .foreground()
-                            .with_opacity(GREY_TEXT_OPACITY),
-                    )
-                    .into(),
-            )
-            .with_style(Properties::default().weight(Weight::Medium))
-            .finish(),
-    )
-    .with_uniform_padding(4.)
-    .with_background(
-        appearance
-            .theme()
-            .background()
-            .blend(&appearance.theme().foreground().with_opacity(25)),
-    )
-    .with_corner_radius(CornerRadius::with_all(Radius::Pixels(3.)))
-    .with_margin_left(10.)
-    .finish()
 }
 
 /// Adds padding to the sub header

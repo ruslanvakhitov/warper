@@ -1,9 +1,6 @@
-use super::{
-    team::Team,
-    workspace::{
-        AdminEnablementSetting, EnterpriseSecretRegex, HostEnablementSetting,
-        UgcCollectionEnablementSetting, Workspace, WorkspaceUid,
-    },
+use super::workspace::{
+    AiAutonomySettings, EnterpriseSecretRegex, HostEnablementSetting, LocalPolicySetting,
+    SandboxedAgentSettings, UgcCollectionEnablementSetting, Workspace, WorkspaceUid,
 };
 use crate::{
     ai::llms::LLMModelHost,
@@ -11,7 +8,6 @@ use crate::{
     settings::{
         AISettings, AISettingsChangedEvent, CodeSettings, CodeSettingsChangedEvent, PrivacySettings,
     },
-    workspaces::workspace::{AiAutonomySettings, SandboxedAgentSettings},
 };
 use regex::Regex;
 use warp_core::{
@@ -22,15 +18,15 @@ use warpui::{AppContext, Entity, ModelContext, SingletonEntity, Tracked};
 
 #[derive(Debug)]
 pub enum UserWorkspacesEvent {
-    UpdateWorkspaceSettingsSuccess,
-    /// Fired whenever the set of teams the user is on changes.
-    TeamsChanged,
+    /// Fired whenever local AI/provider policy data changes.
+    LocalPoliciesChanged,
     CodebaseContextEnablementChanged,
 }
 
-/// UserWorkspaces is a singleton model that holds workspace metadata (name, members, etc).
-/// It should be used for getting information about the workspaces, teams, current teams,
-/// and all other things related to local workspace capability data.
+/// Local capability settings used by retained AI/provider features.
+///
+/// The historical workspace shape is kept as a local-only cache wrapper while
+/// hosted workspace/team membership is amputated from Warper startup.
 pub struct UserWorkspaces {
     current_workspace_uid: Tracked<Option<WorkspaceUid>>,
     workspaces: Tracked<Vec<Workspace>>,
@@ -58,8 +54,8 @@ impl UserWorkspaces {
     }
 
     pub fn new(
-        _cached_workspaces: Vec<Workspace>,
-        _current_workspace_uid: Option<WorkspaceUid>,
+        cached_workspaces: Vec<Workspace>,
+        current_workspace_uid: Option<WorkspaceUid>,
         ctx: &mut ModelContext<Self>,
     ) -> Self {
         ctx.subscribe_to_model(&CodeSettings::handle(ctx), |_, code_settings_event, ctx| {
@@ -78,21 +74,18 @@ impl UserWorkspaces {
             }
         });
 
+        let current_workspace_uid = current_workspace_uid
+            .filter(|uid| {
+                cached_workspaces
+                    .iter()
+                    .any(|workspace| workspace.uid == *uid)
+            })
+            .or_else(|| cached_workspaces.first().map(|workspace| workspace.uid));
+
         Self {
-            current_workspace_uid: None.into(),
-            workspaces: Vec::new().into(),
+            current_workspace_uid: current_workspace_uid.into(),
+            workspaces: cached_workspaces.into(),
         }
-    }
-
-    pub fn team_from_uid(&self, _team_uid: crate::server::ids::ServerId) -> Option<&Team> {
-        None
-    }
-
-    pub fn team_from_uid_across_all_workspaces(
-        &self,
-        _team_uid: crate::server::ids::ServerId,
-    ) -> Option<&Team> {
-        None
     }
 
     pub fn workspace_from_uid(&self, workspace_uid: WorkspaceUid) -> Option<&Workspace> {
@@ -104,19 +97,6 @@ impl UserWorkspaces {
         workspace_uid: WorkspaceUid,
     ) -> Option<&mut Workspace> {
         self.workspaces.iter_mut().find(|w| w.uid == workspace_uid)
-    }
-
-    /// Return the uid of user's current team (if any) without refreshing.
-    pub fn current_team_uid(&self) -> Option<crate::server::ids::ServerId> {
-        None
-    }
-
-    pub fn current_team_mut(&mut self) -> Option<&mut Team> {
-        None
-    }
-
-    pub fn current_team(&self) -> Option<&Team> {
-        None
     }
 
     pub fn current_workspace(&self) -> Option<&Workspace> {
@@ -135,18 +115,20 @@ impl UserWorkspaces {
 
     pub fn set_current_workspace_uid(
         &mut self,
-        _workspace_uid: WorkspaceUid,
+        workspace_uid: WorkspaceUid,
         ctx: &mut ModelContext<Self>,
     ) {
-        *self.current_workspace_uid = None;
-        self.notify_and_emit_teams_changed(ctx);
+        *self.current_workspace_uid = self
+            .workspace_from_uid(workspace_uid)
+            .map(|workspace| workspace.uid);
+        self.notify_and_emit_local_policies_changed(ctx);
     }
 
     pub fn is_active_ai_allowed(&self) -> bool {
         true
     }
 
-    pub fn ai_allowed_for_current_team(&self) -> bool {
+    pub fn ai_allowed_by_local_policy(&self) -> bool {
         true
     }
 
@@ -187,7 +169,7 @@ impl UserWorkspaces {
         })
     }
 
-    /// Did the admin enable AWS Bedrock for the current workspace?
+    /// Is AWS Bedrock enabled by the current local workspace policy?
     pub fn is_aws_bedrock_available_from_workspace(&self) -> bool {
         self.current_workspace().is_some_and(|workspace| {
             workspace.settings.llm_settings.enabled
@@ -210,7 +192,6 @@ impl UserWorkspaces {
     }
 
     pub fn is_aws_bedrock_credentials_enabled(&self, app: &AppContext) -> bool {
-        // i.e. did the admin go and toggle on aws bedrock in the admin panel?
         if !self.is_aws_bedrock_available_from_workspace() {
             return false;
         }
@@ -223,109 +204,82 @@ impl UserWorkspaces {
         }
     }
 
-    /// Returns the AI autonomy settings that are enforced by the workspace for all its members.
-    /// If a setting is `None`, the workspace doesn't enforce a particular setting.
+    /// Returns local AI autonomy policy overrides.
+    /// If a setting is `None`, local policy doesn't override that setting.
     pub fn ai_autonomy_settings(&self) -> AiAutonomySettings {
-        self.current_team()
-            .map(|team| team.organization_settings.ai_autonomy_settings.clone())
+        self.current_workspace()
+            .map(|workspace| workspace.settings.ai_autonomy_settings.clone())
             .unwrap_or_default()
     }
 
-    /// Returns the sandboxed agent settings enforced by the workspace, if any.
+    /// Returns sandboxed agent policy overrides, if any.
     pub fn sandboxed_agent_settings(&self) -> Option<SandboxedAgentSettings> {
-        self.current_team()
-            .and_then(|team| team.organization_settings.sandboxed_agent_settings.clone())
+        self.current_workspace()
+            .and_then(|workspace| workspace.settings.sandboxed_agent_settings.clone())
     }
 
     pub fn is_ai_autonomy_allowed(&self) -> bool {
         true
     }
 
-    pub fn has_teams(&self) -> bool {
-        false
-    }
-
     pub fn has_workspaces(&self) -> bool {
         !self.workspaces.is_empty()
     }
 
-    pub fn update_workspaces(&mut self, _workspaces: Vec<Workspace>, ctx: &mut ModelContext<Self>) {
-        *self.current_workspace_uid = None;
-        self.workspaces.clear();
-        self.notify_and_emit_teams_changed(ctx);
+    pub fn update_workspaces(&mut self, workspaces: Vec<Workspace>, ctx: &mut ModelContext<Self>) {
+        let current_workspace_uid = workspaces.first().map(|workspace| workspace.uid);
+        *self.current_workspace_uid = current_workspace_uid;
+        *self.workspaces = workspaces;
+        self.notify_and_emit_local_policies_changed(ctx);
     }
 
-    fn notify_and_emit_teams_changed(&self, ctx: &mut ModelContext<Self>) {
-        // Update session-sharing enablement since it depends on what teams the user
-        // is part of.
-        self.update_session_sharing_enablement(ctx);
-
+    fn notify_and_emit_local_policies_changed(&self, ctx: &mut ModelContext<Self>) {
         // PrivacySettings can't observe UserWorkspaces for updates, as it's initialized too early in
-        // the app initialization flow. So, we update it manually whenever teams data changes.
+        // the app initialization flow. So, we update it manually whenever local policy data changes.
         PrivacySettings::handle(ctx).update(ctx, |settings, ctx| {
             settings.set_is_telemetry_force_enabled(self.is_telemetry_force_enabled());
             settings.set_enterprise_secret_redaction_settings(
                 self.is_enterprise_secret_redaction_enabled(),
                 self.get_enterprise_secret_redaction_regex_list(),
-                ChangeEventReason::CloudSync,
+                ChangeEventReason::LocalChange,
                 ctx,
             );
         });
 
-        ctx.emit(UserWorkspacesEvent::TeamsChanged);
+        ctx.emit(UserWorkspacesEvent::LocalPoliciesChanged);
         ctx.emit(UserWorkspacesEvent::CodebaseContextEnablementChanged);
         ctx.notify();
     }
 
     pub fn is_telemetry_force_enabled(&self) -> bool {
-        self.current_team()
-            .map(|team| team.organization_settings.telemetry_settings.force_enabled)
+        self.current_workspace()
+            .map(|workspace| workspace.settings.telemetry_settings.force_enabled)
             .unwrap_or(false)
     }
 
     pub fn is_enterprise_secret_redaction_enabled(&self) -> bool {
-        self.current_team()
-            .map(|team| team.organization_settings.secret_redaction_settings.enabled)
+        self.current_workspace()
+            .map(|workspace| workspace.settings.secret_redaction_settings.enabled)
             .unwrap_or(false)
     }
 
     pub fn get_enterprise_secret_redaction_regex_list(&self) -> Vec<EnterpriseSecretRegex> {
-        self.current_team()
-            .map(|team| {
-                team.organization_settings
-                    .secret_redaction_settings
-                    .regexes
-                    .clone()
-            })
+        self.current_workspace()
+            .map(|workspace| workspace.settings.secret_redaction_settings.regexes.clone())
             .unwrap_or_default()
     }
 
     pub fn get_ugc_collection_enablement_setting(&self) -> UgcCollectionEnablementSetting {
-        self.current_team()
-            .map(|team| {
-                team.organization_settings
-                    .ugc_collection_settings
-                    .setting
-                    .clone()
-            })
-            .unwrap_or_default()
-    }
-
-    pub fn get_cloud_conversation_storage_enablement_setting(&self) -> AdminEnablementSetting {
-        self.current_team()
-            .map(|team| {
-                team.organization_settings
-                    .cloud_conversation_storage_settings
-                    .setting
-                    .clone()
-            })
+        self.current_workspace()
+            .map(|workspace| workspace.settings.ugc_collection_settings.setting.clone())
             .unwrap_or_default()
     }
 
     pub fn is_ai_allowed_in_remote_sessions(&self) -> bool {
-        self.current_team()
-            .map(|team| {
-                team.organization_settings
+        self.current_workspace()
+            .map(|workspace| {
+                workspace
+                    .settings
                     .ai_permissions_settings
                     .allow_ai_in_remote_sessions
             })
@@ -333,9 +287,10 @@ impl UserWorkspaces {
     }
 
     pub fn get_remote_session_regex_list(&self) -> Vec<Regex> {
-        self.current_team()
-            .map(|team| {
-                team.organization_settings
+        self.current_workspace()
+            .map(|workspace| {
+                workspace
+                    .settings
                     .ai_permissions_settings
                     .remote_session_regex_list
                     .clone()
@@ -343,106 +298,85 @@ impl UserWorkspaces {
             .unwrap_or_default()
     }
 
-    pub fn is_anyone_with_link_sharing_enabled(&self) -> bool {
-        self.current_team()
-            .map(|team| {
-                team.organization_settings
-                    .link_sharing_settings
-                    .anyone_with_link_sharing_enabled
-            })
-            .unwrap_or(true)
-    }
-
-    pub fn is_direct_link_sharing_enabled(&self) -> bool {
-        self.current_team()
-            .map(|team| {
-                team.organization_settings
-                    .link_sharing_settings
-                    .direct_link_sharing_enabled
-            })
-            .unwrap_or(true)
-    }
-
-    /// Returns the codebase context settings, taking into account the organization,
+    /// Returns the codebase context settings, taking into account local policy,
     /// global AI settings, and codebase-specific settings.
     /// Prefer this function to determine whether to show indexing-related functionality.
     pub fn is_codebase_context_enabled(&self, app: &AppContext) -> bool {
-        // If the organization has an explicit setting, respect it and make user toggle irrelevant.
-        // - Enable: forced ON by org, regardless of user preference.
-        // - Disable: forced OFF by org.
+        // If local policy has an explicit setting, respect it and make the user toggle irrelevant.
+        // - Enable: forced ON by local policy, regardless of user preference.
+        // - Disable: forced OFF by local policy.
         // - RespectUserSetting: respect the user setting.
-        let org_setting = self.team_allows_codebase_context();
+        let local_policy = self.local_codebase_context_policy();
         let ai_globally_enabled = AISettings::as_ref(app).is_any_ai_enabled(app);
 
-        match org_setting {
-            AdminEnablementSetting::Enable => ai_globally_enabled,
-            AdminEnablementSetting::Disable => false,
-            AdminEnablementSetting::RespectUserSetting => {
+        match local_policy {
+            LocalPolicySetting::Enable => ai_globally_enabled,
+            LocalPolicySetting::Disable => false,
+            LocalPolicySetting::RespectUserSetting => {
                 ai_globally_enabled && *CodeSettings::as_ref(app).codebase_context_enabled.value()
             }
         }
     }
 
-    /// Returns the team-level agent attribution setting.
-    ///
+    /// Returns the local agent attribution policy.
     /// Use this to decide whether the user's attribution toggle should be locked
     /// (`Enable`/`Disable`) or editable (`RespectUserSetting`).
-    pub fn get_agent_attribution_setting(&self) -> AdminEnablementSetting {
-        self.current_team()
-            .map(|team| team.organization_settings.enable_warp_attribution.clone())
+    pub fn agent_attribution_policy(&self) -> LocalPolicySetting {
+        self.current_workspace()
+            .map(|workspace| workspace.settings.agent_attribution_policy.clone())
             .unwrap_or_default()
     }
 
-    /// Returns only the organization-specific codebase context enablement setting.
+    /// Returns only the local codebase context policy.
     /// Do not use this function to determine whether codebase context is generally enabled --
     /// use `is_codebase_context_enabled` instead.
-    pub fn team_allows_codebase_context(&self) -> AdminEnablementSetting {
-        self.current_team()
-            .map(|team| {
-                team.organization_settings
-                    .codebase_context_settings
-                    .setting
-                    .clone()
-            })
+    pub fn local_codebase_context_policy(&self) -> LocalPolicySetting {
+        self.current_workspace()
+            .map(|workspace| workspace.settings.codebase_context_settings.setting.clone())
             .unwrap_or_default()
-    }
-
-    /// Updates whether or not session sharing is enabled based on the current team's tier policy.
-    fn update_session_sharing_enablement(&self, _ctx: &AppContext) {
-        if cfg!(any(test, feature = "integration_tests")) {
-            return;
-        }
-
-        // Session sharing is amputated in Warper; there is no feature flag or
-        // hosted policy to update.
     }
 }
 
 #[cfg(test)]
 impl UserWorkspaces {
     pub fn setup_test_workspace(&mut self, ctx: &mut ModelContext<Self>) {
-        self.update_workspaces(vec![], ctx);
+        self.update_workspaces(
+            vec![Workspace::from_local_cache(
+                "local_test_workspace".to_string().into(),
+                "Local Test Workspace".to_string(),
+            )],
+            ctx,
+        );
     }
 
     pub fn update_current_workspace<F>(&mut self, f: F, ctx: &mut ModelContext<Self>)
     where
         F: FnOnce(&mut Workspace),
     {
-        let _ = (f, ctx);
+        if let Some(workspace) = self.current_workspace_mut() {
+            f(workspace);
+            self.notify_and_emit_local_policies_changed(ctx);
+        }
     }
 
     pub fn update_sandboxed_agent_settings<F>(&mut self, f: F, ctx: &mut ModelContext<Self>)
     where
         F: FnOnce(&mut Option<SandboxedAgentSettings>),
     {
-        let _ = (f, ctx);
+        self.update_current_workspace(
+            |workspace| f(&mut workspace.settings.sandboxed_agent_settings),
+            ctx,
+        );
     }
 
     pub fn update_ai_autonomy_settings<F>(&mut self, f: F, ctx: &mut ModelContext<Self>)
     where
         F: FnOnce(&mut AiAutonomySettings),
     {
-        let _ = (f, ctx);
+        self.update_current_workspace(
+            |workspace| f(&mut workspace.settings.ai_autonomy_settings),
+            ctx,
+        );
     }
 }
 

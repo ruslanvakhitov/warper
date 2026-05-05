@@ -1349,9 +1349,8 @@ define_settings_group!(AISettings, settings: [
     }
 
     // Whether the agent should add attribution (co-author line) to commit messages and PRs.
-    // This is the user-level preference; it may be overridden by the team-level
-    // `enable_warp_attribution` AdminEnablementSetting (see
-    // `UserWorkspaces::get_agent_attribution_setting`).
+    // This is the user-level preference; it may be overridden by the local
+    // `agent_attribution_policy` setting.
     agent_attribution_enabled: AgentAttributionEnabled {
         type: bool,
         default: true,
@@ -1381,7 +1380,7 @@ impl AISettings {
         });
     }
 
-    pub fn is_ai_disabled_due_to_remote_session_org_policy(&self, app: &AppContext) -> bool {
+    pub fn is_ai_disabled_due_to_remote_session_local_policy(&self, app: &AppContext) -> bool {
         let contains_remote_blocks = FocusedTerminalInfo::as_ref(app).contains_any_remote_blocks();
 
         let contains_restored_remote_blocks =
@@ -1400,7 +1399,7 @@ impl AISettings {
     pub fn is_any_ai_enabled(&self, app: &AppContext) -> bool {
         if Self::is_oss_openrouter_configured(app) {
             return *self.is_any_ai_enabled
-                && !self.is_ai_disabled_due_to_remote_session_org_policy(app);
+                && !self.is_ai_disabled_due_to_remote_session_local_policy(app);
         }
 
         // Disable AI for anonymous and logged-out users.
@@ -1410,7 +1409,7 @@ impl AISettings {
 
         *self.is_any_ai_enabled
             && !is_anonymous_or_logged_out
-            && !self.is_ai_disabled_due_to_remote_session_org_policy(app)
+            && !self.is_ai_disabled_due_to_remote_session_local_policy(app)
     }
 
     pub fn default_session_mode(&self, app: &AppContext) -> DefaultSessionMode {

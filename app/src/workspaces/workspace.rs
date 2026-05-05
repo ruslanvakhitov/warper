@@ -7,8 +7,6 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-use super::team::Team;
-
 #[derive(Clone, Copy, Hash, Debug, PartialEq, Eq)]
 pub struct WorkspaceUid(ServerId);
 impl From<String> for WorkspaceUid {
@@ -31,22 +29,16 @@ impl From<ServerId> for WorkspaceUid {
 pub struct Workspace {
     pub uid: WorkspaceUid,
     pub name: String,
-    pub teams: Vec<Team>,
     pub settings: WorkspaceSettings,
 }
 
 impl Workspace {
-    pub fn from_local_cache(uid: WorkspaceUid, name: String, teams: Option<Vec<Team>>) -> Self {
+    pub fn from_local_cache(uid: WorkspaceUid, name: String) -> Self {
         Self {
             uid,
             name,
-            teams: teams.unwrap_or_default(),
             settings: Default::default(), // TODO: persistence wrapper instead of default
         }
-    }
-
-    pub fn is_custom_llm_enabled(&self) -> bool {
-        self.settings.llm_settings.enabled
     }
 }
 
@@ -89,16 +81,11 @@ pub struct UgcCollectionSettings {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-pub enum AdminEnablementSetting {
+pub enum LocalPolicySetting {
     Disable,
     Enable,
     #[default]
     RespectUserSetting,
-}
-
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct CloudConversationStorageSettings {
-    pub setting: AdminEnablementSetting,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -164,12 +151,6 @@ impl AiAutonomySettings {
         self.computer_use_setting.is_some()
     }
 }
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct LinkSharingSettings {
-    pub anyone_with_link_sharing_enabled: bool,
-    pub direct_link_sharing_enabled: bool,
-}
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct EnterpriseSecretRegex {
     pub pattern: String,
@@ -185,7 +166,7 @@ pub struct SecretRedactionSettings {
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct CodebaseContextSettings {
-    pub setting: AdminEnablementSetting,
+    pub setting: LocalPolicySetting,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -198,17 +179,14 @@ pub struct WorkspaceSettings {
     pub llm_settings: LlmSettings,
     pub telemetry_settings: TelemetrySettings,
     pub ugc_collection_settings: UgcCollectionSettings,
-    pub cloud_conversation_storage_settings: CloudConversationStorageSettings,
-    pub link_sharing_settings: LinkSharingSettings,
     pub secret_redaction_settings: SecretRedactionSettings,
     pub ai_permissions_settings: AiPermissionsSettings,
     pub ai_autonomy_settings: AiAutonomySettings,
-    pub is_invite_link_enabled: bool,
-    pub is_discoverable: bool,
     pub codebase_context_settings: CodebaseContextSettings,
     pub sandboxed_agent_settings: Option<SandboxedAgentSettings>,
-    /// The team-level agent attribution setting. When `Enable` or `Disable`, the
-    /// user toggle is locked. When `RespectUserSetting` (or absent), the user can choose.
+    /// Local agent attribution policy. When `Enable` or `Disable`, the user
+    /// toggle is locked. When `RespectUserSetting`, the user can choose.
+    #[serde(alias = "enable_warp_attribution")]
     #[serde(default)]
-    pub enable_warp_attribution: AdminEnablementSetting,
+    pub agent_attribution_policy: LocalPolicySetting,
 }

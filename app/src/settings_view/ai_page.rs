@@ -110,6 +110,7 @@ use crate::server::telemetry::{
 };
 use crate::ui_components::icons::Icon;
 use crate::view_components::dropdown::DropdownAction;
+use crate::UserWorkspaces;
 use crate::{
     appearance::Appearance,
     editor::Event as EditorEvent,
@@ -119,8 +120,7 @@ use crate::{
     util::bindings,
     view_components::{Dropdown, DropdownItem},
 };
-use crate::{report_error, report_if_error, send_telemetry_from_ctx};
-use crate::{TelemetryEvent, UserWorkspaces};
+use crate::{report_error, report_if_error};
 use markdown_parser::{FormattedText, FormattedTextFragment, FormattedTextLine};
 use std::borrow::Cow;
 use std::cell::RefCell;
@@ -405,7 +405,7 @@ impl AISettingsPageView {
         let workspace = UserWorkspaces::handle(ctx);
         let ai_autonomy_settings = workspace.as_ref(ctx).ai_autonomy_settings();
         ctx.subscribe_to_model(&workspace, |me, workspace, event, ctx| {
-            if let UserWorkspacesEvent::TeamsChanged = event {
+            if let UserWorkspacesEvent::LocalPoliciesChanged = event {
                 me.refresh_all_execution_profile_ui(ctx);
                 me.reset_execution_profile_mouse_state_handles(ctx);
 
@@ -677,7 +677,7 @@ impl AISettingsPageView {
         );
 
         ctx.subscribe_to_model(&UserWorkspaces::handle(ctx), |me, _handle, _event, ctx| {
-            // Re-render if teams-related data changed that may affect whether features such as voice input are enabled.
+            // Re-render if local policy data changed and may affect AI/provider controls.
             Self::refresh_base_model_menu(&me.base_model_dropdown, ctx);
             Self::refresh_coding_model_menu(&me.coding_model_dropdown, ctx);
             ctx.notify();
@@ -2030,14 +2030,7 @@ impl TypedActionView for AISettingsPageView {
                 match AISettings::handle(ctx).update(ctx, |settings, ctx| {
                     settings.is_any_ai_enabled.toggle_and_save_value(ctx)
                 }) {
-                    Ok(new_value) => {
-                        send_telemetry_from_ctx!(
-                            TelemetryEvent::ToggleGlobalAI {
-                                is_ai_enabled: new_value,
-                            },
-                            ctx
-                        );
-                    }
+                    Ok(new_value) => {}
                     Err(e) => {
                         log::warn!("Failed to set value for Global AI setting: {e:?}");
                     }
@@ -2050,14 +2043,7 @@ impl TypedActionView for AISettingsPageView {
                         .is_active_ai_enabled_internal
                         .toggle_and_save_value(ctx)
                 }) {
-                    Ok(new_value) => {
-                        send_telemetry_from_ctx!(
-                            TelemetryEvent::ToggleActiveAI {
-                                is_active_ai_enabled: new_value,
-                            },
-                            ctx
-                        );
-                    }
+                    Ok(new_value) => {}
                     Err(e) => {
                         log::warn!("Failed to set value for Active AI setting: {e:?}");
                     }
@@ -2070,14 +2056,7 @@ impl TypedActionView for AISettingsPageView {
                         .intelligent_autosuggestions_enabled_internal
                         .toggle_and_save_value(ctx)
                 }) {
-                    Ok(new_value) => {
-                        send_telemetry_from_ctx!(
-                            TelemetryEvent::ToggleIntelligentAutosuggestionsSetting {
-                                is_intelligent_autosuggestions_enabled: new_value,
-                            },
-                            ctx
-                        );
-                    }
+                    Ok(new_value) => {}
                     Err(e) => {
                         log::warn!("Failed to set value for Next Command setting: {e:?}");
                     }
@@ -2093,14 +2072,7 @@ impl TypedActionView for AISettingsPageView {
                         .prompt_suggestions_enabled_internal
                         .toggle_and_save_value(ctx)
                 }) {
-                    Ok(new_value) => {
-                        send_telemetry_from_ctx!(
-                            TelemetryEvent::TogglePromptSuggestionsSetting {
-                                is_prompt_suggestions_enabled: new_value,
-                            },
-                            ctx
-                        );
-                    }
+                    Ok(new_value) => {}
                     Err(e) => {
                         log::warn!("Failed to set value for Prompt Suggestions setting: {e:?}");
                     }
@@ -2113,15 +2085,7 @@ impl TypedActionView for AISettingsPageView {
                         .code_suggestions_enabled_internal
                         .toggle_and_save_value(ctx)
                 }) {
-                    Ok(new_value) => {
-                        send_telemetry_from_ctx!(
-                            TelemetryEvent::ToggleCodeSuggestionsSetting {
-                                source: ToggleCodeSuggestionsSettingSource::Settings,
-                                is_code_suggestions_enabled: new_value,
-                            },
-                            ctx
-                        );
-                    }
+                    Ok(new_value) => {}
                     Err(e) => {
                         log::warn!("Failed to set value for Code Suggestions setting: {e:?}");
                     }
@@ -2134,14 +2098,7 @@ impl TypedActionView for AISettingsPageView {
                         .natural_language_autosuggestions_enabled_internal
                         .toggle_and_save_value(ctx)
                 }) {
-                    Ok(new_value) => {
-                        send_telemetry_from_ctx!(
-                            TelemetryEvent::ToggleNaturalLanguageAutosuggestionsSetting {
-                                is_natural_language_autosuggestions_enabled: new_value,
-                            },
-                            ctx
-                        );
-                    }
+                    Ok(new_value) => {}
                     Err(e) => {
                         log::warn!(
                             "Failed to set value for Natural Language Autosuggestions setting: {e:?}"
@@ -2156,14 +2113,7 @@ impl TypedActionView for AISettingsPageView {
                         .git_operations_autogen_enabled_internal
                         .toggle_and_save_value(ctx)
                 }) {
-                    Ok(new_value) => {
-                        send_telemetry_from_ctx!(
-                            TelemetryEvent::ToggleGitOperationsAutogenSetting {
-                                is_git_operations_autogen_enabled: new_value,
-                            },
-                            ctx
-                        );
-                    }
+                    Ok(new_value) => {}
                     Err(e) => {
                         log::warn!("Failed to set value for Git Operations Autogen setting: {e:?}");
                     }
@@ -2176,15 +2126,7 @@ impl TypedActionView for AISettingsPageView {
                         .ai_autodetection_enabled_internal
                         .toggle_and_save_value(ctx)
                 }) {
-                    Ok(new_value) => {
-                        send_telemetry_from_ctx!(
-                            TelemetryEvent::AgentModeToggleAutoDetectionSetting {
-                                is_autodetection_enabled: new_value,
-                                origin: AgentModeAutoDetectionSettingOrigin::SettingsPage
-                            },
-                            ctx
-                        );
-                    }
+                    Ok(new_value) => {}
                     Err(e) => {
                         log::warn!("Failed to set value for Input Auto-detection: {e:?}");
                     }
@@ -2210,14 +2152,7 @@ impl TypedActionView for AISettingsPageView {
                         .should_render_cli_agent_footer
                         .toggle_and_save_value(ctx)
                 }) {
-                    Ok(new_value) => {
-                        send_telemetry_from_ctx!(
-                            TelemetryEvent::ToggleCLIAgentToolbarSetting {
-                                is_enabled: new_value,
-                            },
-                            ctx
-                        );
-                    }
+                    Ok(new_value) => {}
                     Err(e) => {
                         log::warn!("Failed to set value for CLI Agent Footer setting: {e:?}");
                     }
@@ -2252,14 +2187,7 @@ impl TypedActionView for AISettingsPageView {
                         .should_render_use_agent_footer_for_user_commands
                         .toggle_and_save_value(ctx)
                 }) {
-                    Ok(new_value) => {
-                        send_telemetry_from_ctx!(
-                            TelemetryEvent::ToggleUseAgentToolbarSetting {
-                                is_enabled: new_value,
-                            },
-                            ctx
-                        );
-                    }
+                    Ok(new_value) => {}
                     Err(e) => {
                         log::warn!("Failed to set value for Use Agent Footer setting: {e:?}");
                     }
@@ -2270,14 +2198,7 @@ impl TypedActionView for AISettingsPageView {
                 match CodeSettings::handle(ctx).update(ctx, |settings, ctx| {
                     settings.codebase_context_enabled.toggle_and_save_value(ctx)
                 }) {
-                    Ok(new_value) => {
-                        send_telemetry_from_ctx!(
-                            TelemetryEvent::ToggleCodebaseContext {
-                                is_codebase_context_enabled: new_value
-                            },
-                            ctx
-                        );
-                    }
+                    Ok(new_value) => {}
                     Err(e) => {
                         log::warn!("Failed to set value for Codebase Context: {e:?}");
                     }
@@ -2290,14 +2211,7 @@ impl TypedActionView for AISettingsPageView {
                         .voice_input_enabled_internal
                         .toggle_and_save_value(ctx)
                 }) {
-                    Ok(new_value) => {
-                        send_telemetry_from_ctx!(
-                            TelemetryEvent::ToggleVoiceInputSetting {
-                                is_voice_input_enabled: new_value,
-                            },
-                            ctx
-                        );
-                    }
+                    Ok(new_value) => {}
                     Err(e) => {
                         log::warn!("Failed to set value for Voice Input: {e:?}");
                     }
@@ -2311,14 +2225,6 @@ impl TypedActionView for AISettingsPageView {
             AISettingsPageAction::ToggleShowInputHintText => {
                 InputSettings::handle(ctx).update(ctx, |input_settings, ctx| {
                     report_if_error!(input_settings.show_hint_text.toggle_and_save_value(ctx));
-                    send_telemetry_from_ctx!(
-                        // We purposely keep the FeaturesPageAction event, even though we have moved the setting to AI settings.
-                        TelemetryEvent::FeaturesPageAction {
-                            action: "ToggleShowInputHintText".to_string(),
-                            value: format!("{}", *input_settings.show_hint_text),
-                        },
-                        ctx
-                    );
                 });
             }
             AISettingsPageAction::ToggleShowAgentTips => {
@@ -2326,14 +2232,7 @@ impl TypedActionView for AISettingsPageView {
                     .show_agent_tips
                     .toggle_and_save_value(ctx)
                 {
-                    Ok(new_value) => {
-                        send_telemetry_from_ctx!(
-                            TelemetryEvent::ToggleShowAgentTips {
-                                is_enabled: new_value,
-                            },
-                            ctx
-                        );
-                    }
+                    Ok(new_value) => {}
                     Err(e) => {
                         log::warn!("Failed to set value for Show Agent Tips setting: {e:?}");
                     }
@@ -2398,14 +2297,7 @@ impl TypedActionView for AISettingsPageView {
                         readonly_cmd_execution_enabled,
                         ctx,
                     ) {
-                        Ok(_) => {
-                            send_telemetry_from_ctx!(
-                                TelemetryEvent::ToggledAgentModeAutoexecuteReadonlyCommandsSetting {
-                                    src: AutonomySettingToggleSource::SettingsPage,
-                                    enabled: readonly_cmd_execution_enabled,
-                                },
-                                ctx);
-                        }
+                        Ok(_) => {}
                         Err(e) => report_error!(e),
                     }
                 });
@@ -2413,15 +2305,7 @@ impl TypedActionView for AISettingsPageView {
             AISettingsPageAction::SetCodingPermission(p) => {
                 BlocklistAIPermissions::handle(ctx).update(ctx, |model, ctx| {
                     match model.set_coding_permissions(*p, ctx) {
-                        Ok(_) => {
-                            send_telemetry_from_ctx!(
-                                TelemetryEvent::ChangedAgentModeCodingPermissions {
-                                    src: AutonomySettingToggleSource::SettingsPage,
-                                    new: *p,
-                                },
-                                ctx
-                            );
-                        }
+                        Ok(_) => {}
                         Err(e) => report_error!(e),
                     }
                 });
@@ -2611,13 +2495,6 @@ impl TypedActionView for AISettingsPageView {
                             .open_conversation_layout_preference
                             .set_value(*layout, ctx));
                     },
-                );
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::FeaturesPageAction {
-                        action: "SetConversationLayout".to_string(),
-                        value: format!("{layout:?}")
-                    },
-                    ctx
                 );
                 ctx.notify();
             }
@@ -2865,8 +2742,8 @@ impl SettingsWidget for GlobalAIWidget {
         app: &AppContext,
     ) -> Box<dyn Element> {
         let ui_builder = appearance.ui_builder();
-        let is_ai_disabled_due_to_remote_session_org_policy =
-            AISettings::as_ref(app).is_ai_disabled_due_to_remote_session_org_policy(app);
+        let is_ai_disabled_due_to_remote_session_local_policy =
+            AISettings::as_ref(app).is_ai_disabled_due_to_remote_session_local_policy(app);
 
         let is_oss = ChannelState::channel() == Channel::Oss;
         let agent_title = if is_oss { "Warper Agent" } else { "Warp Agent" };
@@ -2886,11 +2763,11 @@ impl SettingsWidget for GlobalAIWidget {
                 .finish(),
             );
 
-        if is_ai_disabled_due_to_remote_session_org_policy {
+        if is_ai_disabled_due_to_remote_session_local_policy {
             row.add_child(
                 ConstrainedBox::new(
                     Container::new(
-                        Text::new("Your organization disallows AI when the active pane contains content from a remote session", appearance.ui_font_family(), 12.)
+                        Text::new("Local policy disallows AI when the active pane contains content from a remote session", appearance.ui_font_family(), 12.)
                             .with_color(appearance.theme().ui_warning_color())
                             .finish()
                     )
@@ -2967,7 +2844,7 @@ impl ActiveAIWidget {
             && AISettings::as_ref(app)
                 .git_operations_autogen_enabled_internal
                 .is_supported_on_current_platform()
-            && UserWorkspaces::as_ref(app).ai_allowed_for_current_team()
+            && UserWorkspaces::as_ref(app).ai_allowed_by_local_policy()
     }
 
     fn render_next_command_section(
@@ -5109,7 +4986,7 @@ impl ApiKeysWidget {
                 });
                 let editor_clone = $editor.clone();
                 ctx.subscribe_to_model(&workspace_handle, move |_, workspace, event, ctx| {
-                    if let UserWorkspacesEvent::TeamsChanged = event {
+                    if let UserWorkspacesEvent::LocalPoliciesChanged = event {
                         let is_any_ai_enabled =
                             AISettings::handle(ctx).as_ref(ctx).is_any_ai_enabled(ctx);
                         let is_byo_enabled = workspace.as_ref(ctx).is_byo_api_key_enabled();
@@ -5487,7 +5364,7 @@ impl AwsBedrockWidget {
         ctx.subscribe_to_model(
             &UserWorkspaces::handle(ctx),
             move |_, workspace, event, ctx| {
-                if let UserWorkspacesEvent::TeamsChanged = event {
+                if let UserWorkspacesEvent::LocalPoliciesChanged = event {
                     let is_any_ai_enabled = AISettings::as_ref(ctx).is_any_ai_enabled(ctx);
                     let is_usage_enabled = is_any_ai_enabled
                         && workspace
@@ -5532,7 +5409,7 @@ impl AwsBedrockWidget {
         let user_workspaces = UserWorkspaces::as_ref(app);
         let is_any_ai_enabled = ai_settings.is_any_ai_enabled(app);
         let is_section_enabled = is_any_ai_enabled && is_bedrock_available;
-        let is_admin_enforced = matches!(
+        let is_local_policy_enforced = matches!(
             user_workspaces.aws_bedrock_host_enablement_setting(),
             crate::workspaces::workspace::HostEnablementSetting::Enforce
         );
@@ -5540,8 +5417,8 @@ impl AwsBedrockWidget {
             is_section_enabled && user_workspaces.is_aws_bedrock_credentials_toggleable();
         let are_credentials_enabled = user_workspaces.is_aws_bedrock_credentials_enabled(app);
         let is_usage_enabled = is_section_enabled && are_credentials_enabled;
-        let toggle_description = if is_admin_enforced {
-            "Warp loads and sends local AWS CLI credentials for Bedrock-supported models. This setting is managed by your organization.".to_string()
+        let toggle_description = if is_local_policy_enforced {
+            "Warp loads and sends local AWS CLI credentials for Bedrock-supported models. This setting is managed by local policy.".to_string()
         } else {
             "Warp loads and sends local AWS CLI credentials for Bedrock-supported models."
                 .to_string()
@@ -5730,7 +5607,7 @@ impl SettingsWidget for AwsBedrockWidget {
     }
 
     fn should_render(&self, app: &AppContext) -> bool {
-        // Only show if admin has enabled AWS Bedrock for the workspace
+        // Only show if local policy enables AWS Bedrock for the workspace.
         UserWorkspaces::as_ref(app).is_aws_bedrock_available_from_workspace()
     }
 

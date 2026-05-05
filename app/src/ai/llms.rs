@@ -776,7 +776,7 @@ impl LLMPreferences {
         });
 
         ctx.subscribe_to_model(&UserWorkspaces::handle(ctx), |me, event, ctx| {
-            if let UserWorkspacesEvent::TeamsChanged = event {
+            if let UserWorkspacesEvent::LocalPoliciesChanged = event {
                 me.refresh_authed_models(ctx);
             }
         });
