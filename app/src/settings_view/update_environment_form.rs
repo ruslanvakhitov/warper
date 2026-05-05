@@ -2,9 +2,7 @@ use super::{
     editor_text_colors,
     settings_page::{render_input_list, InputListItem},
 };
-use crate::server::server_api::ServerApiProvider;
 use crate::{
-    ai::ambient_agents::telemetry::AmbientAgentTelemetryEvent,
     ai::cloud_environments::{AmbientAgentEnvironment, GithubRepo},
     appearance::Appearance,
     editor::{
@@ -22,13 +20,10 @@ use crate::{
     ChannelState,
 };
 use instant::{Duration, Instant};
-use log::debug;
 #[cfg(not(target_family = "wasm"))]
 use std::collections::HashMap;
 use url::Url;
-use warp_core::send_telemetry_from_ctx;
 use warp_editor::editor::NavigationKey;
-use warp_graphql::queries::user_github_info::UserGithubInfoResult;
 use warpui::{
     elements::{
         Border, ChildAnchor, ChildView, Clipped, ClippedScrollStateHandle, ClippedScrollable,
@@ -1091,27 +1086,10 @@ impl UpdateEnvironmentForm {
     }
 
     pub fn start_github_auth(&mut self, ctx: &mut ViewContext<Self>) {
-        if self.github_dropdown_state.is_loading {
-            return;
-        }
-        if self.should_refresh_auth_url() {
-            if let Some(elapsed) = self
-                .github_dropdown_state
-                .auth_fetched_at
-                .map(|fetched_at| fetched_at.elapsed())
-            {
-                debug!(
-                    "Refreshing GitHub auth URL after {:.0}s (threshold {:.0}s)",
-                    elapsed.as_secs_f64(),
-                    AUTH_URL_REFRESH_THRESHOLD.as_secs_f64()
-                );
-            } else {
-                debug!("Refreshing GitHub auth URL (no previous fetch timestamp)");
-            }
-            self.fetch_github_repos_for_auth(ctx);
-        } else {
-            self.open_github_auth_url_or_fallback(ctx);
-        }
+        self.github_dropdown_state.auth_url = None;
+        self.github_dropdown_state.auth_fetched_at = None;
+        self.update_repos_input_placeholder(ctx);
+        ctx.notify();
     }
 
     fn should_refresh_auth_url(&self) -> bool {
@@ -1155,86 +1133,18 @@ impl UpdateEnvironmentForm {
     fn fetch_github_repos_internal(
         &mut self,
         ctx: &mut ViewContext<Self>,
-        open_auth_after_fetch: bool,
+        _open_auth_after_fetch: bool,
     ) {
-        self.github_dropdown_state.is_loading = true;
+        self.github_dropdown_state.is_loading = false;
         self.github_dropdown_state.load_error_message = None;
         self.github_dropdown_state.auth_url = None;
         self.github_dropdown_state.auth_fetched_at = None;
+        self.github_dropdown_state.available_repos.clear();
+        self.github_dropdown_state.repo_row_mouse_states.clear();
+        self.github_dropdown_state.scroll_state = ClippedScrollStateHandle::default();
+        self.github_dropdown_state.selected_index = None;
+        self.update_repos_input_placeholder(ctx);
         ctx.notify();
-
-        let integrations_client = ServerApiProvider::handle(ctx)
-            .as_ref(ctx)
-            .get_integrations_client();
-
-        ctx.spawn(
-            async move { integrations_client.get_user_github_info().await },
-            move |me, result, ctx| {
-                me.github_dropdown_state.is_loading = false;
-                let mut should_open_auth = open_auth_after_fetch;
-
-                match result {
-                    Ok(UserGithubInfoResult::GithubConnectedOutput(info)) => {
-                        me.github_dropdown_state.available_repos = info
-                            .installed_repos
-                            .into_iter()
-                            .map(|r| GithubRepo::new(r.owner, r.repo))
-                            .collect();
-                        me.github_dropdown_state.repo_row_mouse_states = me
-                            .github_dropdown_state
-                            .available_repos
-                            .iter()
-                            .map(|_| MouseStateHandle::default())
-                            .collect();
-                        me.github_dropdown_state.scroll_state = ClippedScrollStateHandle::default();
-                        me.github_dropdown_state.selected_index = None;
-                        me.ensure_repo_dropdown_selection();
-                        me.scroll_repo_dropdown_selection_into_view();
-                        // Store appInstallLink even when authenticated - it's used for "Configure access" link
-                        me.github_dropdown_state.app_install_link = Some(info.app_install_link);
-                        me.github_dropdown_state.auth_url = None;
-                        me.github_dropdown_state.auth_fetched_at = None;
-                        should_open_auth = false;
-                        me.update_repos_input_placeholder(ctx);
-                    }
-                    Ok(UserGithubInfoResult::GithubAuthRequiredOutput(auth_info)) => {
-                        me.github_dropdown_state.auth_url = Some(auth_info.auth_url);
-                        me.github_dropdown_state.auth_fetched_at = Some(Instant::now());
-                        me.github_dropdown_state.app_install_link =
-                            Some(auth_info.app_install_link);
-                        if open_auth_after_fetch {
-                            if let Some(auth_url) = me.github_dropdown_state.auth_url.as_deref() {
-                                if let Some(tx_id) = Self::extract_tx_id(auth_url) {
-                                    debug!("Refetched GitHub auth URL with tx_id={tx_id}");
-                                } else {
-                                    debug!("Refetched GitHub auth URL (tx_id missing)");
-                                }
-                            }
-                        }
-                        me.update_repos_input_placeholder(ctx);
-                    }
-                    Ok(UserGithubInfoResult::Unknown) => {
-                        me.github_dropdown_state.load_error_message =
-                            Some("Failed to load GitHub repos".to_string());
-                    }
-                    Err(e) => {
-                        me.github_dropdown_state.load_error_message =
-                            Some(format!("Failed to load GitHub repos: {}", e));
-                    }
-                }
-
-                if should_open_auth {
-                    if let Some(auth_url) = me.github_dropdown_state.auth_url.as_deref() {
-                        let auth_url = me.auth_url_with_next(auth_url);
-                        ctx.open_url(&auth_url);
-                    } else if me.github_dropdown_state.available_repos.is_empty() {
-                        let fallback_url = me.github_connect_fallback_url();
-                        ctx.open_url(&fallback_url);
-                    }
-                }
-                ctx.notify();
-            },
-        );
     }
 
     /// Generate a cache key from selected repos for suggest image.
@@ -1323,13 +1233,7 @@ impl UpdateEnvironmentForm {
             reason,
         };
 
-        send_telemetry_from_ctx!(
-            AmbientAgentTelemetryEvent::ImageSuggested {
-                image,
-                needs_custom_image,
-            },
-            ctx
-        );
+        let _ = (image, needs_custom_image, ctx);
     }
 
     #[cfg(not(target_family = "wasm"))]
@@ -1351,106 +1255,11 @@ impl UpdateEnvironmentForm {
         // Record the attempt immediately to enforce the "repos must change to retry" rule
         self.suggest_image_last_attempt_key = Some(key.clone());
 
-        // If we have a cached result, apply it immediately
-        if let Some(cached) = self.suggest_image_cache.get(&key).cloned() {
-            self.apply_cached_suggest_image_result(&key, cached, ctx);
-            ctx.notify();
-            return;
-        }
-
-        self.suggest_image_request_seq = self.suggest_image_request_seq.saturating_add(1);
-        let request_seq = self.suggest_image_request_seq;
-        self.suggest_image_state = SuggestImageState::Loading { key: key.clone() };
+        self.suggest_image_state = SuggestImageState::Error {
+            key,
+            message: "Docker image suggestions are not available in Warper.".to_string(),
+        };
         ctx.notify();
-
-        let repos = self
-            .form_state
-            .selected_repos
-            .iter()
-            .map(|r| (r.owner.clone(), r.repo.clone()))
-            .collect::<Vec<_>>();
-
-        let integrations_client = ServerApiProvider::handle(ctx)
-            .as_ref(ctx)
-            .get_integrations_client();
-
-        ctx.spawn(
-            async move { integrations_client.suggest_cloud_environment_image(repos).await },
-            move |me, result, ctx| {
-                if me.suggest_image_request_seq != request_seq {
-                    return;
-                }
-
-                match result {
-                    Ok(result) => match result {
-                        warp_graphql::queries::suggest_cloud_environment_image::SuggestCloudEnvironmentImageResult::SuggestCloudEnvironmentImageOutput(output) => {
-                            let image = output.image;
-                            let needs_custom_image = output.needs_custom_image;
-                            let reason = output.reason;
-                            me.apply_suggest_image_success(
-                                key.clone(),
-                                image,
-                                needs_custom_image,
-                                reason,
-                                ctx,
-                            );
-                        }
-                        warp_graphql::queries::suggest_cloud_environment_image::SuggestCloudEnvironmentImageResult::SuggestCloudEnvironmentImageAuthRequiredOutput(output) => {
-                            me.suggest_image_cache.insert(
-                                key.clone(),
-                                CachedSuggestImageResult::AuthRequired {
-                                    auth_url: output.auth_url.clone(),
-                                },
-                            );
-                            me.suggest_image_state = SuggestImageState::AuthRequired {
-                                key: key.clone(),
-                                auth_url: output.auth_url,
-                            };
-                        }
-                        warp_graphql::queries::suggest_cloud_environment_image::SuggestCloudEnvironmentImageResult::UserFacingError(_) => {
-                            let error_message = "Failed to suggest a Docker image".to_string();
-                            send_telemetry_from_ctx!(
-                                AmbientAgentTelemetryEvent::ImageSuggestionFailed {
-                                    error: error_message.clone(),
-                                },
-                                ctx
-                            );
-                            me.suggest_image_state = SuggestImageState::Error {
-                                key: key.clone(),
-                                message: error_message,
-                            };
-                        }
-                        warp_graphql::queries::suggest_cloud_environment_image::SuggestCloudEnvironmentImageResult::Unknown => {
-                            let error_message = "Unknown response from suggestCloudEnvironmentImage".to_string();
-                            send_telemetry_from_ctx!(
-                                AmbientAgentTelemetryEvent::ImageSuggestionFailed {
-                                    error: error_message.clone(),
-                                },
-                                ctx
-                            );
-                            me.suggest_image_state = SuggestImageState::Error {
-                                key: key.clone(),
-                                message: error_message,
-                            };
-                        }
-                    },
-                    Err(e) => {
-                        let error_message = format!("Failed to suggest a Docker image: {}", e);
-                        send_telemetry_from_ctx!(
-                            AmbientAgentTelemetryEvent::ImageSuggestionFailed {
-                                error: error_message.clone(),
-                            },
-                            ctx
-                        );
-                        me.suggest_image_state = SuggestImageState::Error {
-                            key: key.clone(),
-                            message: error_message,
-                        };
-                    }
-                }
-                ctx.notify();
-            },
-        );
     }
 
     #[cfg(target_family = "wasm")]
@@ -2897,33 +2706,7 @@ impl UpdateEnvironmentForm {
     }
 
     fn can_suggest_image_for_current_repos(&self) -> bool {
-        if self.form_state.selected_repos.is_empty() {
-            return false;
-        }
-
-        if matches!(&self.suggest_image_state, SuggestImageState::Loading { .. }) {
-            return false;
-        }
-
-        // In Edit mode, disable suggest-image until repos have been modified at least once.
-        if self.is_edit_mode() && !self.edit_repos_modified {
-            return false;
-        }
-
-        // Enforce “repos must change to retry” after a suggest-image attempt.
-        let repos_unchanged = self
-            .selected_repos_key()
-            .and_then(|key| {
-                self.suggest_image_last_attempt_key
-                    .as_ref()
-                    .map(|last_key| key == *last_key)
-            })
-            .unwrap_or(false);
-        if repos_unchanged {
-            return false;
-        }
-
-        true
+        false
     }
 
     fn render_docker_image_suggest_button(&self, appearance: &Appearance) -> Box<dyn Element> {
@@ -2938,7 +2721,7 @@ impl UpdateEnvironmentForm {
             "Suggest image"
         };
 
-        let tooltip_text = "Warp will suggest a Docker image based on your selected repositories.";
+        let tooltip_text = "Docker image suggestions are not available in Warper.";
 
         let button = Hoverable::new(
             self.suggest_image_button_mouse_state.clone(),
@@ -3128,19 +2911,9 @@ impl TypedActionView for UpdateEnvironmentForm {
                 let environment = self.form_state.to_ambient_agent_environment();
                 match &self.mode {
                     EnvironmentFormMode::Create => {
-                        send_telemetry_from_ctx!(
-                            AmbientAgentTelemetryEvent::EnvironmentCreated,
-                            ctx
-                        );
                         ctx.emit(UpdateEnvironmentFormEvent::Created { environment });
                     }
                     EnvironmentFormMode::Edit { env_id } => {
-                        send_telemetry_from_ctx!(
-                            AmbientAgentTelemetryEvent::EnvironmentUpdated {
-                                environment_id: env_id.into_server(),
-                            },
-                            ctx
-                        );
                         ctx.emit(UpdateEnvironmentFormEvent::Updated {
                             env_id: *env_id,
                             environment,
@@ -3150,12 +2923,6 @@ impl TypedActionView for UpdateEnvironmentForm {
             }
             UpdateEnvironmentFormAction::Delete => {
                 if let EnvironmentFormMode::Edit { env_id } = &self.mode {
-                    send_telemetry_from_ctx!(
-                        AmbientAgentTelemetryEvent::EnvironmentDeleted {
-                            environment_id: env_id.into_server(),
-                        },
-                        ctx
-                    );
                     ctx.emit(UpdateEnvironmentFormEvent::DeleteRequested { env_id: *env_id });
                 }
             }
@@ -3270,11 +3037,6 @@ impl TypedActionView for UpdateEnvironmentForm {
                 self.suggest_image(ctx);
             }
             UpdateEnvironmentFormAction::LaunchAgentForSelectedRepos => {
-                send_telemetry_from_ctx!(
-                    AmbientAgentTelemetryEvent::LaunchedAgentFromEnvironmentForm,
-                    ctx
-                );
-
                 let repos = self.selected_repos_as_remote_repo_args();
                 if repos.is_empty() {
                     return;
@@ -3305,10 +3067,6 @@ impl TypedActionView for UpdateEnvironmentForm {
                 self.fetch_github_repos(ctx);
             }
             UpdateEnvironmentFormAction::StartGithubAuth => {
-                send_telemetry_from_ctx!(
-                    AmbientAgentTelemetryEvent::GitHubAuthFromEnvironmentForm,
-                    ctx
-                );
                 self.start_github_auth(ctx);
             }
             UpdateEnvironmentFormAction::OpenUrl(url) => {

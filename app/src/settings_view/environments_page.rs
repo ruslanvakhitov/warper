@@ -16,27 +16,15 @@ use super::{
     SettingsSection,
 };
 use crate::{
-    ai::cloud_environments::{self, AmbientAgentEnvironmentObject},
     appearance::Appearance,
-    cloud_object::{
-        model::persistence::{CloudModel, CloudModelEvent},
-        GenericStringObjectFormat, JsonObjectType, Owner,
-    },
-    drive::CloudObjectTypeAndId,
     editor::{EditorView, PropagateAndNoOpNavigationKeys, SingleLineEditorOptions, TextOptions},
     root_view::CreateEnvironmentArg,
-    server::{
-        cloud_objects::update_manager::{
-            ObjectOperation, OperationSuccessType, UpdateManager, UpdateManagerEvent,
-        },
-        ids::{ClientId, SyncId},
-    },
+    server::ids::SyncId,
     terminal::view::init_environment::mode_selector::{
         EnvironmentSetupMode, EnvironmentSetupModeSelector, EnvironmentSetupModeSelectorEvent,
     },
     themes::theme::Fill as ThemeFill,
     ui_components::{blended_colors, buttons::icon_button_with_color, icons::Icon},
-    util::time_format::format_approx_duration_from_now_utc,
     view_components::{
         render_copyable_text_field, CopyButtonPlacement, CopyableTextFieldConfig, DismissibleToast,
         COPY_FEEDBACK_DURATION,
@@ -49,7 +37,6 @@ use std::collections::HashMap;
 use warp_core::ui::color::blend::Blend;
 use warp_core::ui::theme::color::internal_colors;
 use warp_editor::editor::NavigationKey;
-use warp_graphql::scalars::time::ServerTimestamp;
 use warpui::{
     elements::{
         Align, Border, ChildAnchor, Clipped, ConstrainedBox, Container, CornerRadius,
@@ -71,15 +58,9 @@ use warpui::{
 mod new_environment_button;
 use new_environment_button::NewEnvironmentButtonView;
 
-#[cfg(not(target_family = "wasm"))]
-#[allow(unused_imports)] // IntegrationsClient trait is used in fetch_github_repos
-use {
-    crate::server::server_api::{integrations::IntegrationsClient, ServerApiProvider},
-    warp_graphql::queries::user_github_info::UserGithubInfoResult,
-};
-
 const PAGE_TITLE_TEXT: &str = "Environments";
-const PAGE_DESCRIPTION_TEXT: &str = "Environments define where your ambient agents run. Set one up in minutes via GitHub (recommended), Warp-assisted setup, or manual configuration.";
+const PAGE_DESCRIPTION_TEXT: &str =
+    "Warper runs agents locally through OpenRouter. Hosted saved environments are not available.";
 const CARD_BORDER_WIDTH: f32 = 1.;
 const CARD_PADDING: f32 = 16.;
 const CARD_SPACING: f32 = 12.;
@@ -112,7 +93,7 @@ pub enum EnvironmentsPage {
     Create,
 }
 
-/// A view-friendly representation of a cloud environment.
+/// A view-friendly representation of a saved environment.
 #[derive(Clone, Debug)]
 struct EnvironmentDisplayData {
     id: SyncId,
@@ -121,40 +102,9 @@ struct EnvironmentDisplayData {
     docker_image: String,
     github_repos: Vec<(String, String)>, // (owner, repo)
     setup_commands: Vec<String>,
-    last_edited_ts: Option<ServerTimestamp>,
-    last_used_ts: Option<ServerTimestamp>,
 }
 
 impl EnvironmentDisplayData {
-    fn from_cloud_environment(env: &AmbientAgentEnvironmentObject) -> Self {
-        let model = &env.model().string_model;
-
-        // For environments, the server revision timestamp reflects the last successful edit.
-        // We prefer it over `metadata_last_updated_ts` because the latter may not be refreshed
-        // locally immediately after an update.
-        let last_edited_ts = env
-            .metadata
-            .revision
-            .clone()
-            .map(ServerTimestamp::from)
-            .or(env.metadata.metadata_last_updated_ts);
-
-        Self {
-            id: env.id,
-            name: model.name.clone(),
-            description: model.description.clone(),
-            docker_image: model.base_image.to_string(),
-            github_repos: model
-                .github_repos
-                .iter()
-                .map(|r| (r.owner.clone(), r.repo.clone()))
-                .collect(),
-            setup_commands: model.setup_commands.clone(),
-            last_edited_ts,
-            last_used_ts: env.metadata.last_task_run_ts,
-        }
-    }
-
     fn matches_search_query(&self, query: &str) -> bool {
         let query = query.trim();
         if query.is_empty() {
@@ -185,23 +135,7 @@ impl EnvironmentDisplayData {
 
     /// Format the timestamp text showing last edited and last used times.
     fn format_timestamp_text(&self) -> String {
-        let last_edited_part = self.last_edited_ts.map(|ts| {
-            format!(
-                "Last edited: {}",
-                format_approx_duration_from_now_utc(ts.utc())
-            )
-        });
-        let last_used_part = match self.last_used_ts {
-            Some(ts) => format!(
-                "Last used: {}",
-                format_approx_duration_from_now_utc(ts.utc())
-            ),
-            None => "Last used: never".to_string(),
-        };
-        match last_edited_part {
-            Some(edited) => format!("{} · {}", edited, last_used_part),
-            None => last_used_part,
-        }
+        "Last used: never".to_string()
     }
 }
 
@@ -218,12 +152,6 @@ pub struct EnvironmentsPageView {
     search_editor: ViewHandle<EditorView>,
     empty_state_github_repos_button_mouse_state: MouseStateHandle,
     empty_state_local_repos_button_mouse_state: MouseStateHandle,
-    // Track pending save to show success toast when complete
-    pending_save_env_id: Option<SyncId>,
-    // Track pending create to show success toast when complete
-    pending_create_client_id: Option<ClientId>,
-    // Track pending delete to show success toast when complete
-    pending_delete_env_id: Option<SyncId>,
     // Delete confirmation dialog
     delete_confirmation_dialog: ViewHandle<DeleteEnvironmentConfirmationDialog>,
     // Agent-assisted environment creation modal
@@ -243,12 +171,7 @@ pub struct EnvironmentsPageView {
 
 impl EnvironmentsPageView {
     fn ensure_environment_mouse_states(&mut self, ctx: &mut ViewContext<Self>) {
-        let environments = AmbientAgentEnvironmentObject::get_all(ctx);
-        for env in &environments {
-            self.copy_button_mouse_states.entry(env.id).or_default();
-            self.edit_button_mouse_states.entry(env.id).or_default();
-            self.card_hover_mouse_states.entry(env.id).or_default();
-        }
+        let _ = ctx;
     }
     pub fn update_page(&mut self, page: EnvironmentsPage, ctx: &mut ViewContext<Self>) {
         self.current_page = page.clone();
@@ -256,29 +179,15 @@ impl EnvironmentsPageView {
         // Update the environment form component based on the page
         match &page {
             EnvironmentsPage::Edit { env_id } => {
-                // Extract environment data for edit mode
-                let env_data = AmbientAgentEnvironmentObject::get_by_id(env_id, ctx).map(|env| {
-                    let model = &env.model().string_model;
-                    EnvironmentFormValues {
-                        name: model.name.clone(),
-                        description: model.description.clone().unwrap_or_default(),
-                        selected_repos: model.github_repos.clone(),
-                        docker_image: model.base_image.to_string(),
-                        setup_commands: model.setup_commands.clone(),
-                    }
+                self.environment_form.update(ctx, |form, ctx| {
+                    form.set_mode(
+                        EnvironmentFormInitArgs::Edit {
+                            env_id: *env_id,
+                            initial_values: Box::<EnvironmentFormValues>::default(),
+                        },
+                        ctx,
+                    );
                 });
-
-                if let Some(initial_values) = env_data {
-                    self.environment_form.update(ctx, |form, ctx| {
-                        form.set_mode(
-                            EnvironmentFormInitArgs::Edit {
-                                env_id: *env_id,
-                                initial_values: Box::new(initial_values),
-                            },
-                            ctx,
-                        );
-                    });
-                }
             }
             EnvironmentsPage::Create => {
                 // Update form mode to Create
@@ -331,37 +240,6 @@ impl EnvironmentsPageView {
         ctx.subscribe_to_model(&Appearance::handle(ctx), |view, _, _, ctx| {
             view.update_search_editor_text_colors(ctx);
         });
-        // Subscribe to CloudModel to refresh when environments change.
-        // Per-object events are suppressed during the initial load at the source,
-        // so only runtime changes and InitialLoadCompleted arrive here.
-        ctx.subscribe_to_model(&CloudModel::handle(ctx), |view, _, event, ctx| {
-            match event {
-                // Events that can add/remove environments: refresh mouse states.
-                CloudModelEvent::ObjectCreated { .. }
-                | CloudModelEvent::ObjectDeleted { .. }
-                | CloudModelEvent::ObjectUntrashed { .. }
-                | CloudModelEvent::ObjectTrashed { .. }
-                | CloudModelEvent::InitialLoadCompleted => {
-                    view.ensure_environment_mouse_states(ctx);
-                }
-                // Events that can change environment content (name, config, etc.)
-                // don't need mouse state refresh, but the view should re-render.
-                CloudModelEvent::ObjectUpdated { .. }
-                | CloudModelEvent::ObjectMoved { .. }
-                | CloudModelEvent::ObjectPermissionsUpdated { .. }
-                | CloudModelEvent::ObjectSynced { .. } => {}
-                // Events that never affect environments — skip entirely.
-                CloudModelEvent::NotebookEditorChangedFromServer { .. }
-                | CloudModelEvent::ObjectForceExpanded { .. } => return,
-            }
-            ctx.notify();
-        });
-
-        // Subscribe to UpdateManager to show success toast when environment update completes
-        ctx.subscribe_to_model(&UpdateManager::handle(ctx), |view, _, event, ctx| {
-            view.handle_update_manager_event(event, ctx);
-        });
-
         // Create search editor for list page
         let search_editor = Self::create_single_line_editor("Search environments...", ctx);
         ctx.subscribe_to_view(&search_editor, |me, _, event, ctx| match event {
@@ -474,21 +352,9 @@ impl EnvironmentsPageView {
             }
         });
 
-        // Initialize mouse states for existing environments
-        let mut copy_button_mouse_states = HashMap::new();
-        let mut edit_button_mouse_states = HashMap::new();
-        let mut card_hover_mouse_states = HashMap::new();
-        for env in AmbientAgentEnvironmentObject::get_all(ctx) {
-            copy_button_mouse_states
-                .entry(env.id)
-                .or_insert_with(MouseStateHandle::default);
-            edit_button_mouse_states
-                .entry(env.id)
-                .or_insert_with(MouseStateHandle::default);
-            card_hover_mouse_states
-                .entry(env.id)
-                .or_insert_with(MouseStateHandle::default);
-        }
+        let copy_button_mouse_states = HashMap::new();
+        let edit_button_mouse_states = HashMap::new();
+        let card_hover_mouse_states = HashMap::new();
 
         // Create pane configuration for BackingView support
         let pane_configuration =
@@ -509,9 +375,6 @@ impl EnvironmentsPageView {
             search_editor,
             empty_state_github_repos_button_mouse_state: MouseStateHandle::default(),
             empty_state_local_repos_button_mouse_state: MouseStateHandle::default(),
-            pending_save_env_id: None,
-            pending_create_client_id: None,
-            pending_delete_env_id: None,
             delete_confirmation_dialog,
             agent_assisted_environment_modal,
             new_env_button,
@@ -585,96 +448,8 @@ impl EnvironmentsPageView {
         });
     }
 
-    fn show_success_toast(&self, message: String, ctx: &mut ViewContext<Self>) {
-        let window_id = ctx.window_id();
-        ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
-            toast_stack.add_ephemeral_toast(DismissibleToast::success(message), window_id, ctx);
-        });
-    }
-
-    fn handle_update_manager_event(
-        &mut self,
-        event: &UpdateManagerEvent,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        let UpdateManagerEvent::ObjectOperationComplete { result } = event else {
-            return;
-        };
-
-        // Check if this is a successful update for our pending save
-        if let (ObjectOperation::Update, OperationSuccessType::Success) =
-            (&result.operation, &result.success_type)
-        {
-            let Some(server_id) = &result.server_id else {
-                return;
-            };
-
-            let should_handle = self
-                .pending_save_env_id
-                .is_some_and(|pending_env_id| server_id.uid() == pending_env_id.uid());
-
-            if should_handle {
-                self.pending_save_env_id = None;
-                self.show_success_toast("Successfully updated environment".to_string(), ctx);
-
-                // No need to force a global cloud-object refresh here: on update success the
-                // sync pipeline updates this environment's `revision_ts` (used for "Last edited")
-                // in-memory via `CloudModel::set_latest_revision_and_editor`.
-                ctx.notify();
-            }
-        }
-
-        // Check if this is a successful create for our pending create
-        if let (ObjectOperation::Create { .. }, OperationSuccessType::Success) =
-            (&result.operation, &result.success_type)
-        {
-            if let Some(pending_client_id) = self.pending_create_client_id.take() {
-                // Check if the client_id in the result matches our pending client_id
-                if let Some(result_client_id) = &result.client_id {
-                    if *result_client_id == pending_client_id {
-                        self.show_success_toast(
-                            "Successfully created environment".to_string(),
-                            ctx,
-                        );
-                    }
-                }
-            }
-        }
-
-        // Check if this is a successful delete for our pending delete
-        if let (ObjectOperation::Delete { .. }, OperationSuccessType::Success) =
-            (&result.operation, &result.success_type)
-        {
-            if let Some(pending_env_id) = self.pending_delete_env_id.take() {
-                // Check if the server_id matches our pending environment
-                if let Some(server_id) = &result.server_id {
-                    if server_id.uid() == pending_env_id.uid() {
-                        self.show_success_toast(
-                            "Environment deleted successfully".to_string(),
-                            ctx,
-                        );
-                    }
-                }
-            }
-        }
-    }
-
     fn delete_environment(&mut self, env_id: SyncId, ctx: &mut ViewContext<Self>) {
-        // Track the pending delete to show success toast when complete
-        self.pending_delete_env_id = Some(env_id);
-
-        // Delete via UpdateManager
-        UpdateManager::handle(ctx).update(ctx, |update_manager, ctx| {
-            update_manager.delete_object_by_user(
-                CloudObjectTypeAndId::GenericStringObject {
-                    object_type: GenericStringObjectFormat::Json(JsonObjectType::AgentEnvironment),
-                    id: env_id,
-                },
-                ctx,
-            );
-        });
-
-        // Navigate back to list
+        let _ = env_id;
         self.update_page(EnvironmentsPage::List, ctx);
     }
 
@@ -707,75 +482,26 @@ impl EnvironmentsPageView {
     ) {
         match event {
             UpdateEnvironmentFormEvent::Created { environment } => {
-                // Generate a client ID for tracking the create operation
-                let client_id = ClientId::default();
-                self.pending_create_client_id = Some(client_id);
-
-                let owner = cloud_environments::owner_for_new_personal_environment(ctx);
-
-                let Some(owner) = owner else {
-                    self.show_error_toast(
-                        "Unable to create environment: not logged in.".to_string(),
-                        ctx,
-                    );
-                    return;
-                };
-
-                // Create via UpdateManager
-                UpdateManager::handle(ctx).update(ctx, |update_manager, ctx| {
-                    update_manager.create_ambient_agent_environment(
-                        environment.clone(),
-                        client_id,
-                        owner,
-                        ctx,
-                    );
-                });
-
-                // Navigate back to list
+                let _ = environment;
+                self.show_error_toast(
+                    "Saved hosted environments are not available in Warper.".to_string(),
+                    ctx,
+                );
                 self.update_page(EnvironmentsPage::List, ctx);
             }
             UpdateEnvironmentFormEvent::Updated {
                 env_id,
                 environment,
             } => {
-                // Verify the environment still exists
-                let Some(existing_env) = AmbientAgentEnvironmentObject::get_by_id(env_id, ctx)
-                else {
-                    self.show_error_toast(
-                        "Unable to save: environment no longer exists.".to_string(),
-                        ctx,
-                    );
-                    return;
-                };
-
-                // Get the revision from the existing environment
-                let revision = existing_env.metadata.revision.clone();
-
-                // Track the pending save to show success toast when complete
-                self.pending_save_env_id = Some(*env_id);
-
-                // Update via UpdateManager
-                UpdateManager::handle(ctx).update(ctx, |update_manager, ctx| {
-                    update_manager.update_ambient_agent_environment(
-                        environment.clone(),
-                        *env_id,
-                        revision,
-                        ctx,
-                    );
-                });
-
-                // Navigate back to list
+                let _ = (env_id, environment);
+                self.show_error_toast(
+                    "Saved hosted environments are not available in Warper.".to_string(),
+                    ctx,
+                );
                 self.update_page(EnvironmentsPage::List, ctx);
             }
             UpdateEnvironmentFormEvent::DeleteRequested { env_id } => {
-                // Get the environment name for the confirmation dialog
-                if let Some(env) = AmbientAgentEnvironmentObject::get_by_id(env_id, ctx) {
-                    let env_name = env.model().string_model.name.clone();
-                    self.delete_confirmation_dialog.update(ctx, |dialog, ctx| {
-                        dialog.show(*env_id, env_name, ctx);
-                    });
-                    ctx.notify();
-                }
+                self.delete_environment(*env_id, ctx);
             }
             UpdateEnvironmentFormEvent::Cancelled => {
                 // Navigate back to list
@@ -825,7 +551,7 @@ impl EnvironmentsPageView {
 
                 match mode {
                     EnvironmentSetupMode::RemoteGitHub => {
-                        self.update_page(EnvironmentsPage::Create, ctx);
+                        self.open_agent_assisted_environment_modal(ctx);
                     }
                     EnvironmentSetupMode::LocalRepositories => {
                         self.open_agent_assisted_environment_modal(ctx);
@@ -1007,25 +733,12 @@ impl EnvironmentsPageWidget {
 
         page.add_child(header);
 
-        // Get environments from CloudModel.
-        //
-        // We keep the owner alongside the display data so we can partition the list into Personal
-        // vs Team scoped sections.
-        let mut environments: Vec<(Owner, EnvironmentDisplayData)> =
-            AmbientAgentEnvironmentObject::get_all(app)
-                .iter()
-                .map(|env| {
-                    (
-                        env.permissions.owner,
-                        EnvironmentDisplayData::from_cloud_environment(env),
-                    )
-                })
-                .collect();
+        let mut environments = Vec::<EnvironmentDisplayData>::new();
 
         let has_any_environments = !environments.is_empty();
 
         if !view.search_query.trim().is_empty() {
-            environments.retain(|(_, env)| env.matches_search_query(&view.search_query));
+            environments.retain(|env| env.matches_search_query(&view.search_query));
         }
 
         if !has_any_environments {
@@ -1038,22 +751,6 @@ impl EnvironmentsPageWidget {
             if environments.is_empty() {
                 page.add_child(Self::render_no_matches_state(appearance));
             } else {
-                let mut personal_environments = environments
-                    .into_iter()
-                    .filter_map(|(owner, env)| matches!(owner, Owner::User { .. }).then_some(env))
-                    .collect::<Vec<_>>();
-
-                let sort_by_last_edited_desc = |envs: &mut Vec<EnvironmentDisplayData>| {
-                    envs.sort_by(|a, b| match (a.last_edited_ts, b.last_edited_ts) {
-                        (Some(a_ts), Some(b_ts)) => b_ts.cmp(&a_ts),
-                        (Some(_), None) => std::cmp::Ordering::Less,
-                        (None, Some(_)) => std::cmp::Ordering::Greater,
-                        (None, None) => std::cmp::Ordering::Equal,
-                    });
-                };
-
-                sort_by_last_edited_desc(&mut personal_environments);
-
                 let card_render_state = EnvironmentCardRenderState {
                     copy_button_mouse_states: &view.copy_button_mouse_states,
                     edit_button_mouse_states: &view.edit_button_mouse_states,
@@ -1061,11 +758,11 @@ impl EnvironmentsPageWidget {
                     copy_feedback_times: &view.copy_feedback_times,
                 };
 
-                if personal_environments.is_empty() {
+                if environments.is_empty() {
                     page.add_child(Self::render_no_matches_state(appearance));
                 } else {
                     page.add_child(Self::render_personal_section(
-                        &personal_environments,
+                        &environments,
                         &card_render_state,
                         appearance,
                         app,
@@ -1223,54 +920,15 @@ impl EnvironmentsPageWidget {
     fn render_empty_state(
         view: &EnvironmentsPageView,
         appearance: &Appearance,
-        app: &AppContext,
+        _app: &AppContext,
     ) -> Box<dyn Element> {
         let theme = appearance.theme();
         let icon_size = appearance.ui_font_size() * 1.3;
 
-        let dropdown_state = view.environment_form.as_ref(app).github_dropdown_state();
-
-        let github_button_action = if dropdown_state.is_loading {
-            None
-        } else if dropdown_state.load_error_message.is_some() {
-            Some(EnvironmentsPageAction::RetryFetchGithubRepos)
-        } else if dropdown_state.auth_url.is_some() {
-            Some(EnvironmentsPageAction::StartGithubAuth)
-        } else {
-            Some(EnvironmentsPageAction::OpenCreatePage)
-        };
-
-        let (github_button_label, github_button_enabled) = if dropdown_state.is_loading {
-            ("Loading...", false)
-        } else if dropdown_state.load_error_message.is_some() {
-            ("Retry", true)
-        } else if dropdown_state.auth_url.is_some() {
-            ("Authorize", true)
-        } else {
-            ("Get started", true)
-        };
-
-        let github_button = Self::render_empty_state_button(
-            appearance,
-            github_button_label,
-            ButtonVariant::Accent,
-            view.empty_state_github_repos_button_mouse_state.clone(),
-            github_button_enabled,
-            github_button_action.clone(),
-        );
-        let github_button_compact = Self::render_empty_state_button(
-            appearance,
-            github_button_label,
-            ButtonVariant::Accent,
-            view.empty_state_github_repos_button_mouse_state.clone(),
-            github_button_enabled,
-            github_button_action,
-        );
-
         let local_repos_button = Self::render_empty_state_button(
             appearance,
             "Launch agent",
-            ButtonVariant::Secondary,
+            ButtonVariant::Accent,
             view.empty_state_local_repos_button_mouse_state.clone(),
             true,
             Some(EnvironmentsPageAction::OpenAgentAssistedCreateModal),
@@ -1278,32 +936,19 @@ impl EnvironmentsPageWidget {
         let local_repos_button_compact = Self::render_empty_state_button(
             appearance,
             "Launch agent",
-            ButtonVariant::Secondary,
+            ButtonVariant::Accent,
             view.empty_state_local_repos_button_mouse_state.clone(),
             true,
             Some(EnvironmentsPageAction::OpenAgentAssistedCreateModal),
-        );
-
-        let github_row = Self::render_empty_state_row(
-            appearance,
-            EmptyStateRowConfig {
-                icon: Icon::Github,
-                title: "Quick setup",
-                badge: Some("Suggested"),
-                subtitle: "Select the GitHub repositories you’d like to work with and we’ll suggest a base image and config",
-                action_button: github_button,
-                compact_action_button: github_button_compact,
-                icon_size,
-            },
         );
 
         let local_repos_row = Self::render_empty_state_row(
             appearance,
             EmptyStateRowConfig {
                 icon: Icon::Terminal,
-                title: "Use the agent",
+                title: "Local agent",
                 badge: None,
-                subtitle: "Choose a locally set up project and we’ll help you set up an environment based on it",
+                subtitle: "Choose a local project and run the agent directly from this machine",
                 action_button: local_repos_button,
                 compact_action_button: local_repos_button_compact,
                 icon_size,
@@ -1314,7 +959,6 @@ impl EnvironmentsPageWidget {
             Flex::column()
                 .with_cross_axis_alignment(CrossAxisAlignment::Stretch)
                 .with_spacing(8.)
-                .with_child(github_row)
                 .with_child(local_repos_row)
                 .finish(),
         )
@@ -1322,7 +966,7 @@ impl EnvironmentsPageWidget {
         .finish();
 
         let header = Text::new(
-            "You haven’t set up any environments yet.",
+            "Hosted environments are not available in Warper.",
             appearance.ui_font_family(),
             appearance.ui_font_size() * 1.1,
         )
@@ -1331,7 +975,7 @@ impl EnvironmentsPageWidget {
         .finish();
 
         let subheader = Text::new(
-            "Choose how you’d like to set up your environment:",
+            "Use the local agent flow to work with projects on this machine.",
             appearance.ui_font_family(),
             appearance.ui_font_size() * 0.95,
         )

@@ -2,18 +2,6 @@ use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::{
-    cloud_object::{
-        model::{
-            generic_string_model::{GenericStringModel, GenericStringObjectId, StringModel},
-            json_model::{JsonModel, JsonSerializer},
-        },
-        GenericCloudObject, GenericStringObjectFormat, GenericStringObjectUniqueKey,
-        JsonObjectType, Revision, ServerCloudObject, UniquePer,
-    },
-    server::sync_queue::QueueItem,
-};
-
 use settings::{macros::define_settings_group, SupportedPlatforms, SyncToCloud};
 define_settings_group!(LocalPreferencesSettings, settings: [
    settings_sync_enabled: IsSettingsSyncEnabled {
@@ -26,9 +14,6 @@ define_settings_group!(LocalPreferencesSettings, settings: [
        description: "Legacy settings sync value retained only to ignore old local config.",
    },
 ]);
-
-pub type CloudPreference = GenericCloudObject<GenericStringObjectId, CloudPreferenceModel>;
-pub type CloudPreferenceModel = GenericStringModel<Preference, JsonSerializer>;
 
 /// Defines the platform that a preference was set on.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -112,73 +97,5 @@ impl Preference {
             }),
             Err(err) => Err(anyhow!("Failed to parse preference value {}", err)),
         }
-    }
-}
-
-/// Legacy preference model. New settings are local-only and should not create this object.
-impl StringModel for Preference {
-    type CloudObjectType = CloudPreference;
-
-    fn model_type_name(&self) -> &'static str {
-        "Preference"
-    }
-
-    fn should_enforce_revisions() -> bool {
-        // Legacy preferences never enforce revisions.
-        false
-    }
-
-    fn should_show_activity_toasts() -> bool {
-        // No update toasts for legacy preferences.
-        false
-    }
-
-    fn warn_if_unsaved_at_quit() -> bool {
-        // Don't block quitting on unsaved legacy preference changes.
-        false
-    }
-
-    fn new_from_server_update(&self, server_cloud_object: &ServerCloudObject) -> Option<Self> {
-        if let ServerCloudObject::Preference(server_preference) = server_cloud_object {
-            return Some(server_preference.model.clone().string_model);
-        }
-        None
-    }
-
-    fn model_format() -> GenericStringObjectFormat {
-        GenericStringObjectFormat::Json(Self::json_object_type())
-    }
-
-    fn display_name(&self) -> String {
-        self.model_type_name().to_owned()
-    }
-
-    fn update_object_queue_item(
-        &self,
-        revision_ts: Option<Revision>,
-        object: &CloudPreference,
-    ) -> QueueItem {
-        QueueItem::UpdateLocalPreference {
-            model: object.model().clone().into(),
-            id: object.id,
-            revision: revision_ts.or_else(|| object.metadata.revision.clone()),
-        }
-    }
-
-    fn should_clear_on_unique_key_conflict(&self) -> bool {
-        true
-    }
-
-    fn uniqueness_key(&self) -> Option<GenericStringObjectUniqueKey> {
-        Some(GenericStringObjectUniqueKey {
-            key: format!("{}_{}", self.platform, self.storage_key),
-            unique_per: UniquePer::User,
-        })
-    }
-}
-
-impl JsonModel for Preference {
-    fn json_object_type() -> JsonObjectType {
-        JsonObjectType::Preference
     }
 }

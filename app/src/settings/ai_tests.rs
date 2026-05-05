@@ -1,6 +1,6 @@
 use super::*;
 use crate::{
-    ai::request_usage_model::{RequestLimitInfo, RequestLimitRefreshDuration},
+    ai::request_limits::{RequestLimitInfo, RequestLimitRefreshDuration},
     auth::AuthStateProvider,
     test_util::settings::initialize_settings_for_tests,
     workspaces::user_workspaces::UserWorkspaces,

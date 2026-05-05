@@ -27,11 +27,8 @@ use warpui::{
 };
 
 use crate::{
-    ai::mcp::{
-        templatable::CloudTemplatableMCPServer, MCPServerState, TemplatableMCPServerManager,
-    },
+    ai::mcp::{MCPServerState, TemplatableMCPServerManager},
     appearance::Appearance,
-    cloud_object::CloudObject,
     settings_view::mcp_servers::{style, ServerCardItemId},
     ui_components::{
         avatar::{Avatar, AvatarContent, StatusElementTypes},
@@ -606,10 +603,7 @@ impl ServerCardView {
 
         match self.item_id {
             ServerCardItemId::TemplatableMCP(template_uuid) => {
-                let cloud_server = CloudTemplatableMCPServer::get_by_uuid(&template_uuid, app);
-                if let Some(cloud_server) = cloud_server {
-                    lines.push(format!("Template sync id: {}", cloud_server.sync_id()));
-                }
+                lines.push(format!("Template id: {template_uuid}"));
             }
             ServerCardItemId::TemplatableMCPInstallation(installation_uuid) => {
                 let installation = TemplatableMCPServerManager::as_ref(app)
@@ -621,19 +615,11 @@ impl ServerCardView {
                         Some(uuid) => format!("Gallery Id: {uuid}"),
                         None => "Gallery Id: None".to_string(),
                     };
-                    let cloud_server = CloudTemplatableMCPServer::get_by_uuid(&template_uuid, app);
-                    let template_sync_id_text = match cloud_server {
-                        Some(cloud_server) => {
-                            format!("Template sync id: {}", cloud_server.sync_id())
-                        }
-                        None => "Could not find cloud template".to_string(),
-                    };
                     lines.push(format!(
                         "{}",
                         ServerCardItemId::TemplatableMCP(template_uuid)
                     ));
                     lines.push(gallery_uuid_text);
-                    lines.push(template_sync_id_text);
                 }
             }
             ServerCardItemId::GalleryMCP(_) => {}

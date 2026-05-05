@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use ai::api_keys::ApiKeyManager;
 use indexmap::IndexMap;
 
-use crate::ai::request_usage_model::RequestLimitInfo;
+use crate::ai::request_limits::RequestLimitInfo;
 use crate::auth::AuthStateProvider;
 use crate::report_if_error;
 use crate::terminal::CLIAgent;

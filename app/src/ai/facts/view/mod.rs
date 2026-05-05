@@ -14,8 +14,6 @@ use warpui::{
 use warpui::elements::ChildView;
 use warpui::{SingletonEntity, ViewHandle};
 
-use super::CloudAIFact;
-
 pub mod rule;
 pub mod rule_editor;
 mod style;
@@ -278,12 +276,4 @@ impl BackingView for AIFactView {
 
 pub fn is_online(_app: &AppContext) -> bool {
     true
-}
-
-pub fn is_delete_allowed(_ai_fact: CloudAIFact, _app: &AppContext) -> bool {
-    false
-}
-
-pub fn is_edit_allowed(_ai_fact: CloudAIFact, _app: &AppContext) -> bool {
-    false
 }

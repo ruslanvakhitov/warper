@@ -13,10 +13,7 @@ use warp_core::{
 use warpui::{AppContext, Entity, EntityId, ModelContext, SingletonEntity};
 
 use crate::{
-    auth::{
-        auth_manager::{AuthManager, AuthManagerEvent},
-        AuthStateProvider,
-    },
+    auth::AuthStateProvider,
     network::{NetworkStatus, NetworkStatusEvent, NetworkStatusKind},
     workspaces::user_workspaces::{UserWorkspaces, UserWorkspacesEvent},
 };
@@ -777,18 +774,6 @@ impl LLMPreferences {
                 me.refresh_authed_models(ctx);
             }
         });
-
-        // TODO: Instead of querying this ad-hoc upon a successful log in, we should add the
-        // available LLMs query to the general workspace metadata query which is polled
-        // and hooked up to workspace changes. For that to work, each user would need to
-        // have a personal workspace. This is a stop-gap.
-        if ChannelState::maybe_server_root_url().is_some() {
-            ctx.subscribe_to_model(&AuthManager::handle(ctx), |me, event, ctx| {
-                if let AuthManagerEvent::AuthComplete = event {
-                    me.refresh_authed_models(ctx);
-                }
-            });
-        }
 
         ctx.subscribe_to_model(&UserWorkspaces::handle(ctx), |me, event, ctx| {
             if let UserWorkspacesEvent::TeamsChanged = event {

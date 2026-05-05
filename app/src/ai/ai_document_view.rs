@@ -5,7 +5,7 @@ use std::sync::Arc;
 use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::blocklist::agent_view::AgentViewEntryOrigin;
 use crate::ai::blocklist::BlocklistAIHistoryModel;
-use crate::ai::document::ai_document_model::{AIDocumentSaveStatus, AIDocumentUserEditStatus};
+use crate::ai::document::ai_document_model::AIDocumentUserEditStatus;
 use crate::appearance::Appearance;
 use crate::notebooks::editor::view::RichTextEditorConfig;
 use crate::pane_group::focus_state::PaneFocusHandle;
@@ -46,7 +46,6 @@ use crate::{
 use pathfinder_geometry::vector::vec2f;
 use warp_core::ui::icons;
 use warp_core::ui::icons::ICON_DIMENSIONS;
-use warp_core::ui::theme::Fill as ThemeFill;
 use warpui::clipboard::ClipboardContent;
 use warpui::elements::CrossAxisAlignment;
 use warpui::elements::MainAxisAlignment;
@@ -55,12 +54,8 @@ use warpui::elements::{ChildAnchor, PositionedElementAnchor, PositionedElementOf
 use warpui::keymap::EditableBinding;
 use warpui::keymap::FixedBinding;
 use warpui::text_layout::ClipConfig;
-use warpui::ui_components::components::UiComponent;
 use warpui::{
-    elements::{
-        ChildView, ConstrainedBox, Container, Empty, Flex, Hoverable, MouseStateHandle,
-        OffsetPositioning, ParentElement, SavePosition, Stack,
-    },
+    elements::{ChildView, Container, Flex, OffsetPositioning, ParentElement, SavePosition, Stack},
     AppContext, Element, Entity, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext,
     ViewHandle,
 };
@@ -136,6 +131,21 @@ impl From<PaneEvent> for AIDocumentEvent {
 
 pub const DEFAULT_PLANNING_DOCUMENT_TITLE: &str = "Planning document";
 
+#[cfg(feature = "local_fs")]
+fn safe_markdown_filename(title: &str) -> String {
+    title
+        .chars()
+        .map(|ch| match ch {
+            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
+            ch if ch.is_control() => '_',
+            ch => ch,
+        })
+        .collect::<String>()
+        .trim()
+        .trim_matches('.')
+        .to_string()
+}
+
 /// Entry for the version history dropdown menu.
 struct VersionMenuEntry {
     version: AIDocumentVersion,
@@ -153,12 +163,10 @@ pub struct AIDocumentView {
     original_terminal_view: Option<ViewHandle<TerminalView>>,
     // Version menu state
     version_menu: ViewHandle<Menu<AIDocumentAction>>,
-    sync_button_mouse_state: MouseStateHandle,
     update_plan_button: ViewHandle<ActionButton>,
     restore_button: ViewHandle<ActionButton>,
     is_version_menu_open: bool,
     version_button_position_id: String,
-    synced_status_mouse_state: MouseStateHandle,
     view_position_id: String,
     version_button: ViewHandle<ActionButton>,
 }
@@ -201,12 +209,6 @@ impl AIDocumentView {
                             _ => {}
                         }
                     }
-                }
-                AIDocumentModelEvent::DocumentSaveStatusUpdated(id) => {
-                    if *id != document_id {
-                        return;
-                    }
-                    me.update_header_buttons(ctx);
                 }
                 AIDocumentModelEvent::DocumentUserEditStatusUpdated {
                     document_id: id,
@@ -341,9 +343,6 @@ impl AIDocumentView {
             pane_config.refresh_pane_header_overflow_menu_items(ctx)
         });
 
-        // Create save status mouse state.
-        let sync_button_mouse_state = MouseStateHandle::default();
-
         // Create Update Agent button
         // Read the actual configured keybinding for the save action
         let save_action = keybinding_name_to_keystroke(SAVE_FILE_BINDING_NAME, ctx)
@@ -387,12 +386,10 @@ impl AIDocumentView {
             focus_handle: None,
             original_terminal_view: None,
             version_menu,
-            sync_button_mouse_state,
             update_plan_button,
             restore_button,
             is_version_menu_open: false,
             version_button_position_id,
-            synced_status_mouse_state: MouseStateHandle::default(),
             view_position_id,
             version_button,
         };
@@ -520,7 +517,6 @@ impl AIDocumentView {
 
     fn update_header_buttons(&mut self, ctx: &mut ViewContext<Self>) {
         self.pane_configuration.update(ctx, |pc, ctx| {
-            pc.set_shareable_object(None, ctx);
             pc.refresh_pane_header_overflow_menu_items(ctx);
         });
         ctx.notify();
@@ -549,109 +545,13 @@ impl AIDocumentView {
             .map(|doc| doc.user_edit_status)
             .unwrap_or(AIDocumentUserEditStatus::UpToDate);
 
-        let save_status = AIDocumentModel::as_ref(app).get_document_save_status(&self.document_id);
-
         let is_streaming = self.is_conversation_streaming(app);
-
-        let sync_element = self.render_sync_element(save_status, app);
 
         if is_streaming && user_edit_status.is_dirty() {
             let update_plan_button = self.update_plan_button.clone();
-            Some(
-                Flex::row()
-                    .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                    .with_child(ChildView::new(&update_plan_button).finish())
-                    .with_child(Container::new(sync_element).with_margin_left(4.).finish())
-                    .finish(),
-            )
+            Some(ChildView::new(&update_plan_button).finish())
         } else {
-            Some(sync_element)
-        }
-    }
-
-    /// Renders the sync/save status element based on save status.
-    fn render_sync_element(
-        &self,
-        save_status: AIDocumentSaveStatus,
-        app: &AppContext,
-    ) -> Box<dyn Element> {
-        match save_status {
-            AIDocumentSaveStatus::NotSaved => Empty::new().finish(),
-            AIDocumentSaveStatus::Saving => {
-                let appearance = Appearance::as_ref(app);
-                let theme = appearance.theme();
-                let color = theme.nonactive_ui_detail().into_solid();
-                Container::new(
-                    ConstrainedBox::new(
-                        Container::new(
-                            ConstrainedBox::new(
-                                Icon::RefreshCw04
-                                    .to_warpui_icon(ThemeFill::Solid(color))
-                                    .finish(),
-                            )
-                            .with_width(16.)
-                            .with_height(16.)
-                            .finish(),
-                        )
-                        .with_uniform_padding(4.)
-                        .finish(),
-                    )
-                    .with_width(24.)
-                    .with_height(24.)
-                    .finish(),
-                )
-                .finish()
-            }
-            AIDocumentSaveStatus::Saved => {
-                let appearance = Appearance::as_ref(app);
-                let theme = appearance.theme();
-                let color = theme.nonactive_ui_detail().into_solid();
-                let ui_builder = appearance.ui_builder().clone();
-                let tooltip_text = "This plan is saved locally.".to_string();
-                let synced_status_mouse_state = self.synced_status_mouse_state.clone();
-                Container::new(
-                    ConstrainedBox::new(
-                        Container::new(
-                            Hoverable::new(synced_status_mouse_state, move |state| {
-                                let icon = {
-                                    let icon_elem = Icon::RefreshCw04
-                                        .to_warpui_icon(ThemeFill::Solid(color))
-                                        .finish();
-                                    ConstrainedBox::new(icon_elem)
-                                        .with_width(16.)
-                                        .with_height(16.)
-                                        .finish()
-                                };
-
-                                if state.is_hovered() {
-                                    let tooltip =
-                                        ui_builder.tool_tip(tooltip_text.clone()).build().finish();
-                                    let mut stack = Stack::new().with_child(icon);
-                                    stack.add_positioned_overlay_child(
-                                        tooltip,
-                                        OffsetPositioning::offset_from_parent(
-                                            vec2f(0., 4.),
-                                            warpui::elements::ParentOffsetBounds::WindowByPosition,
-                                            warpui::elements::ParentAnchor::BottomRight,
-                                            ChildAnchor::TopRight,
-                                        ),
-                                    );
-                                    stack.finish()
-                                } else {
-                                    icon
-                                }
-                            })
-                            .finish(),
-                        )
-                        .with_uniform_padding(4.)
-                        .finish(),
-                    )
-                    .with_width(24.)
-                    .with_height(24.)
-                    .finish(),
-                )
-                .finish()
-            }
+            None
         }
     }
 
@@ -892,7 +792,6 @@ impl AIDocumentView {
     /// Export the current content as a markdown file.
     #[cfg(feature = "local_fs")]
     fn export(&self, ctx: &mut ViewContext<Self>) {
-        use crate::drive::export::safe_filename;
         use warpui::platform::SaveFilePickerConfiguration;
         let markdown = self.editor.as_ref(ctx).markdown_unescaped(ctx);
 
@@ -903,7 +802,7 @@ impl AIDocumentView {
             .unwrap_or_else(|| "Untitled".to_string());
 
         // Sanitize the title for use as a filename
-        let sanitized_title = safe_filename(&title);
+        let sanitized_title = safe_markdown_filename(&title);
         let filename = if sanitized_title.is_empty() {
             "Untitled.md".to_string()
         } else {

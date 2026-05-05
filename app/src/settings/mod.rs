@@ -5,7 +5,6 @@ pub mod app_icon;
 pub mod app_installation_detection;
 mod block_visibility;
 mod changelog;
-pub mod cloud_preferences;
 mod code;
 mod debug;
 mod editor;
@@ -41,7 +40,6 @@ pub use ai::*;
 pub use alias_expansion::*;
 pub use block_visibility::*;
 pub use changelog::*;
-pub use cloud_preferences::*;
 pub use code::*;
 pub use debug::*;
 pub use editor::*;
@@ -589,3 +587,5 @@ pub fn user_preferences_file_path() -> PathBuf {
 pub fn user_preferences_toml_file_path() -> PathBuf {
     warp_core::paths::config_local_dir().join("settings.toml")
 }
+pub mod cloud_preferences;
+pub use cloud_preferences::*;

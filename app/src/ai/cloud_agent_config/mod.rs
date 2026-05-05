@@ -1,18 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use crate::{
-    cloud_object::{
-        model::{
-            generic_string_model::{GenericStringModel, GenericStringObjectId, StringModel},
-            json_model::{JsonModel, JsonSerializer},
-        },
-        GenericCloudObject, GenericStringObjectFormat, GenericStringObjectUniqueKey,
-        JsonObjectType, Revision, ServerCloudObject,
-    },
-    server::{ids::SyncId, server_api::ai::AgentConfigSnapshot, sync_queue::QueueItem},
-};
-use warpui::AppContext;
+use crate::server::server_api::ai::AgentConfigSnapshot;
 
 /// Saved agent configuration that can be referenced when running agents via `--agent-id`.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Default)]
@@ -29,9 +18,6 @@ pub struct AgentConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mcp_servers: Option<HashMap<String, serde_json::Value>>,
 }
-
-pub type AgentConfigObject = GenericCloudObject<GenericStringObjectId, AgentConfigObjectModel>;
-pub type AgentConfigObjectModel = GenericStringModel<AgentConfig, JsonSerializer>;
 
 impl AgentConfig {
     /// Convert to AgentConfigSnapshot for use in agent execution.
@@ -52,75 +38,5 @@ impl AgentConfig {
             harness: None,
             harness_auth_secrets: None,
         }
-    }
-}
-
-impl AgentConfigObject {
-    pub fn get_all(_app: &AppContext) -> Vec<AgentConfigObject> {
-        Vec::new()
-    }
-
-    pub fn get_by_id<'a>(
-        _sync_id: &'a SyncId,
-        _app: &'a AppContext,
-    ) -> Option<&'a AgentConfigObject> {
-        None
-    }
-}
-
-impl StringModel for AgentConfig {
-    type CloudObjectType = AgentConfigObject;
-
-    fn model_type_name(&self) -> &'static str {
-        "Agent config"
-    }
-
-    fn should_enforce_revisions() -> bool {
-        true
-    }
-
-    fn model_format() -> GenericStringObjectFormat {
-        GenericStringObjectFormat::Json(JsonObjectType::AgentConfig)
-    }
-
-    fn display_name(&self) -> String {
-        self.name.clone()
-    }
-
-    fn update_object_queue_item(
-        &self,
-        revision_ts: Option<Revision>,
-        object: &AgentConfigObject,
-    ) -> QueueItem {
-        QueueItem::UpdateAgentConfig {
-            model: object.model().clone().into(),
-            id: object.id,
-            revision: revision_ts.or_else(|| object.metadata.revision.clone()),
-        }
-    }
-
-    fn uniqueness_key(&self) -> Option<GenericStringObjectUniqueKey> {
-        None
-    }
-
-    fn new_from_server_update(&self, server_cloud_object: &ServerCloudObject) -> Option<Self> {
-        if let ServerCloudObject::AgentConfig(server_config) = server_cloud_object {
-            return Some(server_config.model.clone().string_model);
-        }
-        None
-    }
-
-    fn should_show_activity_toasts() -> bool {
-        false
-    }
-
-    fn warn_if_unsaved_at_quit() -> bool {
-        true
-    }
-}
-
-impl JsonModel for AgentConfig {
-    fn json_object_type() -> JsonObjectType {
-        JsonObjectType::AgentConfig
     }
 }

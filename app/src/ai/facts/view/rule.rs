@@ -1,5 +1,3 @@
-use crate::cloud_object::CloudObject;
-use crate::cloud_object::Revision;
 use crate::editor::{
     EditorView, Event as EditorEvent, PropagateAndNoOpNavigationKeys, SingleLineEditorOptions,
     TextOptions,
@@ -38,8 +36,7 @@ use warpui::{
     ViewHandle,
 };
 
-use super::{is_edit_allowed, style, CloudAIFact};
-use crate::ai::facts::{AIFact, AIMemory};
+use super::style;
 
 pub const HEADER_TEXT: &str = "Rules";
 const DESCRIPTION_TEXT: &str = "Rules enhance the agent by providing structured guidelines that help maintain consistency, enforce best practices, and adapt to specific workflows, including codebases or broader tasks.";
@@ -87,12 +84,6 @@ pub struct MouseStateHandles {
 }
 
 #[derive(Debug, Clone)]
-struct CloudRuleRow {
-    fact: CloudAIFact,
-    mouse_states: MouseStateHandles,
-}
-
-#[derive(Debug, Clone)]
 struct ProjectScopedRow {
     file_path: PathBuf,
     mouse_state: MouseStateHandle,
@@ -100,23 +91,12 @@ struct ProjectScopedRow {
 
 #[derive(Debug, Clone)]
 enum RuleRow {
-    Global(Box<CloudRuleRow>),
     ProjectScoped(ProjectScopedRow),
 }
 
 impl RuleRow {
     fn matches_search_term(&self, search_term: &str) -> bool {
         match self {
-            RuleRow::Global(row) => {
-                let AIFact::Memory(AIMemory { name, content, .. }) =
-                    row.fact.model().string_model.clone();
-                name.unwrap_or_default()
-                    .to_lowercase()
-                    .contains(search_term.to_lowercase().as_str())
-                    || content
-                        .to_lowercase()
-                        .contains(search_term.to_lowercase().as_str())
-            }
             RuleRow::ProjectScoped(row) => row
                 .file_path
                 .to_str()
@@ -127,17 +107,12 @@ impl RuleRow {
 
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         match (self, other) {
-            (RuleRow::Global(a), RuleRow::Global(b)) => {
-                b.fact.metadata().revision.cmp(&a.fact.metadata().revision)
-            }
             (RuleRow::ProjectScoped(a), RuleRow::ProjectScoped(b)) => a.file_path.cmp(&b.file_path),
-            _ => std::cmp::Ordering::Equal,
         }
     }
 }
 
 pub struct RuleView {
-    global_rules: Vec<CloudRuleRow>,
     project_rules: Vec<ProjectScopedRow>,
     search_editor: ViewHandle<EditorView>,
     search_bar: ViewHandle<SearchBar>,
@@ -160,8 +135,6 @@ impl RuleView {
                 ctx.notify();
             }
         });
-
-        let ai_rules: Vec<CloudRuleRow> = Vec::new();
 
         let project_context = ProjectContextModel::handle(ctx);
         let project_rules = project_context
@@ -232,7 +205,6 @@ impl RuleView {
         });
 
         Self {
-            global_rules: ai_rules,
             project_rules,
             search_editor,
             search_bar,
@@ -256,12 +228,7 @@ impl RuleView {
 
     fn get_filtered_rules(&self) -> Vec<RuleRow> {
         match self.current_scope {
-            RuleScope::Global => self
-                .global_rules
-                .iter()
-                .cloned()
-                .map(|rule| RuleRow::Global(Box::new(rule)))
-                .collect(),
+            RuleScope::Global => Vec::new(),
             RuleScope::ProjectBased => self
                 .project_rules
                 .iter()
@@ -284,7 +251,7 @@ impl RuleView {
         _name: Option<String>,
         _content: String,
         _sync_id: SyncId,
-        _revision_ts: Option<Revision>,
+        _revision_ts: Option<()>,
         _ctx: &mut ViewContext<Self>,
     ) {
     }
@@ -501,16 +468,6 @@ impl RuleView {
             .finish()
     }
 
-    fn render_sync_status_icon(
-        &self,
-        ai_row: CloudRuleRow,
-        appearance: &Appearance,
-        app: &AppContext,
-    ) -> Option<Box<dyn Element>> {
-        let _ = (ai_row, appearance, app);
-        None
-    }
-
     fn render_project_based_row(
         &self,
         project_row: ProjectScopedRow,
@@ -563,97 +520,6 @@ impl RuleView {
         )
     }
 
-    fn render_global_rule_row(
-        &self,
-        ai_row: CloudRuleRow,
-        appearance: &Appearance,
-        app: &AppContext,
-    ) -> Box<dyn Element> {
-        let AIFact::Memory(AIMemory { name, content, .. }) =
-            ai_row.fact.model().string_model.clone();
-        let formatted_name = match name {
-            Some(name) => {
-                if name.is_empty() {
-                    "Untitled".to_string()
-                } else {
-                    name
-                }
-            }
-            None => "Untitled".to_string(),
-        };
-        // Truncate content to 3 lines
-        let formatted_content = if content.split("\n").count() > 3 {
-            content
-                .split("\n")
-                .take(3)
-                .collect::<Vec<&str>>()
-                .join("\n")
-                + "..."
-        } else {
-            content
-        };
-
-        let fact_text = Flex::column()
-            .with_child(
-                appearance
-                    .ui_builder()
-                    .wrappable_text(formatted_name, true)
-                    .with_style(style::fact_row_text(appearance))
-                    .build()
-                    .finish(),
-            )
-            .with_child(
-                appearance
-                    .ui_builder()
-                    .wrappable_text(formatted_content, true)
-                    .with_style(style::fact_row_subtext(appearance))
-                    .build()
-                    .finish(),
-            )
-            .finish();
-
-        let mut row = Flex::row()
-            .with_main_axis_size(MainAxisSize::Max)
-            .with_main_axis_alignment(MainAxisAlignment::SpaceBetween);
-
-        if let Some(sync_status_icon) =
-            self.render_sync_status_icon(ai_row.clone(), appearance, app)
-        {
-            row.add_child(sync_status_icon);
-        }
-
-        row.add_child(Expanded::new(1., fact_text).finish());
-
-        let mut hoverable = Hoverable::new(ai_row.mouse_states.hover.clone(), |state| {
-            let mut bg_color = internal_colors::neutral_1(appearance.theme());
-            if state.is_hovered() {
-                bg_color = internal_colors::neutral_4(appearance.theme());
-            }
-
-            Container::new(row.finish())
-                .with_background(bg_color)
-                .with_corner_radius(CornerRadius::with_all(warpui::elements::Radius::Pixels(4.)))
-                .with_border(
-                    Border::all(1.)
-                        .with_border_color(internal_colors::neutral_2(appearance.theme())),
-                )
-                .with_horizontal_padding(style::ROW_HORIZONTAL_PADDING)
-                .with_vertical_padding(style::RULE_VERTICAL_PADDING)
-                .with_margin_bottom(style::ITEM_BOTTOM_MARGIN)
-                .finish()
-        });
-
-        if is_edit_allowed(ai_row.fact.clone(), app) {
-            hoverable = hoverable
-                .with_cursor(Cursor::PointingHand)
-                .on_click(move |ctx, _, _| {
-                    ctx.dispatch_typed_action(RuleViewAction::Edit(ai_row.fact.sync_id()));
-                });
-        }
-
-        hoverable.finish()
-    }
-
     fn render_items(
         &self,
         appearance: &Appearance,
@@ -676,9 +542,6 @@ impl RuleView {
 
         for row in filtered_rules {
             let row = match row {
-                RuleRow::Global(global_row) => {
-                    Some(self.render_global_rule_row(*global_row, appearance, app))
-                }
                 RuleRow::ProjectScoped(project_row) => {
                     self.render_project_based_row(project_row, appearance)
                 }

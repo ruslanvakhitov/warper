@@ -1,12 +1,10 @@
-use crate::ai::mcp::{Author, MCPServerUpdate};
+use crate::ai::mcp::MCPServerUpdate;
 use crate::appearance::Appearance;
 use crate::settings_view::mcp_servers::style::{
     INSTALLATION_MODAL_BUTTON_GAP, INSTALLATION_MODAL_PADDING,
 };
 use crate::ui_components::avatar::{Avatar, AvatarContent};
 use crate::ui_components::blended_colors;
-use crate::util::time_format::format_approx_duration_from_now;
-use chrono::{Local, TimeZone};
 use uuid::Uuid;
 use warp_core::ui::color::coloru_with_opacity;
 use warp_core::ui::external_product_icon::ExternalProductIcon;
@@ -211,26 +209,6 @@ impl UpdateModalBody {
             .finish();
 
         let (title, description) = match option {
-            MCPServerUpdate::CloudTemplate {
-                publisher,
-                new_version_ts,
-                ..
-            } => {
-                let publisher_string = match publisher {
-                    Author::CurrentUser => "another device",
-                    Author::OtherUser { name } => name,
-                    Author::Unknown => "a team member",
-                };
-                let datetime = Local
-                    .timestamp_opt(*new_version_ts, 0)
-                    .single()
-                    .unwrap_or_else(Local::now);
-                let formatted_time = format_approx_duration_from_now(datetime);
-                (
-                    format!("Update from {publisher_string}"),
-                    formatted_time.to_string(),
-                )
-            }
             MCPServerUpdate::Gallery {
                 name, new_version, ..
             } => (

@@ -1,23 +1,11 @@
 use std::path::PathBuf;
 
-use crate::cloud_object::UniquePer;
-use crate::server::sync_queue::QueueItem;
 use crate::settings::AISettings;
-use crate::workspaces::user_workspaces::UserWorkspaces;
-use crate::{
-    cloud_object::{
-        model::{
-            generic_string_model::{GenericStringModel, GenericStringObjectId, StringModel},
-            json_model::{JsonModel, JsonSerializer},
-        },
-        GenericCloudObject, GenericStringObjectFormat, GenericStringObjectUniqueKey,
-        JsonObjectType, Revision, ServerCloudObject,
-    },
-    settings::{
-        AgentModeCommandExecutionPredicate, DEFAULT_COMMAND_EXECUTION_ALLOWLIST,
-        DEFAULT_COMMAND_EXECUTION_DENYLIST,
-    },
+use crate::settings::{
+    AgentModeCommandExecutionPredicate, DEFAULT_COMMAND_EXECUTION_ALLOWLIST,
+    DEFAULT_COMMAND_EXECUTION_DENYLIST,
 };
+use crate::workspaces::user_workspaces::UserWorkspaces;
 use serde::{Deserialize, Serialize};
 use warp_core::channel::ChannelState;
 use warp_core::features::FeatureFlag;
@@ -387,35 +375,8 @@ impl AIExecutionProfile {
     }
 }
 
-pub type CloudAIExecutionProfile =
-    GenericCloudObject<GenericStringObjectId, CloudAIExecutionProfileModel>;
-pub type CloudAIExecutionProfileModel = GenericStringModel<AIExecutionProfile, JsonSerializer>;
-
-impl StringModel for AIExecutionProfile {
-    type CloudObjectType = CloudAIExecutionProfile;
-
-    fn model_type_name(&self) -> &'static str {
-        "AIExecutionProfile"
-    }
-
-    fn should_enforce_revisions() -> bool {
-        true
-    }
-
-    fn model_format() -> GenericStringObjectFormat {
-        GenericStringObjectFormat::Json(JsonObjectType::AIExecutionProfile)
-    }
-
-    fn should_show_activity_toasts() -> bool {
-        false
-    }
-
-    fn warn_if_unsaved_at_quit() -> bool {
-        true
-    }
-
-    fn display_name(&self) -> String {
-        // Handles case where default profile was previously created and named "Untitled"
+impl AIExecutionProfile {
+    pub fn display_name(&self) -> String {
         if self.is_default_profile {
             "Default".to_string()
         } else if self.name.trim().is_empty() {
@@ -423,50 +384,5 @@ impl StringModel for AIExecutionProfile {
         } else {
             self.name.clone()
         }
-    }
-
-    fn update_object_queue_item(
-        &self,
-        revision_ts: Option<Revision>,
-        object: &Self::CloudObjectType,
-    ) -> QueueItem {
-        QueueItem::UpdateAIExecutionProfile {
-            model: object.model().clone().into(),
-            id: object.id,
-            revision: revision_ts.or_else(|| object.metadata.revision.clone()),
-        }
-    }
-
-    fn new_from_server_update(&self, server_cloud_object: &ServerCloudObject) -> Option<Self> {
-        if let ServerCloudObject::AIExecutionProfile(server_ai_execution_profile) =
-            server_cloud_object
-        {
-            return Some(server_ai_execution_profile.model.clone().string_model);
-        }
-        None
-    }
-
-    fn should_clear_on_unique_key_conflict(&self) -> bool {
-        true
-    }
-
-    fn uniqueness_key(&self) -> Option<GenericStringObjectUniqueKey> {
-        // We want to prevent the creation of several default profiles per user. If it's not the default
-        // profile, then there can be many.
-        self.is_default_profile
-            .then_some(GenericStringObjectUniqueKey {
-                key: "default".to_string(),
-                unique_per: UniquePer::User,
-            })
-    }
-
-    fn renders_in_warp_drive(&self) -> bool {
-        false
-    }
-}
-
-impl JsonModel for AIExecutionProfile {
-    fn json_object_type() -> JsonObjectType {
-        JsonObjectType::AIExecutionProfile
     }
 }

@@ -31,19 +31,14 @@ use crate::{
         blocklist::secret_redaction::find_secrets_in_text,
         mcp::{
             parsing::{prettify_json, resolve_json, ParsedTemplatableMCPServerResult},
-            templatable::CloudTemplatableMCPServer,
             MCPServer, TemplatableMCPServer, TemplatableMCPServerInstallation,
             TemplatableMCPServerManager, TransportType,
         },
     },
     banner::{Banner, BannerTextContent},
-    cloud_object::{CloudObject, Space},
     code::editor::view::{CodeEditorRenderOptions, CodeEditorView},
     persistence::ModelEvent,
-    server::{
-        cloud_objects::update_manager::InitiatedBy,
-        telemetry::{MCPTemplateCreationSource, TelemetryEvent},
-    },
+    server::telemetry::{MCPTemplateCreationSource, TelemetryEvent},
     settings_view::mcp_servers::{
         destructive_mcp_confirmation_dialog::{
             DestructiveMCPConfirmationDialog, DestructiveMCPConfirmationDialogEvent,
@@ -87,7 +82,7 @@ pub enum MCPServersEditPageViewAction {
 
 #[allow(clippy::large_enum_variant)]
 pub enum ServerModel {
-    CloudTemplatableMCPServer(CloudTemplatableMCPServer),
+    TemplatableMCPServer(TemplatableMCPServer),
     LocalTemplatableMCPInstallation(TemplatableMCPServerInstallation),
     None,
 }
@@ -95,8 +90,8 @@ pub enum ServerModel {
 impl ServerModel {
     pub fn name(&self) -> Option<String> {
         match self {
-            ServerModel::CloudTemplatableMCPServer(cloud_templatable_server) => {
-                Some(cloud_templatable_server.display_name())
+            ServerModel::TemplatableMCPServer(templatable_server) => {
+                Some(templatable_server.display_name())
             }
             ServerModel::LocalTemplatableMCPInstallation(templatable_mcp_server_installation) => {
                 Some(
@@ -228,14 +223,12 @@ impl MCPServersEditPageView {
         self.server_card_item_id = item_id;
         match item_id {
             Some(ServerCardItemId::TemplatableMCP(template_uuid)) => {
-                let cloud_templatable_mcp_server = TemplatableMCPServerManager::as_ref(ctx)
-                    .get_cloud_templatable_mcp_server(template_uuid);
+                let templatable_mcp_server = TemplatableMCPServerManager::as_ref(ctx)
+                    .get_templatable_mcp_server(template_uuid);
 
-                if let Some(cloud_templatable_mcp_server) = cloud_templatable_mcp_server {
-                    self.server_model = ServerModel::CloudTemplatableMCPServer(
-                        cloud_templatable_mcp_server.clone(),
-                    );
-                    let templatable_mcp_server = &cloud_templatable_mcp_server.model().string_model;
+                if let Some(templatable_mcp_server) = templatable_mcp_server {
+                    self.server_model =
+                        ServerModel::TemplatableMCPServer(templatable_mcp_server.clone());
                     let json = templatable_mcp_server.to_user_json();
 
                     self.json_editor.update(ctx, |view, ctx| {
@@ -394,44 +387,14 @@ impl MCPServersEditPageView {
     }
 
     fn is_shared(item_id: ServerCardItemId, app: &AppContext) -> bool {
-        match item_id {
-            ServerCardItemId::TemplatableMCP(template_uuid) => {
-                TemplatableMCPServerManager::as_ref(app)
-                    .is_server_template_shared(template_uuid, app)
-            }
-            ServerCardItemId::TemplatableMCPInstallation(installation_uuid) => {
-                TemplatableMCPServerManager::as_ref(app)
-                    .is_server_installation_shared(installation_uuid, app)
-            }
-            ServerCardItemId::GalleryMCP(_) | ServerCardItemId::FileBasedMCP(_) => false,
-        }
+        let _ = (item_id, app);
+        false
     }
 
-    fn is_editable(item_id: Option<ServerCardItemId>, app: &AppContext) -> bool {
+    fn is_editable(item_id: Option<ServerCardItemId>, _app: &AppContext) -> bool {
         match item_id {
-            Some(ServerCardItemId::TemplatableMCPInstallation(installation_uuid)) => {
-                let template_uuid =
-                    TemplatableMCPServerManager::as_ref(app).get_template_uuid(installation_uuid);
-
-                if let Some(template_uuid) = template_uuid {
-                    let is_authorized_editor = TemplatableMCPServerManager::as_ref(app)
-                        .is_authorized_editor(template_uuid, app);
-                    let is_shared = TemplatableMCPServerManager::as_ref(app)
-                        .is_server_template_shared(template_uuid, app);
-
-                    is_authorized_editor || !is_shared
-                } else {
-                    false
-                }
-            }
-            Some(ServerCardItemId::TemplatableMCP(template_uuid)) => {
-                let is_shared = TemplatableMCPServerManager::as_ref(app)
-                    .is_server_template_shared(template_uuid, app);
-                let is_authorized_editor = TemplatableMCPServerManager::as_ref(app)
-                    .is_authorized_editor(template_uuid, app);
-
-                is_authorized_editor || !is_shared
-            }
+            Some(ServerCardItemId::TemplatableMCPInstallation(_))
+            | Some(ServerCardItemId::TemplatableMCP(_)) => true,
             Some(ServerCardItemId::GalleryMCP(_)) | Some(ServerCardItemId::FileBasedMCP(_)) => {
                 false
             }
@@ -460,21 +423,8 @@ impl MCPServersEditPageView {
     }
 
     fn is_unshareable(item_id: ServerCardItemId, app: &AppContext) -> bool {
-        let is_shared = Self::is_shared(item_id, app);
-        let template_uuid = match item_id {
-            ServerCardItemId::TemplatableMCP(template_uuid) => Some(template_uuid),
-            ServerCardItemId::TemplatableMCPInstallation(installation_uuid) => {
-                TemplatableMCPServerManager::as_ref(app).get_template_uuid(installation_uuid)
-            }
-            _ => None,
-        };
-        let is_author = template_uuid
-            .map(|template_uuid| {
-                TemplatableMCPServerManager::as_ref(app).is_author(template_uuid, app)
-            })
-            .unwrap_or(false);
-
-        is_author && is_shared
+        let _ = (item_id, app);
+        false
     }
 
     fn render_editor(&self, app: &AppContext) -> Box<dyn Element> {
@@ -914,8 +864,6 @@ impl TypedActionView for MCPServersEditPageView {
                             |templatable_manager, ctx| {
                                 templatable_manager.create_templatable_mcp_server(
                                     parsed_server.templatable_mcp_server.clone(),
-                                    Space::Personal,
-                                    InitiatedBy::User,
                                     ctx,
                                 );
                                 if let Some(installation) =

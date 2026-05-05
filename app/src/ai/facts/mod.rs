@@ -1,16 +1,5 @@
 use crate::ai::agent::SuggestedLoggingId;
-use crate::cloud_object::{
-    model::{
-        generic_string_model::{GenericStringModel, GenericStringObjectId, StringModel},
-        json_model::{JsonModel, JsonSerializer},
-    },
-    GenericCloudObject, GenericStringObjectFormat, GenericStringObjectUniqueKey, JsonObjectType,
-    Revision, ServerCloudObject,
-};
-use crate::drive::items::WarpDriveItem;
-use crate::server::{ids::SyncId, sync_queue::QueueItem};
 use serde::{Deserialize, Serialize};
-use warp_core::ui::appearance::Appearance;
 
 pub mod manager;
 pub mod view;
@@ -43,77 +32,10 @@ impl AIFact {
     }
 }
 
-pub type CloudAIFact = GenericCloudObject<GenericStringObjectId, CloudAIFactModel>;
-pub type CloudAIFactModel = GenericStringModel<AIFact, JsonSerializer>;
-
-impl StringModel for AIFact {
-    type CloudObjectType = CloudAIFact;
-
-    fn model_type_name(&self) -> &'static str {
-        "Rule"
-    }
-
-    fn should_enforce_revisions() -> bool {
-        true
-    }
-
-    fn model_format() -> GenericStringObjectFormat {
-        GenericStringObjectFormat::Json(JsonObjectType::AIFact)
-    }
-
-    fn should_show_activity_toasts() -> bool {
-        true
-    }
-
-    fn warn_if_unsaved_at_quit() -> bool {
-        true
-    }
-
-    fn display_name(&self) -> String {
+impl AIFact {
+    pub fn display_name(&self) -> String {
         match self {
             AIFact::Memory(memory) => memory.content.clone(),
         }
-    }
-
-    fn update_object_queue_item(
-        &self,
-        revision_ts: Option<Revision>,
-        object: &Self::CloudObjectType,
-    ) -> QueueItem {
-        QueueItem::UpdateAIFact {
-            model: object.model().clone().into(),
-            id: object.id,
-            revision: revision_ts.or_else(|| object.metadata.revision.clone()),
-        }
-    }
-
-    fn new_from_server_update(&self, server_cloud_object: &ServerCloudObject) -> Option<Self> {
-        if let ServerCloudObject::AIFact(server_ai_fact) = server_cloud_object {
-            return Some(server_ai_fact.model.clone().string_model);
-        }
-        None
-    }
-
-    fn uniqueness_key(&self) -> Option<GenericStringObjectUniqueKey> {
-        None
-    }
-
-    fn renders_in_warp_drive(&self) -> bool {
-        false
-    }
-
-    fn to_warp_drive_item(
-        &self,
-        _id: SyncId,
-        _appearance: &Appearance,
-        _ai_fact: &CloudAIFact,
-    ) -> Option<Box<dyn WarpDriveItem>> {
-        None
-    }
-}
-
-impl JsonModel for AIFact {
-    fn json_object_type() -> JsonObjectType {
-        JsonObjectType::AIFact
     }
 }

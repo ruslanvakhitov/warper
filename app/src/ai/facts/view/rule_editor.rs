@@ -1,4 +1,3 @@
-use crate::cloud_object::{CloudObject, Revision};
 use crate::editor::{
     EditorOptions, EditorView, EnterAction, EnterSettings, Event as EditorEvent,
     PropagateAndNoOpNavigationKeys, SingleLineEditorOptions, TextOptions,
@@ -21,7 +20,7 @@ use warpui::{
     ViewHandle,
 };
 
-use super::{is_delete_allowed, style, CloudAIFact};
+use super::style;
 use crate::ui_components::icons::Icon;
 
 const RULE_NAME_PLACEHOLDER_TEXT: &str = "e.g. Rust rules";
@@ -44,7 +43,7 @@ pub enum RuleEditorViewEvent {
         name: Option<String>,
         content: String,
         sync_id: SyncId,
-        revision_ts: Option<Revision>,
+        revision_ts: Option<()>,
     },
     Delete {
         sync_id: SyncId,
@@ -59,7 +58,7 @@ pub enum RuleEditorViewAction {
 }
 pub struct RuleEditorView {
     // Is None if we are adding a new rule, otherwise it is the existing rule we are editing.
-    ai_fact: Option<CloudAIFact>,
+    ai_fact: Option<()>,
 
     current_editor: EditorType,
     name_editor: ViewHandle<EditorView>,
@@ -344,11 +343,7 @@ impl View for RuleEditorView {
             .with_child(self.render_header(appearance))
             .with_child(self.render_form(appearance));
 
-        if let Some(ai_fact) = &self.ai_fact {
-            if is_delete_allowed(ai_fact.clone(), app) {
-                col.add_child(ChildView::new(&self.delete_button).finish());
-            }
-        }
+        let _ = app;
         col.finish()
     }
 }
@@ -365,23 +360,10 @@ impl TypedActionView for RuleEditorView {
                 let name = self.name_editor.as_ref(ctx).buffer_text(ctx);
                 let name = if name.is_empty() { None } else { Some(name) };
                 let content = self.content_editor.as_ref(ctx).buffer_text(ctx);
-                if let Some(ai_fact) = &self.ai_fact {
-                    ctx.emit(RuleEditorViewEvent::Edit {
-                        name,
-                        content,
-                        sync_id: ai_fact.sync_id(),
-                        revision_ts: ai_fact.metadata().revision.clone(),
-                    });
-                } else {
-                    ctx.emit(RuleEditorViewEvent::Add { name, content });
-                }
+                ctx.emit(RuleEditorViewEvent::Add { name, content });
             }
             RuleEditorViewAction::Delete => {
-                if let Some(ai_fact) = &self.ai_fact {
-                    ctx.emit(RuleEditorViewEvent::Delete {
-                        sync_id: ai_fact.sync_id(),
-                    });
-                }
+                ctx.emit(RuleEditorViewEvent::Back);
             }
         }
     }

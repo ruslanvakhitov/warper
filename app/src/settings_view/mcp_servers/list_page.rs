@@ -1,5 +1,13 @@
 use crate::ai::mcp::templatable::GalleryData;
 use crate::ai::mcp::MCPServerUpdate;
+#[cfg(feature = "local_fs")]
+use crate::ai::mcp::{
+    // Import events for file-based manager and watcher conditionally
+    // since their WASM variants don't export events.
+    file_based_manager::FileBasedMCPManagerEvent,
+    FileMCPWatcher,
+    FileMCPWatcherEvent,
+};
 use crate::modal::Modal;
 use crate::modal::ModalEvent;
 use crate::modal::ModalViewState;
@@ -10,17 +18,6 @@ use crate::settings_view::settings_page::{
     build_toggle_element, render_body_item_label, LocalOnlyIconState, ToggleState,
 };
 use crate::util::truncation::truncate_from_end;
-use crate::view_components::DismissibleToast;
-use crate::ToastStack;
-
-#[cfg(feature = "local_fs")]
-use crate::ai::mcp::{
-    // Import events for file-based manager and watcher conditionally
-    // since their WASM variants don't export events.
-    file_based_manager::FileBasedMCPManagerEvent,
-    FileMCPWatcher,
-    FileMCPWatcherEvent,
-};
 
 use crate::{
     ai::mcp::{
@@ -650,45 +647,6 @@ impl MCPServersListPageView {
         let local_templatable_mcp_server = installation.templatable_mcp_server();
 
         match update {
-            MCPServerUpdate::CloudTemplate { .. } => {
-                let latest_templatable_mcp_server = TemplatableMCPServerManager::as_ref(ctx)
-                    .get_templatable_mcp_server(installation.template_uuid())
-                    .cloned();
-                let Some(latest_templatable_mcp_server) = latest_templatable_mcp_server else {
-                    log::warn!(
-                        "Failed to update MCP server: Could not find templatable MCP server for installation {installation_uuid}"
-                    );
-                    return;
-                };
-
-                if local_templatable_mcp_server.version == latest_templatable_mcp_server.version {
-                    log::warn!("Failed to update MCP server: Installed server is up to date");
-                    return;
-                }
-                if local_templatable_mcp_server.version > latest_templatable_mcp_server.version {
-                    log::warn!(
-                        "Failed to update MCP server: Installed server is ahead of the latest template"
-                    );
-                    return;
-                }
-
-                self.update_installation_via_template(
-                    installation.clone(),
-                    latest_templatable_mcp_server,
-                    ctx,
-                );
-                // We do not have to update the cloud template, because this update came from a cloud template
-                log::info!(
-                    "Successfully updated server {installation_uuid} with the newest cloud template."
-                );
-
-                // Show the toast that the server updated, even though we don't update the cloud template in this case
-                let window_id = ctx.window_id();
-                ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
-                    let toast = DismissibleToast::success(String::from("MCP server updated"));
-                    toast_stack.add_ephemeral_toast(toast, window_id, ctx);
-                });
-            }
             MCPServerUpdate::Gallery { .. } => {
                 let Some(GalleryData {
                     gallery_item_id,
