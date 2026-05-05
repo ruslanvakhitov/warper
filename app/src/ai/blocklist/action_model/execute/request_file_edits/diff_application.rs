@@ -30,11 +30,9 @@ use super::telemetry::{
     RequestFileEditsTelemetryEvent,
 };
 
-/// Result of reading a file from disk or a remote server.
+/// Result of reading a file from disk.
 ///
-/// This is the common currency between the local (`std::fs`) and remote
-/// (`RemoteServerClient`) file-reading paths so that all diff application
-/// logic can be shared.
+/// This is the common currency for diff application logic.
 pub(crate) enum FileReadResult {
     /// The file was found and its full content is available.
     Found(String),

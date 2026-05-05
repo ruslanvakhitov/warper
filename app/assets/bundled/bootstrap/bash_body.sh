@@ -82,18 +82,12 @@ if [ -z "$WARP_BOOTSTRAPPED" ]; then
         fi
     }
 
-    # Emit the ExitShell hook right before the remote shell exits so the Warp
-    # client can drop per-session resources (specifically the
-    # `ssh … remote-server-proxy` child that holds a multiplexed channel on
-    # the foreground ssh ControlMaster). This avoids a hang where the master
-    # waits on orphaned slave channels when the user ends their interactive
-    # session.
+    # Emit the ExitShell hook right before the remote shell exits.
     #
     # Only relevant for remote SSH shells. WARP_IS_SSH is exported to "1"
     # by `warp_ssh_helper` on the remote side of a Warp-managed SSH session
     # and is unset everywhere else (local shells, subshells, docker
-    # sandboxes, etc.), so the hook only fires where a remote-server-proxy
-    # actually needs tearing down.
+    # sandboxes, etc.).
     #
     # Installed after warp_send_json_message is defined so the handler is
     # callable the moment the trap is registered.
@@ -990,8 +984,7 @@ if [ -z "$WARP_BOOTSTRAPPED" ]; then
 "
 export TERM_PROGRAM='WarpTerminal'
 # Mark the remote side of a Warp-managed SSH session so the bootstrap
-# body can distinguish it from local shells. Used to gate the ExitShell
-# hook which tears down the remote-server-proxy subprocess.
+# body can distinguish it from local shells.
 export WARP_IS_SSH='1'
 test -n '$WARP_CLIENT_VERSION' && export WARP_CLIENT_VERSION='$WARP_CLIENT_VERSION'
 # Only forward the protocol version if it was set locally (i.e. the HOANotifications feature flag is on).

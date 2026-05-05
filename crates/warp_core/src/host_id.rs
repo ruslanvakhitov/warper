@@ -2,9 +2,7 @@ use std::fmt;
 
 /// Opaque identifier for a remote host.
 ///
-/// Returned by the server in `InitializeResponse`. Used by
-/// `RemoteServerManager` and downstream features to deduplicate
-/// host-scoped models (e.g. `RepoMetadataModel`) across sessions.
+/// Retained for restored remote-session metadata and host-scoped models.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct HostId(String);
 

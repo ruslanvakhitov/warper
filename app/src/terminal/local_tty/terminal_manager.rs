@@ -3,7 +3,6 @@ use crate::auth::auth_state::AuthState;
 use crate::auth::AuthStateProvider;
 use crate::terminal::model::terminal_model::ExitReason;
 use crate::terminal::shell::ShellName;
-use crate::terminal::warpify::settings::WarpifySettings;
 use crate::terminal::TerminalManager as _;
 use anyhow::Context as _;
 use async_broadcast::InactiveReceiver;
@@ -39,7 +38,6 @@ use crate::persistence::ModelEvent;
 use crate::send_telemetry_on_executor;
 use crate::server::telemetry::{TelemetryAgentViewEntryOrigin, TelemetryEvent};
 use crate::settings::DebugSettings;
-use crate::settings::SshSettings;
 use warp_core::send_telemetry_from_ctx;
 
 use crate::terminal::model::session::Sessions;
@@ -49,8 +47,7 @@ use crate::terminal::session_settings::{SessionSettings, SessionSettingsChangedE
 use crate::terminal::view::Event as TerminalViewEvent;
 use crate::terminal::writeable_pty::pty_controller::{EventLoopSendError, EventLoopSender};
 use crate::terminal::writeable_pty::terminal_manager_util::{
-    init_pty_controller_model, init_remote_server_controller, wire_up_pty_controller_with_view,
-    wire_up_remote_server_controller_with_view,
+    init_pty_controller_model, wire_up_pty_controller_with_view,
 };
 use crate::terminal::writeable_pty::{self, Message};
 use crate::terminal::{
@@ -74,9 +71,6 @@ use {
 };
 
 type PtyController = writeable_pty::PtyController<mio_channel::Sender<Message>>;
-type RemoteServerController =
-    writeable_pty::remote_server_controller::RemoteServerController<mio_channel::Sender<Message>>;
-
 /// The TerminalManager is responsible for
 /// - creating the terminal model
 /// - starting the local PTY
@@ -103,10 +97,6 @@ pub struct TerminalManager {
     /// of the PTY controller.
     #[allow(dead_code)]
     pty_controller: ModelHandle<PtyController>,
-
-    /// The manager is responsible for managing the lifetime of the remote server controller.
-    #[expect(dead_code)]
-    remote_server_controller: ModelHandle<RemoteServerController>,
 
     /// The process ID of the PTY. Purely used for integration tests. None if the PTY has not yet
     /// been started.
@@ -253,10 +243,6 @@ impl TerminalManager {
             ctx,
         );
 
-        // Initialize the RemoteServerController.
-        let remote_server_controller =
-            init_remote_server_controller(&pty_controller, &model_events, ctx);
-
         let current_prompt = ctx.add_model(|ctx| {
             CurrentPrompt::new_with_model_events(sessions.clone(), Some(&model_events), ctx)
         });
@@ -323,8 +309,6 @@ impl TerminalManager {
             ctx,
         );
 
-        wire_up_remote_server_controller_with_view(&remote_server_controller, &view, ctx);
-
         ctx.subscribe_to_model(&SessionSettings::handle(ctx), move |_, event, ctx| {
             if let SessionSettingsChangedEvent::HonorPS1 { .. } = event {
                 if !*SessionSettings::as_ref(ctx).honor_ps1 {
@@ -375,7 +359,6 @@ impl TerminalManager {
             #[cfg(unix)]
             terminal_attributes_poller: None,
             pty_controller,
-            remote_server_controller,
 
             #[cfg(feature = "integration_tests")]
             pid: None,
@@ -646,15 +629,7 @@ impl TerminalManager {
             .is_shell_debug_mode_enabled
             .value();
         let is_honor_ps1_enabled = *SessionSettings::as_ref(ctx).honor_ps1;
-        // The TMUX SSH wrapper supercedes the original ControlMaster wrapper.
-        let enable_ssh_wrapper = if FeatureFlag::SSHTmuxWrapper.is_enabled() {
-            *WarpifySettings::as_ref(ctx)
-                .enable_ssh_warpification
-                .value()
-                && !*WarpifySettings::as_ref(ctx).use_ssh_tmux_wrapper.value()
-        } else {
-            *SshSettings::as_ref(ctx).enable_legacy_ssh_wrapper.value()
-        };
+        let enable_ssh_wrapper = false;
 
         let size: crate::terminal::SizeInfo = model.lock().block_list().size().to_owned();
         let options = PtyOptions {

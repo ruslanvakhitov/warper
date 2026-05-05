@@ -28,16 +28,10 @@ use warp_completer::completer::{
 };
 use warpui::{platform::OperatingSystem, Entity, ModelContext, SingletonEntity};
 
-#[cfg(feature = "local_tty")]
-use crate::features::FeatureFlag;
-#[cfg(feature = "local_tty")]
-use crate::remote_server::manager::{RemoteServerManager, RemoteServerManagerEvent};
 use crate::server::telemetry::{BootstrappingInfo, TelemetryEvent};
 use crate::terminal::event::ExecutedExecutorCommandEvent;
 use crate::terminal::ShellHost;
 use crate::terminal::ShellLaunchData;
-#[cfg(feature = "local_tty")]
-use command_executor::remote_server_executor::RemoteServerCommandExecutor;
 use parking_lot::{Mutex, RwLock};
 
 use crate::terminal::shell::{Shell, ShellType};
@@ -46,7 +40,6 @@ use crate::terminal::History;
 
 use super::ansi::{BootstrappedValue, InitShellValue, SSHValue};
 use super::terminal_model::{HistoryEntry, SubshellInitializationInfo};
-use crate::terminal::event::RemoteServerSetupState;
 
 #[derive(thiserror::Error, Debug)]
 pub enum ReadHistoryContentsError {
@@ -101,10 +94,6 @@ pub struct Sessions {
 
     /// Select environment variables and their values.
     env_vars: HashMap<SessionId, HashMap<String, String>>,
-
-    /// Tracks the remote server setup state for SSH sessions that have the
-    /// `SshRemoteServer` feature flag enabled. Keyed by the pending session ID.
-    remote_server_setup_states: HashMap<SessionId, RemoteServerSetupState>,
 }
 
 #[derive(Clone, Debug)]
@@ -135,63 +124,8 @@ impl Entity for Sessions {
 impl Sessions {
     pub fn new(
         executor_command_tx: Sender<ExecutorCommandEvent>,
-        ctx: &mut ModelContext<Self>,
+        _ctx: &mut ModelContext<Self>,
     ) -> Self {
-        // Track the connected host_id on the `Session` type so downstream
-        // code can distinguish hosts. The `RemoteServerCommandExecutor`
-        // client itself is baked in at session construction time
-        // (see `new_command_executor_for_local_tty_session`) so we no
-        // longer need to wire it here on connect/disconnect.
-        #[cfg(feature = "local_tty")]
-        if FeatureFlag::SshRemoteServer.is_enabled() {
-            let mgr = RemoteServerManager::handle(ctx);
-            ctx.subscribe_to_model(&mgr, |sessions, event, _ctx| match event {
-                RemoteServerManagerEvent::SessionConnected {
-                    session_id: sid,
-                    host_id,
-                } => {
-                    if let Some(session) = sessions.sessions.get(sid) {
-                        session.set_remote_host_id(Some(host_id.clone()));
-                    }
-                }
-                RemoteServerManagerEvent::SessionDisconnected {
-                    session_id: sid, ..
-                } => {
-                    if let Some(session) = sessions.sessions.get(sid) {
-                        session.set_remote_host_id(None);
-                    }
-                }
-                RemoteServerManagerEvent::SessionConnecting { .. }
-                | RemoteServerManagerEvent::SessionDeregistered { .. }
-                | RemoteServerManagerEvent::SessionConnectionFailed { .. }
-                | RemoteServerManagerEvent::HostConnected { .. }
-                | RemoteServerManagerEvent::HostDisconnected { .. }
-                | RemoteServerManagerEvent::NavigatedToDirectory { .. }
-                | RemoteServerManagerEvent::RepoMetadataSnapshot { .. }
-                | RemoteServerManagerEvent::RepoMetadataUpdated { .. }
-                | RemoteServerManagerEvent::RepoMetadataDirectoryLoaded { .. }
-                | RemoteServerManagerEvent::SetupStateChanged { .. }
-                | RemoteServerManagerEvent::BinaryCheckComplete { .. }
-                | RemoteServerManagerEvent::BinaryInstallComplete { .. }
-                | RemoteServerManagerEvent::ClientRequestFailed { .. }
-                | RemoteServerManagerEvent::ServerMessageDecodingError { .. } => {}
-                RemoteServerManagerEvent::SessionReconnected {
-                    session_id: sid,
-                    client,
-                    ..
-                } => {
-                    if let Some(session) = sessions.sessions.get(sid) {
-                        let new_executor =
-                            Arc::new(RemoteServerCommandExecutor::new(*sid, client.clone()));
-                        session.set_command_executor(new_executor);
-                        log::info!("Swapped command executor for session {sid:?} after reconnect");
-                    }
-                }
-            });
-        }
-        #[cfg(not(feature = "local_tty"))]
-        let _ = ctx;
-
         Self {
             pending_session_start_times: Default::default(),
             sessions: Default::default(),
@@ -199,7 +133,6 @@ impl Sessions {
             in_band_command_output_tx_map: Default::default(),
             executor_for_all_sessions: None,
             env_vars: Default::default(),
-            remote_server_setup_states: Default::default(),
         }
     }
 
@@ -224,7 +157,6 @@ impl Sessions {
             in_band_command_output_tx_map: Default::default(),
             executor_for_all_sessions: None,
             env_vars: Default::default(),
-            remote_server_setup_states: Default::default(),
         }
     }
 
@@ -261,23 +193,6 @@ impl Sessions {
         session_id: SessionId,
     ) -> Option<HashMap<String, String>> {
         self.env_vars.get(&session_id).cloned()
-    }
-
-    /// Updates the remote server setup state for the given session.
-    pub fn set_remote_server_setup_state(
-        &mut self,
-        session_id: SessionId,
-        state: RemoteServerSetupState,
-    ) {
-        self.remote_server_setup_states.insert(session_id, state);
-    }
-
-    /// Returns the current remote server setup state for the given session, if any.
-    pub fn remote_server_setup_state(
-        &self,
-        session_id: SessionId,
-    ) -> Option<&RemoteServerSetupState> {
-        self.remote_server_setup_states.get(&session_id)
     }
 
     pub fn register_pending_session(
@@ -342,24 +257,6 @@ impl Sessions {
 
         let session = Arc::new(session);
         self.sessions.insert(session.id(), session.clone());
-
-        // For warpified-remote sessions, pick up the current host_id from
-        // the manager so session.remote_host_id() is populated without
-        // waiting for the next SessionConnected event. The
-        // RemoteServerCommandExecutor already has its client baked in, so
-        // nothing else needs to be wired here.
-        #[cfg(feature = "local_tty")]
-        if FeatureFlag::SshRemoteServer.is_enabled()
-            && matches!(
-                session_info.session_type,
-                BootstrapSessionType::WarpifiedRemote
-            )
-        {
-            if let Some(host_id) = RemoteServerManager::as_ref(ctx).host_id_for_session(session_id)
-            {
-                session.set_remote_host_id(Some(host_id.clone()));
-            }
-        }
 
         let bootstrap_duration_seconds =
             pending_session_start_time.map(|start| start.elapsed().as_secs_f64());
@@ -835,10 +732,8 @@ pub enum SessionType {
     /// The session host is a different host from where Warp is running.
     /// Note that we only know this for sure when we Warpify a block.
     ///
-    /// `host_id` is `Some` when the remote server feature flag is enabled and
-    /// `RemoteServerManager` has completed the connection handshake. It is
-    /// `None` when the feature flag is off or the connection hasn't been
-    /// established yet.
+    /// `host_id` is retained for restored remote-session metadata. New
+    /// remote-server handshakes no longer populate it.
     WarpifiedRemote { host_id: Option<warp_core::HostId> },
 }
 
@@ -863,14 +758,13 @@ pub struct Session {
     info: SessionInfo,
     external_commands: Arc<OnceCell<HashSet<SmolStr>>>,
     /// The command executor for this session. Behind a `RwLock` so it can be
-    /// swapped after a remote server reconnect (via `set_command_executor`).
+    /// swapped if a session-specific executor needs to be replaced.
     command_executor: RwLock<Arc<dyn CommandExecutor>>,
     load_external_commands_future: OnceCell<Shared<BoxFuture<'static, ()>>>,
     command_case_sensitivity: TopLevelCommandCaseSensitivity,
     /// The authoritative session type, initially derived from the
-    /// [`BootstrapSessionType`] in `SessionInfo` and updated by [`Sessions`]
-    /// when `RemoteServerManager` reports a connected session (to fill in the
-    /// `host_id`). Interior mutability allows updating through `Arc<Session>`.
+    /// [`BootstrapSessionType`] in `SessionInfo`. Interior mutability allows
+    /// updating through `Arc<Session>`.
     session_type: Mutex<SessionType>,
 }
 
@@ -1042,9 +936,7 @@ impl Session {
         &self.info.subshell_info
     }
 
-    /// Replaces the command executor for this session. Used after a remote
-    /// server reconnect to swap in a new `RemoteServerCommandExecutor`
-    /// backed by the reconnected client.
+    /// Replaces the command executor for this session.
     pub fn set_command_executor(&self, executor: Arc<dyn CommandExecutor>) {
         *self.command_executor.write() = executor;
     }

@@ -3163,9 +3163,7 @@ impl CodeReviewView {
             let is_wsl = session.as_ref().map(|s| s.is_wsl()).unwrap_or(false);
 
             let enablement = if is_remote {
-                CodingPanelEnablementState::RemoteSession {
-                    has_remote_server: false,
-                }
+                CodingPanelEnablementState::RemoteSession
             } else if is_wsl {
                 CodingPanelEnablementState::UnsupportedSession
             } else {

@@ -155,9 +155,6 @@ pub enum FeatureFlag {
     /// Enables the overflow menu on AI blocks.
     AIBlockOverflowMenu,
 
-    /// Enables cycling through the next command suggestions with down arrow.
-    CycleNextCommandSuggestion,
-
     /// Enables multi-workspace selection.
     MultiWorkspace,
 
@@ -165,9 +162,6 @@ pub enum FeatureFlag {
     MaximizeFlatStorage,
 
     ImeMarkedText,
-
-    /// Enables partial next command suggestions with a prefix.
-    PartialNextCommandSuggestions,
 
     AIGeneratedOnboardingSuggestions,
 
@@ -217,9 +211,6 @@ pub enum FeatureFlag {
 
     /// Forces users to login.
     ForceLogin,
-
-    /// Enables prediction of Agent Mode queries.
-    PredictAMQueries,
 
     /// Enables full source code embedding of repos when using codebase context.
     FullSourceCodeEmbedding,
@@ -435,12 +426,6 @@ pub enum FeatureFlag {
 
     /// Enables the provider command for linking third-party services.
     ProviderCommand,
-
-    /// Enables the integration command for managing agent integrations.
-    IntegrationCommand,
-
-    /// Enables the artifact command for uploading and downloading CLI artifacts.
-    ArtifactCommand,
 
     /// Groups MCP tools and resources by their originating server when sending context to the AI backend.
     MCPGroupedServerContext,
@@ -689,11 +674,6 @@ pub enum FeatureFlag {
     /// space is not rendered while the agent is running.
     TrimTrailingBlankLines,
 
-    /// Gates the new SSH remote server flow that installs and connects to a
-    /// persistent binary on the remote machine instead of using ControlMaster
-    /// for command execution.
-    SshRemoteServer,
-
     /// Enables summary mode in vertical tabs, showing condensed tab summaries
     /// instead of individual pane rows.
     VerticalTabsSummaryMode,
@@ -737,7 +717,6 @@ pub const DOGFOOD_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::NLDClassifierModelEnabled,
     FeatureFlag::Projects,
     FeatureFlag::ProviderCommand,
-    FeatureFlag::ArtifactCommand,
     FeatureFlag::MarkdownImages,
     FeatureFlag::FileAndDiffSetComments,
     FeatureFlag::FileGlobV2Warnings,
@@ -773,9 +752,6 @@ pub const PREVIEW_FLAGS: &[FeatureFlag] = &[
     FeatureFlag::BlocklistMarkdownTableRendering,
     FeatureFlag::BlocklistMarkdownImages,
     FeatureFlag::MarkdownTables,
-    // Remote server binary is not yet supported on Windows.
-    #[cfg(not(windows))]
-    FeatureFlag::SshRemoteServer,
     FeatureFlag::GitOperationsInCodeReview,
 ];
 

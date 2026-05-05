@@ -37,11 +37,11 @@ impl Channel {
     /// Returns the CLI command name corresponding to this channel.
     pub fn cli_command_name(&self) -> &'static str {
         match self {
-            Channel::Stable => "oz",
-            Channel::Dev => "oz-dev",
-            Channel::Preview => "oz-preview",
-            Channel::Local => "oz-local",
-            Channel::Integration => "oz-integration",
+            Channel::Stable => "warp",
+            Channel::Dev => "warp-dev",
+            Channel::Preview => "warp-preview",
+            Channel::Local => "warp-local",
+            Channel::Integration => "warp-integration",
             Channel::Oss => "warp-oss",
         }
     }

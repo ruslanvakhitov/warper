@@ -239,7 +239,6 @@ typed-path.workspace = true
 urlencoding = "2.1.3"
 mime_guess = "2.0"
 warp_multi_agent_api.workspace = true
-remote_server.workspace = true
 repo_metadata.workspace = true
 vim.workspace = true
 rmcp = { workspace = true, features = ["client"] }
@@ -513,8 +512,6 @@ default = [
     "summarize_conversation_command",
     "inline_code_review",
     "web_search_ui",
-    "integration_command",
-    "artifact_command",
     "code_review_find",
     "mcp_grouped_server_context",
     "fork_from_command",
@@ -683,7 +680,6 @@ plugin_host = ["dep:rquickjs", "dep:warp_js", "warp_cli/plugin_host"]
 # generated profile will be written to profile.pb in the current directory.
 # NOTE: This may slow down program execution.
 pprof_cpu_profiling = ["dep:pprof"]
-predict_am_queries = []
 quake_mode = []
 record_app_active_events = []
 recording_mode = []
@@ -740,10 +736,8 @@ external_agent_mode_context = []
 avatar_in_tab_bar = []
 ssh_drag_and_drop = []
 permanent_autosuggestion_hint = []
-cycle_next_command_suggestion = []
 multi_workspace = []
 ime_marked_text = []
-partial_next_command_suggestions = []
 drive_objects_as_context = []
 iterm_images = []
 validate_autosuggestions = []
@@ -805,8 +799,6 @@ summarization_cancellation_confirmation = []
 code_review_find = []
 auto_open_code_review_pane = []
 inline_code_review = []
-integration_command = []
-artifact_command = []
 cloud_environments = []
 create_environment_slash_command = []
 summarize_conversation_command = []
