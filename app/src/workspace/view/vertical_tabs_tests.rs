@@ -268,13 +268,7 @@ fn preferred_agent_tab_titles_fall_back_when_preferred_text_is_missing() {
 fn pane_type_supports_vertical_tabs_detail_sidecar(pane_type: IPaneType) -> bool {
     matches!(
         pane_type,
-        IPaneType::Terminal
-            | IPaneType::Code
-            | IPaneType::Notebook
-            | IPaneType::Workflow
-            | IPaneType::EnvVarCollection
-            | IPaneType::AIFact
-            | IPaneType::AIDocument
+        IPaneType::Terminal | IPaneType::Code | IPaneType::AIFact | IPaneType::AIDocument
     )
 }
 
@@ -300,21 +294,12 @@ fn collect_normalized_unique_summary_texts(
 }
 
 #[test]
-fn detail_sidecar_supports_terminal_code_and_warp_drive_object_panes() {
+fn detail_sidecar_supports_terminal_code_and_document_panes() {
     assert!(pane_type_supports_vertical_tabs_detail_sidecar(
         IPaneType::Terminal
     ));
     assert!(pane_type_supports_vertical_tabs_detail_sidecar(
         IPaneType::Code
-    ));
-    assert!(pane_type_supports_vertical_tabs_detail_sidecar(
-        IPaneType::Notebook
-    ));
-    assert!(pane_type_supports_vertical_tabs_detail_sidecar(
-        IPaneType::Workflow
-    ));
-    assert!(pane_type_supports_vertical_tabs_detail_sidecar(
-        IPaneType::EnvVarCollection
     ));
     assert!(pane_type_supports_vertical_tabs_detail_sidecar(
         IPaneType::AIFact

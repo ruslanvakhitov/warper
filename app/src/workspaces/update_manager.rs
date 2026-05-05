@@ -1,9 +1,8 @@
 use super::workspace::WorkspaceUid;
-use crate::cloud_object::CloudObjectEventEntrypoint;
 use crate::persistence::ModelEvent;
-use crate::server::ids::ServerId;
 #[cfg(test)]
 use crate::server::server_api::team::TeamClient;
+use crate::server::{ids::ServerId, server_api::team::CloudObjectEventEntrypoint};
 use crate::workspaces::user_workspaces::UserWorkspaces;
 use futures::channel::oneshot::{self, Receiver};
 use std::sync::mpsc::SyncSender;

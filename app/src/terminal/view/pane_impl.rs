@@ -7,7 +7,6 @@ use crate::ai::blocklist::agent_view::orchestration_conversation_links::parent_c
 use crate::ai::blocklist::BlocklistAIHistoryModel;
 use crate::ai::conversation_status_ui::{render_status_element, STATUS_ELEMENT_PADDING};
 use crate::appearance::Appearance;
-use crate::drive::sharing::ShareableObject;
 use crate::features::FeatureFlag;
 use crate::menu::{MenuItem, MenuItemFields};
 use crate::pane_group::focus_state::{PaneFocusHandle, PaneGroupFocusEvent, PaneGroupFocusState};
@@ -120,11 +119,6 @@ impl TerminalView {
         self.update_agent_view_pane_header(ctx);
     }
 
-    /// Returns the shareable object for the active agent view conversation, if any.
-    fn agent_view_shareable_object(&self, _ctx: &ViewContext<Self>) -> Option<ShareableObject> {
-        None
-    }
-
     /// Updates the pane header's shareable object based on agent view state.
     /// This should be called when entering/exiting agent view or when the conversation changes.
     pub(super) fn update_agent_view_pane_header(&mut self, ctx: &mut ViewContext<Self>) {
@@ -132,9 +126,7 @@ impl TerminalView {
             return;
         }
 
-        let shareable_object = self.agent_view_shareable_object(ctx);
         self.pane_configuration.update(ctx, |pane_config, ctx| {
-            pane_config.set_shareable_object(shareable_object, ctx);
             pane_config.notify_header_content_changed(ctx);
             pane_config.refresh_pane_header_overflow_menu_items(ctx);
         });

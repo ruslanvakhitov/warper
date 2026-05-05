@@ -2,7 +2,6 @@ mod agent;
 pub mod buffer_model;
 mod classic;
 mod cli_agent;
-mod cloud_mode_v2_history_menu;
 mod common;
 pub mod conversations;
 pub mod decorations;
@@ -57,7 +56,6 @@ use crate::terminal::cli_agent_sessions::{
     CLIAgentInputState, CLIAgentSessionsModel, CLIAgentSessionsModelEvent,
 };
 use crate::terminal::input::buffer_model::InputBufferModel;
-use crate::terminal::input::cloud_mode_v2_history_menu::CloudModeV2HistoryMenuView;
 use crate::terminal::input::conversations::{
     InlineConversationMenuEvent, InlineConversationMenuView,
 };
@@ -125,10 +123,6 @@ use crate::{
     ai_assistant::execution_context::WarpAiExecutionContext,
     appearance::{Appearance, AppearanceEvent},
     channel::{Channel, ChannelState},
-    cloud_object::{
-        model::{actions::ObjectActionType, persistence::CloudModel, view::CloudViewModel},
-        CloudObject, Space,
-    },
     cmd_or_ctrl_shift,
     code_review::diff_state::DiffMode,
     completer::SessionContext,
@@ -169,7 +163,6 @@ use crate::{
     },
     send_telemetry_from_ctx,
     server::{
-        cloud_objects::update_manager::UpdateManager,
         ids::SyncId,
         server_api::ServerApi,
         telemetry::{
@@ -319,11 +312,11 @@ use super::{
         UniversalDeveloperInputButtonBar, UniversalDeveloperInputButtonBarEvent,
     },
     view::{
-        ambient_agent::AmbientAgentViewModel,
         inline_banner::{
             PromptSuggestionBannerState, ZeroStatePromptSuggestionTriggeredFrom,
             ZeroStatePromptSuggestionType,
         },
+        local_agent::AmbientAgentViewModel,
         ExecuteCommandEvent, SyncInputType, TerminalAction,
         PADDING_LEFT as TERMINAL_VIEW_PADDING_LEFT,
     },
@@ -333,7 +326,7 @@ use super::{
 use crate::ai::blocklist::agent_view::{
     AgentInputFooter, AgentInputFooterEvent, AgentViewController,
 };
-use crate::terminal::view::ambient_agent::{HarnessSelector, HostSelector};
+use crate::terminal::view::local_agent::{HarnessSelector, HostSelector};
 use async_channel::Sender;
 use futures::stream::AbortHandle;
 use parking_lot::FairMutex;
@@ -1544,8 +1537,6 @@ pub struct Input {
     /// Inline history menu for up-arrow with conversations and commands.
     inline_history_menu_view: ViewHandle<InlineHistoryMenuView>,
 
-    pub(super) cloud_mode_v2_history_menu_view: Option<ViewHandle<CloudModeV2HistoryMenuView>>,
-
     inline_terminal_menu_positioner: ModelHandle<InlineMenuPositioner>,
 
     /// Model for managing slash command state.
@@ -2455,8 +2446,6 @@ impl Input {
         }
         let inline_history_model = inline_history_menu_view.as_ref(ctx).model().clone();
 
-        let cloud_mode_v2_history_menu_view = None;
-
         let terminal_input_message_bar = ctx.add_view(|ctx| {
             TerminalInputMessageBar::new(
                 model.clone(),
@@ -3068,7 +3057,6 @@ impl Input {
             user_query_menu_view,
             rewind_menu_view,
             inline_history_menu_view,
-            cloud_mode_v2_history_menu_view,
             inline_terminal_menu_positioner,
             cached_agent_mode_hint_text: None,
             is_editor_empty_on_last_edit: is_editor_empty,
@@ -3690,11 +3678,7 @@ impl Input {
         ctx: &mut ViewContext<Self>,
     ) {
         let InlinePromptsMenuEvent::SelectedPrompt { id } = event;
-
-        let Some(workflow) = CloudModel::as_ref(ctx).get_workflow(id).cloned() else {
-            log::warn!("Tried to open saved prompt for id {id:?} but it does not exist");
-            return;
-        };
+        log::warn!("Ignoring amputated inline saved prompt selection for id {id:?}");
 
         if self.suggestions_mode_model.as_ref(ctx).is_prompts_menu() {
             self.suggestions_mode_model.update(ctx, |model, ctx| {
@@ -3704,14 +3688,6 @@ impl Input {
         }
         self.clear_buffer_and_reset_undo_stack(ctx);
         self.focus_input_box(ctx);
-
-        self.show_workflows_info_box_on_workflow_selection(
-            WorkflowType::Cloud(Box::new(workflow)),
-            WorkflowSource::WarpAI,
-            WorkflowSelectionSource::SlashMenu,
-            None,
-            ctx,
-        );
     }
 
     fn handle_inline_skill_selector_event(
@@ -5979,11 +5955,7 @@ impl Input {
             } => {
                 let workflow_id = workflow.server_id();
                 let workflow_source = *workflow_source;
-                let space = workflow_id.and_then(|id| {
-                    CloudViewModel::as_ref(ctx)
-                        .object_space(&id.to_string(), ctx)
-                        .map(Into::into)
-                });
+                let space = None;
 
                 send_telemetry_from_ctx!(
                     TelemetryEvent::WorkflowSelected(WorkflowTelemetryMetadata {
@@ -6023,14 +5995,7 @@ impl Input {
     }
 
     pub fn workflows_info_box_open_workflow_cloud_id(&self) -> Option<SyncId> {
-        if let Some(state) = &self.workflows_state.selected_workflow_state {
-            match &state.workflow_type {
-                WorkflowType::Cloud(workflow) => Some(workflow.id),
-                _ => None,
-            }
-        } else {
-            None
-        }
+        None
     }
 
     pub fn show_workflows_info_box_on_workflow_selection(
@@ -6207,19 +6172,7 @@ impl Input {
                     );
                 });
 
-                // Get enum variants
-                let cloud_model = CloudModel::as_ref(ctx);
-                let enum_variants_map = argument_index_to_object_id_map
-                    .iter()
-                    .filter_map(|(index, object_id)| {
-                        cloud_model
-                            .get_workflow_enum(object_id)
-                            .map(|workflow_enum| {
-                                workflow_enum.model().string_model.variants.clone()
-                            })
-                            .map(|variants| (*index, variants))
-                    })
-                    .collect();
+                let enum_variants_map = HashMap::new();
 
                 self.workflows_state.selected_workflow_state = Some(SelectedWorkflowState {
                     more_info_view: self.create_workflows_info_view(
@@ -6302,24 +6255,8 @@ impl Input {
 
     /// Builds a prefix for applying env vars to a command in the current session.
     fn env_vars_command_prefix(&self, env_vars_id: &SyncId, ctx: &AppContext) -> Option<String> {
-        let shell_type = self.active_session(ctx)?.shell().shell_type();
-        let env_vars = &CloudModel::as_ref(ctx)
-            .get_env_var_collection(env_vars_id)?
-            .model()
-            .string_model;
-
-        if shell_type == ShellType::Fish {
-            // Warp currently doesn't support newlines in Fish, just prepend the vars
-            let mut command = env_vars.export_variables_for_shell(ShellType::Fish);
-            command.push(' ');
-            Some(command)
-        } else {
-            // Add newlines at the end to separate the vars from the comment/command
-            Some(format!(
-                "# Environment variables\n{}\n\n",
-                env_vars.export_variables(" ", shell_type.into())
-            ))
-        }
+        let _ = (env_vars_id, ctx);
+        None
     }
 
     fn create_workflows_info_view(
@@ -6352,24 +6289,6 @@ impl Input {
         match event {
             WorkflowsInfoBoxViewEvent::PrefixCommandWithEnvironmentVariables(env_vars) => {
                 self.reset_workflow_state(*env_vars, ctx);
-
-                // The ID may be `None` if the user is *clearing* environment variables.
-                if let Some(env_vars_id) = env_vars {
-                    let env_vars_object =
-                        CloudModel::as_ref(ctx).get_env_var_collection(env_vars_id);
-                    let telemetry_metadata = EnvVarTelemetryMetadata {
-                        object_id: env_vars_id.into_server().map(Into::into),
-                        team_uid: env_vars_object
-                            .and_then(|object| object.permissions.owner.into()),
-                        space: env_vars_object
-                            .map_or(Space::Personal, |object| object.space(ctx))
-                            .into(),
-                    };
-                    send_telemetry_from_ctx!(
-                        TelemetryEvent::EnvVarWorkflowParameterization(telemetry_metadata),
-                        ctx
-                    );
-                }
             }
         }
     }
@@ -7173,17 +7092,9 @@ impl Input {
                 true
             }
             InputSuggestionsMode::InlineHistoryMenu { .. } => {
-                if self.is_cloud_mode_input_v2_composing(ctx) {
-                    if let Some(view) = self.cloud_mode_v2_history_menu_view.clone() {
-                        view.update(ctx, |view, ctx| {
-                            view.select_up(ctx);
-                        });
-                    }
-                } else {
-                    self.inline_history_menu_view.update(ctx, |view, ctx| {
-                        view.select_up(ctx);
-                    });
-                }
+                self.inline_history_menu_view.update(ctx, |view, ctx| {
+                    view.select_up(ctx);
+                });
                 true
             }
             InputSuggestionsMode::IndexedReposMenu => {
@@ -7548,17 +7459,9 @@ impl Input {
             .as_ref(ctx)
             .is_inline_history_menu()
         {
-            if self.is_cloud_mode_input_v2_composing(ctx) {
-                if let Some(view) = self.cloud_mode_v2_history_menu_view.clone() {
-                    view.update(ctx, |view, ctx| {
-                        view.select_down(ctx);
-                    });
-                }
-            } else {
-                self.inline_history_menu_view.update(ctx, |view, ctx| {
-                    view.select_down(ctx);
-                });
-            }
+            self.inline_history_menu_view.update(ctx, |view, ctx| {
+                view.select_down(ctx);
+            });
             return;
         }
 
@@ -8685,24 +8588,16 @@ impl Input {
                         // User query menu handles its own state
                     }
                     InputSuggestionsMode::InlineHistoryMenu { .. } => {
-                        let mismatched = if self.is_cloud_mode_input_v2_composing(ctx) {
-                            self.cloud_mode_v2_history_menu_view
-                                .as_ref()
-                                .and_then(|view| view.as_ref(ctx).selected_query_text(ctx))
-                                .is_some_and(|selected_text| {
-                                    selected_text != self.editor.as_ref(ctx).buffer_text(ctx)
-                                })
-                        } else {
-                            self.inline_history_menu_view
-                                .as_ref(ctx)
-                                .model()
-                                .as_ref(ctx)
-                                .selected_item()
-                                .and_then(|item| item.buffer_replacement_text())
-                                .is_some_and(|selected_item_text| {
-                                    *selected_item_text != self.editor.as_ref(ctx).buffer_text(ctx)
-                                })
-                        };
+                        let mismatched = self
+                            .inline_history_menu_view
+                            .as_ref(ctx)
+                            .model()
+                            .as_ref(ctx)
+                            .selected_item()
+                            .and_then(|item| item.buffer_replacement_text())
+                            .is_some_and(|selected_item_text| {
+                                *selected_item_text != self.editor.as_ref(ctx).buffer_text(ctx)
+                            });
                         if mismatched {
                             self.suggestions_mode_model.update(ctx, |model, ctx| {
                                 model.set_mode(InputSuggestionsMode::Closed, ctx);
@@ -9206,19 +9101,6 @@ impl Input {
                             file_path.to_string()
                         };
                         self.replace_at_symbol_with_text(&file_path, ctx);
-                    }
-                    AIContextMenuSearchableAction::InsertDriveObject {
-                        object_type,
-                        object_uid,
-                    } => {
-                        // For InsertDriveObject, format as <object_type:uid> and replace the "@" and any filter text
-                        let drive_object_text = format!("<{object_type}:{object_uid}>");
-                        self.replace_at_symbol_with_text(&drive_object_text, ctx);
-                    }
-                    AIContextMenuSearchableAction::InsertPlan { ai_document_uid } => {
-                        // For InsertPlan, format as <plan:uid> and replace the "@" and any filter text
-                        let ai_document_text = format!("<plan:{ai_document_uid}>");
-                        self.replace_at_symbol_with_text(&ai_document_text, ctx);
                     }
                     AIContextMenuSearchableAction::InsertConversation { conversation_id } => {
                         let conversation_text = format!("<convo:{conversation_id}>");
@@ -11208,20 +11090,6 @@ impl Input {
             .suggestions_mode_model
             .as_ref(ctx)
             .is_inline_history_menu()
-            && self.is_cloud_mode_input_v2_composing(ctx)
-            && self
-                .cloud_mode_v2_history_menu_view
-                .as_ref()
-                .is_some_and(|view| view.as_ref(ctx).has_selection(ctx))
-        {
-            if let Some(view) = self.cloud_mode_v2_history_menu_view.clone() {
-                view.update(ctx, |view, ctx| view.accept_selected(ctx));
-            }
-            return;
-        } else if self
-            .suggestions_mode_model
-            .as_ref(ctx)
-            .is_inline_history_menu()
             && self
                 .inline_history_menu_view
                 .as_ref(ctx)
@@ -11312,30 +11180,10 @@ impl Input {
                 command_string.truncate(command_string.trim_end().len());
 
                 if let Some(alias) = WorkflowAliases::as_ref(ctx).match_alias(&command_string) {
-                    if let Some(workflow) = CloudModel::as_ref(ctx).get_workflow(&alias.workflow_id)
-                    {
-                        let owner = workflow.clone().permissions.owner.into();
-
-                        let workflow_type = WorkflowType::Cloud(Box::new(workflow.clone()));
-                        let env_vars = alias.env_vars.or(workflow.model().data.default_env_vars());
-
-                        self.insert_workflow_into_input(
-                            workflow_type,
-                            owner,
-                            WorkflowSelectionSource::Alias,
-                            alias.arguments,
-                            None,
-                            env_vars,
-                            true,
-                            ctx,
-                        );
-                        return;
-                    } else {
-                        log::warn!(
-                            "Tried to execute workflow for id {:?} but it does not exist",
-                            alias.workflow_id
-                        );
-                    };
+                    log::warn!(
+                        "Ignoring amputated workflow alias for id {:?}",
+                        alias.workflow_id
+                    );
                 }
             }
 
@@ -11801,26 +11649,7 @@ impl Input {
 
         ctx.emit(Event::ExecuteAIQuery);
 
-        if let Some(workflow_state) = self.workflows_state.selected_workflow_state.as_ref() {
-            if let WorkflowType::Cloud(workflow) = &workflow_state.workflow_type {
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::ExecutedWarpDrivePrompt {
-                        id: workflow.id.into_server().map(Into::into),
-                        selection_source: workflow_state.workflow_selection_source,
-                    },
-                    ctx
-                );
-
-                UpdateManager::handle(ctx).update(ctx, move |update_manager, ctx| {
-                    update_manager.record_object_action(
-                        workflow.cloud_object_type_and_id(),
-                        ObjectActionType::Execute,
-                        None,
-                        ctx,
-                    )
-                });
-            }
-        }
+        let _ = self.workflows_state.selected_workflow_state.as_ref();
     }
 
     /// Returns true if toggling the input mode is disabled.
@@ -12271,10 +12100,7 @@ impl Input {
                             // ID for execution of local workflows because they have no such
                             // unique ID.
                             workflow_id: selected_workflow_state.workflow_type.server_id(),
-                            workflow_space: match &selected_workflow_state.workflow_type {
-                                WorkflowType::Cloud(workflow) => Some(workflow.space(ctx).into()),
-                                _ => None,
-                            },
+                            workflow_space: None,
                             enum_ids: selected_workflow_state
                                 .workflow_type
                                 .as_workflow()
@@ -12284,10 +12110,7 @@ impl Input {
                     );
 
                     let workflow_type = &selected_workflow_state.workflow_type;
-                    let workflow_id = match workflow_type {
-                        WorkflowType::Cloud(workflow) => Some(workflow.id),
-                        _ => None,
-                    };
+                    let workflow_id = None;
 
                     // If the SelectedWorkflowState is populated, then we're always able to return the workflow command.
                     // The case where workflow_id = None but workflow_command = Some() is when it's a local workflow, which

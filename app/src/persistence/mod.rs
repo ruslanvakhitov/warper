@@ -4,7 +4,6 @@ cfg_if::cfg_if! {
     if #[cfg(feature = "local_fs")] {
         pub mod agent;
         mod block_list;
-        mod cloud_objects;
         mod sqlite;
         pub mod commands;
     }
@@ -26,33 +25,21 @@ use std::thread::JoinHandle;
 
 use crate::ai::persisted_workspace::EnablementState;
 use ai::project_context::model::ProjectRulePath;
-use chrono::{DateTime, Local, Utc};
+use chrono::{DateTime, Local};
 use lsp::supported_servers::LSPServerType;
 use uuid::Uuid;
 use warp_core::command::ExitCode;
-use warp_graphql::scalars::time::ServerTimestamp;
 use warp_multi_agent_api as api;
 use warpui::{AppContext, Entity, SingletonEntity};
 
 use crate::ai::blocklist::PersistedAIInput;
 use crate::ai::mcp::TemplatableMCPServerInstallation;
 use crate::app_state::AppState;
-use crate::auth::auth_manager::PersistedCurrentUserInformation;
-use crate::cloud_object::model::actions::ObjectAction;
-use crate::cloud_object::model::generic_string_model::CloudStringObject;
-
-use crate::cloud_object::{
-    CloudObject, CloudObjectMetadata, ObjectIdType, RevisionAndLastEditor, ServerCreationInfo,
-};
-use crate::drive::folders::CloudFolder;
-use crate::notebooks::CloudNotebook;
-use crate::server::experiments::ServerExperiment;
 use crate::server::ids::SyncId;
 use crate::suggestions::ignored_suggestions_model::SuggestionType;
 use crate::terminal::history::PersistedCommand;
 use crate::terminal::model::block::{SerializedAgentViewVisibility, SerializedBlock};
 use crate::terminal::model::session::SessionId;
-use crate::workflows::CloudWorkflow;
 use crate::workspaces::user_profiles::UserProfileWithUID;
 use crate::workspaces::workspace::{Workspace as WorkspaceMetadata, WorkspaceUid};
 use ai::workspace::WorkspaceMetadata as CodeWorkspaceMetadata;
@@ -180,15 +167,10 @@ pub struct PersistedData {
     /// Session restoration data
     pub app_state: AppState,
 
-    /// Shareable objects.
-    pub cloud_objects: Vec<Box<dyn CloudObject>>,
     pub workspaces: Vec<WorkspaceMetadata>,
     pub current_workspace_uid: Option<WorkspaceUid>,
     pub command_history: Vec<PersistedCommand>,
     pub user_profiles: Vec<UserProfileWithUID>,
-    pub time_of_next_force_object_refresh: Option<DateTime<Utc>>,
-    pub object_actions: Vec<ObjectAction>,
-    pub experiments: Vec<ServerExperiment>,
     pub ai_queries: Vec<PersistedAIInput>,
     pub codebase_indices: Vec<CodeWorkspaceMetadata>,
     pub workspace_language_servers: HashMap<PathBuf, HashMap<LSPServerType, EnablementState>>,
@@ -236,35 +218,6 @@ pub enum ModelEvent {
     SaveBlock(BlockCompleted),
     DeleteBlocks(Vec<u8>),
     Snapshot(AppState),
-    UpsertWorkflows(Vec<CloudWorkflow>),
-    UpsertNotebooks(Vec<CloudNotebook>),
-    UpsertFolders(Vec<CloudFolder>),
-    MarkObjectAsSynced {
-        hashed_sqlite_id: String,
-        revision_and_editor: RevisionAndLastEditor,
-        metadata_ts: Option<ServerTimestamp>,
-    },
-    IncrementRetryCount(String),
-    UpsertGenericStringObject {
-        object: Box<dyn CloudStringObject>,
-    },
-    UpsertGenericStringObjects(Vec<Box<dyn CloudStringObject>>),
-    UpsertNotebook {
-        notebook: CloudNotebook,
-    },
-    UpsertWorkflow {
-        workflow: CloudWorkflow,
-    },
-    UpsertFolder {
-        folder: CloudFolder,
-    },
-    UpdateObjectAfterServerCreation {
-        client_id: String,
-        server_creation_info: ServerCreationInfo,
-    },
-    DeleteObjects {
-        ids: Vec<(SyncId, ObjectIdType)>,
-    },
     UpsertWorkspace {
         workspace: Box<WorkspaceMetadata>,
     },
@@ -273,10 +226,6 @@ pub enum ModelEvent {
     },
     SetCurrentWorkspace {
         workspace_uid: WorkspaceUid,
-    },
-    UpdateObjectMetadata {
-        id: String,
-        metadata: CloudObjectMetadata,
     },
     InsertCommand {
         metadata: StartedCommandMetadata,
@@ -288,24 +237,12 @@ pub enum ModelEvent {
         profiles: Vec<UserProfileWithUID>,
     },
     ClearUserProfiles,
-    RecordTimeOfNextRefresh {
-        timestamp: DateTime<Utc>,
-    },
-    SaveExperiments {
-        experiments: Vec<ServerExperiment>,
-    },
     // `PauseAndRemoveDatabase` and `ReconstructAndResume` are used to pause and resume the writer thread.
     // These are employed as part of Logout v0 to ensure that the writer thread
     // does not continue writing to the DB after the user has logged out and the DB is deleted.
     PauseAndRemoveDatabase,
     #[cfg(feature = "local_fs")]
     ReconstructAndResume,
-    InsertObjectAction {
-        object_action: ObjectAction,
-    },
-    SyncObjectActions {
-        actions_to_sync: Vec<ObjectAction>,
-    },
     /// Close the SQLite writer thread when the app is about to quit.
     Terminate,
     UpsertAIQuery {
@@ -385,4 +322,9 @@ pub enum ModelEvent {
         version: i32,
         title: String,
     },
+}
+
+#[derive(Clone, Debug)]
+pub struct PersistedCurrentUserInformation {
+    pub email: String,
 }

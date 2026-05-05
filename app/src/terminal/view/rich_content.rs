@@ -13,9 +13,8 @@ use crate::{
         },
         ssh::{error::SshErrorBlock, install_tmux::SshInstallTmuxBlock, warpify::SshWarpifyBlock},
         view::{
-            ambient_agent::AmbientAgentEntryBlock,
             block_onboarding::onboarding_agentic_suggestions_block::OnboardingAgenticSuggestionsBlock,
-            init_environment::InitEnvironmentBlock,
+            init_environment::InitEnvironmentBlock, local_agent::AmbientAgentEntryBlock,
             ssh_remote_server_choice_view::SshRemoteServerChoiceView,
             ssh_remote_server_failed_banner::SshRemoteServerFailedBanner,
         },

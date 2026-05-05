@@ -1,6 +1,4 @@
 use super::hoa_onboarding;
-use crate::auth::auth_manager::AuthManagerEvent;
-use crate::auth::AuthManager;
 use crate::settings::CodeSettings;
 use settings::Setting as _;
 use warp_core::features::FeatureFlag;
@@ -20,18 +18,7 @@ pub struct OneTimeModalModel {
 
 impl OneTimeModalModel {
     pub fn new(ctx: &mut ModelContext<Self>) -> Self {
-        // Subscribe to auth manager events to automatically trigger local one-time flows.
-        ctx.subscribe_to_model(&AuthManager::handle(ctx), |me, event, ctx| {
-            let AuthManagerEvent::AuthComplete = event else {
-                return;
-            };
-
-            let auth_state = crate::auth::AuthStateProvider::as_ref(ctx).get().clone();
-            let is_existing_user = auth_state.is_onboarded().unwrap_or_default();
-            if is_existing_user {
-                me.check_and_trigger_all_modals(ctx);
-            }
-        });
+        let _ = ctx;
 
         Self {
             is_hoa_onboarding_open: false,

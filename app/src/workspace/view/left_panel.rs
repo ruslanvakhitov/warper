@@ -41,7 +41,6 @@ use crate::workspace::view::{
 use crate::{
     appearance::Appearance,
     code::file_tree::FileTreeView,
-    drive::panel::{MAX_SIDEBAR_WIDTH_RATIO, MIN_SIDEBAR_WIDTH},
     pane_group::pane::view::header::{components::HEADER_EDGE_PADDING, PANE_HEADER_HEIGHT},
     pane_group::{self},
     terminal::resizable_data::{ModalType, ResizableData},
@@ -53,6 +52,9 @@ use crate::{
     workspace::WorkspaceAction,
     TelemetryEvent,
 };
+
+const MIN_SIDEBAR_WIDTH: f32 = 250.0;
+const MAX_SIDEBAR_WIDTH_RATIO: f32 = 0.75;
 
 #[derive(Default)]
 struct MouseStateHandles {
@@ -437,10 +439,6 @@ impl LeftPanelView {
 
     pub fn active_view(&self) -> ToolPanelView {
         self.active_view.get()
-    }
-
-    pub fn is_warp_drive_active(&self) -> bool {
-        false
     }
 
     pub fn is_file_tree_active(&self) -> bool {

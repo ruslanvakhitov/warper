@@ -20,9 +20,7 @@ use crate::{
     ai::execution_profiles::{ActionPermission, ComputerUsePermission, WriteToPtyPermission},
     ai::{BonusGrant, BonusGrantScope},
     auth::UserUid,
-    cloud_object::{ServerAIExecutionProfile, ServerAIFact},
     report_error,
-    server::experiments::ServerExperiment,
     server::ids::ServerId,
     settings::AgentModeCommandExecutionPredicate,
     workspaces::workspace::{
@@ -30,16 +28,6 @@ use crate::{
         EnterpriseCreditsAutoReloadPolicy, EnterprisePayAsYouGoPolicy, MultiAdminPolicy,
         PurchaseAddOnCreditsPolicy, UsageBasedPricingSettings,
     },
-};
-use crate::{
-    cloud_object::{
-        ServerAgentConfigObject, ServerAmbientAgentEnvironment, ServerCloudObject,
-        ServerEnvVarCollection, ServerFolder, ServerMCPServer, ServerNotebook, ServerPreference,
-        ServerScheduledAmbientAgent, ServerTemplatableMCPServer, ServerWorkflow,
-        ServerWorkflowEnum,
-    },
-    convert_to_server_experiment,
-    server::cloud_objects::listener::ObjectUpdateMessage,
 };
 use anyhow::{anyhow, bail};
 use regex::Regex;
@@ -963,15 +951,11 @@ impl From<GqlUser> for WorkspacesMetadataResponse {
             .map(|gql_joinable_team| gql_joinable_team.into())
             .collect();
 
-        let experiments = gql_user
-            .experiments
-            .and_then(|experiments| convert_to_server_experiment!(experiments));
-
         // TODO(skambashi) refactor to return back workspaces, and not teams
         WorkspacesMetadataResponse {
             workspaces,
             joinable_teams,
-            experiments,
+            experiments: None,
             feature_model_choices,
         }
     }
@@ -988,6 +972,7 @@ impl From<PublicUserProfile> for UserProfileWithUID {
     }
 }
 
+#[cfg(any())]
 impl TryFrom<WarpDriveUpdate> for ObjectUpdateMessage {
     type Error = anyhow::Error;
 
@@ -1040,6 +1025,7 @@ impl TryFrom<WarpDriveUpdate> for ObjectUpdateMessage {
     }
 }
 
+#[cfg(any())]
 impl TryFrom<warp_graphql::folder::Folder> for ServerFolder {
     type Error = anyhow::Error;
 
@@ -1054,6 +1040,7 @@ impl TryFrom<warp_graphql::folder::Folder> for ServerFolder {
     }
 }
 
+#[cfg(any())]
 impl TryFrom<warp_graphql::notebook::Notebook> for ServerNotebook {
     type Error = anyhow::Error;
 
@@ -1069,6 +1056,7 @@ impl TryFrom<warp_graphql::notebook::Notebook> for ServerNotebook {
     }
 }
 
+#[cfg(any())]
 impl TryFrom<warp_graphql::workflow::Workflow> for ServerWorkflow {
     type Error = anyhow::Error;
 
@@ -1082,6 +1070,7 @@ impl TryFrom<warp_graphql::workflow::Workflow> for ServerWorkflow {
     }
 }
 
+#[cfg(any())]
 impl TryFrom<warp_graphql::generic_string_object::GenericStringObject> for ServerEnvVarCollection {
     type Error = anyhow::Error;
 
@@ -1097,6 +1086,7 @@ impl TryFrom<warp_graphql::generic_string_object::GenericStringObject> for Serve
     }
 }
 
+#[cfg(any())]
 impl TryFrom<warp_graphql::generic_string_object::GenericStringObject> for ServerWorkflowEnum {
     type Error = anyhow::Error;
 
@@ -1112,6 +1102,7 @@ impl TryFrom<warp_graphql::generic_string_object::GenericStringObject> for Serve
     }
 }
 
+#[cfg(any())]
 impl TryFrom<warp_graphql::generic_string_object::GenericStringObject> for ServerAIFact {
     type Error = anyhow::Error;
 
@@ -1127,6 +1118,7 @@ impl TryFrom<warp_graphql::generic_string_object::GenericStringObject> for Serve
     }
 }
 
+#[cfg(any())]
 impl TryFrom<warp_graphql::generic_string_object::GenericStringObject>
     for ServerAIExecutionProfile
 {
@@ -1143,6 +1135,7 @@ impl TryFrom<warp_graphql::generic_string_object::GenericStringObject>
         )
     }
 }
+#[cfg(any())]
 impl TryFrom<warp_graphql::generic_string_object::GenericStringObject> for ServerMCPServer {
     type Error = anyhow::Error;
 
@@ -1158,6 +1151,7 @@ impl TryFrom<warp_graphql::generic_string_object::GenericStringObject> for Serve
     }
 }
 
+#[cfg(any())]
 impl TryFrom<warp_graphql::generic_string_object::GenericStringObject>
     for ServerTemplatableMCPServer
 {
@@ -1174,6 +1168,7 @@ impl TryFrom<warp_graphql::generic_string_object::GenericStringObject>
     }
 }
 
+#[cfg(any())]
 impl TryFrom<warp_graphql::generic_string_object::GenericStringObject> for ServerPreference {
     type Error = anyhow::Error;
 
@@ -1189,6 +1184,7 @@ impl TryFrom<warp_graphql::generic_string_object::GenericStringObject> for Serve
     }
 }
 
+#[cfg(any())]
 impl TryFrom<warp_graphql::generic_string_object::GenericStringObject>
     for ServerAmbientAgentEnvironment
 {
@@ -1206,6 +1202,7 @@ impl TryFrom<warp_graphql::generic_string_object::GenericStringObject>
     }
 }
 
+#[cfg(any())]
 impl TryFrom<warp_graphql::generic_string_object::GenericStringObject>
     for ServerScheduledAmbientAgent
 {
@@ -1223,6 +1220,7 @@ impl TryFrom<warp_graphql::generic_string_object::GenericStringObject>
     }
 }
 
+#[cfg(any())]
 impl TryFrom<warp_graphql::generic_string_object::GenericStringObject> for ServerAgentConfigObject {
     type Error = anyhow::Error;
 
@@ -1238,6 +1236,7 @@ impl TryFrom<warp_graphql::generic_string_object::GenericStringObject> for Serve
     }
 }
 
+#[cfg(any())]
 impl TryFrom<warp_graphql::object::CloudObject> for ServerCloudObject {
     type Error = anyhow::Error;
 
@@ -1293,6 +1292,7 @@ impl TryFrom<warp_graphql::object::CloudObject> for ServerCloudObject {
     }
 }
 
+#[cfg(any())]
 impl TryFrom<CloudObjectWithDescendants> for ServerCloudObject {
     type Error = anyhow::Error;
 

@@ -26,7 +26,6 @@ use crate::workspace::view::TOGGLE_RIGHT_PANEL_BINDING_NAME;
 use crate::workspace::WorkspaceAction;
 use crate::{
     appearance::Appearance,
-    drive::panel::{MAX_SIDEBAR_WIDTH_RATIO, MIN_SIDEBAR_WIDTH},
     terminal::resizable_data::{ModalType, ResizableData},
 };
 use crate::{code_review::diff_state::DiffStateModel, terminal::view::TerminalView};
@@ -59,6 +58,9 @@ use warpui::{
     platform::Cursor,
     ui_components::components::UiComponent,
 };
+
+const MIN_SIDEBAR_WIDTH: f32 = 250.0;
+const MAX_SIDEBAR_WIDTH_RATIO: f32 = 0.75;
 
 /// Describes which agent destination is available for sending review comments.
 #[derive(Clone, Debug, PartialEq)]

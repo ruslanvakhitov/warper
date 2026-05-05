@@ -9,14 +9,13 @@ use crate::{
     ai::llms::LLMModelHost,
     auth::{AuthStateProvider, UserUid},
     channel::ChannelState,
-    cloud_object::{
-        model::persistence::CloudModel, CloudObjectEventEntrypoint, ObjectType, Owner, Space,
-    },
     report_error,
     server::{
-        experiments::ServerExperiment,
         ids::ServerId,
-        server_api::{team::TeamClient, workspace::WorkspaceClient},
+        server_api::{
+            team::{CloudObjectEventEntrypoint, TeamClient},
+            workspace::WorkspaceClient,
+        },
     },
     settings::{
         AISettings, AISettingsChangedEvent, CodeSettings, CodeSettingsChangedEvent, PrivacySettings,
@@ -47,6 +46,27 @@ use crate::workspaces::workspace::{
 use super::workspace::WorkspaceMemberUsageInfo;
 
 const HOSTED_BILLING_REMOVED: &str = "hosted billing is removed in Warper";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ObjectType {
+    Notebook,
+    Workflow,
+    Folder,
+    GenericStringObject,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Space {
+    Personal,
+    Team { team_uid: ServerId },
+    Shared,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Owner {
+    User { user_uid: UserUid },
+    Team { team_uid: ServerId },
+}
 
 #[derive(Debug)]
 pub enum UserWorkspacesEvent {
@@ -107,8 +127,8 @@ pub struct WorkspacesMetadataResponse {
     pub workspaces: Vec<Workspace>,
     /// The list of discoverable teams that the user can join.
     pub joinable_teams: Vec<DiscoverableTeam>,
-    /// The list of experiments applicable to the user.
-    pub experiments: Option<Vec<ServerExperiment>>,
+    /// Server-backed experiments are removed in Warper.
+    pub experiments: Option<Vec<()>>,
     /// TODO(Tyler): Post-workspaces, move this into the workspace object.
     /// Feature model choices may change from user to user and while the app is open, so we need to periodically update this list.
     /// It makes most sense to fetch this in workspaces which is queried every 10 minutes.
@@ -247,7 +267,7 @@ impl UserWorkspaces {
                 !UserWorkspaces::has_capacity_for_shared_workflows(team_uid, ctx, 1)
             }
             ObjectType::Folder => false,
-            ObjectType::GenericStringObject(_) => false,
+            ObjectType::GenericStringObject => false,
         }
     }
 
@@ -266,9 +286,7 @@ impl UserWorkspaces {
         ctx: &AppContext,
         new_shared_notebooks: usize,
     ) -> bool {
-        let current_shared_notebooks = CloudModel::as_ref(ctx)
-            .active_notebooks_in_space(Space::Team { team_uid }, ctx)
-            .count();
+        let current_shared_notebooks = 0;
 
         let team = UserWorkspaces::as_ref(ctx).team_from_uid(team_uid);
         if let Some(team) = team {
@@ -303,9 +321,7 @@ impl UserWorkspaces {
         ctx: &AppContext,
         new_shared_workflows: usize,
     ) -> bool {
-        let current_shared_workflows = CloudModel::as_ref(ctx)
-            .active_workflows_in_space(Space::Team { team_uid }, ctx)
-            .count();
+        let current_shared_workflows = 0;
 
         let team = UserWorkspaces::as_ref(ctx).team_from_uid(team_uid);
         if let Some(team) = team {

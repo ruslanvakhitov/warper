@@ -12,9 +12,8 @@ use crate::ai::agent_conversations_model::AgentManagementFilters;
 use crate::ai::blocklist::InputConfig;
 use crate::ai::blocklist::SerializedBlockListItem;
 use crate::code::editor_management::CodeSource;
-use crate::drive::LocalObjectOpenSettings;
 use crate::root_view::quake_mode_window_id;
-use crate::server::ids::SyncId;
+use crate::server::ids::{ServerId, SyncId};
 use crate::settings_view::{environments_page::EnvironmentsPage, SettingsSection};
 use crate::tab::SelectedTabColor;
 use crate::terminal::ShellLaunchData;
@@ -32,6 +31,11 @@ pub struct AppState {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct PaneUuid(pub Vec<u8>);
+
+#[derive(Debug, Clone, Eq, PartialEq, Default)]
+pub struct LocalObjectOpenSettings {
+    pub focused_folder_id: Option<ServerId>,
+}
 
 /// Wrapper for persisting agent management filters to restore.
 #[derive(Default, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

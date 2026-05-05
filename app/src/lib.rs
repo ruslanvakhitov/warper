@@ -12,7 +12,6 @@ mod auth;
 mod banner;
 mod changelog_model;
 mod chip_configurator;
-mod cloud_object;
 mod code;
 mod code_review;
 mod coding_entrypoints;
@@ -27,7 +26,6 @@ mod debounce;
 mod debug_dump;
 mod default_terminal;
 mod download_method;
-mod drive;
 #[cfg(windows)]
 mod dynamic_libraries;
 mod env_vars;
@@ -135,7 +133,6 @@ use ::ai::index::full_source_code_embedding::SyncTask;
 use ::ai::index::DEFAULT_SYNC_REQUESTS_PER_MIN;
 use ::ai::project_context::model::ProjectContextModel;
 pub use ai::agent::{todos::AIAgentTodoList, AIAgentActionResultType, FileEdit, TodoOperation};
-use ai::agent_management::AgentNotificationsModel;
 use ai::blocklist::{BlocklistAIHistoryModel, BlocklistAIPermissions};
 use ai::execution_profiles::editor::ExecutionProfileEditorManager;
 use ai::execution_profiles::profiles::AIExecutionProfilesModel;
@@ -181,7 +178,6 @@ use warp_core::user_preferences::GetUserPreferences as _;
 use warpui::modals::{AlertDialogWithCallbacks, AppModalCallback};
 use warpui::platform::app::ApproveTerminateResult;
 use window_settings::WindowSettings;
-use workflows::manager::WorkflowManager;
 
 use crate::ai::facts::manager::AIFactManager;
 use crate::ai::llms::LLMPreferences;
@@ -189,21 +185,17 @@ use crate::ai::mcp::TemplatableMCPServerManager;
 use crate::ai::outline::RepoOutlines;
 use crate::ai::restored_conversations::RestoredAgentConversations;
 use crate::ai::skills::SkillManager;
-use crate::cloud_object::model::actions::ObjectActions;
 use crate::code::global_buffer_model::GlobalBufferModel;
 #[cfg(feature = "local_fs")]
 use crate::code::language_server_shutdown_manager::LanguageServerShutdownManager;
 use crate::context_chips::prompt::Prompt;
 use crate::default_terminal::DefaultTerminal;
-use crate::drive::export::ExportManager;
-use crate::env_vars::manager::EnvVarCollectionManager;
 use crate::gpu_state::GPUState;
 use crate::network::NetworkStatus;
 use crate::notebooks::editor::keys::NotebookKeybindings;
 use crate::palette::PaletteMode;
 use crate::persistence::PersistenceWriter;
 use crate::projects::ProjectManagementModel;
-use crate::server::cloud_objects::update_manager::UpdateManager;
 use crate::session_management::{RunningSessionSummary, SessionNavigationData};
 use crate::settings::manager::SettingsManager;
 use crate::settings::{AccessibilitySettings, ScrollSettings, SelectionSettings};
@@ -246,8 +238,6 @@ use warpui::{integration::TestDriver, App, AssetProvider, Event};
 
 use self::features::FeatureFlag;
 use crate::app_state::AppState;
-use crate::cloud_object::model::persistence::CloudModel;
-use crate::drive::CloudObjectTypeAndId;
 use crate::experiments::ImprovedPaletteSearch;
 pub use crate::global_resource_handles::{GlobalResourceHandles, GlobalResourceHandlesProvider};
 use crate::notification::NotificationContext;
@@ -920,7 +910,6 @@ fn initialize_app(
         app_state,
         command_history,
         restored_user_profiles,
-        experiments,
         ai_queries,
         persisted_workspaces,
         workspace_language_servers,
@@ -938,7 +927,6 @@ fn initialize_app(
                 Some(sqlite_data.app_state),
                 sqlite_data.command_history,
                 sqlite_data.user_profiles,
-                sqlite_data.experiments,
                 sqlite_data.ai_queries,
                 sqlite_data.codebase_indices,
                 sqlite_data.workspace_language_servers,
@@ -966,11 +954,10 @@ fn initialize_app(
                 Default::default(),
                 Default::default(),
                 Default::default(),
-                Default::default(),
             )
         });
 
-    let _ = (cached_workspaces, current_workspace_uid, experiments);
+    let _ = (cached_workspaces, current_workspace_uid);
     ctx.add_singleton_model(UserWorkspaces::local_only);
 
     // Initialize ApiKeyManager after UserWorkspaces so it can subscribe to workspace/settings changes
@@ -1182,7 +1169,6 @@ fn initialize_app(
     terminal::ssh::error::init(ctx);
     context_chips::display_menu::init(ctx);
     context_chips::node_version_popup::init(ctx);
-    env_vars::view::env_var_collection::init(ctx);
     ai::agent::todos::popup::init(ctx);
     terminal::view::init_environment::mode_selector::init(ctx);
     coding_entrypoints::project_buttons::init(ctx);
@@ -1221,7 +1207,6 @@ fn initialize_app(
     ctx.add_singleton_model(|_| CLIAgentSessionsModel::new());
     // ActiveAgentViewsModel is used to track active agent conversations and notify listeners when they change.
     ctx.add_singleton_model(|_| ActiveAgentViewsModel::new());
-    ctx.add_singleton_model(AgentNotificationsModel::new);
     ctx.add_singleton_model(BlocklistAIPermissions::new);
     ctx.add_singleton_model(ai::blocklist::orchestration_events::OrchestrationEventService::new);
 
@@ -1265,7 +1250,6 @@ fn initialize_app(
     // ByoLlmAuthBannerSessionState tracks dismissal of the BYO LLM auth banner (e.g., AWS Bedrock login).
     ctx.add_singleton_model(ByoLlmAuthBannerSessionState::new);
 
-    ctx.add_singleton_model(ExportManager::new);
     ctx.add_singleton_model(|_| CodeManager::default());
     ctx.add_singleton_model(|_| OpenedFilesModel::new());
     ctx.add_singleton_model(NotebookKeybindings::new);
@@ -1282,9 +1266,6 @@ fn initialize_app(
 
     // Add a singleton model for resizable modals whose size should be persisted through restarts.
     ctx.add_singleton_model(|_| ResizableData::default());
-
-    ctx.add_singleton_model(EnvVarCollectionManager::new);
-    ctx.add_singleton_model(WorkflowManager::new);
 
     ctx.add_singleton_model(LocalWorkflows::new);
 

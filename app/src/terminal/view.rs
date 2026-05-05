@@ -1,6 +1,5 @@
 mod action;
 mod agent_view;
-pub(crate) mod ambient_agent;
 mod block_banner;
 pub mod block_onboarding;
 pub(crate) mod blocklist_filter;
@@ -13,6 +12,7 @@ pub use load_ai_conversation::ConversationRestorationInNewPaneType;
 // TODO(advait): if we align on prompt suggestions banner in Input, move code out of inline_banner mod.
 pub(crate) mod init_environment;
 mod init_project;
+pub(crate) mod local_agent;
 use crate::ai::block_context::BlockContext;
 #[cfg(feature = "local_fs")]
 use crate::ai::skills::SkillOpenOrigin;
@@ -215,29 +215,20 @@ use crate::ai::{
     execution_profiles::profiles::{AIExecutionProfilesModel, ClientProfileId},
     get_relevant_files::controller::GetRelevantFilesController,
 };
-use crate::auth::auth_manager::AuthManager;
 use crate::auth::auth_state::AuthState;
-use crate::auth::auth_view_modal::AuthViewVariant;
 use crate::auth::AuthStateProvider;
-use crate::cloud_object::model::actions::ObjectActionType;
-use crate::cloud_object::model::persistence::CloudModel;
-use crate::cloud_object::{CloudObject, GenericStringObjectFormat, JsonObjectType};
 #[cfg(feature = "local_fs")]
 use crate::code::editor_management::CodeSource;
 use crate::context_chips::prompt::Prompt;
 use crate::context_chips::prompt_type::PromptType;
 use crate::context_chips::ContextChipKind;
-use crate::drive::settings::LocalDriveSettings;
-use crate::drive::sharing::ShareableObject;
-use crate::drive::CloudObjectTypeAndId;
 use crate::env_vars::{
     env_var_collection_block::{EnvVarCollectionBlock, EnvVarCollectionBlockEvent},
-    CloudEnvVarCollection, EnvVar,
+    EnvVar, EnvVarCollection,
 };
 use crate::pane_group::focus_state::PaneFocusHandle;
 use crate::persistence::{self, FinishedCommandMetadata};
 use crate::safe_warn;
-use crate::server::cloud_objects::update_manager::UpdateManager;
 use crate::server::ids::SyncId;
 use crate::server::telemetry::SharingDialogSource;
 #[cfg(feature = "local_fs")]
@@ -2372,7 +2363,7 @@ pub struct TerminalView {
     ai_context_model: ModelHandle<BlocklistAIContextModel>,
     get_relevant_files_controller: ModelHandle<GetRelevantFilesController>,
 
-    pending_env_var_collection: Option<CloudEnvVarCollection>,
+    pending_env_var_collection: Option<EnvVarCollection>,
 
     ai_render_context: Rc<RefCell<BlocklistAIRenderContext>>,
 
@@ -2480,7 +2471,7 @@ pub struct TerminalView {
     agent_view_back_button: ViewHandle<ActionButton>,
     is_using_conversation_for_pane_header_title: bool,
 
-    ambient_agent_view_model: ModelHandle<ambient_agent::AmbientAgentViewModel>,
+    ambient_agent_view_model: ModelHandle<local_agent::AmbientAgentViewModel>,
 
     /// Local-only placeholder state for the amputated hosted cloud-mode details UI.
     is_cloud_mode_details_panel_open: bool,
@@ -2683,7 +2674,7 @@ impl TerminalView {
         });
 
         let ambient_agent_view_model = ctx.add_model(|ctx| {
-            ambient_agent::AmbientAgentViewModel::new(
+            local_agent::AmbientAgentViewModel::new(
                 terminal_view_id,
                 false, // New terminal views don't have parent by default
                 ctx,
@@ -5679,21 +5670,6 @@ impl TerminalView {
                     );
                     return;
                 };
-                let associated_workflow = self
-                    .active_ai_block(ctx)
-                    .and_then(|ai_block| {
-                        ai_block
-                            .as_ref(ctx)
-                            .requested_command_copied_from_doc(action_id, ctx)
-                    })
-                    .and_then(|citation| {
-                        if let AIAgentCitation::WarpDriveObject { uid } = citation {
-                            CloudModel::as_ref(ctx).get_workflow_by_uid(&uid)
-                        } else {
-                            None
-                        }
-                    });
-
                 let shell_family = self.sessions.read(ctx, |sessions, _| {
                     sessions
                         .get(session_id)
@@ -5717,18 +5693,6 @@ impl TerminalView {
                     _ => command.clone(),
                 };
 
-                let workflow_telem_metadata = associated_workflow.map(|workflow| {
-                    let workflow_data = &workflow.model().data;
-                    WorkflowTelemetryMetadata {
-                        workflow_source: workflow.space(ctx).into(),
-                        workflow_categories: workflow_data.tags().cloned(),
-                        workflow_selection_source: WorkflowSelectionSource::AgentMode,
-                        workflow_id: workflow.sync_id().into_server().map(Into::into),
-                        workflow_space: Some(workflow.space(ctx).into()),
-                        enum_ids: workflow_data.get_server_enum_ids(),
-                    }
-                });
-
                 let agent_metadata =
                     AgentInteractionMetadata::new_hidden(action_id.clone(), conversation.id());
 
@@ -5745,10 +5709,8 @@ impl TerminalView {
                     session_id,
                     source,
                     should_add_command_to_history: true,
-                    workflow_id: associated_workflow.map(|workflow| workflow.sync_id()),
-                    workflow_command: associated_workflow
-                        .and_then(|workflow| workflow.model().data.command())
-                        .map(str::to_string),
+                    workflow_id: None,
+                    workflow_command: None,
                 }));
 
                 if let Some(active_ai_block) = self.active_ai_block(ctx) {
@@ -5777,9 +5739,6 @@ impl TerminalView {
                     },
                 );
 
-                if let Some(metadata) = workflow_telem_metadata {
-                    send_telemetry_from_ctx!(TelemetryEvent::WorkflowExecuted(metadata), ctx);
-                }
                 ctx.notify();
             }
             ShellCommandExecutorEvent::WriteToPty { input, mode } => {
@@ -6076,7 +6035,7 @@ impl TerminalView {
             .active_conversation_id()
     }
 
-    pub fn ambient_agent_view_model(&self) -> &ModelHandle<ambient_agent::AmbientAgentViewModel> {
+    pub fn ambient_agent_view_model(&self) -> &ModelHandle<local_agent::AmbientAgentViewModel> {
         &self.ambient_agent_view_model
     }
 
@@ -9948,36 +9907,11 @@ impl TerminalView {
                         &json!({"exit_code": block_completed.serialized_block.as_ref().exit_code})
                             .to_string();
 
-                    // If the block was a cloud workflow, record the workflow execution as an object action.
-                    if let Some(cloud_workflow_id) = cloud_workflow_id {
-                        let id_and_type = CloudObjectTypeAndId::Workflow(*cloud_workflow_id);
-                        UpdateManager::handle(ctx).update(ctx, move |update_manager, ctx| {
-                            update_manager.record_object_action(
-                                id_and_type,
-                                ObjectActionType::Execute,
-                                Some(exit_code_data.clone()),
-                                ctx,
-                            )
-                        });
-                    }
-
-                    if let Some(cloud_env_var_collection_id) = cloud_env_var_collection_id {
-                        let id_and_type = CloudObjectTypeAndId::GenericStringObject {
-                            object_type: GenericStringObjectFormat::Json(
-                                JsonObjectType::EnvVarCollection,
-                            ),
-
-                            id: *cloud_env_var_collection_id,
-                        };
-                        UpdateManager::handle(ctx).update(ctx, move |update_manager, ctx| {
-                            update_manager.record_object_action(
-                                id_and_type,
-                                ObjectActionType::Execute,
-                                Some(exit_code_data.clone()),
-                                ctx,
-                            )
-                        });
-                    }
+                    let _ = (
+                        cloud_workflow_id,
+                        cloud_env_var_collection_id,
+                        exit_code_data,
+                    );
 
                     if let (
                         Some(active_session_id),
@@ -13450,9 +13384,7 @@ impl TerminalView {
         else {
             return;
         };
-        if conversation.is_entirely_passive()
-            || !conversation.status().should_trigger_notification()
-        {
+        if conversation.is_entirely_passive() || conversation.status().is_in_progress() {
             return;
         }
 
@@ -14253,7 +14185,7 @@ impl TerminalView {
                         .into_item(),
                 ];
 
-                if LocalDriveSettings::is_local_drive_enabled(ctx) {
+                if false {
                     items.push(MenuItem::Separator);
                     items.push(
                         MenuItemFields::new("Save as workflow")
@@ -14902,7 +14834,7 @@ impl TerminalView {
         }
 
         // Section 3: Teams related
-        if !all_current_input_text.is_empty() && LocalDriveSettings::is_local_drive_enabled(ctx) {
+        if false {
             items.extend([
                 MenuItem::Separator,
                 MenuItemFields::new("Save as workflow")
@@ -21640,12 +21572,8 @@ impl TerminalView {
                 ));
             }
             OpenConversationShareDialog { conversation_id } => {
-                // Set the shareable object and open the sharing dialog via the pane header
-                let shareable_object = ShareableObject::AIConversation(*conversation_id);
-                self.pane_configuration.update(ctx, |pane_config, ctx| {
-                    pane_config.set_shareable_object(Some(shareable_object), ctx);
-                    pane_config.toggle_sharing_dialog(SharingDialogSource::AIBlockContextMenu, ctx);
-                });
+                let _ = conversation_id;
+                log::info!("Skipping hosted conversation sharing dialog in offline Warper build");
             }
             CopyAgentCommand { ai_block_view_id } => {
                 for rich_content in self.rich_content_views.iter() {
@@ -22204,7 +22132,6 @@ impl TerminalView {
         collection_title: String,
         command: String,
         session_id: SessionId,
-        cloud_object_type_and_id: CloudObjectTypeAndId,
         ctx: &mut ViewContext<Self>,
     ) {
         let block_id = Uuid::new_v4().to_string();
@@ -22231,14 +22158,6 @@ impl TerminalView {
                         },
                     }));
 
-                    UpdateManager::handle(ctx).update(ctx, move |update_manager, ctx| {
-                        update_manager.record_object_action(
-                            cloud_object_type_and_id,
-                            ObjectActionType::Execute,
-                            None,
-                            ctx,
-                        )
-                    });
                     me.reset_focus_after_rich_block(ctx);
                 }
                 EnvVarCollectionBlockEvent::Cancelled => {
@@ -22323,7 +22242,7 @@ impl TerminalView {
 
     pub fn invoke_environment_variables(
         &mut self,
-        cloud_env_var_collection: CloudEnvVarCollection,
+        env_var_collection: EnvVarCollection,
         in_subshell: bool,
         ctx: &mut ViewContext<Self>,
     ) {
@@ -22334,7 +22253,7 @@ impl TerminalView {
                 return;
             };
             self.invoke_env_vars_in_current_session(
-                cloud_env_var_collection.clone(),
+                env_var_collection.clone(),
                 shell_type,
                 session_id,
                 ctx,
@@ -22357,7 +22276,7 @@ impl TerminalView {
                 };
 
             self.invoke_env_vars_in_subshell(
-                cloud_env_var_collection,
+                env_var_collection,
                 shell_session_info,
                 window_id,
                 ctx,
@@ -22367,12 +22286,11 @@ impl TerminalView {
 
     fn invoke_env_vars_in_current_session(
         &mut self,
-        cloud_env_var_collection: CloudEnvVarCollection,
+        env_var_collection: EnvVarCollection,
         shell_type: ShellType,
         session_id: Option<SessionId>,
         ctx: &mut ViewContext<Self>,
     ) {
-        let env_var_collection = cloud_env_var_collection.model().string_model.clone();
         if let Some(session_id) = session_id {
             self.add_env_var_block_to_blocklist(
                 env_var_collection
@@ -22386,11 +22304,10 @@ impl TerminalView {
                     .collect_vec()
                     .join(" "),
                 session_id,
-                cloud_env_var_collection.cloud_object_type_and_id(),
                 ctx,
             );
         } else {
-            self.pending_env_var_collection = Some(cloud_env_var_collection)
+            self.pending_env_var_collection = Some(env_var_collection)
         }
     }
 
@@ -22411,13 +22328,11 @@ impl TerminalView {
 
     fn invoke_env_vars_in_subshell(
         &mut self,
-        cloud_env_var_collection: CloudEnvVarCollection,
+        env_var_collection: EnvVarCollection,
         shell_session_info: (String, ShellType),
         window_id: WindowId,
         ctx: &mut ViewContext<Self>,
     ) {
-        let env_var_collection = cloud_env_var_collection.model().string_model.clone();
-
         let (shell_path_string, shell_type) = shell_session_info;
         if shell_type == ShellType::PowerShell {
             ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
@@ -22435,16 +22350,6 @@ impl TerminalView {
             env_var_collection.title.unwrap_or("Untitled".to_owned()),
         ));
         self.set_and_execute_subshell_command(&shell_path_string, shell_type, ctx);
-
-        // Ok to update the execution record here because we auto-execute when in subshell
-        UpdateManager::handle(ctx).update(ctx, move |update_manager, ctx| {
-            update_manager.record_object_action(
-                cloud_env_var_collection.cloud_object_type_and_id(),
-                ObjectActionType::Execute,
-                None,
-                ctx,
-            )
-        });
     }
 
     #[cfg(feature = "integration_tests")]
@@ -23759,16 +23664,7 @@ impl TypedActionView for TerminalView {
                 ctx.open_url(&hyperlink.url);
             }
             AttemptLoginGatedFeature => {
-                if ChannelState::channel() == Channel::Oss {
-                    return;
-                }
-                AuthManager::handle(ctx).update(ctx, |auth_manager, ctx| {
-                    auth_manager.attempt_login_gated_feature(
-                        "Upgrade AI Usage",
-                        AuthViewVariant::RequireLoginCloseable,
-                        ctx,
-                    )
-                });
+                let _ = ctx;
             }
             StartFileDropTarget => {
                 let Some(session) = self
