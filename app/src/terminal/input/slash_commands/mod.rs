@@ -606,7 +606,9 @@ impl Input {
                     .map(|path| path.to_path_buf())
                     .map(|path| path.to_string_lossy().to_string())
                 else {
-                    log::error!("Expected a valid working directory since /pr-comments is only available from the terminal");
+                    log::error!(
+                        "Expected a valid working directory since /pr-comments is only available from the terminal"
+                    );
                     return false;
                 };
 

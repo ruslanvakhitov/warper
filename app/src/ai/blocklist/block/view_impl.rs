@@ -1248,7 +1248,6 @@ impl AIAgentInput {
             | AIAgentInput::AutoCodeDiffQuery { .. }
             | AIAgentInput::ResumeConversation { .. }
             | AIAgentInput::InitProjectRules { .. }
-            | AIAgentInput::CreateEnvironment { .. }
             | AIAgentInput::TriggerPassiveSuggestion { .. }
             | AIAgentInput::CreateNewProject { .. }
             | AIAgentInput::CloneRepository { .. }

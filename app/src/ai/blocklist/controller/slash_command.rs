@@ -29,10 +29,6 @@ pub enum SlashCommandRequest {
         url: String,
     },
     InitProjectRules,
-    CreateEnvironment {
-        repos: Vec<String>,
-        use_current_dir: bool,
-    },
     Summarize {
         prompt: Option<String>,
     },
@@ -174,7 +170,6 @@ impl SlashCommandRequest {
     ) -> Option<AIConversationId> {
         match self {
             Self::Summarize { .. }
-            | Self::CreateEnvironment { .. }
             | Self::InvokeSkill { .. }
             | Self::FetchReviewComments { .. } => controller
                 .context_model
@@ -204,27 +199,6 @@ impl SlashCommandRequest {
                 context,
                 display_query: Some("/init".to_string()),
             }],
-            SlashCommandRequest::CreateEnvironment {
-                mut repos,
-                use_current_dir,
-            } => {
-                let display_query = if repos.is_empty() {
-                    "/create-environment".to_string()
-                } else {
-                    format!("/create-environment {}", repos.join(" "))
-                };
-
-                // Add "." to represent the current working directory
-                if use_current_dir {
-                    repos.push(String::from("."));
-                }
-
-                vec![AIAgentInput::CreateEnvironment {
-                    context,
-                    display_query: Some(display_query),
-                    repo_paths: repos,
-                }]
-            }
             SlashCommandRequest::Summarize { prompt, .. } => {
                 vec![AIAgentInput::SummarizeConversation { prompt }]
             }
@@ -261,7 +235,6 @@ impl SlashCommandRequest {
             SlashCommandRequest::CloneRepository { .. } => EntrypointType::CloneRepository,
             SlashCommandRequest::InitProjectRules => EntrypointType::InitProjectRules,
             SlashCommandRequest::CreateNewProject { .. }
-            | SlashCommandRequest::CreateEnvironment { .. }
             | SlashCommandRequest::Summarize { .. }
             | SlashCommandRequest::FetchReviewComments { .. }
             | SlashCommandRequest::InvokeSkill { .. } => EntrypointType::UserInitiated,

@@ -59,7 +59,6 @@ use crate::{
     },
     terminal::{self, TerminalModel},
     util::link_detection::{add_link_detection_mouse_interactions, DetectedLinksState},
-    workspaces::{user_workspaces::UserWorkspaces, workspace::CustomerType},
 };
 use crate::{
     ai::{
@@ -3206,12 +3205,9 @@ pub(crate) fn render_debug_footer<V: View>(
         .to_string()
     };
 
-    // Check if we should show the submit button (hide for dogfood and enterprise users)
+    // Check if we should show the submit button (hide for dogfood users)
     let is_dogfood = ChannelState::channel().is_dogfood();
-    let is_enterprise_user = UserWorkspaces::as_ref(app)
-        .current_team()
-        .is_some_and(|team| team.billing_metadata.customer_type == CustomerType::Enterprise);
-    let submit_button = if !is_dogfood && !is_enterprise_user {
+    let submit_button = if !is_dogfood {
         let submit_button_style = UiComponentStyles {
             font_color: Some(
                 appearance
@@ -3415,7 +3411,6 @@ pub(super) fn query_prefix_highlight_len(
             | AIAgentInput::AutoCodeDiffQuery { .. }
             | AIAgentInput::ResumeConversation { .. }
             | AIAgentInput::InitProjectRules { .. }
-            | AIAgentInput::CreateEnvironment { .. }
             | AIAgentInput::TriggerPassiveSuggestion { .. }
             | AIAgentInput::CreateNewProject { .. }
             | AIAgentInput::CloneRepository { .. }

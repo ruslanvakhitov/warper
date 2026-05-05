@@ -28,7 +28,7 @@ pub enum WorkflowSource {
         team_uid: ServerId,
     },
     PersonalCloud,
-    WarpAI,
+    AI,
     Notebook {
         notebook_id: Option<NotebookId>,
         team_uid: Option<ServerId>,
@@ -46,7 +46,7 @@ pub enum WorkflowSelectionSource {
     CommandPalette,
     UniversalSearch,
     Voltron,
-    WarpAI,
+    AI,
     Notebook,
     SlashMenu,
     UpArrowHistory,
@@ -105,7 +105,6 @@ crate::server_id_traits! { WorkflowId, "Workflow" }
 pub enum AIWorkflowOrigin {
     CommandSearch,
     AgentMode,
-    LegacyWarpAI,
 }
 
 /// Wrapper type for a workflow from local files, local object storage, generated AI output, or a notebook.
@@ -113,7 +112,7 @@ pub enum AIWorkflowOrigin {
 pub enum WorkflowType {
     /// Saved workflows sourced from local, global, project, app collections, saved locally.
     Local(Workflow),
-    /// Ephemeral/transient workflows created from Warp AI output
+    /// Ephemeral/transient workflows created from AI output.
     AIGenerated {
         workflow: Workflow,
         origin: AIWorkflowOrigin,

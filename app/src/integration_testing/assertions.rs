@@ -50,31 +50,13 @@ pub fn join_a_workspace() -> TestStep {
                 let teams: Vec<Team> = vec![Team {
                     uid: "team_uid12345678912345".try_into().expect("ID is valid"),
                     name: "My Team".to_string(),
-                    invite_code: Default::default(),
-                    members: Default::default(),
-                    pending_email_invites: Default::default(),
-                    invite_link_domain_restrictions: Default::default(),
-                    billing_metadata: Default::default(),
-                    stripe_customer_id: None,
                     organization_settings: Default::default(),
-                    is_eligible_for_discovery: false,
-                    has_billing_history: false,
                 }];
                 let workspaces: Vec<Workspace> = vec![Workspace {
                     uid: workspace_uid,
                     name: "My Workspace".to_string(),
-                    stripe_customer_id: None,
                     teams: teams.clone(),
-                    billing_metadata: Default::default(),
-                    bonus_grants_purchased_this_month: Default::default(),
-                    has_billing_history: false,
                     settings: Default::default(),
-                    invite_code: Default::default(),
-                    invite_link_domain_restrictions: Default::default(),
-                    pending_email_invites: Default::default(),
-                    is_eligible_for_discovery: false,
-                    members: Default::default(),
-                    total_requests_used_since_last_refresh: 0,
                 }];
 
                 user_workspaces.update_workspaces(workspaces, ctx);

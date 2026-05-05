@@ -14,7 +14,7 @@ use crate::ai::blocklist::SerializedBlockListItem;
 use crate::code::editor_management::CodeSource;
 use crate::root_view::quake_mode_window_id;
 use crate::server::ids::{ServerId, SyncId};
-use crate::settings_view::{environments_page::EnvironmentsPage, SettingsSection};
+use crate::settings_view::SettingsSection;
 use crate::tab::SelectedTabColor;
 use crate::terminal::ShellLaunchData;
 use crate::themes::theme::AnsiColorIdentifier;
@@ -51,9 +51,7 @@ pub struct WindowSnapshot {
     pub fullscreen_state: FullscreenState,
     pub quake_mode: bool,
     pub universal_search_width: Option<f32>,
-    pub warp_ai_width: Option<f32>,
     pub voltron_width: Option<f32>,
-    pub warp_drive_index_width: Option<f32>,
     pub left_panel_open: bool,
     pub vertical_tabs_panel_open: bool,
     pub left_panel_width: Option<f32>,
@@ -125,7 +123,6 @@ pub enum LeafContents {
     AIDocument(AIDocumentPaneSnapshot),
     Code(CodePaneSnapShot),
     EnvVarCollection(EnvVarCollectionPaneSnapshot),
-    EnvironmentManagement(EnvironmentManagementPaneSnapshot),
     Workflow(WorkflowPaneSnapshot),
     Settings(SettingsPaneSnapshot),
     AIFact(AIFactPaneSnapshot),
@@ -159,10 +156,7 @@ impl LeafContents {
             // Network log: the backing log is an in-memory ring buffer that
             // starts empty on launch; persisting would also regress back to
             // an on-disk log via the app-state database.
-            LeafContents::NetworkLog
-            // Environment management panes are opened on-demand via workspace
-            // actions and have no persistable state.
-            | LeafContents::EnvironmentManagement(_) => false,
+            LeafContents::NetworkLog => false,
             LeafContents::Terminal(_)
             | LeafContents::Notebook(_)
             | LeafContents::AIDocument(_)
@@ -198,14 +192,8 @@ pub struct TerminalPaneSnapshot {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum NotebookPaneSnapshot {
-    CloudNotebook {
-        /// The ID of the notebook that was open in this pane. There are 3 possibilities:
-        /// 1. The pane contains a newly-created notebook that has not been edited yet. It might not
-        ///    have an ID yet (client or server), so this will be `None`.
-        /// 2. The pane contains a notebook that hasn't been synced to the server yet, so this will
-        ///    contain a client ID that should exist in SQLite.
-        /// 3. The pane contains a notebook that's known to the server, so this will contain the
-        ///    server ID.
+    LocalNotebook {
+        /// The ID of the notebook that was open in this pane, when the local object store has one.
         notebook_id: Option<SyncId>,
         // Settings for the notebook pane when it's opened (such as a folder to focus upon opening)
         settings: LocalObjectOpenSettings,
@@ -244,7 +232,7 @@ pub enum CodePaneSnapShot {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum WorkflowPaneSnapshot {
-    CloudWorkflow {
+    LocalWorkflow {
         workflow_id: Option<SyncId>,
         // Settings for the workflow pane when it's opened (such as a folder to focus upon opening)
         settings: LocalObjectOpenSettings,
@@ -253,16 +241,9 @@ pub enum WorkflowPaneSnapshot {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum EnvVarCollectionPaneSnapshot {
-    // CloudEnvVarCollection snapshots operate under the same heuristics
-    // as NotebookPaneSnapshot::CloudNotebook
-    CloudEnvVarCollection {
+    LocalEnvVarCollection {
         env_var_collection_id: Option<SyncId>,
     },
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct EnvironmentManagementPaneSnapshot {
-    pub mode: EnvironmentsPage,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -290,7 +271,6 @@ pub enum CodeReviewPaneSnapshot {
 pub enum LeftPanelDisplayedTab {
     FileTree,
     GlobalSearch,
-    WarpDrive,
     ConversationListView,
 }
 

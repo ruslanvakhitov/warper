@@ -31,8 +31,7 @@ use crate::test_util::settings::initialize_settings_for_tests;
 use crate::workspace::ActiveSession;
 use crate::UserWorkspaces;
 use crate::{
-    cloud_object::model::persistence::CloudModel, search::files::model::FileSearchModel,
-    GlobalResourceHandles, GlobalResourceHandlesProvider,
+    search::files::model::FileSearchModel, GlobalResourceHandles, GlobalResourceHandlesProvider,
 };
 
 /// Container for a [`RichTextEditorView`] in unit tests.
@@ -77,7 +76,6 @@ fn initialize_editor(
     app.add_singleton_model(FileSearchModel::new);
     app.add_singleton_model(NotebookKeybindings::new);
     app.add_singleton_model(TerminalKeybindings::new);
-    app.add_singleton_model(CloudModel::mock);
     app.add_singleton_model(|_| AuthStateProvider::new_for_test());
     #[cfg(feature = "voice_input")]
     app.add_singleton_model(voice_input::VoiceInput::new);

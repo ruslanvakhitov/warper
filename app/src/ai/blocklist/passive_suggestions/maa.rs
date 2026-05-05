@@ -20,7 +20,6 @@ use crate::terminal::event::{BlockType, UserBlockCompleted};
 use crate::terminal::model::session::active_session::ActiveSession;
 use crate::terminal::model::terminal_model::TerminalModel;
 use crate::terminal::model_events::{ModelEvent, ModelEventDispatcher};
-use crate::terminal::view::local_agent::AmbientAgentViewModel;
 use crate::workspaces::user_workspaces::UserWorkspaces;
 use ai::agent::action::{AIAgentActionType, FileEdit};
 use ai::diff_validation::ParsedDiff;
@@ -86,7 +85,6 @@ pub struct PassiveSuggestionsModel {
     latest_request: Option<Request>,
     pending_file_read_handle: Option<SpawnedFutureHandle>,
     terminal_model: Arc<FairMutex<TerminalModel>>,
-    ambient_agent_view_model: ModelHandle<AmbientAgentViewModel>,
 
     #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
     terminal_view_id: EntityId,
@@ -100,7 +98,6 @@ impl PassiveSuggestionsModel {
         terminal_model: Arc<FairMutex<TerminalModel>>,
         ai_controller: ModelHandle<BlocklistAIController>,
         model_event_dispatcher: &ModelHandle<ModelEventDispatcher>,
-        ambient_agent_view_model: ModelHandle<AmbientAgentViewModel>,
         terminal_view_id: EntityId,
         ctx: &mut ModelContext<Self>,
     ) -> Self {
@@ -117,7 +114,6 @@ impl PassiveSuggestionsModel {
             latest_request: None,
             pending_file_read_handle: None,
             terminal_model,
-            ambient_agent_view_model,
             terminal_view_id,
         }
     }
@@ -379,11 +375,6 @@ impl PassiveSuggestionsModel {
             return;
         }
 
-        // Suppress passive suggestions in cloud mode sessions.
-        if self.ambient_agent_view_model.as_ref(ctx).is_ambient_agent() {
-            return;
-        }
-
         let history_model = BlocklistAIHistoryModel::as_ref(ctx);
         let Some(conversation) = history_model.conversation(&conversation_id) else {
             return;
@@ -428,10 +419,6 @@ impl PassiveSuggestionsModel {
         ctx: &mut ModelContext<Self>,
     ) {
         self.abort_pending_requests(ctx);
-        // Suppress passive suggestions in cloud mode sessions.
-        if self.ambient_agent_view_model.as_ref(ctx).is_ambient_agent() {
-            return;
-        }
 
         let is_prompt_suggestions_enabled = is_prompt_suggestions_enabled(ctx);
         let is_passive_code_diffs_enabled = is_passive_code_diffs_enabled(ctx);

@@ -21,10 +21,6 @@ use super::{
     telemetry::ActionEntrypoint,
 };
 
-#[cfg(test)]
-#[path = "context_menu_tests.rs"]
-mod tests;
-
 const CONTEXT_MENU_WIDTH: f32 = 200.;
 
 pub struct ContextMenuState<V: TypedActionView + View>

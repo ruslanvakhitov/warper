@@ -44,7 +44,6 @@ use crate::{
     search::files::model::FileSearchModel,
     server::{
         cloud_objects::{listener::Listener, update_manager::UpdateManager},
-        server_api::ServerApiProvider,
         sync_queue::SyncQueue,
     },
     settings::PrivacySettings,
@@ -64,8 +63,6 @@ use repo_metadata::watcher::DirectoryWatcher;
 /// Initializes all of the necessary models to use a terminal view.
 pub fn initialize_app_for_terminal_view(app: &mut App) {
     initialize_settings_for_tests(app);
-
-    app.add_singleton_model(|_| ServerApiProvider::new_for_test());
     app.add_singleton_model(|_| ChangelogModel::new());
     app.add_singleton_model(|_| NetworkStatus::new());
     app.add_singleton_model(|_| SystemStats::new());
@@ -89,9 +86,7 @@ pub fn initialize_app_for_terminal_view(app: &mut App) {
     app.add_singleton_model(AgentNotificationsModel::new);
     app.add_singleton_model(UndoCloseStack::new);
 
-    app.add_singleton_model(|ctx| {
-        AIRequestUsageModel::new_for_test(ServerApiProvider::as_ref(ctx).get_ai_client(), ctx)
-    });
+    app.add_singleton_model(|ctx| AIRequestUsageModel::new(ctx));
     app.add_singleton_model(|_| KeybindingChangedNotifier::new());
     app.add_singleton_model(TerminalKeybindings::new);
     app.add_singleton_model(|_| ActiveSession::default());
@@ -110,7 +105,12 @@ pub fn initialize_app_for_terminal_view(app: &mut App) {
     app.add_singleton_model(WarpManagedPathsWatcher::new_for_testing);
     app.add_singleton_model(SkillManager::new);
     app.add_singleton_model(|ctx| {
-        CodebaseIndexManager::new_for_test(ServerApiProvider::as_ref(ctx).get(), ctx)
+        CodebaseIndexManager::new_for_test(
+            std::sync::Arc::new(
+                ::ai::index::full_source_code_embedding::store_client::MockStoreClient,
+            ),
+            ctx,
+        )
     });
     app.add_singleton_model(|_| TemplatableMCPServerManager::default());
     app.add_singleton_model(|ctx| {

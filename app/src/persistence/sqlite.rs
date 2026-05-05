@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::ffi::OsString;
 use std::path::Path;
 use std::str::FromStr;
@@ -40,11 +39,11 @@ use super::block_list::{
 use super::model::{
     self, ActiveMCPServer, CurrentUserInformation, MCPEnvironmentVariables, NewActiveMCPServer,
     NewApp, NewCommand, NewFolder, NewNotebook, NewServerExperiment, NewTab, NewTeam, NewWindow,
-    NewWorkspace, NewWorkspaceMetadata, NewWorkspaceTeam, ObjectMetadata, ObjectPermissions,
-    Project, Tab, Window, WorkspaceMetadata as WorkspaceMetadataModel, AI_DOCUMENT_PANE_KIND,
-    AI_FACT_PANE_KIND, CODE_PANE_KIND, ENV_VAR_COLLECTION_PANE_KIND,
-    EXECUTION_PROFILE_EDITOR_PANE_KIND, MCP_SERVER_PANE_KIND, NOTEBOOK_PANE_KIND,
-    SETTINGS_PANE_KIND, TERMINAL_PANE_KIND, WELCOME_PANE_KIND, WORKFLOW_PANE_KIND,
+    NewWorkspace, NewWorkspaceMetadata, NewWorkspaceTeam, Project, Tab, Window,
+    WorkspaceMetadata as WorkspaceMetadataModel, AI_DOCUMENT_PANE_KIND, AI_FACT_PANE_KIND,
+    CODE_PANE_KIND, ENV_VAR_COLLECTION_PANE_KIND, EXECUTION_PROFILE_EDITOR_PANE_KIND,
+    MCP_SERVER_PANE_KIND, NOTEBOOK_PANE_KIND, SETTINGS_PANE_KIND, TERMINAL_PANE_KIND,
+    WELCOME_PANE_KIND, WORKFLOW_PANE_KIND,
 };
 use super::schema;
 use super::{
@@ -52,7 +51,6 @@ use super::{
     WriterHandles,
 };
 use crate::ai::agent::conversation::AIConversationId;
-use crate::ai::document::ai_document_model::AIDocumentId;
 use crate::ai::mcp::templatable_installation::VariableValue;
 use crate::ai::mcp::{TemplatableMCPServer, TemplatableMCPServerInstallation};
 use crate::ai::persisted_workspace::EnablementState;
@@ -69,7 +67,6 @@ use crate::persistence::model::{
     NewTeamSettings, ProjectRules, UserProfile, CODE_REVIEW_PANE_KIND, GET_STARTED_PANE_KIND,
 };
 use crate::persistence::PersistedCurrentUserInformation;
-use crate::server::ids::SyncId;
 use crate::server::telemetry::TelemetryEvent;
 use crate::settings_view::SettingsSection;
 use crate::suggestions::ignored_suggestions_model::SuggestionType;
@@ -711,9 +708,9 @@ fn save_app_state(conn: &mut SqliteConnection, app_state: &AppState) -> Result<(
                 origin_y,
                 quake_mode: window.quake_mode,
                 universal_search_width: window.universal_search_width,
-                warp_ai_width: window.warp_ai_width,
+                warp_ai_width: None,
                 voltron_width: window.voltron_width,
-                warp_drive_index_width: window.warp_drive_index_width,
+                warp_drive_index_width: None,
                 left_panel_open: Some(window.left_panel_open),
                 vertical_tabs_panel_open: Some(window.vertical_tabs_panel_open),
                 fullscreen_state: window.fullscreen_state as i32,
@@ -906,7 +903,7 @@ fn save_pane_state(
         LeafContents::GetStarted => GET_STARTED_PANE_KIND,
         LeafContents::Welcome { .. } => WELCOME_PANE_KIND,
         LeafContents::AIDocument(_) => AI_DOCUMENT_PANE_KIND,
-        LeafContents::EnvironmentManagement(_) | LeafContents::NetworkLog => {
+        LeafContents::NetworkLog => {
             // These pane types are filtered out before this function is
             // called; see `LeafContents::is_persisted` and the skip in
             // `save_app_state`. Reaching this arm would mean a `pane_nodes`
@@ -974,7 +971,7 @@ fn save_pane_state(
         }
         LeafContents::Notebook(notebook_snapshot) => {
             let (notebook_id, local_path) = match notebook_snapshot {
-                NotebookPaneSnapshot::CloudNotebook {
+                NotebookPaneSnapshot::LocalNotebook {
                     notebook_id: _,
                     settings: _,
                 } => (None, None),
@@ -1026,7 +1023,7 @@ fn save_pane_state(
         }
         LeafContents::EnvVarCollection(env_var_collection_snapshot) => {
             let env_var_collection_id = match env_var_collection_snapshot {
-                EnvVarCollectionPaneSnapshot::CloudEnvVarCollection {
+                EnvVarCollectionPaneSnapshot::LocalEnvVarCollection {
                     env_var_collection_id: _,
                 } => None,
             };
@@ -1042,7 +1039,7 @@ fn save_pane_state(
         }
         LeafContents::Workflow(workflow_pane_snapshot) => {
             let workflow_id = match workflow_pane_snapshot {
-                WorkflowPaneSnapshot::CloudWorkflow {
+                WorkflowPaneSnapshot::LocalWorkflow {
                     workflow_id: _,
                     settings: _,
                 } => None,
@@ -1053,9 +1050,6 @@ fn save_pane_state(
             diesel::insert_into(schema::workflow_panes::dsl::workflow_panes)
                 .values(workflow)
                 .execute(conn)?;
-        }
-        LeafContents::EnvironmentManagement(_) => {
-            // Unreachable: filtered by `is_persisted` in `save_app_state`.
         }
         LeafContents::Settings(settings_pane_snapshot) => {
             let current_page = match settings_pane_snapshot {
@@ -1597,252 +1591,27 @@ fn remove_ignored_suggestion(
     Ok(())
 }
 
-fn save_workspace(conn: &mut SqliteConnection, workspace: WorkspaceMetadata) -> Result<()> {
-    // Set all existing workspaces as not selected
-    diesel::update(workspaces)
-        .set(is_selected.eq(false))
-        .execute(conn)?;
-
-    // Save new workspace and set it as current workspace
-    use schema::workspaces::dsl::*;
-    let new_workspace = NewWorkspace {
-        name: workspace.name,
-        server_uid: workspace.uid.into(),
-        is_selected: true,
-    };
-
-    diesel::insert_into(workspaces)
-        .values(&new_workspace)
-        .on_conflict(schema::workspaces::dsl::server_uid)
-        .do_update()
-        // If there's already a workspace with this server_uid, then lets just update the other values
-        .set(&new_workspace)
-        .execute(conn)?;
-
-    // Save teams for workspace
-    for team in workspace.teams {
-        use schema::teams::dsl::*;
-        use schema::workspace_teams::dsl::*;
-        let new_team = NewTeam {
-            name: team.name,
-            server_uid: team.uid.into(),
-            billing_metadata_json: serde_json::to_string(&team.billing_metadata).ok(),
-        };
-        diesel::insert_into(teams)
-            .values(&new_team)
-            .on_conflict(server_uid)
-            .do_update()
-            // If there's already a team with this server_uid, then lets just update the other values
-            .set(&new_team)
-            .execute(conn)?;
-
-        let team_db_id: i32 = schema::teams::dsl::teams
-            .filter(schema::teams::dsl::server_uid.eq::<String>(team.uid.into()))
-            .select(schema::teams::dsl::id)
-            .first(conn)?;
-
-        diesel::delete(
-            schema::team_members::dsl::team_members
-                .filter(schema::team_members::dsl::team_id.eq(team_db_id)),
-        )
-        .execute(conn)?;
-
-        for member in &team.members {
-            let new_member = model::NewTeamMember {
-                team_id: team_db_id,
-                user_uid: member.uid.as_string(),
-                email: member.email.clone(),
-                role: serde_json::to_string(&member.role).unwrap_or_default(),
-            };
-            diesel::insert_into(schema::team_members::dsl::team_members)
-                .values(&new_member)
-                .execute(conn)?;
-        }
-
-        let new_workspace_team = NewWorkspaceTeam {
-            workspace_server_uid: workspace.uid.into(),
-            team_server_uid: team.uid.into(),
-        };
-        diesel::insert_into(workspace_teams)
-            .values(&new_workspace_team)
-            .on_conflict((workspace_server_uid, team_server_uid))
-            .do_update()
-            .set(&new_workspace_team)
-            .execute(conn)?;
-    }
-
-    Ok(())
+fn save_workspace(conn: &mut SqliteConnection, _workspace: WorkspaceMetadata) -> Result<()> {
+    clear_hosted_workspace_cache(conn)
 }
 
 fn save_workspaces(
     conn: &mut SqliteConnection,
-    workspaces_to_insert: Vec<WorkspaceMetadata>,
+    _workspaces_to_insert: Vec<WorkspaceMetadata>,
 ) -> Result<()> {
-    use schema::team_settings::dsl::*;
-    use schema::teams::dsl::*;
-    use schema::workspace_teams::dsl::*;
-    use schema::workspaces::dsl::*;
-
-    // Get currently selected workspace uid if there is one
-    let current_workspace_uid: Option<WorkspaceUid> = workspaces
-        .filter(is_selected.eq(true))
-        .select(schema::workspaces::dsl::server_uid)
-        .first::<String>(conn)
-        .optional()?
-        .map(|uid| uid.into());
-
-    // Remove all team_members/team_settings/workspaces/teams/workspace_teams stored locally.
-    diesel::delete(schema::team_members::dsl::team_members).execute(conn)?;
-    diesel::delete(team_settings).execute(conn)?;
-    diesel::delete(workspace_teams).execute(conn)?;
-    diesel::delete(teams).execute(conn)?;
-    diesel::delete(workspaces).execute(conn)?;
-
-    // Insert workspaces returned by server (doing nothing on conflict), set is_selected
-    // to true for the current_workspace_uid if it is in the list of workspaces.
-    let new_workspace_values: Vec<NewWorkspace> = workspaces_to_insert
-        .clone()
-        .into_iter()
-        .map(|workspace| NewWorkspace {
-            server_uid: workspace.uid.into(),
-            name: workspace.name,
-            is_selected: current_workspace_uid
-                .map(|current_uid| workspace.uid == current_uid)
-                .unwrap_or(false),
-        })
-        .collect();
-    diesel::insert_or_ignore_into(workspaces)
-        .values(&new_workspace_values)
-        .execute(conn)?;
-
-    // Insert teams returned by server (doing nothing on conflict)
-    let new_team_values: Vec<NewTeam> = workspaces_to_insert
-        .clone()
-        .into_iter()
-        .flat_map(|workspace| {
-            workspace
-                .teams
-                .into_iter()
-                .map(|team| NewTeam {
-                    server_uid: team.uid.into(),
-                    name: team.name.clone(),
-                    billing_metadata_json: serde_json::to_string(&team.billing_metadata).ok(),
-                })
-                .collect::<Vec<NewTeam>>()
-        })
-        .collect();
-    diesel::insert_or_ignore_into(teams)
-        .values(&new_team_values)
-        .execute(conn)?;
-
-    // We cannot directly return the id from the insert so perform
-    // a second query for the id https://github.com/diesel-rs/diesel/issues/771.
-    let teams_with_id: Vec<(i32, String)> = schema::teams::dsl::teams
-        .select((schema::teams::dsl::id, schema::teams::dsl::server_uid))
-        .load(conn)?;
-    let teams_by_server_uid: HashMap<&String, i32> = HashMap::from_iter(
-        teams_with_id
-            .iter()
-            .map(|(table_id, table_server_uid)| (table_server_uid, *table_id)),
-    );
-
-    // Insert workspace_teams returned by server (doing nothing on conflict)
-    let workspace_teams_values: Vec<NewWorkspaceTeam> = workspaces_to_insert
-        .clone()
-        .into_iter()
-        .flat_map(|workspace| {
-            workspace
-                .teams
-                .into_iter()
-                .map(|team| NewWorkspaceTeam {
-                    workspace_server_uid: workspace.uid.into(),
-                    team_server_uid: team.uid.into(),
-                })
-                .collect::<Vec<NewWorkspaceTeam>>()
-        })
-        .collect();
-    diesel::insert_or_ignore_into(workspace_teams)
-        .values(&workspace_teams_values)
-        .execute(conn)?;
-
-    // Cache workspace settings returned by the server (overwriting any existing settings)
-    let team_settings_values: Vec<NewTeamSettings> = workspaces_to_insert
-        .clone()
-        .into_iter()
-        .flat_map(|workspace| {
-            workspace.teams.into_iter().filter_map(|team| {
-                let serialized_settings_json =
-                    serde_json::to_string(&team.organization_settings).ok()?;
-                let team_id_match = teams_by_server_uid.get(&team.uid.uid())?;
-                Some(NewTeamSettings {
-                    team_id: *team_id_match,
-                    settings_json: serialized_settings_json,
-                })
-            })
-        })
-        .collect();
-    diesel::insert_into(schema::team_settings::dsl::team_settings)
-        .values(&team_settings_values)
-        .execute(conn)?;
-
-    // Cache team members
-    let team_member_values: Vec<model::NewTeamMember> = workspaces_to_insert
-        .clone()
-        .into_iter()
-        .flat_map(|workspace| {
-            workspace.teams.into_iter().flat_map(|team| {
-                let team_id_match = teams_by_server_uid.get(&team.uid.uid()).copied();
-                team.members.into_iter().filter_map(move |member| {
-                    Some(model::NewTeamMember {
-                        team_id: team_id_match?,
-                        user_uid: member.uid.as_string(),
-                        email: member.email,
-                        role: serde_json::to_string(&member.role).unwrap_or_default(),
-                    })
-                })
-            })
-        })
-        .collect();
-    if !team_member_values.is_empty() {
-        diesel::insert_into(schema::team_members::dsl::team_members)
-            .values(&team_member_values)
-            .execute(conn)?;
-    }
-
-    if let Some(current_workspace_uid) = current_workspace_uid {
-        if !workspaces_to_insert
-            .iter()
-            .any(|workspace| workspace.uid == current_workspace_uid)
-        {
-            // If the currently selected workspace is not in the list of workspaces, set
-            // the first workspace as the current workspace.
-            if let Some(first_workspace) = workspaces_to_insert.first() {
-                diesel::update(workspaces.filter(
-                    schema::workspaces::dsl::server_uid.eq::<String>(first_workspace.uid.into()),
-                ))
-                .set(is_selected.eq(true))
-                .execute(conn)?;
-            }
-        }
-    }
-
-    Ok(())
+    clear_hosted_workspace_cache(conn)
 }
 
-fn set_current_workspace(conn: &mut SqliteConnection, workspace_uid: WorkspaceUid) -> Result<()> {
-    use schema::workspaces::dsl::*;
+fn set_current_workspace(conn: &mut SqliteConnection, _workspace_uid: WorkspaceUid) -> Result<()> {
+    clear_hosted_workspace_cache(conn)
+}
 
-    // Set all existing workspaces as not selected
-    diesel::update(workspaces)
-        .set(is_selected.eq(false))
-        .execute(conn)?;
-
-    diesel::update(
-        workspaces.filter(schema::workspaces::dsl::server_uid.eq::<String>(workspace_uid.into())),
-    )
-    .set(is_selected.eq(true))
-    .execute(conn)?;
-
+fn clear_hosted_workspace_cache(conn: &mut SqliteConnection) -> Result<()> {
+    diesel::delete(schema::team_members::dsl::team_members).execute(conn)?;
+    diesel::delete(schema::team_settings::dsl::team_settings).execute(conn)?;
+    diesel::delete(schema::workspace_teams::dsl::workspace_teams).execute(conn)?;
+    diesel::delete(schema::teams::dsl::teams).execute(conn)?;
+    diesel::delete(schema::workspaces::dsl::workspaces).execute(conn)?;
     Ok(())
 }
 
@@ -1938,7 +1707,7 @@ fn read_node(conn: &mut SqliteConnection, node: model::PaneNode) -> Result<PaneN
                     // notebook than an unreadable local file.
                     LeafContents::Notebook(match local_path {
                         Some(path) => NotebookPaneSnapshot::LocalFileNotebook { path: Some(path) },
-                        None => NotebookPaneSnapshot::CloudNotebook {
+                        None => NotebookPaneSnapshot::LocalNotebook {
                             notebook_id: None,
                             settings: Default::default(),
                         },
@@ -1950,7 +1719,7 @@ fn read_node(conn: &mut SqliteConnection, node: model::PaneNode) -> Result<PaneN
                         .select(model::WorkflowPane::as_select())
                         .first(conn)?;
 
-                    LeafContents::Workflow(WorkflowPaneSnapshot::CloudWorkflow {
+                    LeafContents::Workflow(WorkflowPaneSnapshot::LocalWorkflow {
                         workflow_id: None,
                         settings: Default::default(),
                     })
@@ -1998,7 +1767,7 @@ fn read_node(conn: &mut SqliteConnection, node: model::PaneNode) -> Result<PaneN
                     let _env_var_collection_pane = env_var_collection_pane;
 
                     LeafContents::EnvVarCollection(
-                        EnvVarCollectionPaneSnapshot::CloudEnvVarCollection {
+                        EnvVarCollectionPaneSnapshot::LocalEnvVarCollection {
                             env_var_collection_id: None,
                         },
                     )
@@ -2126,7 +1895,7 @@ fn read_node(conn: &mut SqliteConnection, node: model::PaneNode) -> Result<PaneN
 /// In the future, the awkwardness of the transaction interface is resolved in diesel 2.0.0.
 fn read_sqlite_data(
     conn: &mut SqliteConnection,
-    current_user_id: Option<UserUid>,
+    _current_user_id: Option<UserUid>,
 ) -> Result<PersistedData, Error> {
     use schema::windows::dsl::*;
 
@@ -2263,9 +2032,7 @@ fn read_sqlite_data(
                 quake_mode: window.quake_mode,
                 bounds,
                 universal_search_width: window.universal_search_width,
-                warp_ai_width: window.warp_ai_width,
                 voltron_width: window.voltron_width,
-                warp_drive_index_width: window.warp_drive_index_width,
                 left_panel_open: window_left_panel_open,
                 vertical_tabs_panel_open: window.vertical_tabs_panel_open.unwrap_or(false),
                 fullscreen_state: fullscreen_state_val,
@@ -2277,308 +2044,6 @@ fn read_sqlite_data(
             }
         })
         .collect();
-
-    #[cfg(any())]
-    {
-        let object_metadata =
-            schema::object_metadata::dsl::object_metadata.load::<model::ObjectMetadata>(conn)?;
-        let object_permissions = schema::object_permissions::dsl::object_permissions
-            .load::<model::ObjectPermissions>(conn)?;
-
-        // Cache metadata and permissions by id so that we aren't doing an n^2 lookups for each object type.
-        let metadata_by_id = object_metadata
-            .into_iter()
-            .map(|metadata| {
-                let object_type = if metadata
-                    .object_type
-                    .starts_with(GENERIC_STRING_OBJECT_PREFIX)
-                {
-                    GENERIC_STRING_OBJECT_PREFIX.to_owned()
-                } else {
-                    metadata.object_type.to_owned()
-                };
-                // Shareable object ids aren't unique across object types, so the object type needs to be
-                // part of the hashmap key.  For generic objects, they are all in the same table,
-                // so it's safe to use the generic prefix as part of the key.
-                ((metadata.shareable_object_id, object_type), metadata)
-            })
-            .collect::<HashMap<_, _>>();
-        let permissions_by_id = object_permissions
-            .into_iter()
-            .map(|permissions| (permissions.object_metadata_id, permissions))
-            .collect::<HashMap<_, _>>();
-
-        let mut cloud_objects: Vec<Box<dyn CloudObject>> = Vec::new();
-        #[cfg(any())]
-        {
-            cloud_objects.extend(
-                schema::workflows::dsl::workflows
-                    .load::<model::Workflow>(conn)?
-                    .iter()
-                    .filter_map(|workflow| {
-                        metadata_by_id
-                            .get(&(
-                                workflow.id,
-                                ObjectType::Workflow.sqlite_object_type_as_str().to_string(),
-                            ))
-                            .and_then(|metadata| {
-                                let workflow_content =
-                                    serde_json::from_str(workflow.data.as_str()).ok();
-                                let workflow_id = id_from_metadata::<WorkflowId>(metadata);
-                                let permissions = permissions_by_id.get(&metadata.id)?;
-                                let cloud_object_permissions =
-                                    to_cloud_object_permissions(permissions, current_user_id)?;
-                                workflow_content
-                                    .zip(workflow_id)
-                                    .map(|(content, workflow_id)| {
-                                        let boxed: Box<dyn CloudObject> =
-                                            Box::new(CloudWorkflow::new(
-                                                workflow_id,
-                                                CloudWorkflowModel::new(content),
-                                                to_cloud_object_metadata(metadata),
-                                                cloud_object_permissions,
-                                            ));
-                                        boxed
-                                    })
-                            })
-                    })
-                    .collect::<Vec<_>>(),
-            );
-
-            cloud_objects.extend(
-                schema::notebooks::dsl::notebooks
-                    .load::<model::Notebook>(conn)?
-                    .iter()
-                    .filter_map(|notebook| {
-                        metadata_by_id
-                            .get(&(
-                                notebook.id,
-                                ObjectType::Notebook.sqlite_object_type_as_str().to_string(),
-                            ))
-                            .and_then(|metadata| {
-                                let notebook_id = id_from_metadata::<NotebookId>(metadata);
-                                let permissions = permissions_by_id.get(&metadata.id)?;
-                                let cloud_object_permissions =
-                                    to_cloud_object_permissions(permissions, current_user_id)?;
-                                notebook_id.map(|server_id| {
-                                    let ai_document_id =
-                                        notebook.ai_document_id.as_ref().and_then(|doc_id_str| {
-                                            AIDocumentId::try_from(doc_id_str.as_str()).ok()
-                                        });
-                                    let boxed: Box<dyn CloudObject> = Box::new(CloudNotebook::new(
-                                        server_id,
-                                        CloudNotebookModel {
-                                            title: notebook.title.clone().unwrap_or_default(),
-                                            data: notebook.data.clone().unwrap_or_default(),
-                                            ai_document_id,
-                                            conversation_id: None,
-                                        },
-                                        to_cloud_object_metadata(metadata),
-                                        cloud_object_permissions,
-                                    ));
-                                    boxed
-                                })
-                            })
-                    })
-                    .collect::<Vec<_>>(),
-            );
-
-            cloud_objects.extend(
-                schema::folders::dsl::folders
-                    .load::<model::Folder>(conn)?
-                    .iter()
-                    .filter_map(|folder| {
-                        metadata_by_id
-                            .get(&(
-                                folder.id,
-                                ObjectType::Folder.sqlite_object_type_as_str().to_string(),
-                            ))
-                            .and_then(|metadata| {
-                                let folder_id = id_from_metadata::<FolderId>(metadata);
-                                let permissions = permissions_by_id.get(&metadata.id)?;
-                                let cloud_object_permissions =
-                                    to_cloud_object_permissions(permissions, current_user_id)?;
-                                folder_id.map(|server_id| {
-                                    let boxed: Box<dyn CloudObject> = Box::new(CloudFolder::new(
-                                        server_id,
-                                        CloudFolderModel {
-                                            name: folder.name.clone(),
-                                            is_open: folder.is_open,
-                                            is_warp_pack: folder.is_warp_pack,
-                                        },
-                                        to_cloud_object_metadata(metadata),
-                                        cloud_object_permissions,
-                                    ));
-                                    boxed
-                                })
-                            })
-                    })
-                    .collect::<Vec<_>>(),
-            );
-
-            cloud_objects.extend(
-                schema::generic_string_objects::dsl::generic_string_objects
-                    .load::<model::GenericStringObject>(conn)?
-                    .iter()
-                    .filter_map(|object| {
-                        metadata_by_id
-                            .get(&(object.id, GENERIC_STRING_OBJECT_PREFIX.to_owned()))
-                            .and_then(|metadata| {
-                                let object_id = id_from_metadata::<GenericStringObjectId>(metadata);
-                                let permissions = permissions_by_id.get(&metadata.id)?;
-                                let cloud_object_permissions =
-                                    to_cloud_object_permissions(permissions, current_user_id)?;
-                                let json_object_type: JsonObjectType = metadata
-                                    .object_type
-                                    .strip_prefix(&format!(
-                                        "{GENERIC_STRING_OBJECT_PREFIX}{JSON_OBJECT_PREFIX}"
-                                    ))?
-                                    .try_into()
-                                    .ok()?;
-                                object_id.and_then(|server_id| match json_object_type {
-                                    JsonObjectType::Preference => {
-                                        let model =
-                                            CloudPreferenceModel::deserialize_owned(&object.data);
-                                        model.ok().map(|model| {
-                                            let boxed: Box<dyn CloudObject> =
-                                                Box::new(CloudPreference::new(
-                                                    server_id,
-                                                    model,
-                                                    to_cloud_object_metadata(metadata),
-                                                    cloud_object_permissions,
-                                                ));
-                                            boxed
-                                        })
-                                    }
-                                    JsonObjectType::EnvVarCollection => {
-                                        let model = CloudEnvVarCollectionModel::deserialize_owned(
-                                            &object.data,
-                                        );
-                                        model.ok().map(|model| {
-                                            let boxed: Box<dyn CloudObject> =
-                                                Box::new(CloudEnvVarCollection::new(
-                                                    server_id,
-                                                    model,
-                                                    to_cloud_object_metadata(metadata),
-                                                    cloud_object_permissions,
-                                                ));
-                                            boxed
-                                        })
-                                    }
-                                    JsonObjectType::WorkflowEnum => {
-                                        let model =
-                                            CloudWorkflowEnumModel::deserialize_owned(&object.data);
-                                        model.ok().map(|model| {
-                                            let boxed: Box<dyn CloudObject> =
-                                                Box::new(CloudWorkflowEnum::new(
-                                                    server_id,
-                                                    model,
-                                                    to_cloud_object_metadata(metadata),
-                                                    cloud_object_permissions,
-                                                ));
-                                            boxed
-                                        })
-                                    }
-                                    JsonObjectType::AIFact => {
-                                        let model =
-                                            CloudAIFactModel::deserialize_owned(&object.data);
-                                        model.ok().map(|model| {
-                                            let boxed: Box<dyn CloudObject> =
-                                                Box::new(CloudAIFact::new(
-                                                    server_id,
-                                                    model,
-                                                    to_cloud_object_metadata(metadata),
-                                                    cloud_object_permissions,
-                                                ));
-                                            boxed
-                                        })
-                                    }
-                                    JsonObjectType::MCPServer => {
-                                        let model =
-                                            CloudMCPServerModel::deserialize_owned(&object.data);
-                                        model.ok().map(|model| {
-                                            let boxed: Box<dyn CloudObject> =
-                                                Box::new(CloudMCPServer::new(
-                                                    server_id,
-                                                    model,
-                                                    to_cloud_object_metadata(metadata),
-                                                    cloud_object_permissions,
-                                                ));
-                                            boxed
-                                        })
-                                    }
-                                    JsonObjectType::TemplatableMCPServer => {
-                                        let model =
-                                            CloudTemplatableMCPServerModel::deserialize_owned(
-                                                &object.data,
-                                            );
-                                        model.ok().map(|model| {
-                                            let boxed: Box<dyn CloudObject> =
-                                                Box::new(CloudTemplatableMCPServer::new(
-                                                    server_id,
-                                                    model,
-                                                    to_cloud_object_metadata(metadata),
-                                                    cloud_object_permissions,
-                                                ));
-                                            boxed
-                                        })
-                                    }
-                                    JsonObjectType::AIExecutionProfile => {
-                                        let model = CloudAIExecutionProfileModel::deserialize_owned(
-                                            &object.data,
-                                        );
-                                        model.ok().map(|model| {
-                                            let boxed: Box<dyn CloudObject> =
-                                                Box::new(CloudAIExecutionProfile::new(
-                                                    server_id,
-                                                    model,
-                                                    to_cloud_object_metadata(metadata),
-                                                    cloud_object_permissions,
-                                                ));
-                                            boxed
-                                        })
-                                    }
-                                    JsonObjectType::AgentEnvironment => {
-                                        let model =
-                                            AmbientAgentEnvironmentObjectModel::deserialize_owned(
-                                                &object.data,
-                                            );
-                                        model.ok().map(|model| {
-                                            let boxed: Box<dyn CloudObject> =
-                                                Box::new(AmbientAgentEnvironmentObject::new(
-                                                    server_id,
-                                                    model,
-                                                    to_cloud_object_metadata(metadata),
-                                                    cloud_object_permissions,
-                                                ));
-                                            boxed
-                                        })
-                                    }
-                                    JsonObjectType::ScheduledAmbientAgent => {
-                                        let model =
-                                            CloudScheduledAmbientAgentModel::deserialize_owned(
-                                                &object.data,
-                                            );
-                                        model.ok().map(|model| {
-                                            let boxed: Box<dyn CloudObject> =
-                                                Box::new(CloudScheduledAmbientAgent::new(
-                                                    server_id,
-                                                    model,
-                                                    to_cloud_object_metadata(metadata),
-                                                    cloud_object_permissions,
-                                                ));
-                                            boxed
-                                        })
-                                    }
-                                    // Agent configs are ignored because hosted sync support is absent.
-                                    JsonObjectType::AgentConfig => None,
-                                })
-                            })
-                    })
-                    .collect::<Vec<_>>(),
-            );
-        }
-    }
 
     // WARPER-001: do not restore legacy hosted workspace/team/billing cache.
     // Local startup uses UserWorkspaces::local_only, so old organization state
@@ -2639,102 +2104,6 @@ fn read_sqlite_data(
         mcp_server_installations,
         mcp_servers_to_restore,
     })
-}
-
-#[cfg(any())]
-fn id_from_metadata<K: HashableId + ToServerId>(metadata: &ObjectMetadata) -> Option<SyncId> {
-    match (&metadata.server_id, &metadata.client_id) {
-        (Some(server_id), _) => {
-            K::from_hash(server_id).map(|id| SyncId::ServerId(id.to_server_id()))
-        }
-        (None, Some(client_id)) => ClientId::from_hash(client_id).map(SyncId::ClientId),
-        _ => None,
-    }
-}
-
-#[cfg(any())]
-fn to_cloud_object_metadata(metadata: &ObjectMetadata) -> CloudObjectMetadata {
-    CloudObjectMetadata {
-        current_editor_uid: metadata.current_editor.clone(),
-        metadata_last_updated_ts: metadata
-            .metadata_last_updated_ts
-            .and_then(|epoch| ServerTimestamp::from_unix_timestamp_micros(epoch).ok()),
-        revision: metadata
-            .revision_ts
-            .and_then(|epoch| Revision::from_unix_timestamp_micros(epoch).ok()),
-        pending_changes_statuses: CloudObjectStatuses {
-            pending_delete: false,
-            content_sync_status: if metadata.is_pending {
-                CloudObjectSyncStatus::InFlight(NumInFlightRequests(1))
-            } else {
-                CloudObjectSyncStatus::NoLocalChanges
-            },
-            has_pending_metadata_change: false,
-            has_pending_permissions_change: false,
-            pending_untrash: false,
-        },
-        trashed_ts: metadata
-            .trashed_ts
-            .and_then(|epoch| ServerTimestamp::from_unix_timestamp_micros(epoch).ok()),
-        folder_id: metadata.folder_id.as_ref().and_then(|folder_id_str| {
-            // First, attempt to convert the string into a server id.
-            let as_server_id =
-                FolderId::from_hash(folder_id_str).map(|id| SyncId::ServerId(id.into()));
-
-            // If the string cannot be converted to server id, it may be a client id.
-            if as_server_id.is_none() {
-                ClientId::from_hash(folder_id_str).map(SyncId::ClientId)
-            } else {
-                as_server_id
-            }
-        }),
-        is_welcome_object: metadata.is_welcome_object,
-        creator_uid: metadata.creator_uid.clone(),
-        last_editor_uid: metadata.last_editor_uid.clone(),
-        last_task_run_ts: None,
-    }
-}
-
-#[cfg(any())]
-fn to_cloud_object_permissions(
-    permissions: &ObjectPermissions,
-    default_user_id: Option<UserUid>,
-) -> Option<CloudObjectPermissions> {
-    let owner = owner_for_permissions(permissions, default_user_id)?;
-    let permissions_last_updated_ts = permissions
-        .permissions_last_updated_at
-        .and_then(|ts| ServerTimestamp::from_unix_timestamp_micros(ts).ok());
-
-    let guests = Default::default();
-    let anyone_with_link = None;
-
-    Some(CloudObjectPermissions {
-        owner,
-        permissions_last_updated_ts,
-        guests,
-        anyone_with_link,
-    })
-}
-
-#[cfg(any())]
-fn owner_for_permissions(
-    permissions: &ObjectPermissions,
-    default_user_id: Option<UserUid>,
-) -> Option<Owner> {
-    match permissions.subject_type.as_str() {
-        "USER" => {
-            let user_uid = permissions
-                .subject_id
-                .as_deref()
-                .map(UserUid::new)
-                .or(default_user_id)?;
-            Some(Owner::User { user_uid })
-        }
-        // Legacy team-owned objects belonged to hosted Warp Drive/team sync.
-        // Ignore them locally instead of rehydrating organization state.
-        "TEAM" => None,
-        _ => None,
-    }
 }
 
 impl From<StartedCommandMetadata> for model::NewCommand {
@@ -2894,144 +2263,6 @@ fn load_active_mcp_servers(conn: &mut SqliteConnection) -> Result<Vec<uuid::Uuid
         .into_iter()
         .filter_map(|active_server| uuid::Uuid::parse_str(&active_server.mcp_server_uuid).ok())
         .collect())
-}
-
-/// Converts the ObjectAction type into a uniform type that can be inserted into
-/// the sqlite table.
-#[cfg(any())]
-impl From<ObjectAction> for model::NewPersistedObjectAction {
-    fn from(action: ObjectAction) -> Self {
-        match action.action_subtype {
-            ObjectActionSubtype::SingleAction {
-                timestamp,
-                data,
-                pending,
-                processed_at_timestamp,
-            } => Self {
-                hashed_object_id: action.hashed_sqlite_id,
-                timestamp: Some(timestamp.naive_utc()),
-                action: action.action_type.to_string(),
-                data,
-                count: None,
-                oldest_timestamp: None,
-                latest_timestamp: None,
-                pending: Some(pending),
-                processed_at_timestamp: processed_at_timestamp.map(|t| t.naive_utc()),
-            },
-            ObjectActionSubtype::BundledActions {
-                count,
-                oldest_timestamp,
-                latest_timestamp,
-                latest_processed_at_timestamp,
-            } => Self {
-                hashed_object_id: action.hashed_sqlite_id,
-                timestamp: None,
-                action: action.action_type.to_string(),
-                data: None,
-                count: Some(count),
-                oldest_timestamp: Some(oldest_timestamp.naive_utc()),
-                latest_timestamp: Some(latest_timestamp.naive_utc()),
-                pending: None,
-                processed_at_timestamp: Some(latest_processed_at_timestamp.naive_utc()),
-            },
-        }
-    }
-}
-
-#[cfg(any())]
-fn insert_object_action(
-    conn: &mut SqliteConnection,
-    object_action: ObjectAction,
-) -> Result<(), Error> {
-    let action: NewPersistedObjectAction = object_action.into();
-    conn.transaction::<(), Error, _>(|conn| {
-        diesel::insert_into(schema::object_actions::dsl::object_actions)
-            .values(action)
-            .execute(conn)?;
-        Ok(())
-    })
-}
-
-#[cfg(any())]
-fn sync_object_actions(
-    conn: &mut SqliteConnection,
-    actions_to_sync: Vec<ObjectAction>,
-) -> Result<(), Error> {
-    use schema::object_actions::dsl::*;
-
-    let ids_to_delete: HashSet<String> =
-        HashSet::from_iter(actions_to_sync.iter().map(|a| a.hashed_sqlite_id.clone()));
-    // Insert the new ones
-    let new_actions: Vec<NewPersistedObjectAction> =
-        actions_to_sync.iter().map(|a| a.clone().into()).collect();
-    conn.transaction::<(), Error, _>(|conn| {
-        // Erase all the actions that currently have this object ID
-        for hashed_sqlite_id in ids_to_delete {
-            diesel::delete(object_actions.filter(hashed_object_id.eq(hashed_sqlite_id)))
-                .execute(conn)?;
-        }
-
-        // Insert the new ones
-        diesel::insert_into(schema::object_actions::dsl::object_actions)
-            .values(new_actions)
-            .execute(conn)?;
-        Ok(())
-    })
-}
-
-#[cfg(any())]
-fn delete_objects(
-    conn: &mut SqliteConnection,
-    ids: Vec<(SyncId, ObjectIdType)>,
-) -> Result<(), Error> {
-    conn.transaction::<(), Error, _>(|conn| {
-        for (sync_id, object_id_type) in ids {
-            match object_id_type {
-                ObjectIdType::Notebook => delete_cloud_object(
-                    conn,
-                    sync_id,
-                    object_id_type,
-                    Box::new(|conn, notebook_id| {
-                        use schema::notebooks::dsl::*;
-                        diesel::delete(notebooks.filter(id.eq(notebook_id))).execute(conn)?;
-                        Ok(())
-                    }),
-                )?,
-                ObjectIdType::Workflow => delete_cloud_object(
-                    conn,
-                    sync_id,
-                    object_id_type,
-                    Box::new(|conn, workflow_id| {
-                        use schema::workflows::dsl::*;
-                        diesel::delete(workflows.filter(id.eq(workflow_id))).execute(conn)?;
-                        Ok(())
-                    }),
-                )?,
-                ObjectIdType::Folder => delete_cloud_object(
-                    conn,
-                    sync_id,
-                    object_id_type,
-                    Box::new(|conn, folder_id| {
-                        use schema::folders::dsl::*;
-                        diesel::delete(folders.filter(id.eq(folder_id))).execute(conn)?;
-                        Ok(())
-                    }),
-                )?,
-                ObjectIdType::GenericStringObject => delete_cloud_object(
-                    conn,
-                    sync_id,
-                    object_id_type,
-                    Box::new(|conn, gso_id| {
-                        use schema::generic_string_objects::dsl::*;
-                        diesel::delete(generic_string_objects.filter(id.eq(gso_id)))
-                            .execute(conn)?;
-                        Ok(())
-                    }),
-                )?,
-            }
-        }
-        Ok(())
-    })
 }
 
 #[cfg(test)]

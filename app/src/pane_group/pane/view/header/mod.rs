@@ -44,8 +44,6 @@ use warpui::{
 
 use super::PaneDropTargetData;
 
-mod sharing;
-
 pub(crate) mod components;
 
 pub(crate) const PANE_HEADER_HEIGHT: f32 = 34.;
@@ -364,7 +362,6 @@ struct MouseStateHandles {
 #[derive(Default, Debug, PartialEq, Eq)]
 enum OpenOverlay {
     OverflowMenu,
-    SharingDialog,
     #[default]
     None,
 }
@@ -495,7 +492,7 @@ impl<P: BackingView> PaneHeader<P> {
         (right_justified_row, required_width)
     }
 
-    /// Adds overlay children to the stack (overflow menu and sharing dialog).
+    /// Adds overlay children to the stack.
     fn add_overlays_to_stack(
         &self,
         stack: &mut Stack,
@@ -517,7 +514,6 @@ impl<P: BackingView> PaneHeader<P> {
                     );
                 }
             }
-            OpenOverlay::SharingDialog => {}
             OpenOverlay::None => {}
         }
     }
@@ -709,7 +705,7 @@ impl<P: BackingView> View for PaneHeader<P> {
             overflow_button_position_id: self.overflow_button_position_id(),
             has_overflow_items,
             header_left_inset,
-            render_sharing_controls_fn: Box::new(|_, _, _| None),
+            _marker: std::marker::PhantomData,
         };
         let header_content = self
             .pane_stack
@@ -1156,7 +1152,3 @@ fn render_draggable_placeholder_element(
     .with_background_color(appearance.theme().dark_overlay().into())
     .finish()
 }
-
-#[cfg(test)]
-#[path = "mod_test.rs"]
-mod tests;

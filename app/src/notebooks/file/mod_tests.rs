@@ -14,11 +14,9 @@ use crate::server::telemetry::context_provider::AppTelemetryContextProvider;
 use crate::terminal::keys::TerminalKeybindings;
 use crate::{
     auth::{auth_manager::AuthManager, AuthStateProvider},
-    cloud_object::model::persistence::CloudModel,
     notebooks::{editor::keys::NotebookKeybindings, file::is_markdown_file},
     search::files::model::FileSearchModel,
-    server::server_api::ServerApiProvider,
-    settings_view::keybindings::KeybindingChangedNotifier,
+    server::settings_view::keybindings::KeybindingChangedNotifier,
     terminal::model::session::Session,
     test_util::settings::initialize_settings_for_tests,
     workspace::ActiveSession,
@@ -46,8 +44,6 @@ fn init_app(app: &mut App) {
     app.add_singleton_model(FileModel::new);
     app.add_singleton_model(NotebookKeybindings::new);
     app.add_singleton_model(TerminalKeybindings::new);
-    app.add_singleton_model(CloudModel::mock);
-    app.add_singleton_model(|_| ServerApiProvider::new_for_test());
     app.add_singleton_model(|_| AuthStateProvider::new_for_test());
     app.add_singleton_model(AppTelemetryContextProvider::new_context_provider);
     app.add_singleton_model(AuthManager::new_for_test);

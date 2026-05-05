@@ -13,7 +13,6 @@ pub(super) mod ai_fact_pane;
 pub(super) mod code_diff_pane;
 pub(super) mod code_diff_pane_model;
 pub(super) mod code_pane;
-pub(crate) mod environment_management_pane;
 pub(super) mod execution_profile_editor_pane;
 pub(super) mod file_pane;
 pub(super) mod get_started_pane;
@@ -42,9 +41,8 @@ use crate::{
     menu::MenuItem,
     notebooks::file::FileNotebookView,
     server::network_log_view::NetworkLogView,
-    server::telemetry::SharingDialogSource,
     settings::PaneSettings,
-    settings_view::{environments_page::EnvironmentsPageView, SettingsView},
+    settings_view::SettingsView,
     terminal::{available_shells::AvailableShell, TerminalView},
 };
 use serde::{Deserialize, Serialize};
@@ -134,7 +132,6 @@ pub(crate) enum IPaneType {
     File,
     Code,
     CodeDiff,
-    EnvironmentManagement,
     Settings,
     AIFact,
     AIDocument,
@@ -155,7 +152,6 @@ impl Display for IPaneType {
             IPaneType::File => write!(f, "File"),
             IPaneType::Code => write!(f, "Code"),
             IPaneType::CodeDiff => write!(f, "Code Diff"),
-            IPaneType::EnvironmentManagement => write!(f, "Environment Management"),
             IPaneType::Settings => write!(f, "Settings"),
             IPaneType::AIFact => write!(f, "AI Fact"),
             IPaneType::AIDocument => write!(f, "AI Document"),
@@ -196,12 +192,6 @@ impl PaneId {
     }
 
     /// Creates a [`PaneId`] from a [`ViewContext<PaneView<EnvironmentsPageView>>`]
-    pub fn from_environment_management_pane_ctx(
-        ctx: &ViewContext<PaneView<EnvironmentsPageView>>,
-    ) -> Self {
-        Self::new_from_ctx(IPaneType::EnvironmentManagement, ctx)
-    }
-
     /// Creates a [`PaneId`] from a [`ViewContext<PaneView<TextView>>`]
     pub fn from_code_pane_ctx(ctx: &ViewContext<PaneView<CodeView>>) -> Self {
         Self::new_from_ctx(IPaneType::Code, ctx)
@@ -272,15 +262,6 @@ impl PaneId {
     }
 
     /// Creates a [`PaneId`] from a [`PaneView<EnvironmentsPageView>`] entity ID.
-    pub fn from_environment_management_pane_view(
-        environment_management_pane_view: &ViewHandle<PaneView<EnvironmentsPageView>>,
-    ) -> Self {
-        Self::new(
-            IPaneType::EnvironmentManagement,
-            environment_management_pane_view,
-        )
-    }
-
     /// Creates a [`PaneId`] from a [`PaneView<SettingsView>`] entity ID.
     pub fn from_settings_pane_view(
         settings_pane_view: &ViewHandle<PaneView<SettingsView>>,
@@ -377,10 +358,6 @@ impl PaneId {
         matches!(self.0.pane_type, IPaneType::CodeDiff)
     }
 
-    pub fn is_environment_management_pane(&self) -> bool {
-        matches!(self.0.pane_type, IPaneType::EnvironmentManagement)
-    }
-
     /// Returns true if this pane contains a Warp Drive object (notebook, workflow, etc.).
     pub fn is_warp_drive_object_pane(&self) -> bool {
         matches!(self.0.pane_type, IPaneType::AIFact)
@@ -400,9 +377,6 @@ impl PaneId {
             }
             IPaneType::CodeDiff => {
                 ChildView::<PaneView<CodeDiffView>>::with_id(self.0.pane_view_id).finish()
-            }
-            IPaneType::EnvironmentManagement => {
-                ChildView::<PaneView<EnvironmentsPageView>>::with_id(self.0.pane_view_id).finish()
             }
             IPaneType::Settings => {
                 ChildView::<PaneView<SettingsView>>::with_id(self.0.pane_view_id).finish()
@@ -754,14 +728,6 @@ impl PaneConfiguration {
         ctx.emit(PaneConfigurationEvent::HeaderContentChanged);
     }
 
-    pub fn toggle_sharing_dialog(
-        &mut self,
-        source: SharingDialogSource,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        ctx.emit(PaneConfigurationEvent::ToggleSharingDialog(source));
-    }
-
     /// Notifies that the header content has changed and the pane header should re-render.
     /// Use this when the backing view's state has changed in a way that affects the header
     /// content returned by `render_header_content()`.
@@ -785,7 +751,6 @@ pub enum PaneConfigurationEvent {
     ShowAccentBorderUpdated,
     OpenModalUpdated,
     RefreshPaneHeaderOverflowMenuItems,
-    ToggleSharingDialog(SharingDialogSource),
     DimEvenIfFocusedUpdated,
     /// The header content has changed and should be re-rendered.
     /// This is used when the backing view's state changes in a way that

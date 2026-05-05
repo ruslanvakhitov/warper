@@ -3,11 +3,11 @@ use super::*;
 use chrono::{TimeZone, Utc};
 
 #[cfg(feature = "local_fs")]
-use crate::ai::artifact_download::default_download_filename;
-#[cfg(feature = "local_fs")]
-use crate::server::server_api::ai::{
+use crate::ai::ambient_agents::{
     ArtifactDownloadCommonFields, ArtifactDownloadResponse, FileArtifactResponseData,
 };
+#[cfg(feature = "local_fs")]
+use crate::ai::artifact_download::default_download_filename;
 
 #[test]
 fn test_parse_github_pr_url() {

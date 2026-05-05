@@ -1,18 +1,12 @@
 use std::{path::PathBuf, sync::Arc};
 
-use warp_core::features::FeatureFlag;
-use warp_graphql::scalars::time::ServerTimestamp;
-
 use crate::{
     app_state::{
         AppState, CodePaneSnapShot, CodePaneTabSnapshot, LeafContents, LeafSnapshot,
         PaneNodeSnapshot, TabSnapshot, TerminalPaneSnapshot, WindowSnapshot,
     },
-    cloud_object::{CloudObjectPermissions, Owner},
     code::editor_management::CodeSource,
-    notebooks::{CloudNotebook, CloudNotebookModel},
-    persistence::{model::ObjectPermissions, BlockCompleted, ModelEvent},
-    server::ids::ClientId,
+    persistence::{BlockCompleted, ModelEvent},
     tab::SelectedTabColor,
     terminal::model::block::SerializedBlock,
     terminal::ShellLaunchData,
@@ -24,17 +18,6 @@ use super::{
 
 #[test]
 fn test_deduplicate_snapshots() {
-    let local_notebook = CloudNotebook::new_local(
-        CloudNotebookModel {
-            title: "Hello".to_string(),
-            data: "World".to_string(),
-            ai_document_id: None,
-            conversation_id: None,
-        },
-        Owner::mock_current_user(),
-        None,
-        ClientId::new(),
-    );
     let completed_block_1 = BlockCompleted {
         pane_id: vec![1, 2, 3],
         block: Arc::new(SerializedBlock::default()),
@@ -65,26 +48,19 @@ fn test_deduplicate_snapshots() {
     };
 
     let original_events = vec![
-        ModelEvent::UpsertNotebook {
-            notebook: local_notebook.clone(),
-        },
+        ModelEvent::DeleteBlocks(vec![1, 2, 3]),
         ModelEvent::Snapshot(snapshot_1.clone()),
         ModelEvent::SaveBlock(completed_block_1.clone()),
         ModelEvent::Snapshot(snapshot_2.clone()),
         ModelEvent::SaveBlock(completed_block_2.clone()),
         ModelEvent::Snapshot(snapshot_3.clone()),
-        ModelEvent::UpsertNotebook {
-            notebook: local_notebook.clone(),
-        },
+        ModelEvent::DeleteBlocks(vec![4, 5, 6]),
     ];
 
     let filtered_events = deduplicate_events(original_events);
     assert_eq!(filtered_events.len(), 5);
 
-    assert!(matches!(
-        &filtered_events[0],
-        &ModelEvent::UpsertNotebook { .. }
-    ));
+    assert!(matches!(&filtered_events[0], &ModelEvent::DeleteBlocks(_)));
     // The first snapshot should have been filtered out.
     assert!(matches!(&filtered_events[1], &ModelEvent::SaveBlock(_)));
     // The second snapshot should have been filtered out.
@@ -94,10 +70,7 @@ fn test_deduplicate_snapshots() {
         ModelEvent::Snapshot(snapshot) => assert_eq!(snapshot, &snapshot_3),
         other => panic!("Expected ModelEvent::Snapshot, got {other:?}"),
     }
-    assert!(matches!(
-        &filtered_events[4],
-        &ModelEvent::UpsertNotebook { .. }
-    ));
+    assert!(matches!(&filtered_events[4], &ModelEvent::DeleteBlocks(_)));
 }
 
 #[test]
@@ -145,9 +118,7 @@ fn test_terminal_window_snapshot(vertical_tabs_panel_open: bool) -> WindowSnapsh
         fullscreen_state: Default::default(),
         quake_mode: false,
         universal_search_width: None,
-        warp_ai_width: None,
         voltron_width: None,
-        warp_drive_index_width: None,
         left_panel_open: false,
         vertical_tabs_panel_open,
         left_panel_width: None,
@@ -228,9 +199,7 @@ fn test_sqlite_round_trips_custom_vertical_tabs_title() {
             fullscreen_state: Default::default(),
             quake_mode: false,
             universal_search_width: None,
-            warp_ai_width: None,
             voltron_width: None,
-            warp_drive_index_width: None,
             left_panel_open: false,
             vertical_tabs_panel_open: false,
             left_panel_width: None,
@@ -300,9 +269,7 @@ fn test_sqlite_round_trips_code_pane_with_multiple_tabs() {
             fullscreen_state: Default::default(),
             quake_mode: false,
             universal_search_width: None,
-            warp_ai_width: None,
             voltron_width: None,
-            warp_drive_index_width: None,
             left_panel_open: false,
             vertical_tabs_panel_open: false,
             left_panel_width: None,
@@ -377,41 +344,4 @@ fn test_path_encode_decode() {
     assert_encode_then_decode_preserves_original_path(PathBuf::from("/temp/ñoñàscii/temp.txt"));
     assert_encode_then_decode_preserves_original_path(PathBuf::from("/temp/hindi/हिन्दी"));
     assert_encode_then_decode_preserves_original_path(PathBuf::from("/temp/cjk/狗没有耐心"));
-}
-
-#[test]
-fn test_deserialize_corrupted_guests() {
-    let _ = FeatureFlag::SharedWithMe.override_enabled(true);
-    // Use a hardcoded timestamp to ensure this test works on systems with more-than-microsecond
-    // precision.
-    let permissions_ts_micros = 123456;
-    let permissions_ts =
-        ServerTimestamp::from_unix_timestamp_micros(permissions_ts_micros).unwrap();
-
-    let db_permissions = ObjectPermissions {
-        id: 42,
-        object_metadata_id: 10,
-        subject_type: "TEAM".to_string(),
-        subject_id: Some("7".to_string()),
-        subject_uid: "team_uid12345678912345".to_string(),
-        permissions_last_updated_at: Some(permissions_ts_micros),
-        // This is not a valid set of encoded object guests.
-        object_guests: Some(vec![1, 2, 3]),
-        anyone_with_link_access_level: None,
-        anyone_with_link_source: None,
-    };
-
-    // The overall permissions should successfully convert, minus the object guests.
-    let cloud_permissions = super::to_cloud_object_permissions(&db_permissions, None);
-    assert_eq!(
-        cloud_permissions,
-        Some(CloudObjectPermissions {
-            owner: Owner::Team {
-                team_uid: crate::server::ids::ServerId::from_string_lossy("team_uid12345678912345"),
-            },
-            permissions_last_updated_ts: Some(permissions_ts),
-            anyone_with_link: None,
-            guests: vec![],
-        })
-    );
 }
