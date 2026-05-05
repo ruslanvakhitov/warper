@@ -20,9 +20,6 @@ use crate::terminal::model_events::ModelEventDispatcher;
 use crate::terminal::TerminalModel;
 use crate::util::bindings::keybinding_name_to_keystroke;
 use chrono::{DateTime, Local};
-use itertools::Itertools;
-use prost::Message;
-use std::ops::Not;
 
 use super::DEFAULT_AI_BLOCK_HEIGHT;
 
@@ -62,7 +59,6 @@ use crate::{
         },
     },
 };
-use warp_core::channel::ChannelState;
 use warp_multi_agent_api as api;
 use warpui::units::IntoPixels;
 use warpui::{ModelHandle, SingletonEntity};
@@ -1130,93 +1126,6 @@ impl TerminalView {
         });
     }
 
-    /// Loads an agent mode conversation from a debug link in the clipboard.
-    /// This is used for debugging purposes only when in dogfood channel state.
-    pub fn load_agent_mode_conversation(&mut self, ctx: &mut ViewContext<Self>) {
-        if !ChannelState::channel().is_dogfood() {
-            return;
-        }
-
-        let content = ctx.clipboard().read();
-        let Some(debug_link) = content
-            .paths
-            .and_then(|paths| paths.into_iter().exactly_one().ok())
-            .or(content
-                .plain_text
-                .is_empty()
-                .not()
-                .then_some(content.plain_text))
-        else {
-            log::error!("Clipboard contents are not a conversation debug link");
-            return;
-        };
-
-        // Parse the debug link and construct the protobuf URL
-        let proto_url = if debug_link.contains("/debug/maa/") {
-            // Split URL into base and query params
-            let mut parts = debug_link.splitn(2, '?');
-            let base_url = parts.next().unwrap_or(&debug_link);
-            let query_params = parts.next();
-
-            let clean_url = base_url.trim_end_matches('/');
-            let mut url = format!("{clean_url}/raw/final_tasks.pb");
-
-            // Preserve all query parameters if present
-            if let Some(params) = query_params {
-                url.push_str(&format!("?{params}"));
-            }
-
-            url
-        } else {
-            log::error!(
-                "Invalid debug link format. Expected format: http://host/debug/maa/conversation-id"
-            );
-            return;
-        };
-
-        log::info!("Downloading conversation data from: {proto_url}");
-
-        // Download the protobuf data
-        ctx.spawn(
-            async move {
-                let client = http_client::Client::new();
-                let response = client
-                    .get(&proto_url)
-                    .header("Accept", "application/protobuf")
-                    .send()
-                    .await?;
-
-                if !response.status().is_success() {
-                    return Err(anyhow::anyhow!("HTTP {}", response.status()));
-                }
-
-                let proto_bytes = response.bytes().await?;
-                log::debug!("Downloaded {} bytes from debug link", proto_bytes.len());
-                let task_list =
-                    api::ConversationData::decode(proto_bytes.as_ref()).map_err(|e| {
-                        anyhow::anyhow!(
-                            "Failed to decode protobuf (size: {} bytes): {}",
-                            proto_bytes.len(),
-                            e
-                        )
-                    })?;
-
-                Ok(task_list)
-            },
-            |terminal_view, task_list_result, ctx| match task_list_result {
-                Ok(task_list) => {
-                    log::info!(
-                        "Successfully downloaded and parsed conversation data with {} tasks",
-                        task_list.tasks.len()
-                    );
-                    terminal_view.load_conversation_from_tasks(task_list, ctx);
-                }
-                Err(err) => {
-                    log::warn!("Failed to download conversation data from debug link: {err}");
-                }
-            },
-        );
-    }
 }
 
 /// Returns block indices where `AIBlock`s created for the given `exchanges` should be inserted.
