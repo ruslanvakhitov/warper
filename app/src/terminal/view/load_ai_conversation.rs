@@ -91,14 +91,11 @@ pub enum ConversationRestorationInNewPaneType {
         active_conversation_id: Option<AIConversationId>,
     },
 
-    /// Load a conversation for the cloud conversation viewer or CLI.
+    /// Load a conversation for the local conversation viewer or CLI.
     /// The conversation has already been converted from ConversationData.
     Historical {
         conversation: AIConversation,
         should_use_live_appearance: bool,
-        /// The ambient agent task ID, if this is an ambient agent conversation.
-        /// Used to display the session ended tombstone.
-        ambient_agent_task_id: Option<crate::ai::agent::conversation::AmbientAgentTaskId>,
     },
 
     /// Fork an existing conversation into this new pane.
@@ -182,7 +179,7 @@ pub struct AIBlockCreationParams {
     /// The exchange data used to process outputs for restoring code diffs, and dummy requested command blocks if command_block_index is None.
     pub exchange: AIAgentExchange,
     /// When true, uses the live (non-restored) appearance even though the block is restored.
-    /// Used for forked conversations and cloud conversation viewer.
+    /// Used for forked and read-only historical conversations.
     pub use_live_appearance: bool,
 
     /// Whether this block is being restored as part of conversation restoration on app startup.
@@ -613,7 +610,7 @@ impl TerminalView {
         ctx: &mut ViewContext<Self>,
     ) {
         // We don't want blocks to appear as restored for forked conversations
-        // and conversations in the cloud conversation viewer.
+        // and read-only historical conversations.
         let use_live_appearance = conversation_restoration.should_use_live_appearance();
         let is_fork_conversation_in_new_pane = conversation_restoration.is_forked();
         let is_startup = conversation_restoration.is_startup();
@@ -993,7 +990,7 @@ impl TerminalView {
 
         match AIConversation::new_restored(conversation_id, tasks, Some(conversation_data)) {
             Ok(conversation) => {
-                // Use live appearance for cloud conversation viewer
+                // Use live appearance for read-only historical conversation viewer.
                 self.restore_conversation_after_view_creation(
                     RestoredAIConversation::new(conversation),
                     true,

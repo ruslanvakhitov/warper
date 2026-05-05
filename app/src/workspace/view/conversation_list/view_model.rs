@@ -1,6 +1,6 @@
-use crate::ai::active_agent_views_model::ConversationOrTaskId;
+use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::agent_conversations_model::{
-    AgentConversationsModel, AgentConversationsModelEvent, ConversationOrTask,
+    AgentConversationsModel, AgentConversationsModelEvent, ConversationItem,
 };
 use fuzzy_match::match_indices_case_insensitive;
 use warpui::{AppContext, Entity, ModelContext, ModelHandle, SingletonEntity};
@@ -9,13 +9,13 @@ pub struct ConversationListViewModelEvent;
 
 #[derive(Clone, Debug)]
 pub struct ConversationEntry {
-    pub id: ConversationOrTaskId,
+    pub id: AIConversationId,
     pub highlight_indices: Vec<usize>,
 }
 
 pub struct ConversationListViewModel {
     conversations_model: ModelHandle<AgentConversationsModel>,
-    cached_conversation_or_task_ids: Vec<ConversationOrTaskId>,
+    cached_conversation_ids: Vec<AIConversationId>,
     filtered_items: Vec<ConversationEntry>,
     search_query: String,
 }
@@ -35,14 +35,12 @@ impl ConversationListViewModel {
                 AgentConversationsModelEvent::ConversationsLoaded => {
                     me.refresh_cached_items(ctx);
                 }
-                AgentConversationsModelEvent::TasksUpdated
-                | AgentConversationsModelEvent::TaskManuallyOpened => {}
             }
         });
 
         let mut model = Self {
             conversations_model,
-            cached_conversation_or_task_ids: Vec::new(),
+            cached_conversation_ids: Vec::new(),
             filtered_items: Vec::new(),
             search_query: String::new(),
         };
@@ -52,20 +50,15 @@ impl ConversationListViewModel {
 
     /// Rebuilds the cached list of IDs from the current conversation set.
     ///
-    /// The cache stores only `ConversationOrTaskId`s; per-item fields like
+    /// The cache stores only conversation IDs; per-item fields like
     /// status, title, and last-updated are read fresh at render time via
     /// `get_item_by_id`. Callers should therefore avoid invoking this on
     /// events that only mutate per-item state.
     fn refresh_cached_items(&mut self, ctx: &mut ModelContext<Self>) {
         let model = self.conversations_model.as_ref(ctx);
-        self.cached_conversation_or_task_ids = model
+        self.cached_conversation_ids = model
             .conversations_iter()
-            .filter_map(|item| match item {
-                ConversationOrTask::Conversation(conv) => {
-                    Some(ConversationOrTaskId::ConversationId(conv.nav_data.id))
-                }
-                ConversationOrTask::Task(_) => None,
-            })
+            .map(|item| item.navigation_data().id)
             .collect();
 
         self.apply_search_filter(ctx);
@@ -88,7 +81,7 @@ impl ConversationListViewModel {
 
         if search_query.is_empty() {
             self.filtered_items = self
-                .cached_conversation_or_task_ids
+                .cached_conversation_ids
                 .iter()
                 .map(|id| ConversationEntry {
                     id: *id,
@@ -97,17 +90,10 @@ impl ConversationListViewModel {
                 .collect();
         } else {
             let mut matched_items: Vec<(i64, ConversationEntry)> = self
-                .cached_conversation_or_task_ids
+                .cached_conversation_ids
                 .iter()
                 .filter_map(|id| {
-                    let item = match id {
-                        ConversationOrTaskId::TaskId(task_id) => {
-                            conversations_model.get_task(task_id)
-                        }
-                        ConversationOrTaskId::ConversationId(conv_id) => {
-                            conversations_model.get_conversation(conv_id)
-                        }
-                    }?;
+                    let item = conversations_model.get_conversation(id)?;
 
                     match_indices_case_insensitive(&item.title(ctx), &search_query).map(|result| {
                         (
@@ -128,7 +114,7 @@ impl ConversationListViewModel {
 
     /// Returns the total number of conversations in the model before any filtering is applied.
     pub fn unfiltered_item_count(&self) -> usize {
-        self.cached_conversation_or_task_ids.len()
+        self.cached_conversation_ids.len()
     }
 
     /// Returns the filtered items with their highlight indices.
@@ -136,20 +122,17 @@ impl ConversationListViewModel {
         &self.filtered_items
     }
 
-    /// Look up a conversation or task by ID.
+    /// Look up a conversation by ID.
     pub fn get_item_by_id<'a>(
         &self,
-        id: &ConversationOrTaskId,
+        id: &AIConversationId,
         ctx: &'a AppContext,
-    ) -> Option<ConversationOrTask<'a>> {
+    ) -> Option<ConversationItem<'a>> {
         let model = self.conversations_model.as_ref(ctx);
-        match id {
-            ConversationOrTaskId::TaskId(task_id) => model.get_task(task_id),
-            ConversationOrTaskId::ConversationId(conv_id) => model.get_conversation(conv_id),
-        }
+        model.get_conversation(id)
     }
 
-    pub fn current_ids(&self) -> impl Iterator<Item = &ConversationOrTaskId> {
+    pub fn current_ids(&self) -> impl Iterator<Item = &AIConversationId> {
         self.filtered_items.iter().map(|item| &item.id)
     }
 }

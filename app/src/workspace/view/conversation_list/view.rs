@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 use std::sync::{Arc, Mutex};
 
-use crate::ai::active_agent_views_model::{ActiveAgentViewsModel, ConversationOrTaskId};
+use crate::ai::active_agent_views_model::ActiveAgentViewsModel;
 use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::blocklist::history_model::BlocklistAIHistoryModel;
 use crate::appearance::Appearance;
@@ -53,7 +53,7 @@ const INITIAL_MAX_PAST_ITEMS: usize = 10;
 struct StateHandles {
     list_state: UniformListState,
     scroll_state: ScrollStateHandle,
-    item_states: HashMap<ConversationOrTaskId, ItemState>,
+    item_states: HashMap<AIConversationId, ItemState>,
     start_new_conversation_item: ItemState,
     list_hover: MouseStateHandle,
     zero_state_button: MouseStateHandle,
@@ -94,7 +94,7 @@ enum ListItem {
 
 #[derive(Clone, Copy)]
 struct OverflowMenuState {
-    conversation_id: ConversationOrTaskId,
+    conversation_id: AIConversationId,
     /// When `Some`, the menu was opened via right-click and should be
     /// positioned at the cursor location rather than the kebab button.
     position: Option<Vector2F>,
@@ -107,16 +107,16 @@ pub enum ConversationListViewAction {
         terminal_view_id: Option<EntityId>,
     },
     ToggleOverflowMenu {
-        conversation_id: ConversationOrTaskId,
+        conversation_id: AIConversationId,
         /// When `Some`, the menu was opened via right-click and should be
         /// positioned where the right click took place.
         position: Option<Vector2F>,
     },
     DeleteFromOverflowMenu {
-        conversation_id: ConversationOrTaskId,
+        conversation_id: AIConversationId,
     },
     OpenItem {
-        id: ConversationOrTaskId,
+        id: AIConversationId,
     },
     ArrowUp,
     ArrowDown,
@@ -127,7 +127,7 @@ pub enum ConversationListViewAction {
     ToggleSection(ConversationSection),
     ToggleViewAll,
     ForkConversation {
-        conversation_id: ConversationOrTaskId,
+        conversation_id: AIConversationId,
         destination: ForkedConversationDestination,
     },
 }
@@ -293,13 +293,12 @@ impl ConversationListView {
         // If the focused conversation is a new/empty conversation that's not already in the list,
         // add it as a regular conversation entry so it participates in the sort.
         if let Some(new_conv_id) = focused_new_conversation {
-            let conv_id = ConversationOrTaskId::ConversationId(new_conv_id);
-            let already_in_list = active_items
-                .iter()
-                .any(|item| matches!(item, ListItem::Conversation(entry) if entry.id == conv_id));
+            let already_in_list = active_items.iter().any(
+                |item| matches!(item, ListItem::Conversation(entry) if entry.id == new_conv_id),
+            );
             if !already_in_list {
                 active_items.push(ListItem::Conversation(ConversationEntry {
-                    id: conv_id,
+                    id: new_conv_id,
                     highlight_indices: vec![],
                 }));
             }
@@ -367,7 +366,7 @@ impl ConversationListView {
     }
 
     /// Finds the flat index of a conversation by ID, or None if not found.
-    fn get_index_of_conversation_id(&self, conversation_id: ConversationOrTaskId) -> Option<usize> {
+    fn get_index_of_conversation_id(&self, conversation_id: AIConversationId) -> Option<usize> {
         self.list_items.iter().position(|item| match item {
             ListItem::Conversation(entry) => entry.id == conversation_id,
             ListItem::SectionHeader(_)
@@ -528,10 +527,9 @@ impl ConversationListView {
                     return;
                 };
 
-                // Use shared logic from ConversationOrTask to determine click action
-                if let Some(action) = item.get_open_action(None, ctx) {
-                    ctx.dispatch_typed_action(&action);
-                }
+                // Use shared logic from the conversation item to determine click action.
+                let action = item.get_open_action(None, ctx);
+                ctx.dispatch_typed_action(&action);
             }
             ListItem::SectionHeader(_) | ListItem::ToggleViewAllButton => {}
         }
@@ -819,11 +817,10 @@ impl TypedActionView for ConversationListView {
                     return;
                 }
 
-                let id = ConversationOrTaskId::ConversationId(*conversation_id);
                 let conversation_title = self
                     .view_model
                     .as_ref(ctx)
-                    .get_item_by_id(&id, ctx)
+                    .get_item_by_id(conversation_id, ctx)
                     .map(|c| c.title(ctx).to_string())
                     .unwrap_or_else(|| "Conversation".to_string());
                 ctx.emit(Event::ShowDeleteConfirmationDialog {
@@ -877,13 +874,8 @@ impl TypedActionView for ConversationListView {
                 ctx.notify();
             }
             ConversationListViewAction::DeleteFromOverflowMenu { conversation_id } => {
-                let ConversationOrTaskId::ConversationId(ai_conversation_id) = conversation_id
-                else {
-                    return;
-                };
-
                 let conversation =
-                    BlocklistAIHistoryModel::as_ref(ctx).conversation(ai_conversation_id);
+                    BlocklistAIHistoryModel::as_ref(ctx).conversation(conversation_id);
 
                 if let Some(conversation) = conversation {
                     if !conversation.status().is_done() && !conversation.is_empty() {
@@ -910,13 +902,13 @@ impl TypedActionView for ConversationListView {
                     .get_item_by_id(conversation_id, ctx);
                 let terminal_view_id = item
                     .as_ref()
-                    .and_then(|item| item.navigation_data().and_then(|nav| nav.terminal_view_id));
+                    .and_then(|item| item.navigation_data().terminal_view_id);
                 let conversation_title = item
                     .as_ref()
                     .map(|c| c.title(ctx).to_string())
                     .unwrap_or_else(|| "Conversation".to_string());
                 ctx.emit(Event::ShowDeleteConfirmationDialog {
-                    conversation_id: *ai_conversation_id,
+                    conversation_id: *conversation_id,
                     conversation_title,
                     terminal_view_id,
                 });
@@ -926,10 +918,7 @@ impl TypedActionView for ConversationListView {
                 let Some(item) = model.get_item_by_id(id, ctx) else {
                     return;
                 };
-                let Some(action) = item.get_open_action(None, ctx) else {
-                    return;
-                };
-
+                let action = item.get_open_action(None, ctx);
                 ctx.dispatch_typed_action(&action);
             }
             ConversationListViewAction::ArrowUp => {
@@ -989,13 +978,8 @@ impl TypedActionView for ConversationListView {
                 conversation_id,
                 destination,
             } => {
-                let ConversationOrTaskId::ConversationId(ai_conversation_id) = conversation_id
-                else {
-                    return;
-                };
-
                 ctx.dispatch_typed_action(&WorkspaceAction::ForkAIConversation {
-                    conversation_id: *ai_conversation_id,
+                    conversation_id: *conversation_id,
                     fork_from_exchange: None,
                     summarize_after_fork: false,
                     summarization_prompt: None,

@@ -20,7 +20,7 @@ use warpui::{
 
 use crate::{
     ai::{
-        active_agent_views_model::{ActiveAgentViewsModel, ConversationOrTaskId},
+        active_agent_views_model::ActiveAgentViewsModel,
         agent::conversation::AIConversationId,
         blocklist::{
             agent_view::{
@@ -42,7 +42,7 @@ use crate::{
         },
         model_events::{AnsiHandlerEvent, ModelEvent, ModelEventDispatcher},
         prompt,
-        view::{local_agent::AmbientAgentViewModel, TerminalAction},
+        view::TerminalAction,
         TerminalModel,
     },
     util::time_format::format_approx_duration_from_now_utc,
@@ -53,7 +53,6 @@ const MAX_RECENT_CONVERSATION_COUNT: usize = 3;
 #[derive(Default)]
 struct StateHandles {
     start_new_conversation: MouseStateHandle,
-    start_cloud_conversation: MouseStateHandle,
     switch_model: MouseStateHandle,
     exit: MouseStateHandle,
     init_callout: MouseStateHandle,
@@ -71,7 +70,6 @@ pub struct AgentViewZeroStateBlock {
     cached_recent_conversations: Vec<ConversationNavigationData>,
     should_hide: bool,
     should_show_init_callout: bool,
-    has_parent_terminal: bool,
     state_handles: StateHandles,
 }
 
@@ -82,7 +80,6 @@ impl AgentViewZeroStateBlock {
         origin: AgentViewEntryOrigin,
         agent_view_controller: ModelHandle<AgentViewController>,
         sessions: &ModelHandle<Sessions>,
-        cloud_agent_view_model: &ModelHandle<AmbientAgentViewModel>,
         terminal_model: Arc<FairMutex<TerminalModel>>,
         model_events_dispatcher: &ModelHandle<ModelEventDispatcher>,
         should_show_init_callout: bool,
@@ -147,8 +144,6 @@ impl AgentViewZeroStateBlock {
             },
         );
 
-        let _ = cloud_agent_view_model;
-        let has_parent_terminal = true;
         let state_handles = StateHandles::default();
         let current_working_directory = {
             let terminal_model = terminal_model.lock();
@@ -171,7 +166,6 @@ impl AgentViewZeroStateBlock {
             cached_recent_conversations,
             should_hide: matches!(origin, AgentViewEntryOrigin::AcceptedPassiveCodeDiff),
             should_show_init_callout,
-            has_parent_terminal,
             state_handles,
         }
     }
@@ -232,10 +226,10 @@ impl AgentViewZeroStateBlock {
         current_working_directory: &str,
         app: &AppContext,
     ) -> Vec<ConversationNavigationData> {
-        let open_conversation_ids = ActiveAgentViewsModel::as_ref(app)
-            .get_all_open_conversation_ids(app)
+        let active_agent_views = ActiveAgentViewsModel::as_ref(app);
+        let open_conversation_ids = active_agent_views.get_all_open_conversation_ids(app);
+        let open_conversation_ids = open_conversation_ids
             .iter()
-            .filter_map(ConversationOrTaskId::conversation_id)
             .collect::<std::collections::HashSet<_>>();
         ConversationNavigationData::all_conversations(app)
             .into_iter()
@@ -328,7 +322,6 @@ impl View for AgentViewZeroStateBlock {
         let body = render_body(
             ZeroStateBodyProps {
                 origin: self.origin,
-                has_parent_terminal: self.has_parent_terminal,
                 should_show_init_callout: self.should_show_init_callout,
                 recent_conversations: &self.cached_recent_conversations,
                 active_session: active_session.as_deref(),
@@ -514,7 +507,6 @@ fn render_title_and_description(props: HeaderProps, app: &AppContext) -> Vec<Box
 
 struct ZeroStateBodyProps<'a> {
     origin: AgentViewEntryOrigin,
-    has_parent_terminal: bool,
     should_show_init_callout: bool,
     recent_conversations: &'a [ConversationNavigationData],
     active_session: Option<&'a Session>,
@@ -525,7 +517,6 @@ struct ZeroStateBodyProps<'a> {
 fn render_body(props: ZeroStateBodyProps<'_>, app: &AppContext) -> Vec<Box<dyn Element>> {
     let ZeroStateBodyProps {
         origin: _,
-        has_parent_terminal,
         should_show_init_callout,
         recent_conversations,
         active_session,
@@ -576,25 +567,22 @@ fn render_body(props: ZeroStateBodyProps<'_>, app: &AppContext) -> Vec<Box<dyn E
             app,
         ));
 
-        // Only show "escape to go back" if there's a parent terminal
-        if has_parent_terminal {
-            body_items.push(render_standard_message(
-                Message::new(vec![MessageItem::clickable(
-                    vec![
-                        MessageItem::keystroke(Keystroke {
-                            key: "escape".to_owned(),
-                            ..Default::default()
-                        }),
-                        MessageItem::text("go back to terminal"),
-                    ],
-                    |ctx| {
-                        ctx.dispatch_typed_action(TerminalAction::ExitAgentView);
-                    },
-                    state_handles.exit.clone(),
-                )]),
-                app,
-            ));
-        }
+        body_items.push(render_standard_message(
+            Message::new(vec![MessageItem::clickable(
+                vec![
+                    MessageItem::keystroke(Keystroke {
+                        key: "escape".to_owned(),
+                        ..Default::default()
+                    }),
+                    MessageItem::text("go back to terminal"),
+                ],
+                |ctx| {
+                    ctx.dispatch_typed_action(TerminalAction::ExitAgentView);
+                },
+                state_handles.exit.clone(),
+            )]),
+            app,
+        ));
 
         body_items
     };

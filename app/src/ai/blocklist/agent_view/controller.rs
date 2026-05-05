@@ -14,9 +14,7 @@ use crate::terminal::input::message_bar::{Message, MessageItem};
 use crate::terminal::input::slash_commands::SlashCommandTrigger;
 use crate::util::bindings::keybinding_name_to_keystroke;
 use crate::{
-    ai::agent::conversation::AIConversationId,
-    terminal::{view::local_agent::AmbientAgentViewModel, TerminalModel},
-    BlocklistAIHistoryModel,
+    ai::agent::conversation::AIConversationId, terminal::TerminalModel, BlocklistAIHistoryModel,
 };
 
 use super::{DismissalStrategy, EphemeralMessage, EphemeralMessageModel};
@@ -136,7 +134,6 @@ pub enum AgentViewEntryOrigin {
         trigger: SlashCommandTrigger,
     },
     SlashInit,
-    CreateEnvironment,
     /// Entered agent view by executing a slash command that requires agent mode.
     Keybinding,
     /// Entered agent view by attaching context from the code review panel.
@@ -330,7 +327,6 @@ pub struct AgentViewController {
     /// Set during terminal pane attach; used for pane-group-scoped visibility checks.
     pane_group_id: Option<EntityId>,
     agent_view_state: AgentViewState,
-    ambient_agent_view_model: ModelHandle<AmbientAgentViewModel>,
     ephemeral_message_model: ModelHandle<EphemeralMessageModel>,
     pending_confirmation: Option<PendingConfirmation>,
     pending_confirmation_abort_handle: Option<SpawnedFutureHandle>,
@@ -355,7 +351,6 @@ impl AgentViewController {
     pub fn new(
         terminal_model: Arc<FairMutex<TerminalModel>>,
         terminal_view_id: EntityId,
-        ambient_agent_view_model: ModelHandle<AmbientAgentViewModel>,
         ephemeral_message_model: ModelHandle<EphemeralMessageModel>,
         _ctx: &mut ModelContext<Self>,
     ) -> Self {
@@ -364,7 +359,6 @@ impl AgentViewController {
             terminal_view_id,
             pane_group_id: None,
             agent_view_state: AgentViewState::Inactive,
-            ambient_agent_view_model,
             ephemeral_message_model,
             pending_confirmation: None,
             pending_confirmation_abort_handle: None,

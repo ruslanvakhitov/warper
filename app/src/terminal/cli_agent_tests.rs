@@ -407,8 +407,6 @@ fn workspace_with_team_uid(uid: &str) -> Workspace {
             ServerId::from_string_lossy(uid),
             "Test Team".to_string(),
             None,
-            None,
-            None,
         )]),
     )
 }

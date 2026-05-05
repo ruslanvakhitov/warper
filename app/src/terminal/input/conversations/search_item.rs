@@ -12,7 +12,7 @@ use warpui::scene::{CornerRadius, Radius};
 use warpui::text_layout::ClipConfig;
 use warpui::{AppContext, Element, SingletonEntity};
 
-use crate::ai::active_agent_views_model::{ActiveAgentViewsModel, ConversationOrTaskId};
+use crate::ai::active_agent_views_model::ActiveAgentViewsModel;
 use crate::ai::agent::conversation::ConversationStatus;
 use crate::ai::blocklist::BlocklistAIHistoryModel;
 use crate::ai::conversation_navigation::ConversationNavigationData;
@@ -109,9 +109,7 @@ impl SearchItem for ConversationSearchItem {
 
         let open_conversation_ids =
             ActiveAgentViewsModel::as_ref(app).get_all_open_conversation_ids(app);
-        let is_active = open_conversation_ids.contains(&ConversationOrTaskId::ConversationId(
-            self.navigation_data.id,
-        ));
+        let is_active = open_conversation_ids.contains(&self.navigation_data.id);
 
         let secondary_suffix = " open in different pane";
         let title = &self.navigation_data.title;

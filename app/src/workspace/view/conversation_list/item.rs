@@ -1,6 +1,6 @@
 use crate::ai::active_agent_views_model::ActiveAgentViewsModel;
-use crate::ai::active_agent_views_model::ConversationOrTaskId;
-use crate::ai::agent_conversations_model::ConversationOrTask;
+use crate::ai::agent::conversation::AIConversationId;
+use crate::ai::agent_conversations_model::ConversationItem;
 use crate::ai::conversation_status_ui::{render_status_element, STATUS_ELEMENT_PADDING};
 use crate::appearance::Appearance;
 use crate::menu::Menu;
@@ -32,13 +32,8 @@ const MAX_TOOLTIP_LENGTH: usize = 80;
 const ICON_SPACING: f32 = 4.;
 
 /// Generate a position ID for a conversation list item
-fn conversation_item_position_id(id: &ConversationOrTaskId) -> String {
-    match id {
-        ConversationOrTaskId::ConversationId(conv_id) => {
-            format!("conversation_list_item_{conv_id}")
-        }
-        ConversationOrTaskId::TaskId(task_id) => format!("conversation_list_task_{task_id}"),
-    }
+fn conversation_item_position_id(id: &AIConversationId) -> String {
+    format!("conversation_list_item_{id}")
 }
 
 /// Minimum height for static list items (section headers, StartNewConversation).
@@ -61,7 +56,7 @@ pub enum OverflowMenuDisplay {
 }
 
 pub struct ItemProps<'a> {
-    pub conversation: &'a ConversationOrTask<'a>,
+    pub conversation: &'a ConversationItem<'a>,
     pub highlight_indices: Option<&'a Vec<usize>>,
     pub is_selected: bool,
     pub is_focused_conversation: bool,
@@ -69,7 +64,7 @@ pub struct ItemProps<'a> {
     pub state: &'a ItemState,
     pub overflow_menu: &'a ViewHandle<Menu<ConversationListViewAction>>,
     pub overflow_menu_display: OverflowMenuDisplay,
-    pub conversation_id: ConversationOrTaskId,
+    pub conversation_id: AIConversationId,
     pub list_position_id: &'a str,
     pub tooltip_opens_right: bool,
 }
@@ -247,8 +242,8 @@ pub fn render_item(props: ItemProps<'_>, app: &AppContext) -> Box<dyn Element> {
         .with_child(bottom_row)
         .finish();
 
-    // Use shared logic from ConversationOrTask to determine open action
-    let open_action = conversation.get_open_action(None, app);
+    // Use shared logic from the conversation item to determine open action.
+    let open_action = Some(conversation.get_open_action(None, app));
     let title = conversation.title(app);
     let tooltip_text = truncate_from_end(&title, MAX_TOOLTIP_LENGTH);
     let overflow_button_state = state.overflow_button_state.clone();
@@ -377,21 +372,15 @@ pub fn render_item(props: ItemProps<'_>, app: &AppContext) -> Box<dyn Element> {
 
 /// Returns the secondary label for a conversation list item:
 /// - For local conversations: the working directory.
-fn format_item_subtext(conversation: &ConversationOrTask, app: &AppContext) -> Option<String> {
-    match conversation {
-        ConversationOrTask::Task(_) => None,
-        ConversationOrTask::Conversation(metadata) => {
-            // If this conversation is active (with an expanded agent view),
-            // we use the terminal session's live working directory.
-            let live_pwd = ActiveAgentViewsModel::as_ref(app)
-                .get_active_session_for_conversation(metadata.nav_data.id, app)
-                .and_then(|session| session.as_ref(app).current_working_directory().cloned());
+fn format_item_subtext(conversation: &ConversationItem, app: &AppContext) -> Option<String> {
+    let metadata = conversation.navigation_data();
+    let live_pwd = ActiveAgentViewsModel::as_ref(app)
+        .get_active_session_for_conversation(metadata.id, app)
+        .and_then(|session| session.as_ref(app).current_working_directory().cloned());
 
-            let pwd = live_pwd.or_else(|| metadata.nav_data.initial_working_directory.clone());
-            pwd.map(|pwd| {
-                let home_dir = dirs::home_dir().and_then(|p| p.to_str().map(String::from));
-                user_friendly_path(&pwd, home_dir.as_deref()).into_owned()
-            })
-        }
-    }
+    let pwd = live_pwd.or_else(|| metadata.initial_working_directory.clone());
+    pwd.map(|pwd| {
+        let home_dir = dirs::home_dir().and_then(|p| p.to_str().map(String::from));
+        user_friendly_path(&pwd, home_dir.as_deref()).into_owned()
+    })
 }
