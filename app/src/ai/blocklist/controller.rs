@@ -22,6 +22,7 @@ use super::{
     BlocklistAIInputModel, InputType,
 };
 use crate::ai::agent::api::{self, ServerConversationToken};
+use crate::ai::agent::conversation::AmbientAgentTaskId;
 use crate::ai::agent::conversation::{AIConversation, ConversationStatus};
 use crate::ai::agent::task::TaskId;
 use crate::ai::agent::{
@@ -29,7 +30,6 @@ use crate::ai::agent::{
     PassiveSuggestionTriggerType, RunningCommand,
 };
 use crate::ai::agent::{DocumentContentAttachmentSource, FileContext};
-use crate::ai::ambient_agents::AmbientAgentTaskId;
 use crate::ai::document::ai_document_model::{
     AIDocumentId, AIDocumentModel, AIDocumentUserEditStatus,
 };

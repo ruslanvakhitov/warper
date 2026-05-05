@@ -439,15 +439,8 @@ impl Input {
     }
 
     fn render_cloud_mode_v2_history_menu(&self, app: &AppContext) -> Option<Box<dyn Element>> {
-        if !self
-            .suggestions_mode_model
-            .as_ref(app)
-            .is_inline_history_menu()
-        {
-            return None;
-        }
-        let view = self.cloud_mode_v2_history_menu_view.as_ref()?;
-        Some(ChildView::new(view).finish())
+        let _ = app;
+        None
     }
 
     fn render_cloud_mode_v2_top_row(&self) -> Box<dyn Element> {

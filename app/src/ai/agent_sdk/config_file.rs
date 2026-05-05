@@ -1,10 +1,48 @@
 use std::path::Path;
 
 use anyhow::Context as _;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{Map, Value};
+use warp_cli::agent::Harness;
 use warp_cli::mcp::MCPSpec;
 
-use crate::ai::ambient_agents::AgentConfigSnapshot;
+use crate::server::server_api::ai::AgentConfigSnapshot;
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct HarnessConfig {
+    #[serde(
+        rename = "type",
+        serialize_with = "serialize_harness",
+        deserialize_with = "deserialize_harness"
+    )]
+    pub harness_type: Harness,
+}
+
+impl HarnessConfig {
+    pub fn from_harness_type(harness_type: Harness) -> Self {
+        Self { harness_type }
+    }
+}
+
+fn serialize_harness<S: Serializer>(harness: &Harness, serializer: S) -> Result<S::Ok, S::Error> {
+    serializer.serialize_str(&harness.to_string())
+}
+
+fn deserialize_harness<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Harness, D::Error> {
+    let name = String::deserialize(deserializer)?;
+    Ok(match name.as_str() {
+        "claude" => Harness::Claude,
+        "opencode" => Harness::OpenCode,
+        "gemini" => Harness::Gemini,
+        _ => Harness::Unknown,
+    })
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct HarnessAuthSecretsConfig {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub claude_auth_secret_name: Option<String>,
+}
 
 /// A strict, file-based representation of `AgentConfigSnapshot`.
 ///

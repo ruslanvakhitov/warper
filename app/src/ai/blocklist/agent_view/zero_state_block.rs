@@ -42,7 +42,7 @@ use crate::{
         },
         model_events::{AnsiHandlerEvent, ModelEvent, ModelEventDispatcher},
         prompt,
-        view::{ambient_agent::AmbientAgentViewModel, TerminalAction},
+        view::{local_agent::AmbientAgentViewModel, TerminalAction},
         TerminalModel,
     },
     util::time_format::format_approx_duration_from_now_utc,

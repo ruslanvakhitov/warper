@@ -1,17 +1,12 @@
 #[cfg(not(target_family = "wasm"))]
 use std::path::PathBuf;
 
-#[cfg(test)]
-#[path = "upload_artifact_tests.rs"]
-mod tests;
-
 use futures::{future::BoxFuture, FutureExt};
 use warpui::{Entity, EntityId, ModelContext, ModelHandle};
 
 #[cfg(not(target_family = "wasm"))]
 use crate::ai::{
     agent::{AIAgentAction, AIAgentActionResultType, AIAgentActionType, UploadArtifactResult},
-    agent_sdk::artifact_upload::{FileArtifactUploadRequest, FileArtifactUploader},
     blocklist::{BlocklistAIHistoryModel, BlocklistAIPermissions},
     paths::host_native_absolute_path,
 };
@@ -100,53 +95,19 @@ impl UploadArtifactExecutor {
             };
 
             let resolved_path = self.resolve_path(&request.file_path, ctx);
-            let server_conversation_token = BlocklistAIHistoryModel::as_ref(ctx)
-                .conversation(&conversation_id)
-                .and_then(|conversation| conversation.server_conversation_token())
-                .cloned();
-
-            let Some(server_conversation_token) = server_conversation_token else {
-                return ActionExecution::<()>::Sync(AIAgentActionResultType::UploadArtifact(
-                    UploadArtifactResult::Error(
-                        "Current conversation has not been synced to the server yet".to_string(),
-                    ),
-                ))
-                .into();
-            };
+            let _ = BlocklistAIHistoryModel::as_ref(ctx).conversation(&conversation_id);
 
             BlocklistAIPermissions::handle(ctx).update(ctx, |model, _ctx| {
                 model.add_temporary_file_read_permissions(conversation_id, [resolved_path.clone()]);
             });
 
-            let description = request.description.clone();
-
-            ActionExecution::new_async(
-                async move {
-                    let uploader = FileArtifactUploader::new();
-                    let request = FileArtifactUploadRequest {
-                        path: resolved_path,
-                        run_id: None,
-                        conversation_id: Some(server_conversation_token),
-                        description,
-                    };
-                    let association = uploader.resolve_upload_association(&request).await?;
-                    uploader.upload_with_association(request, association).await
-                },
-                |result, _ctx| match result {
-                    Ok(upload) => {
-                        AIAgentActionResultType::UploadArtifact(UploadArtifactResult::Success {
-                            artifact_uid: upload.artifact.artifact_uid,
-                            filepath: Some(upload.artifact.filepath),
-                            mime_type: upload.artifact.mime_type,
-                            description: upload.artifact.description,
-                            size_bytes: upload.size_bytes,
-                        })
-                    }
-                    Err(err) => AIAgentActionResultType::UploadArtifact(
-                        UploadArtifactResult::Error(err.to_string()),
-                    ),
-                },
-            )
+            let _ = resolved_path;
+            let _ = request;
+            ActionExecution::<()>::Sync(AIAgentActionResultType::UploadArtifact(
+                UploadArtifactResult::Error(
+                    "Hosted artifact uploads are unavailable in local-only Warper".to_string(),
+                ),
+            ))
             .into()
         }
     }

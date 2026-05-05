@@ -14,12 +14,13 @@ use std::{
     time::Duration,
 };
 
-use crate::ai::document::ai_document_model::{AIDocumentModel, AIDocumentModelEvent};
 use crate::ai::llms::{LLMId, LLMPreferences};
 use crate::ai::mcp::MCPServerState;
 use crate::ai::skills::{SkillManager, SkillWatcher};
 use crate::ai::{
-    agent::conversation::AIConversationId,
+    agent::conversation::{
+        AIConversation, AIConversationId, AmbientAgentTaskId, ConversationStatus,
+    },
     agent_sdk::driver::harness::{
         task_env_vars, HarnessKind, HarnessRunner, SavePoint, ThirdPartyHarness,
     },
@@ -33,17 +34,14 @@ use crate::terminal::cli_agent_sessions::{
 use crate::{
     ai::{
         agent::{
-            AIAgentExchange, AIAgentInput, AIAgentOutput, CancellationReason, RenderableAIError,
-        },
-        ambient_agents::{
-            conversation_output_status_from_conversation, AmbientAgentTaskId,
-            AmbientConversationStatus,
+            AIAgentExchange, AIAgentInput, AIAgentOutput, AIAgentOutputStatus, CancellationReason,
+            FinishedAIAgentOutput, RenderableAIError,
         },
         blocklist::{
             agent_view::AgentViewEntryOrigin, BlocklistAIHistoryEvent, BlocklistAIHistoryModel,
             BlocklistAIPermissions,
         },
-        cloud_environments::{AmbientAgentEnvironment, AmbientAgentEnvironmentObject},
+        cloud_environments::AmbientAgentEnvironment,
         execution_profiles::profiles::AIExecutionProfilesModel,
         mcp::{
             file_based_manager::{FileBasedMCPManager, FileBasedMCPManagerEvent},
@@ -52,7 +50,6 @@ use crate::{
             TemplatableMCPServerInstallation, TemplatableMCPServerManager,
         },
     },
-    cloud_object::CloudObject,
     server::ids::{ServerId, SyncId},
 };
 use anyhow::{anyhow, Context as _};
@@ -72,7 +69,6 @@ use warpui::{
     AppContext, Entity, ModelContext, ModelHandle, ModelSpawner, SingletonEntity,
 };
 
-pub(crate) mod cloud_provider;
 pub(crate) mod environment;
 mod error_classification;
 pub(crate) mod harness;
@@ -183,8 +179,6 @@ pub struct AgentDriverOptions {
     /// If set, resume an existing conversation instead of starting fresh. The variant
     /// is ignored because hosted transcript restoration is removed.
     pub resume: Option<ResumeOptions>,
-    /// Cloud providers to configure within the agent's session.
-    pub cloud_providers: Vec<Box<dyn cloud_provider::CloudProvider>>,
     /// Resolved environment configuration, if any.
     pub environment: Option<AmbientAgentEnvironment>,
     /// Selected execution harness for this run.
@@ -217,9 +211,6 @@ pub struct AgentDriver {
     // The conversation ID to continue (if provided).
     restored_conversation_id: Option<AIConversationId>,
 
-    /// Cloud providers set up within this driver session.
-    cloud_providers: Vec<Box<dyn cloud_provider::CloudProvider>>,
-
     /// Resolved environment configuration.
     environment: Option<AmbientAgentEnvironment>,
 }
@@ -247,6 +238,33 @@ impl SDKConversationOutputStatus {
             }
         }
     }
+}
+
+fn sdk_output_status_from_conversation(
+    conversation: &AIConversation,
+) -> Option<SDKConversationOutputStatus> {
+    if let ConversationStatus::Blocked { blocked_action } = conversation.status() {
+        return Some(SDKConversationOutputStatus::Blocked {
+            blocked_action: blocked_action.clone(),
+        });
+    }
+
+    let last_exchange = conversation.root_task_exchanges().last()?;
+    if let AIAgentOutputStatus::Finished { finished_output } = &last_exchange.output_status {
+        return Some(match finished_output {
+            FinishedAIAgentOutput::Cancelled { output: _, reason } => {
+                SDKConversationOutputStatus::Cancelled { reason: *reason }
+            }
+            FinishedAIAgentOutput::Error { output: _, error } => {
+                SDKConversationOutputStatus::Error {
+                    error: error.clone(),
+                }
+            }
+            FinishedAIAgentOutput::Success { output: _ } => SDKConversationOutputStatus::Success,
+        });
+    }
+
+    None
 }
 
 /// Task configuration for running an agent.
@@ -303,8 +321,6 @@ pub enum AgentDriverError {
     EnvironmentNotFound(String),
     #[error("Environment setup failed: {0}")]
     EnvironmentSetupFailed(String),
-    #[error("Cloud provider setup failed")]
-    CloudProviderSetupFailed(#[from] cloud_provider::CloudProviderSetupError),
     #[error("Could not resolve working directory {}", path.display())]
     InvalidWorkingDirectory {
         path: PathBuf,
@@ -398,7 +414,6 @@ impl AgentDriver {
             idle_on_complete,
             secrets,
             resume,
-            cloud_providers,
             environment,
             selected_harness,
         } = options;
@@ -488,8 +503,6 @@ impl AgentDriver {
             env_vars.insert(OsString::from(env_name), OsString::from(env_value));
         }
 
-        // Inject cloud provider env vars.
-        cloud_provider::collect_env_vars(&cloud_providers, &mut env_vars)?;
         env_vars.extend(task_env_vars(
             task_id.as_ref(),
             parent_run_id.as_deref(),
@@ -524,7 +537,6 @@ impl AgentDriver {
             harness: None,
             idle_on_complete,
             restored_conversation_id: None,
-            cloud_providers,
             environment,
         })
     }
@@ -579,16 +591,8 @@ impl AgentDriver {
     }
 
     /// Log all valid environment IDs for the user.
-    pub(super) fn log_valid_environments(app: &AppContext) {
-        let environments = AmbientAgentEnvironmentObject::get_all(app);
-        if environments.is_empty() {
-            log::error!("No environments available for this user.");
-        } else {
-            log::error!("Valid environment IDs:");
-            for env in environments {
-                log::error!("  - {} ({})", env.sync_id(), env.model().string_model.name);
-            }
-        }
+    pub(super) fn log_valid_environments(_app: &AppContext) {
+        log::error!("Hosted cloud environments are unavailable in local-only Warper.");
     }
 
     /// Check that the working directory exists. Since it's user-specified, we don't automatically
@@ -1045,10 +1049,6 @@ impl AgentDriver {
             .await?
             .await?;
 
-        // Once the terminal session is bootstrapped, perform cloud provider setup before spawning MCP servers.
-        // MCP servers *may* rely on cloud provider credentials.
-        Self::setup_cloud_providers(&foreground).await?;
-
         let environment_opt = foreground.spawn(|me, _| me.environment.clone()).await?;
 
         if let Some(environment) = environment_opt {
@@ -1384,24 +1384,7 @@ impl AgentDriver {
                     }
 
                     // Conversation is no longer in progress. Handle completion based on the result.
-                    if let Some(conversation_status) =
-                         conversation_output_status_from_conversation(conversation)
-                    {
-                        let output_status = match conversation_status {
-                            AmbientConversationStatus::Success => {
-                                SDKConversationOutputStatus::Success
-                            }
-                            AmbientConversationStatus::Cancelled { reason } => {
-                                SDKConversationOutputStatus::Cancelled { reason }
-                            }
-                            AmbientConversationStatus::Error { error } => {
-                                SDKConversationOutputStatus::Error { error }
-                            }
-                            AmbientConversationStatus::Blocked { blocked_action } => {
-                                SDKConversationOutputStatus::Blocked { blocked_action }
-                            }
-                        };
-
+                    if let Some(output_status) = sdk_output_status_from_conversation(conversation) {
                         match output_status {
                             SDKConversationOutputStatus::Success
                             | SDKConversationOutputStatus::Blocked { .. }
@@ -1451,56 +1434,6 @@ impl AgentDriver {
                 | BlocklistAIHistoryEvent::UpdatedConversationArtifacts { .. }
                 | BlocklistAIHistoryEvent::ConversationServerTokenAssigned { .. } => (),
             }
-        });
-
-        // Subscribe to document model events to emit local plan artifacts when they are saved.
-        ctx.subscribe_to_model(&AIDocumentModel::handle(ctx), move |me, event, ctx| {
-            let AIDocumentModelEvent::DocumentSaveStatusUpdated(document_id) = event else {
-                return;
-            };
-
-            let doc_model = AIDocumentModel::as_ref(ctx);
-
-            // Only emit when the document transitions to "Saved" (has a ServerId)
-            if !doc_model.get_document_save_status(document_id).is_saved() {
-                return;
-            }
-
-            // Get the document to extract the notebook link
-            let Some(document) = doc_model.get_current_document(document_id) else {
-                return;
-            };
-
-            // Get the notebook link from the document model
-            let Some(notebook_link) =
-                doc_model.get_document_warp_drive_object_link(document_id, ctx)
-            else {
-                return;
-            };
-
-            let document_id_str = document_id.to_string();
-
-            report_if_error!(output::with_stdout_buffered(|buf| {
-                match me.output_format {
-                    OutputFormat::Json | OutputFormat::Ndjson => {
-                        output::json::plan_artifact_created(
-                            &document_id_str,
-                            &notebook_link,
-                            &document.title,
-                            buf,
-                        )
-                    }
-                    OutputFormat::Text | OutputFormat::Pretty => {
-                        output::text::plan_artifact_created(
-                            &document_id_str,
-                            &notebook_link,
-                            &document.title,
-                            buf,
-                        )
-                    }
-                }
-            })
-            .context("Failed to write artifact_created"));
         });
 
         // Submit the AI query.
@@ -1654,61 +1587,8 @@ impl AgentDriver {
         }
     }
 
-    /// Set up each cloud provider in sequence.
-    async fn setup_cloud_providers(spawner: &ModelSpawner<Self>) -> Result<(), AgentDriverError> {
-        let (mut providers, terminal_spawner) = spawner
-            .spawn(|me, ctx| {
-                let terminal_spawner = me.terminal_driver.update(ctx, |_, ctx| ctx.spawner());
-                // Temporarily take all cloud providers so we can move them onto the background thread.
-                //
-                // Since the Vec of cloud providers is owned by the AgentDriver model, which is
-                // itself owned by the UI framework, we can only mutate them in-place on the UI thread.
-                // So that `CloudProvider::setup` can be `async` _and_ take `&mut self`, the
-                // `setup_cloud_providers` future takes ownership of all the providers, and then moves
-                // them back to the UI thread. This is somewhat similar to how views and models are removed
-                // from the UI framework temporarily while being mutated.
-                let providers = std::mem::take(&mut me.cloud_providers);
-                (providers, terminal_spawner)
-            })
-            .await?;
-
-        let mut result = Ok(());
-
-        for provider in providers.iter_mut() {
-            let provider_result = provider.setup(terminal_spawner.clone()).await;
-            if provider_result.is_err() {
-                result = provider_result;
-                break;
-            }
-        }
-
-        // Restore the cloud providers.
-        spawner
-            .spawn(move |me, _| {
-                me.cloud_providers = providers;
-            })
-            .await?;
-
-        result?;
-        Ok(())
-    }
-
     /// Perform cleanup after the agent has finished running.
-    async fn cleanup(spawner: ModelSpawner<Self>) {
-        let Ok(providers) = spawner
-            .spawn(|me, _| std::mem::take(&mut me.cloud_providers))
-            .await
-        else {
-            log::error!("Unable to retrieve cloud providers for cleanup");
-            return;
-        };
-
-        for provider in providers {
-            if let Err(err) = provider.cleanup().await {
-                report_error!(anyhow!(err).context("Unable to clean up cloud provider"));
-            }
-        }
-    }
+    async fn cleanup(_spawner: ModelSpawner<Self>) {}
 }
 
 impl Entity for AgentDriver {

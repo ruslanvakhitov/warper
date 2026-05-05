@@ -35,9 +35,8 @@ use telemetry::CliTelemetryEvent;
 use warp_cli::agent::{Harness, Prompt, RunAgentArgs};
 
 mod artifact;
-pub(crate) mod artifact_upload;
 mod common;
-mod config_file;
+pub(crate) mod config_file;
 pub(crate) mod driver;
 #[cfg(any())]
 mod integration;
@@ -384,7 +383,6 @@ impl AgentDriverRunner {
                     idle_on_complete: args.idle_on_complete.map(|d| d.into()),
                     secrets: Default::default(),
                     resume: None,
-                    cloud_providers: Vec::new(),
                     environment: None,
                     selected_harness: args.harness.map(Into::into).unwrap_or(Harness::Unknown),
                 };

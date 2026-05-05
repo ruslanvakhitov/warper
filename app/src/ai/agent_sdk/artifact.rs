@@ -7,17 +7,11 @@ use warp_cli::artifact::{
     ArtifactCommand, DownloadArtifactArgs, GetArtifactArgs, UploadArtifactArgs,
 };
 use warp_cli::GlobalOptions;
-use warpui::{platform::TerminationMode, AppContext, ModelContext, SingletonEntity};
+use warpui::{AppContext, ModelContext, SingletonEntity};
 
-#[cfg(test)]
-use crate::ai::artifact_download::download_destination;
 use crate::server::server_api::ai::ArtifactDownloadResponse;
 #[cfg(test)]
 use crate::server::server_api::ai::FileArtifactRecord;
-
-use super::artifact_upload::{
-    CompletedFileArtifactUpload, FileArtifactUploadRequest, FileArtifactUploader,
-};
 
 /// Run artifact-related commands.
 pub fn run(
@@ -77,25 +71,8 @@ impl ArtifactCommandRunner {
         output_format: OutputFormat,
         ctx: &mut ModelContext<Self>,
     ) {
-        let uploader = FileArtifactUploader::new();
-
-        ctx.spawn(
-            async move {
-                let request = FileArtifactUploadRequest::try_from(args)?;
-                let association = uploader.resolve_upload_association(&request).await?;
-                uploader.upload_with_association(request, association).await
-            },
-            move |_, result, ctx| match result {
-                Ok(artifact) => {
-                    if let Err(err) = write_upload_output(&artifact, output_format) {
-                        super::report_fatal_error(err, ctx);
-                        return;
-                    }
-                    ctx.terminate_app(TerminationMode::ForceTerminate, None);
-                }
-                Err(err) => super::report_fatal_error(err, ctx),
-            },
-        );
+        let _ = (args, output_format);
+        super::report_fatal_error(hosted_artifacts_unavailable(), ctx);
     }
 }
 
@@ -155,15 +132,6 @@ impl DownloadArtifactOutput {
             path,
         }
     }
-}
-
-#[derive(Debug, Serialize)]
-struct UploadArtifactOutput {
-    artifact_uid: String,
-    filepath: String,
-    description: Option<String>,
-    mime_type: String,
-    size_bytes: Option<i64>,
 }
 
 fn write_get_output(
@@ -276,75 +244,6 @@ fn write_download_output_to<W: std::io::Write>(
                 output_record.artifact_uid,
                 output_record.artifact_type,
                 output_record.path.display()
-            )?;
-        }
-    }
-
-    Ok(())
-}
-
-fn write_upload_output(
-    artifact: &CompletedFileArtifactUpload,
-    output_format: OutputFormat,
-) -> Result<()> {
-    let mut stdout = std::io::stdout();
-    write_upload_output_to(&mut stdout, artifact, output_format)
-}
-
-fn write_upload_output_to<W: std::io::Write>(
-    output: &mut W,
-    artifact: &CompletedFileArtifactUpload,
-    output_format: OutputFormat,
-) -> Result<()> {
-    let output_record = UploadArtifactOutput {
-        artifact_uid: artifact.artifact.artifact_uid.clone(),
-        filepath: artifact.artifact.filepath.clone(),
-        description: artifact.artifact.description.clone(),
-        mime_type: artifact.artifact.mime_type.clone(),
-        size_bytes: Some(artifact.size_bytes),
-    };
-
-    match output_format {
-        OutputFormat::Json | OutputFormat::Ndjson => {
-            serde_json::to_writer(&mut *output, &output_record)
-                .context("unable to write JSON output")?;
-            writeln!(&mut *output)?;
-        }
-        OutputFormat::Pretty => {
-            writeln!(&mut *output, "Artifact uploaded")?;
-            writeln!(&mut *output, "Artifact UID: {}", output_record.artifact_uid)?;
-            writeln!(&mut *output, "Filepath: {}", output_record.filepath)?;
-            writeln!(
-                &mut *output,
-                "Description: {}",
-                output_record.description.as_deref().unwrap_or("")
-            )?;
-            writeln!(&mut *output, "MIME type: {}", output_record.mime_type)?;
-            writeln!(
-                &mut *output,
-                "Size bytes: {}",
-                output_record
-                    .size_bytes
-                    .map(|size| size.to_string())
-                    .unwrap_or_default()
-            )?;
-        }
-        OutputFormat::Text => {
-            writeln!(
-                &mut *output,
-                "Artifact UID\tFilepath\tDescription\tMIME type\tSize bytes"
-            )?;
-            writeln!(
-                &mut *output,
-                "{}\t{}\t{}\t{}\t{}",
-                output_record.artifact_uid,
-                output_record.filepath,
-                output_record.description.unwrap_or_default(),
-                output_record.mime_type,
-                output_record
-                    .size_bytes
-                    .map(|size| size.to_string())
-                    .unwrap_or_default()
             )?;
         }
     }

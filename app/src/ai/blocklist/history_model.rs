@@ -893,7 +893,7 @@ impl BlocklistAIHistoryModel {
         &mut self,
         conversation_id: AIConversationId,
         run_id: String,
-        task_id: Option<crate::ai::ambient_agents::AmbientAgentTaskId>,
+        task_id: Option<crate::ai::agent::conversation::AmbientAgentTaskId>,
         terminal_view_id: EntityId,
         ctx: &mut ModelContext<Self>,
     ) {

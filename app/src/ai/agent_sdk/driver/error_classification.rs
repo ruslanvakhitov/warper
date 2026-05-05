@@ -79,14 +79,6 @@ pub fn classify_driver_error(error: &AgentDriverError) -> (AgentTaskState, TaskS
                 ),
             )
         }
-        AgentDriverError::CloudProviderSetupFailed(err) => (
-            AgentTaskState::Error,
-            TaskStatusUpdate::with_error_code(
-                format!("Error configuring cloud access: {err:#}"),
-                PlatformErrorCode::InternalError,
-            ),
-        ),
-
         // --- User-side errors (task → FAILED) ---
         AgentDriverError::MCPServerNotFound(uuid) => (
             AgentTaskState::Failed,

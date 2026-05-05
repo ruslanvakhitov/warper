@@ -15,7 +15,7 @@ use crate::terminal::input::slash_commands::SlashCommandTrigger;
 use crate::util::bindings::keybinding_name_to_keystroke;
 use crate::{
     ai::agent::conversation::AIConversationId,
-    terminal::{view::ambient_agent::AmbientAgentViewModel, TerminalModel},
+    terminal::{view::local_agent::AmbientAgentViewModel, TerminalModel},
     BlocklistAIHistoryModel,
 };
 

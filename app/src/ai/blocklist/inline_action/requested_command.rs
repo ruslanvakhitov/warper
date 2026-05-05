@@ -238,8 +238,8 @@ pub struct RequestedCommandView {
     header_mouse_state: MouseStateHandle,
     is_editing: bool,
 
-    // A requested command can either be copied directly off of one citation (such as a Warp Drive
-    // object), derived from one or more citations, or be unrelated to any citations.
+    // A requested command can either be copied directly from one citation, derived from one or more
+    // citations, or be unrelated to any citations.
     // A given citation should only appear once per block.
     copied_from_citation: Option<AIAgentCitation>,
     derived_from_citations: Vec<AIAgentCitation>,

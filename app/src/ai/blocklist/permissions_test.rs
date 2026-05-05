@@ -27,9 +27,8 @@ use crate::{
         mcp::templatable_manager::TemplatableMCPServerManager,
     },
     auth::AuthStateProvider,
-    cloud_object::model::persistence::CloudModel,
     network::NetworkStatus,
-    server::{cloud_objects::update_manager::UpdateManager, sync_queue::SyncQueue},
+    server::sync_queue::SyncQueue,
     settings::{AgentModeCommandExecutionPredicate, PrivacySettings},
     test_util::settings::initialize_settings_for_tests_with_mode,
     workspaces::{
@@ -81,8 +80,6 @@ fn initialize_permissions_test_with_mode(
     app.add_singleton_model(SyncQueue::mock);
     app.add_singleton_model(|_| NetworkStatus::new());
     app.add_singleton_model(TeamTesterStatus::mock);
-    app.add_singleton_model(UpdateManager::mock);
-    app.add_singleton_model(CloudModel::mock);
     app.add_singleton_model(|_| TemplatableMCPServerManager::default());
     let profile_model = app.add_singleton_model(|ctx| {
         AIExecutionProfilesModel::new(&LaunchMode::new_for_unit_test(), ctx)

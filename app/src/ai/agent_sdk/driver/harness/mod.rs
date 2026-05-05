@@ -132,7 +132,7 @@ pub(crate) fn validate_cli_installed(
 }
 
 pub(crate) fn task_env_vars(
-    _task_id: Option<&crate::ai::ambient_agents::AmbientAgentTaskId>,
+    _task_id: Option<&crate::ai::agent::conversation::AmbientAgentTaskId>,
     _parent_run_id: Option<&str>,
     _selected_harness: Harness,
 ) -> HashMap<OsString, OsString> {

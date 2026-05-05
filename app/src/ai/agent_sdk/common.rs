@@ -8,12 +8,12 @@ use std::time::Duration;
 use warp_cli::agent::Harness;
 use warpui::{AppContext, SingletonEntity as _};
 
+use crate::ai::agent::conversation::AmbientAgentTaskId;
 use crate::ai::agent::conversation::ServerAIConversationMetadata;
 use crate::ai::agent_sdk::driver::AgentDriverError;
-use crate::ai::ambient_agents::AmbientAgentTaskId;
 use crate::ai::llms::{LLMId, LLMPreferences};
-use crate::cloud_object::Owner;
 use crate::server::server_api::ai::AIClient;
+use crate::workspaces::user_workspaces::Owner;
 
 /// How long to wait for workspace metadata to refresh.
 pub const WORKSPACE_METADATA_REFRESH_TIMEOUT: Duration = Duration::from_secs(10);
@@ -146,8 +146,8 @@ pub enum EnvironmentChoice {
 impl EnvironmentChoice {
     /// Resolve the environment to use when creating an agent integration.
     /// Hosted environments are unavailable in local-only Warper.
-    pub fn resolve_for_create(
-        _args: (),
+    pub fn resolve_for_create<T>(
+        _args: T,
         _ctx: &AppContext,
     ) -> Result<Self, ResolveConfigurationError> {
         Ok(EnvironmentChoice::None)
@@ -156,8 +156,8 @@ impl EnvironmentChoice {
     /// Resolve the environment to use when updating an agent integration. If the user did not
     /// request any changes to the environment, this returns `Ok(None)`.
     /// Hosted environments are unavailable in local-only Warper.
-    pub fn resolve_for_update(
-        _args: (),
+    pub fn resolve_for_update<T>(
+        _args: T,
         _ctx: &AppContext,
     ) -> Result<Option<Self>, ResolveConfigurationError> {
         Ok(None)

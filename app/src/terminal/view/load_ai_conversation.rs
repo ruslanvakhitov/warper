@@ -98,7 +98,7 @@ pub enum ConversationRestorationInNewPaneType {
         should_use_live_appearance: bool,
         /// The ambient agent task ID, if this is an ambient agent conversation.
         /// Used to display the session ended tombstone.
-        ambient_agent_task_id: Option<crate::ai::ambient_agents::AmbientAgentTaskId>,
+        ambient_agent_task_id: Option<crate::ai::agent::conversation::AmbientAgentTaskId>,
     },
 
     /// Fork an existing conversation into this new pane.

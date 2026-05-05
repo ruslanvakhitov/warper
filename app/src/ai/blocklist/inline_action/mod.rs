@@ -7,7 +7,6 @@ pub(crate) mod inline_action_icons;
 mod malformed_line_heuristics;
 pub(crate) mod requested_action;
 pub(crate) mod requested_command;
-pub(crate) mod requested_command_attribution;
 pub(crate) mod requested_script;
 pub(super) mod search_codebase;
 pub(crate) mod search_results_common;

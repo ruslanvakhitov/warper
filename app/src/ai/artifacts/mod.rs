@@ -6,7 +6,6 @@ use warp_core::report_error;
 use warp_multi_agent_api as api;
 use warpui::SingletonEntity;
 
-use crate::ai::artifact_download::sanitized_basename;
 use crate::notebooks::NotebookId;
 use crate::view_components::DismissibleToast;
 use crate::workspace::ToastStack;
@@ -14,6 +13,14 @@ use crate::workspace::WorkspaceAction;
 
 pub mod buttons;
 pub use buttons::{ArtifactButtonsRow, ArtifactButtonsRowEvent};
+
+pub(crate) fn sanitized_basename(path_or_filename: &str) -> Option<String> {
+    let file_name = Path::new(path_or_filename).file_name()?.to_str()?;
+    if file_name.is_empty() {
+        return None;
+    }
+    Some(file_name.to_string())
+}
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize)]
 #[serde(tag = "artifact_type", content = "data")]

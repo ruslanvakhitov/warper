@@ -50,7 +50,7 @@ use crate::{
         input::SET_INPUT_MODE_TERMINAL_ACTION_NAME,
         model::block::LONG_RUNNING_COMMAND_DURATION_MS,
         model_events::{ModelEvent, ModelEventDispatcher},
-        view::ambient_agent::AmbientAgentViewModel,
+        view::local_agent::AmbientAgentViewModel,
         warpify::render::LEFT_STRIPE_WIDTH,
         TerminalModel, CANCEL_COMMAND_KEYBINDING, TOGGLE_AUTOEXECUTE_MODE_KEYBINDING,
         TOGGLE_HIDE_CLI_RESPONSES_KEYBINDING, TOGGLE_QUEUE_NEXT_PROMPT_KEYBINDING,

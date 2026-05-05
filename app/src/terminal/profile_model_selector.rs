@@ -39,14 +39,13 @@ use crate::{
         },
     },
     appearance::Appearance,
-    cloud_object::model::generic_string_model::StringModel,
     context_chips::{
         display_chip::{udi_font_size, udi_icon_size},
         spacing,
     },
     menu::{Event as MenuEvent, Menu, MenuItem, MenuItemFields},
     settings_view::SettingsSection,
-    terminal::view::ambient_agent::AmbientAgentViewModel,
+    terminal::view::local_agent::AmbientAgentViewModel,
     terminal::{
         input::{MenuPositioning, MenuPositioningProvider},
         TerminalModel,

@@ -4,12 +4,11 @@ use crate::search::ai_context_menu::view::AIContextMenu;
 use crate::settings::InputSettings;
 use crate::{
     ai::{blocklist::block::cli_controller::CLISubagentController, llms::LLMPreferences},
-    cloud_object::model::generic_string_model::StringModel,
     settings::AISettingsChangedEvent,
     terminal::profile_model_selector::{
         calculate_max_profile_name_width, calculate_scaled_font_size,
     },
-    terminal::view::ambient_agent::AmbientAgentViewModel,
+    terminal::view::local_agent::AmbientAgentViewModel,
 };
 use pathfinder_color::ColorU;
 #[cfg(not(target_family = "wasm"))]

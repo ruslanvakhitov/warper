@@ -20,7 +20,7 @@ use crate::terminal::event::{BlockType, UserBlockCompleted};
 use crate::terminal::model::session::active_session::ActiveSession;
 use crate::terminal::model::terminal_model::TerminalModel;
 use crate::terminal::model_events::{ModelEvent, ModelEventDispatcher};
-use crate::terminal::view::ambient_agent::AmbientAgentViewModel;
+use crate::terminal::view::local_agent::AmbientAgentViewModel;
 use crate::workspaces::user_workspaces::UserWorkspaces;
 use ai::agent::action::{AIAgentActionType, FileEdit};
 use ai::diff_validation::ParsedDiff;

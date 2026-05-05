@@ -414,7 +414,7 @@ impl BlocklistAIActionExecutor {
 
     pub fn set_ambient_agent_task_id(
         &self,
-        _id: Option<crate::ai::ambient_agents::AmbientAgentTaskId>,
+        _id: Option<crate::ai::agent::conversation::AmbientAgentTaskId>,
         ctx: &mut ModelContext<Self>,
     ) {
         self.request_computer_use_executor

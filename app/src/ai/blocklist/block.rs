@@ -46,7 +46,7 @@ use crate::code_review::comment_rendering::{CommentViewCard, HeaderClickHandler}
 use crate::terminal::model::BlockId;
 use crate::terminal::model_events::ModelEvent;
 use crate::terminal::model_events::ModelEventDispatcher;
-use crate::terminal::view::ambient_agent::AmbientAgentViewModel;
+use crate::terminal::view::local_agent::AmbientAgentViewModel;
 use crate::terminal::TerminalModel;
 use crate::view_components::action_button::{
     ActionButtonTheme, NakedTheme, PrimaryTheme, SecondaryTheme,
@@ -92,9 +92,6 @@ use crate::ai::blocklist::inline_action::search_codebase::{
 };
 use crate::ai::blocklist::inline_action::web_fetch::WebFetchView;
 use crate::ai::blocklist::inline_action::web_search::WebSearchView;
-use crate::ai::facts::{AIFact, AIMemory, CloudAIFactModel};
-use crate::cloud_object::model::generic_string_model::GenericStringObjectId;
-use crate::cloud_object::model::persistence::CloudModel;
 use crate::code_review::telemetry_event::CodeReviewPaneEntrypoint;
 use crate::server::ids::SyncId;
 use crate::server::telemetry::AgentModeRewindEntrypoint;
@@ -154,7 +151,7 @@ use crate::ai::agent::{
     AIAgentAction, AIAgentActionId, AIAgentActionType, AIAgentAttachment, AIAgentCitation,
     AIAgentContext, AIAgentOutputMessage, AIAgentOutputMessageType, CreateDocumentsRequest,
     CreateDocumentsResult, DocumentToCreate, EditDocumentsResult, ProgrammingLanguage,
-    RenderableAIError, RequestCommandOutputResult, SuggestedLoggingId, SummarizationType,
+    RenderableAIError, RequestCommandOutputResult, SummarizationType,
 };
 use crate::ai::blocklist::inline_action::code_diff_view;
 use crate::ai::blocklist::inline_action::requested_command::{
@@ -225,7 +222,6 @@ use super::{
     inline_action::code_diff_view::{
         CodeDiffState, CodeDiffView, CodeDiffViewAction, CodeDiffViewEvent,
     },
-    inline_action::requested_command_attribution::is_command_copied_from_document,
     permissions::is_agent_mode_autonomy_allowed,
     telemetry_banner::should_collect_ai_ugc_telemetry,
     BlocklistAIActionModel, BlocklistAIController, BlocklistAIHistoryEvent,
@@ -2140,23 +2136,8 @@ impl AIBlock {
                 .map(|rule| rule.read(ctx, |rule, _| rule.logging_id()))
                 .collect_vec();
 
-            let existing_rules: HashSet<SuggestedLoggingId> = {
-                CloudModel::as_ref(ctx)
-                    .get_all_objects_of_type::<GenericStringObjectId, CloudAIFactModel>()
-                    .filter_map(|fact| {
-                        let AIFact::Memory(AIMemory {
-                            suggested_logging_id,
-                            ..
-                        }) = fact.model().string_model.clone();
-                        suggested_logging_id
-                    })
-                    .collect()
-            };
-
             for rule in suggestions.rules.into_iter() {
-                if existing_rules.contains(&rule.logging_id)
-                    || existing_suggestions.contains(&rule.logging_id)
-                {
+                if existing_suggestions.contains(&rule.logging_id) {
                     continue;
                 }
 
@@ -2403,19 +2384,6 @@ impl AIBlock {
                         )
                     }
                     _ => (),
-                }
-            }
-
-            for citation in &output.citations {
-                if is_command_copied_from_document(command, citation, shell_type, ctx) {
-                    if let Some(requested_command) =
-                        self.requested_commands.get(requested_command_action_id)
-                    {
-                        requested_command.view.update(ctx, |view, ctx| {
-                            view.update_copied_from_citation(citation);
-                            ctx.notify();
-                        });
-                    }
                 }
             }
         }
