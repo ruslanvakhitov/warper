@@ -7,6 +7,7 @@ use itertools::Itertools;
 #[cfg(test)]
 use mockall::automock;
 use prost::Message;
+use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
     time::Duration,
@@ -15,27 +16,26 @@ use warp_core::channel::ChannelState;
 use warp_core::{features::FeatureFlag, report_error};
 use warp_multi_agent_api::ConversationData;
 
-use super::auth::AuthClient;
 use super::ServerApi;
 use crate::ai::agent::api::ServerConversationToken;
+use crate::ai::agent::conversation::AmbientAgentTaskId;
 use crate::ai::agent::conversation::{
     AIAgentConversationFormat, AIAgentHarness, AIAgentSerializedBlockFormat,
-    ServerAIConversationMetadata,
+    ServerAIConversationMetadata, ServerConversationObjectMetadata, ServerConversationPermissions,
 };
-use crate::ai::ambient_agents::AmbientAgentTaskId;
 use crate::ai::artifacts::Artifact;
 use crate::ai::generate_code_review_content::api::{
     GenerateCodeReviewContentRequest, GenerateCodeReviewContentResponse,
 };
 #[cfg(feature = "agent_mode_evals")]
-use crate::ai::request_usage_model::RequestLimitInfo;
+use crate::ai::request_limits::RequestLimitInfo;
 #[cfg(not(feature = "agent_mode_evals"))]
 use crate::ai::BonusGrant;
 use crate::persistence::model::ConversationUsageMetadata;
 use crate::terminal::model::block::SerializedBlock;
 #[cfg(not(feature = "agent_mode_evals"))]
 use crate::{
-    ai::request_usage_model::BonusGrantScope,
+    ai::request_limits::BonusGrantScope,
     server::ids::ServerId,
     workspaces::{gql_convert::PLACEHOLDER_WORKSPACE_UID, workspace::WorkspaceUid},
 };
@@ -51,7 +51,6 @@ use crate::{
         execution_context::WarpAiExecutionContext, requests::GenerateDialogueResult,
         utils::TranscriptPart, AIGeneratedCommand, GenerateCommandsFromNaturalLanguageError,
     },
-    drive::workflows::ai_assist::{GeneratedCommandMetadata, GeneratedCommandMetadataError},
     server::graphql::{
         default_request_options, get_request_context, get_user_facing_error_message,
     },
@@ -69,16 +68,8 @@ use warp_graphql::queries::get_request_limit_info::{
 use warp_graphql::{
     ai::{AgentTaskState, PlatformErrorCode},
     mutations::{
-        confirm_file_artifact_upload::{
-            ConfirmFileArtifactUpload, ConfirmFileArtifactUploadInput,
-            ConfirmFileArtifactUploadResult, ConfirmFileArtifactUploadVariables,
-        },
         create_agent_task::{
             CreateAgentTask, CreateAgentTaskInput, CreateAgentTaskResult, CreateAgentTaskVariables,
-        },
-        create_file_artifact_upload_target::{
-            CreateFileArtifactUploadTarget, CreateFileArtifactUploadTargetInput,
-            CreateFileArtifactUploadTargetResult, CreateFileArtifactUploadTargetVariables,
         },
         delete_ai_conversation::{
             DeleteAIConversation, DeleteAIConversationVariables, DeleteConversationInput,
@@ -144,11 +135,219 @@ use warp_graphql::{
     },
 };
 
-// Re-export ambient agent types for backwards compatibility
-pub use crate::ai::ambient_agents::{
-    task::{AttachmentInput, TaskAttachment},
-    AgentConfigSnapshot, AgentSource, AmbientAgentTask, AmbientAgentTaskState, TaskStatusMessage,
-};
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize, PartialEq)]
+pub struct AgentConfigSnapshot {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub environment_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_prompt: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mcp_servers: Option<serde_json::Map<String, serde_json::Value>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worker_host: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skill_spec: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub computer_use_enabled: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub harness: Option<crate::ai::agent_sdk::config_file::HarnessConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub harness_auth_secrets: Option<crate::ai::agent_sdk::config_file::HarnessAuthSecretsConfig>,
+}
+
+impl AgentConfigSnapshot {
+    pub fn is_empty(&self) -> bool {
+        self == &Self::default()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum AgentSource {
+    Linear,
+    AgentWebhook,
+    Slack,
+    Cli,
+    ScheduledAgent,
+    Interactive,
+    RemovedHosted,
+    GitHubAction,
+}
+
+impl AgentSource {
+    pub fn as_str(&self) -> &str {
+        match self {
+            AgentSource::Linear => "LINEAR",
+            AgentSource::AgentWebhook => "API",
+            AgentSource::Slack => "SLACK",
+            AgentSource::Cli => "CLI",
+            AgentSource::ScheduledAgent => "SCHEDULED_AGENT",
+            AgentSource::Interactive => "LOCAL",
+            AgentSource::RemovedHosted => "REMOVED_HOSTED",
+            AgentSource::GitHubAction => "GITHUB_ACTION",
+        }
+    }
+
+    pub fn display_name(&self) -> &str {
+        match self {
+            AgentSource::Linear => "Linear",
+            AgentSource::AgentWebhook => "API",
+            AgentSource::Slack => "Slack",
+            AgentSource::Cli => "CLI",
+            AgentSource::ScheduledAgent => "Scheduled",
+            AgentSource::Interactive => "Local agent",
+            AgentSource::RemovedHosted => "Removed hosted agent",
+            AgentSource::GitHubAction => "GitHub Action",
+        }
+    }
+
+    pub fn is_user_initiated(&self) -> bool {
+        matches!(
+            self,
+            AgentSource::Linear | AgentSource::Slack | AgentSource::Interactive
+        )
+    }
+}
+
+impl AmbientAgentTaskState {
+    pub fn as_query_param(&self) -> Option<&'static str> {
+        match self {
+            AmbientAgentTaskState::Queued => Some("queued"),
+            AmbientAgentTaskState::Pending => Some("pending"),
+            AmbientAgentTaskState::Claimed => Some("claimed"),
+            AmbientAgentTaskState::InProgress => Some("in_progress"),
+            AmbientAgentTaskState::Succeeded => Some("succeeded"),
+            AmbientAgentTaskState::Failed => Some("failed"),
+            AmbientAgentTaskState::Error => Some("error"),
+            AmbientAgentTaskState::Blocked => Some("blocked"),
+            AmbientAgentTaskState::Cancelled => Some("cancelled"),
+            AmbientAgentTaskState::Unknown => None,
+        }
+    }
+
+    pub fn is_failure_like(&self) -> bool {
+        matches!(
+            self,
+            AmbientAgentTaskState::Failed
+                | AmbientAgentTaskState::Error
+                | AmbientAgentTaskState::Blocked
+                | AmbientAgentTaskState::Cancelled
+        )
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum AmbientAgentTaskState {
+    Queued,
+    Pending,
+    Claimed,
+    InProgress,
+    Succeeded,
+    Failed,
+    Error,
+    Blocked,
+    Cancelled,
+    Unknown,
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq)]
+pub struct TaskStatusMessage {
+    pub message: String,
+    #[serde(default)]
+    pub error_code: Option<String>,
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq)]
+pub struct TaskCreatorInfo {
+    pub uid: String,
+    pub email: Option<String>,
+    pub name: Option<String>,
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq)]
+pub struct RequestUsage {
+    pub requests_used: i32,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct GeneratedCommandMetadata {
+    pub title: Option<String>,
+    pub description: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum GeneratedCommandMetadataError {
+    RateLimited,
+    Other,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
+pub struct AmbientAgentTask {
+    pub task_id: AmbientAgentTaskId,
+    #[serde(default)]
+    pub parent_run_id: Option<String>,
+    pub title: String,
+    pub state: AmbientAgentTaskState,
+    pub prompt: String,
+    pub created_at: DateTime<Utc>,
+    pub started_at: Option<DateTime<Utc>>,
+    pub updated_at: DateTime<Utc>,
+    pub status_message: Option<TaskStatusMessage>,
+    #[serde(default)]
+    pub source: Option<AgentSource>,
+    pub session_id: Option<String>,
+    pub session_link: Option<String>,
+    pub creator: Option<TaskCreatorInfo>,
+    pub conversation_id: Option<String>,
+    pub request_usage: Option<RequestUsage>,
+    pub is_sandbox_running: bool,
+    #[serde(default, alias = "agent_config")]
+    pub agent_config_snapshot: Option<AgentConfigSnapshot>,
+    #[serde(default)]
+    pub artifacts: Vec<Artifact>,
+    #[serde(default)]
+    pub last_event_sequence: Option<i64>,
+    #[serde(default)]
+    pub children: Vec<String>,
+}
+
+impl AmbientAgentTask {
+    pub fn creator_display_name(&self) -> Option<String> {
+        self.creator
+            .as_ref()
+            .and_then(|creator| creator.name.clone().or_else(|| creator.email.clone()))
+    }
+
+    pub fn credits_used(&self) -> Option<f32> {
+        self.request_usage
+            .as_ref()
+            .map(|usage| usage.requests_used as f32)
+    }
+
+    pub fn run_time(&self) -> Option<chrono::Duration> {
+        let started_at = self.started_at?;
+        Some(self.updated_at - started_at)
+    }
+}
+
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct AttachmentInput {
+    pub file_name: String,
+    pub mime_type: String,
+    pub data: String,
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct TaskAttachment {
+    pub file_name: String,
+    pub mime_type: String,
+    pub data: String,
+}
 
 const AI_ASSISTANT_REQUEST_TIMEOUT_SECONDS: u64 = 30;
 
@@ -452,41 +651,12 @@ pub struct PrepareAttachmentUploadsResponse {
 }
 
 #[derive(Debug, Clone)]
-pub struct CreateFileArtifactUploadRequest {
-    pub conversation_id: Option<String>,
-    pub run_id: Option<String>,
-    pub filepath: String,
-    pub description: Option<String>,
-    pub mime_type: Option<String>,
-    pub size_bytes: Option<i32>,
-}
-
-#[derive(Debug, Clone)]
 pub struct FileArtifactRecord {
     pub artifact_uid: String,
     pub filepath: String,
     pub description: Option<String>,
     pub mime_type: String,
     pub size_bytes: Option<i32>,
-}
-
-#[derive(Debug, Clone)]
-pub struct FileArtifactUploadHeaderInfo {
-    pub name: String,
-    pub value: String,
-}
-
-#[derive(Debug, Clone)]
-pub struct FileArtifactUploadTargetInfo {
-    pub url: String,
-    pub method: String,
-    pub headers: Vec<FileArtifactUploadHeaderInfo>,
-}
-
-#[derive(Debug, Clone)]
-pub struct CreateFileArtifactUploadResponse {
-    pub artifact: FileArtifactRecord,
-    pub upload_target: FileArtifactUploadTargetInfo,
 }
 
 /// Filter parameters for listing ambient agent tasks.
@@ -870,17 +1040,6 @@ pub trait AIClient: 'static + Send + Sync {
         task_id: String,
     ) -> anyhow::Result<Vec<TaskAttachment>, anyhow::Error>;
 
-    async fn create_file_artifact_upload_target(
-        &self,
-        request: CreateFileArtifactUploadRequest,
-    ) -> anyhow::Result<CreateFileArtifactUploadResponse, anyhow::Error>;
-
-    async fn confirm_file_artifact_upload(
-        &self,
-        artifact_uid: String,
-        checksum: String,
-    ) -> anyhow::Result<FileArtifactRecord, anyhow::Error>;
-
     async fn get_artifact_download(
         &self,
         artifact_uid: &str,
@@ -965,18 +1124,6 @@ pub trait AIClient: 'static + Send + Sync {
         &self,
         request: GenerateCodeReviewContentRequest,
     ) -> Result<GenerateCodeReviewContentResponse, anyhow::Error>;
-}
-
-fn into_file_artifact_record(
-    artifact: warp_graphql::mutations::create_file_artifact_upload_target::FileArtifact,
-) -> FileArtifactRecord {
-    FileArtifactRecord {
-        artifact_uid: artifact.artifact_uid.into_inner(),
-        filepath: artifact.filepath,
-        description: artifact.description,
-        mime_type: artifact.mime_type,
-        size_bytes: artifact.size_bytes,
-    }
 }
 
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
@@ -1099,10 +1246,18 @@ impl AIClient for ServerApi {
                 match output.status {
                     GenerateMetadataForCommandStatus::GenerateMetadataForCommandSuccess(
                         success,
-                    ) => Ok(success.into()),
+                    ) => Ok(GeneratedCommandMetadata {
+                        title: Some(success.title),
+                        description: Some(success.description),
+                    }),
                     GenerateMetadataForCommandStatus::GenerateMetadataForCommandFailure(
                         failure,
-                    ) => Err(failure.type_.into()),
+                    ) => Err(match failure.type_ {
+                        warp_graphql::mutations::generate_metadata_for_command::GenerateMetadataForCommandFailureType::RateLimited => {
+                            GeneratedCommandMetadataError::RateLimited
+                        }
+                        _ => GeneratedCommandMetadataError::Other,
+                    }),
                     GenerateMetadataForCommandStatus::Unknown => {
                         Err(GeneratedCommandMetadataError::Other)
                     }
@@ -1501,43 +1656,9 @@ impl AIClient for ServerApi {
 
     async fn list_ai_conversation_metadata(
         &self,
-        conversation_ids: Option<Vec<String>>,
+        _conversation_ids: Option<Vec<String>>,
     ) -> anyhow::Result<Vec<ServerAIConversationMetadata>> {
-        return Ok(vec![]);
-        use warp_graphql::queries::list_ai_conversations::{
-            ListAIConversationMetadata, ListAIConversationMetadataResult,
-            ListAIConversationMetadataVariables, ListAIConversationsInput,
-        };
-
-        let input = ListAIConversationsInput {
-            conversation_ids: conversation_ids
-                .map(|ids| ids.into_iter().map(cynic::Id::new).collect()),
-        };
-
-        let variables = ListAIConversationMetadataVariables {
-            input,
-            request_context: get_request_context(),
-        };
-
-        let operation = ListAIConversationMetadata::build(variables);
-        let response = self.send_graphql_request(operation, None).await?;
-
-        match response.list_ai_conversations {
-            ListAIConversationMetadataResult::ListAIConversationsOutput(output) => {
-                let metadata_vec: Result<Vec<_>, _> = output
-                    .conversations
-                    .into_iter()
-                    .map(|conv| conv.try_into())
-                    .collect();
-                metadata_vec
-            }
-            ListAIConversationMetadataResult::UserFacingError(e) => {
-                Err(anyhow!(get_user_facing_error_message(e)))
-            }
-            ListAIConversationMetadataResult::Unknown => {
-                Err(anyhow!("Failed to list AI conversations metadata"))
-            }
-        }
+        Ok(vec![])
     }
 
     async fn get_ai_conversation_format(
@@ -1643,111 +1764,9 @@ impl AIClient for ServerApi {
 
     async fn get_task_attachments(
         &self,
-        task_id: String,
+        _task_id: String,
     ) -> anyhow::Result<Vec<TaskAttachment>, anyhow::Error> {
-        let variables = TaskVariables {
-            input: TaskInput {
-                task_id: cynic::Id::new(task_id),
-            },
-            request_context: get_request_context(),
-        };
-        let operation = TaskAttachmentsQuery::build(variables);
-        let response = self.send_graphql_request(operation, None).await?;
-
-        match response.task {
-            TaskResult::TaskOutput(output) => {
-                let attachments = output
-                    .task
-                    .attachments
-                    .into_iter()
-                    .map(|att| TaskAttachment {
-                        file_id: att.file_id.into_inner(),
-                        filename: att.filename,
-                        download_url: att.download_url,
-                        mime_type: att.mime_type,
-                    })
-                    .collect();
-                Ok(attachments)
-            }
-            TaskResult::UserFacingError(error) => {
-                Err(anyhow!(get_user_facing_error_message(error)))
-            }
-            TaskResult::Unknown => Err(anyhow!("Failed to fetch task attachments")),
-        }
-    }
-
-    async fn create_file_artifact_upload_target(
-        &self,
-        request: CreateFileArtifactUploadRequest,
-    ) -> anyhow::Result<CreateFileArtifactUploadResponse, anyhow::Error> {
-        let variables = CreateFileArtifactUploadTargetVariables {
-            input: CreateFileArtifactUploadTargetInput {
-                conversation_id: request.conversation_id.map(cynic::Id::new),
-                run_id: request.run_id.map(cynic::Id::new),
-                filepath: request.filepath,
-                description: request.description,
-                mime_type: request.mime_type,
-                size_bytes: request.size_bytes,
-            },
-            request_context: get_request_context(),
-        };
-        let operation = CreateFileArtifactUploadTarget::build(variables);
-        let response = self.send_graphql_request(operation, None).await?;
-
-        match response.create_file_artifact_upload_target {
-            CreateFileArtifactUploadTargetResult::CreateFileArtifactUploadTargetOutput(output) => {
-                Ok(CreateFileArtifactUploadResponse {
-                    artifact: into_file_artifact_record(output.artifact),
-                    upload_target: FileArtifactUploadTargetInfo {
-                        url: output.upload_target.url,
-                        method: output.upload_target.method,
-                        headers: output
-                            .upload_target
-                            .headers
-                            .into_iter()
-                            .map(|header| FileArtifactUploadHeaderInfo {
-                                name: header.name,
-                                value: header.value,
-                            })
-                            .collect(),
-                    },
-                })
-            }
-            CreateFileArtifactUploadTargetResult::UserFacingError(error) => {
-                Err(anyhow!(get_user_facing_error_message(error)))
-            }
-            CreateFileArtifactUploadTargetResult::Unknown => {
-                Err(anyhow!("Failed to create file artifact upload target"))
-            }
-        }
-    }
-
-    async fn confirm_file_artifact_upload(
-        &self,
-        artifact_uid: String,
-        checksum: String,
-    ) -> anyhow::Result<FileArtifactRecord, anyhow::Error> {
-        let variables = ConfirmFileArtifactUploadVariables {
-            input: ConfirmFileArtifactUploadInput {
-                artifact_uid: cynic::Id::new(artifact_uid),
-                checksum,
-            },
-            request_context: get_request_context(),
-        };
-        let operation = ConfirmFileArtifactUpload::build(variables);
-        let response = self.send_graphql_request(operation, None).await?;
-
-        match response.confirm_file_artifact_upload {
-            ConfirmFileArtifactUploadResult::ConfirmFileArtifactUploadOutput(output) => {
-                Ok(into_file_artifact_record(output.artifact))
-            }
-            ConfirmFileArtifactUploadResult::UserFacingError(error) => {
-                Err(anyhow!(get_user_facing_error_message(error)))
-            }
-            ConfirmFileArtifactUploadResult::Unknown => {
-                Err(anyhow!("Failed to confirm file artifact upload"))
-            }
-        }
+        Ok(vec![])
     }
 
     async fn get_artifact_download(
@@ -1796,24 +1815,9 @@ impl AIClient for ServerApi {
 
     async fn get_handoff_snapshot_attachments(
         &self,
-        task_id: &AmbientAgentTaskId,
+        _task_id: &AmbientAgentTaskId,
     ) -> anyhow::Result<Vec<TaskAttachment>, anyhow::Error> {
-        let response: ListHandoffSnapshotAttachmentsResponse = self
-            .get_public_api(&format!("agent/runs/{task_id}/handoff/attachments"))
-            .await?;
-
-        Ok(response
-            .attachments
-            .into_iter()
-            .map(|attachment| TaskAttachment {
-                file_id: attachment.attachment_id,
-                filename: attachment.filename,
-                download_url: attachment.download_url,
-                mime_type: attachment
-                    .mime_type
-                    .unwrap_or_else(|| "application/octet-stream".to_string()),
-            })
-            .collect())
+        Ok(vec![])
     }
 
     // --- Orchestrations V2 messaging ---
@@ -2281,8 +2285,12 @@ impl TryFrom<warp_graphql::ai::AIConversation> for ServerAIConversationMetadata 
             value.usage.usage_metadata.context_window_usage,
             value.usage.usage_metadata.credits_spent,
         );
-        let metadata = value.metadata.try_into()?;
-        let permissions = value.permissions.try_into()?;
+        let metadata = ServerConversationObjectMetadata {
+            uid: ServerId::from_string_lossy(value.metadata.uid.into_inner()),
+            creator_uid: value.metadata.creator_uid.map(|id| id.into_inner()),
+            metadata_last_updated_ts: value.metadata.metadata_last_updated_ts,
+        };
+        let permissions = ServerConversationPermissions;
         let ambient_agent_task_id = value
             .ambient_agent_task_id
             .map(|id| id.into_inner().parse())
@@ -2325,8 +2333,12 @@ impl TryFrom<warp_graphql::queries::list_ai_conversations::AIConversationMetadat
             value.usage.usage_metadata.context_window_usage,
             value.usage.usage_metadata.credits_spent,
         );
-        let metadata = value.metadata.try_into()?;
-        let permissions = value.permissions.try_into()?;
+        let metadata = ServerConversationObjectMetadata {
+            uid: ServerId::from_string_lossy(value.metadata.uid.into_inner()),
+            creator_uid: value.metadata.creator_uid.map(|id| id.into_inner()),
+            metadata_last_updated_ts: value.metadata.metadata_last_updated_ts,
+        };
+        let permissions = ServerConversationPermissions;
         let ambient_agent_task_id = value
             .ambient_agent_task_id
             .map(|id| id.into_inner().parse())

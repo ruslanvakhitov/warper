@@ -1,5 +1,3 @@
-pub mod schema;
-
 use warp_graphql::client::RequestOptions;
 pub use warp_graphql::client::{get_request_context, get_user_facing_error_message, GraphQLError};
 

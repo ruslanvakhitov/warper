@@ -1,6 +1,5 @@
 use crate::ai::agent::comment::CodeReview;
 use crate::ai::agent::linearization::compute_task_depths;
-use crate::ai::ambient_agents::AmbientAgentTaskId;
 use crate::ai::artifacts::Artifact;
 use crate::ai::blocklist::{RequestInput, ResponseStreamId, SerializedBlockListItem};
 use crate::ai::skills::SkillDescriptor;
@@ -31,6 +30,7 @@ use warp_core::send_telemetry_from_ctx;
 use warp_core::ui::appearance::Appearance;
 use warp_core::ui::theme::color::internal_colors;
 use warp_core::ui::theme::WarpTheme;
+use warp_graphql::scalars::time::ServerTimestamp;
 use warp_multi_agent_api::response_event::stream_finished;
 use warp_multi_agent_api::{self as api, response_event::stream_finished::TokenUsage};
 use warpui::color::ColorU;
@@ -72,6 +72,34 @@ use super::{
 use super::{
     AIAgentOutput, OutputModelInfo, ServerOutputId, Shared, SuggestedLoggingId, Suggestions,
 };
+
+#[derive(Debug, thiserror::Error)]
+#[error("Invalid task ID: {0}")]
+pub struct ParseAmbientAgentTaskIdError(#[from] uuid::Error);
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct AmbientAgentTaskId(uuid::NonNilUuid);
+
+impl Display for AmbientAgentTaskId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl std::str::FromStr for AmbientAgentTaskId {
+    type Err = ParseAmbientAgentTaskIdError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let uuid = Uuid::try_parse(s)?;
+        Ok(Self(uuid::NonNilUuid::try_from(uuid)?))
+    }
+}
+
+impl From<AmbientAgentTaskId> for cynic::Id {
+    fn from(id: AmbientAgentTaskId) -> Self {
+        Self::new(id.to_string())
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TodoStatus {
@@ -3434,14 +3462,14 @@ pub struct ServerAIConversationMetadata {
     /// Usage metadata including token counts, credits spent, etc.
     pub usage: ConversationUsageMetadata,
 
-    /// Server metadata (revision, timestamps, creator info, etc.).
-    pub metadata: crate::cloud_object::ServerMetadata,
+    /// Local server metadata retained for restored conversation display.
+    pub metadata: ServerConversationObjectMetadata,
 
-    /// Permissions for this conversation (space, guests, link sharing).
-    pub permissions: crate::cloud_object::ServerPermissions,
+    /// Hosted sharing permissions were removed by WARPER-001.
+    pub permissions: ServerConversationPermissions,
 
     /// The ID of the associated ambient agent task, if any.
-    pub ambient_agent_task_id: Option<crate::ai::ambient_agents::AmbientAgentTaskId>,
+    pub ambient_agent_task_id: Option<crate::ai::agent::conversation::AmbientAgentTaskId>,
 
     /// The server conversation token used to identify this conversation on the server.
     pub server_conversation_token: ServerConversationToken,
@@ -3449,6 +3477,16 @@ pub struct ServerAIConversationMetadata {
     /// Artifacts (plans, PRs) created during this conversation.
     pub artifacts: Vec<Artifact>,
 }
+
+#[derive(Debug, Clone)]
+pub struct ServerConversationObjectMetadata {
+    pub uid: ServerId,
+    pub creator_uid: Option<String>,
+    pub metadata_last_updated_ts: ServerTimestamp,
+}
+
+#[derive(Debug, Clone)]
+pub struct ServerConversationPermissions;
 
 /// Returns an iterator over `AIAgentContext`s attached to inputs in the given `exchanges`, in the
 /// same order in which they appeared.

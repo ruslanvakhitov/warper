@@ -1,8 +1,6 @@
 use std::time::Duration;
 use warpui::RetryOption;
 
-use crate::server::server_api::presigned_upload::HttpStatusError;
-
 /// Common duration for a periodic poll. In our app, we generally have the following to update the same data:
 /// - RTC messages
 /// - Out-of-band queries based on user actions (i.e. fetch team info when user opens the settings page, user
@@ -38,6 +36,13 @@ pub const LISTENER_RETRY_STRATEGY: RetryOption = RetryOption::linear(
     5,                       /* max retry count */
 )
 .with_jitter(0.6 /* max_jitter_multiplier */);
+
+#[derive(Debug, thiserror::Error)]
+#[error("HTTP status {status}: {body}")]
+pub(crate) struct HttpStatusError {
+    pub(crate) status: u16,
+    pub(crate) body: String,
+}
 
 /// Classify an HTTP-backed error as transient (worth retrying) or permanent (fail fast).
 ///

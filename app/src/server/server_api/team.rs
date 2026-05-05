@@ -1,6 +1,5 @@
 use super::ServerApi;
 use crate::auth::UserUid;
-use crate::cloud_object::CloudObjectEventEntrypoint;
 use crate::server::ids::ServerId;
 use crate::workspaces::team::{DiscoverableTeam, MembershipRole};
 use crate::workspaces::user_workspaces::{CreateTeamResponse, WorkspacesMetadataWithPricing};
@@ -12,6 +11,11 @@ use mockall::{automock, predicate::*};
 
 fn hosted_team_api_removed() -> anyhow::Error {
     anyhow!("hosted team/account APIs are removed in Warper")
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum CloudObjectEventEntrypoint {
+    Removed,
 }
 
 #[cfg_attr(test, automock)]

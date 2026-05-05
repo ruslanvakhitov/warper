@@ -1,15 +1,11 @@
 pub mod ai;
-pub mod auth;
 pub mod block;
-pub mod harness_support;
 pub mod integrations;
 pub mod managed_secrets;
-pub mod object;
-pub(crate) mod presigned_upload;
 pub mod team;
 pub mod workspace;
 
-use crate::ai::ambient_agents::AmbientAgentTaskId;
+use crate::ai::agent::conversation::AmbientAgentTaskId;
 use crate::ai::get_relevant_files::api::{GetRelevantFiles, GetRelevantFilesResponse};
 use crate::ai::predict::generate_ai_input_suggestions;
 use crate::ai::predict::generate_ai_input_suggestions::GenerateAIInputSuggestionsRequest;
@@ -19,9 +15,7 @@ use crate::ai::predict::predict_am_queries::{PredictAMQueriesRequest, PredictAMQ
 use crate::ai::voice::transcribe::{TranscribeRequest, TranscribeResponse};
 use crate::auth::auth_state::AuthState;
 use ai::AIClient;
-use auth::{AuthClient, AMBIENT_WORKLOAD_TOKEN_HEADER, CLOUD_AGENT_ID_HEADER};
 use block::BlockClient;
-use object::{LocalOnlyObjectClient, ObjectClient};
 use team::TeamClient;
 use warp_core::errors::{register_error, AnyhowErrorExt, ErrorExt};
 use warp_managed_secrets::client::ManagedSecretsClient;
@@ -43,6 +37,8 @@ use warpui::Entity;
 use warpui::SingletonEntity;
 
 pub const FETCH_CHANNEL_VERSIONS_TIMEOUT: std::time::Duration = Duration::from_secs(60);
+const AMBIENT_WORKLOAD_TOKEN_HEADER: &str = "X-Warp-Ambient-Workload-Token";
+const CLOUD_AGENT_ID_HEADER: &str = "X-Warp-Cloud-Agent-ID";
 
 /// We use a special error code header `X-Warp-Error-Code` to allow the server to send
 /// more specific error code information, so that the client can discern between different
@@ -337,8 +333,6 @@ pub struct ServerApi {
     event_sender: async_channel::Sender<ServerApiEvent>,
     // TODO(jeff): Make `TelemetryApi` another type of client, and move it off `ServerApi`.
     telemetry_api: TelemetryApi,
-    // We technically use OAuth2 for headless device authentication.
-    oauth_client: Option<self::auth::OAuth2Client>,
     /// Cached ambient workload token for requests from ambient agents.
     ambient_workload_token: Arc<Mutex<Option<warp_isolation_platform::WorkloadToken>>>,
     /// The ambient agent task ID for requests from cloud agents.
@@ -363,14 +357,11 @@ impl ServerApi {
             Some(EVAL_USER_IDS[rand::thread_rng().gen_range(0..EVAL_USER_IDS.len())])
         };
 
-        let oauth_client = Self::create_oauth_client();
-
         Self {
             client: Arc::new(http_client::Client::new()),
             auth_state,
             event_sender,
             telemetry_api: TelemetryApi::new(),
-            oauth_client,
             ambient_workload_token: Arc::new(Mutex::new(None)),
             ambient_agent_task_id: Arc::new(RwLock::new(None)),
             agent_source,
@@ -391,14 +382,11 @@ impl ServerApi {
     fn new_for_test() -> Self {
         let (tx, _) = async_channel::unbounded();
 
-        let oauth_client = Self::create_oauth_client();
-
         Self {
             client: Arc::new(http_client::Client::new_for_test()),
             auth_state: Arc::new(AuthState::new_for_test()),
             event_sender: tx,
             telemetry_api: TelemetryApi::new(),
-            oauth_client,
             ambient_workload_token: Arc::new(Mutex::new(None)),
             ambient_agent_task_id: Arc::new(RwLock::new(None)),
             agent_source: None,
@@ -414,11 +402,6 @@ impl ServerApi {
 
     /// Returns ambient agent headers to attach to requests.
     async fn ambient_agent_headers(&self) -> Result<Vec<(&'static str, String)>> {
-        let workload_token = self
-            .get_or_create_ambient_workload_token()
-            .await
-            .context("Failed to get ambient workload token")?;
-
         let task_id = self
             .ambient_agent_task_id
             .read()
@@ -427,16 +410,11 @@ impl ServerApi {
 
         let agent_source = self.agent_source.as_ref().map(|s| s.as_str().to_string());
 
-        Ok(workload_token
-            .map(|token| (AMBIENT_WORKLOAD_TOKEN_HEADER, token))
+        Ok(task_id
+            .map(|id| (CLOUD_AGENT_ID_HEADER, id))
             .into_iter()
-            .chain(task_id.map(|id| (CLOUD_AGENT_ID_HEADER, id)))
             .chain(agent_source.map(|s| (AGENT_SOURCE_HEADER, s)))
             .collect())
-    }
-
-    fn create_oauth_client() -> Option<self::auth::OAuth2Client> {
-        None
     }
 
     pub fn send_graphql_request<'a, QF, O: warp_graphql::client::Operation<QF> + Send + 'a>(
@@ -721,10 +699,6 @@ impl ServerApiProvider {
         self.server_api.clone()
     }
 
-    pub fn get_auth_client(&self) -> Arc<dyn AuthClient> {
-        self.server_api.clone()
-    }
-
     pub fn get_block_client(&self) -> Arc<dyn BlockClient> {
         self.server_api.clone()
     }
@@ -741,10 +715,6 @@ impl ServerApiProvider {
         self.server_api.clone()
     }
 
-    pub fn get_cloud_objects_client(&self) -> Arc<dyn ObjectClient> {
-        Arc::new(LocalOnlyObjectClient)
-    }
-
     pub fn get_integrations_client(&self) -> Arc<dyn integrations::IntegrationsClient> {
         self.server_api.clone()
     }
@@ -757,11 +727,6 @@ impl ServerApiProvider {
     /// and includes standard Warp request headers.
     pub fn get_http_client(&self) -> Arc<http_client::Client> {
         self.server_api.client.clone()
-    }
-
-    #[cfg_attr(target_family = "wasm", expect(dead_code))]
-    pub fn get_harness_support_client(&self) -> Arc<dyn harness_support::HarnessSupportClient> {
-        self.server_api.clone()
     }
 }
 

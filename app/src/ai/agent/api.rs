@@ -22,7 +22,7 @@ use warp_core::execution_mode::AppExecutionMode;
 use warp_core::features::FeatureFlag;
 
 use crate::ai::agent::conversation::AIConversationId;
-use crate::ai::ambient_agents::AmbientAgentTaskId;
+use crate::ai::agent::conversation::AmbientAgentTaskId;
 use crate::{
     ai::{blocklist::SessionContext, llms::LLMId},
     server::server_api::AIApiError,
