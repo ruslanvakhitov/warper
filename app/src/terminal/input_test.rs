@@ -16,7 +16,6 @@ use crate::ai::AIRequestUsageModel;
 use crate::auth::auth_manager::AuthManager;
 use crate::auth::AuthStateProvider;
 use crate::changelog_model::ChangelogModel;
-use crate::cloud_object::model::persistence::CloudModel;
 use crate::pricing::PricingInfoModel;
 use crate::search::files::model::FileSearchModel;
 use crate::terminal::cli_agent_sessions::CLIAgentSessionsModel;
@@ -107,7 +106,6 @@ pub fn initialize_app(app: &mut App) {
     app.add_singleton_model(|_| SystemStats::new());
     app.add_singleton_model(|_| Prompt::mock());
     app.add_singleton_model(SyncQueue::mock);
-    app.add_singleton_model(CloudModel::mock);
     app.add_singleton_model(UserWorkspaces::default_mock);
     app.add_singleton_model(UpdateManager::mock);
     app.add_singleton_model(MCPGalleryManager::new);

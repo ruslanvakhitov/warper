@@ -1,57 +1,13 @@
-use warpui::{
-    async_assert, integration::TestStep, windowing::WindowManager, SingletonEntity, WindowId,
-};
+use warpui::{integration::TestStep, windowing::WindowManager, WindowId};
 
 use crate::{
-    cloud_object::{model::persistence::CloudModel, CloudObjectEventEntrypoint, Space},
     drive::LocalObjectOpenSettings,
     integration_testing::view_getters::workspace_view,
-    server::{
-        cloud_objects::update_manager::UpdateManager,
-        ids::{ClientId, SyncId},
-    },
-    workflows::{manager::WorkflowOpenSource, workflow::Workflow, WorkflowViewMode},
-    workspaces::user_workspaces::UserWorkspaces,
+    server::ids::SyncId,
+    workflows::{manager::WorkflowOpenSource, WorkflowViewMode},
 };
 
 use super::open_workflow_count;
-
-/// Create a personal workflow and save its sync ID into the step data.
-pub fn create_a_personal_workflow(key: impl Into<String>) -> TestStep {
-    let key = key.into();
-    let workflow = Workflow::new("personal workflow", "echo 'name'");
-    TestStep::new("Create a personal workflow")
-        .with_action(move |app, _, data| {
-            let client_id = ClientId::new();
-            let sync_id = SyncId::ClientId(client_id);
-            UpdateManager::handle(app).update(app, |update_manager, ctx| {
-                update_manager.create_workflow(
-                    workflow.clone(),
-                    UserWorkspaces::as_ref(ctx)
-                        .personal_drive(ctx)
-                        .expect("User UID must be set in tests"),
-                    None,
-                    client_id,
-                    CloudObjectEventEntrypoint::ManagementUI,
-                    true,
-                    ctx,
-                );
-            });
-
-            data.insert(key.clone(), sync_id);
-        })
-        .add_assertion(move |app, _| {
-            CloudModel::handle(app).read(app, |cloud_model, ctx| {
-                async_assert!(
-                    cloud_model
-                        .active_cloud_objects_in_space(Space::Personal, ctx)
-                        .count()
-                        > 0,
-                    "Workflow exists"
-                )
-            })
-        })
-}
 
 /// Open the workflow saved at `workflow_key` in the active tab of the window saved at `window_key`
 pub fn open_workflow(window_key: impl Into<String>, workflow_key: impl Into<String>) -> TestStep {

@@ -1,7 +1,6 @@
 use warpui::{platform::WindowStyle, App};
 
 use crate::{
-    cloud_object::model::persistence::CloudModel,
     network::NetworkStatus,
     server::{
         cloud_objects::{listener::Listener, update_manager::UpdateManager},
@@ -24,7 +23,6 @@ fn initialize_app(app: &mut App) {
     app.add_singleton_model(|_| NetworkStatus::new());
     app.add_singleton_model(|_| SystemStats::new());
     app.add_singleton_model(SyncQueue::mock);
-    app.add_singleton_model(CloudModel::mock);
     app.add_singleton_model(UserWorkspaces::default_mock);
     app.add_singleton_model(Listener::mock);
     app.add_singleton_model(UpdateManager::mock);

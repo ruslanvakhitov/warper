@@ -2,21 +2,13 @@ use std::sync::Arc;
 
 use string_offset::CharOffset;
 use warp_editor::model::CoreEditorModel;
-use warpui::{
-    async_assert, integration::TestStep, windowing::WindowManager, App, SingletonEntity,
-    ViewHandle, WindowId,
-};
+use warpui::{integration::TestStep, windowing::WindowManager, App, ViewHandle, WindowId};
 
 use crate::{
-    cloud_object::{model::persistence::CloudModel, CloudObjectEventEntrypoint, Space},
     drive::LocalObjectOpenSettings,
     integration_testing::view_getters::{notebook_view, workspace_view},
     notebooks::manager::NotebookSource,
-    server::{
-        cloud_objects::update_manager::UpdateManager,
-        ids::{ClientId, SyncId},
-    },
-    workspaces::user_workspaces::UserWorkspaces,
+    server::ids::SyncId,
 };
 
 fn notebook_editor(
@@ -27,46 +19,6 @@ fn notebook_editor(
 ) -> ViewHandle<crate::notebooks::editor::view::RichTextEditorView> {
     notebook_view(app, window_id, tab_index, pane_index)
         .read(app, |notebook, _ctx| notebook.input_editor())
-}
-
-/// Create a personal notebook and save its sync ID into the step data.
-pub fn create_a_personal_notebook(key: impl Into<String>, title: impl Into<String>) -> TestStep {
-    let key = key.into();
-    let title = Arc::new(title.into());
-    TestStep::new("Create a personal notebook")
-        .with_action(move |app, _, data| {
-            let client_id = ClientId::new();
-            let sync_id = SyncId::ClientId(client_id);
-            UpdateManager::handle(app).update(app, |update_manager, ctx| {
-                update_manager.create_notebook(
-                    client_id,
-                    UserWorkspaces::as_ref(ctx)
-                        .personal_drive(ctx)
-                        .expect("User UID must be set in tests"),
-                    None,
-                    Default::default(),
-                    CloudObjectEventEntrypoint::ManagementUI,
-                    true,
-                    ctx,
-                );
-
-                // Set a title so that the notebook is not considered empty.
-                update_manager.update_notebook_title(title.clone(), sync_id, ctx);
-            });
-
-            data.insert(key.clone(), sync_id);
-        })
-        .add_assertion(move |app, _| {
-            CloudModel::handle(app).read(app, |cloud_model, ctx| {
-                async_assert!(
-                    cloud_model
-                        .active_cloud_objects_in_space(Space::Personal, ctx)
-                        .count()
-                        > 0,
-                    "Notebook exists"
-                )
-            })
-        })
 }
 
 /// Open the notebook saved at `notebook_key` in the active tab of the window saved at `window_key`

@@ -9,7 +9,6 @@ use crate::ai::persisted_workspace::PersistedWorkspace;
 use crate::ai::restored_conversations::RestoredAgentConversations;
 use crate::ai::skills::SkillManager;
 use crate::ai::AIRequestUsageModel;
-use crate::cloud_object::model::persistence::CloudModel;
 use crate::cloud_object::model::view::CloudViewModel;
 use crate::context_chips::prompt::Prompt;
 use crate::editor::Event;
@@ -87,7 +86,6 @@ fn initialize_app(app: &mut App) {
     app.add_singleton_model(|_| NetworkStatus::new());
     app.add_singleton_model(|_| SystemStats::new());
     app.add_singleton_model(SyncQueue::mock);
-    app.add_singleton_model(CloudModel::mock);
     app.add_singleton_model(UserWorkspaces::default_mock);
     app.add_singleton_model(|_ctx| UserProfiles::new(Vec::new()));
     app.add_singleton_model(UpdateManager::mock);
@@ -778,84 +776,6 @@ fn test_workspace_sessions_retrieves_panes() {
             assert!(workspace
                 .workspace_sessions(ctx.window_id(), ctx)
                 .any(|x| { x.pane_view_locator().pane_id == new_pane_id }));
-        });
-    });
-}
-
-#[test]
-fn test_notebook_pane_tracking() {
-    App::test((), |mut app| async move {
-        initialize_app(&mut app);
-
-        let workspace = mock_workspace(&mut app);
-
-        workspace.update(&mut app, |workspace, ctx| {
-            // Add a new notebook pane.
-            workspace.open_notebook(
-                &NotebookSource::New {
-                    title: None,
-                    owner: Owner::mock_current_user(),
-                    initial_folder_id: None,
-                },
-                &LocalObjectOpenSettings::default(),
-                ctx,
-                true,
-            );
-
-            // Get the ID of the new notebook.
-            let pane_group = workspace
-                .get_pane_group_view(0)
-                .expect("Pane group does not exist")
-                .clone();
-            let notebook_view = pane_group
-                .as_ref(ctx)
-                .notebook_view_at_pane_index(0, ctx)
-                .expect("Notebook view was not created")
-                .clone();
-            let notebook_pane_id = pane_group
-                .as_ref(ctx)
-                .pane_id_from_index(0)
-                .expect("Notebook view should have been created");
-            let notebook_id = notebook_view
-                .as_ref(ctx)
-                .notebook_id(ctx)
-                .expect("Notebook should have an ID");
-
-            // The notebook should be registered with the NotebookManager.
-            let (window, locator) = NotebookManager::as_ref(ctx)
-                .find_pane(&NotebookSource::Existing(notebook_id))
-                .expect("Notebook pane should be registered");
-            assert_eq!(window, ctx.window_id());
-            assert_eq!(
-                locator,
-                PaneViewLocator {
-                    pane_group_id: pane_group.id(),
-                    pane_id: notebook_pane_id,
-                }
-            );
-
-            // Re-opening the notebook should not create a new view.
-            workspace.open_notebook(
-                &NotebookSource::Existing(notebook_id),
-                &LocalObjectOpenSettings::default(),
-                ctx,
-                true,
-            );
-            assert_eq!(
-                ctx.views_of_type::<NotebookView>(ctx.window_id()),
-                Some(vec![notebook_view])
-            );
-
-            // Finally, closing the notebook pane should de-register it.
-            pane_group.update(ctx, |pane_group, ctx| {
-                pane_group.handle_action(&PaneGroupAction::RemoveActive, ctx)
-            });
-            assert_eq!(
-                NotebookManager::handle(ctx)
-                    .as_ref(ctx)
-                    .find_pane(&NotebookSource::Existing(notebook_id)),
-                None
-            );
         });
     });
 }

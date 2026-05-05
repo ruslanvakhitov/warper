@@ -1,34 +1,29 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::time::Duration;
 
-use chrono::{DateTime, Local, Utc};
+use chrono::{DateTime, Local};
 use itertools::Itertools;
 use warpui::{App, EntityId};
 
 use crate::{
     ai::{
         agent::{
-            api::ServerConversationToken,
-            conversation::{AIAgentHarness, AIConversationId, ServerAIConversationMetadata},
-            AIAgentExchange, AIAgentExchangeId, AIAgentInput, AIAgentOutputStatus,
-            FinishedAIAgentOutput, Shared, UserQueryMode,
+            api::ServerConversationToken, conversation::AIConversationId, AIAgentExchange,
+            AIAgentExchangeId, AIAgentInput, AIAgentOutputStatus, FinishedAIAgentOutput, Shared,
+            UserQueryMode,
         },
-        ambient_agents::AmbientAgentTaskId,
         blocklist::{controller::RequestInput, ResponseStreamId},
         llms::LLMId,
     },
-    cloud_object::{Owner, Revision, ServerMetadata, ServerPermissions},
     input_suggestions::HistoryInputSuggestion,
     persistence::{model::PersistedAutoexecuteMode, ModelEvent},
-    server::ids::ServerId,
     terminal::model::session::SessionId,
     test_util::settings::initialize_settings_for_tests,
     GlobalResourceHandles, GlobalResourceHandlesProvider,
 };
 
 use super::{
-    AIConversationMetadata, AIQueryHistoryOutputStatus, BlocklistAIHistoryModel, PersistedAIInput,
-    PersistedAIInputType,
+    AIQueryHistoryOutputStatus, BlocklistAIHistoryModel, PersistedAIInput, PersistedAIInputType,
 };
 
 /// Helper function to create a PersistedAIInput for testing
@@ -282,193 +277,6 @@ fn test_ai_queries_for_terminal_view_up_arrow_history() {
     });
 }
 
-/// Helper function to create ServerMetadata for testing
-fn create_mock_server_metadata() -> ServerMetadata {
-    ServerMetadata {
-        uid: ServerId::default(),
-        revision: Revision::now(),
-        metadata_last_updated_ts: Utc::now().into(),
-        trashed_ts: None,
-        folder_id: None,
-        is_welcome_object: false,
-        creator_uid: None,
-        last_editor_uid: None,
-        current_editor_uid: None,
-    }
-}
-
-/// Helper function to create ServerPermissions for testing
-fn create_mock_server_permissions() -> ServerPermissions {
-    ServerPermissions {
-        space: Owner::mock_current_user(),
-        guests: Vec::new(),
-        anyone_link_sharing: None,
-        permissions_last_updated_ts: Utc::now().into(),
-    }
-}
-
-/// Helper function to create ServerAIConversationMetadata for testing
-fn create_server_metadata(
-    title: &str,
-    server_token: &str,
-    credits_spent: f32,
-    ambient_agent_task_id: Option<AmbientAgentTaskId>,
-) -> ServerAIConversationMetadata {
-    use crate::persistence::model::ConversationUsageMetadata;
-
-    // Create ConversationUsageMetadata from persistence model
-    let usage = ConversationUsageMetadata {
-        was_summarized: false,
-        context_window_usage: 0.0,
-        credits_spent,
-        credits_spent_for_last_block: None,
-        token_usage: vec![],
-        tool_usage_metadata: Default::default(),
-    };
-
-    ServerAIConversationMetadata {
-        title: title.to_string(),
-        usage,
-        metadata: create_mock_server_metadata(),
-        permissions: create_mock_server_permissions(),
-        ambient_agent_task_id,
-        server_conversation_token: ServerConversationToken::new(server_token.to_string()),
-        artifacts: Vec::new(),
-        working_directory: None,
-        harness: AIAgentHarness::Oz,
-    }
-}
-
-#[test]
-fn test_merge_cloud_conversation_metadata() {
-    App::test((), |mut app| async move {
-        let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
-
-        // Set up local metadata: some with server tokens, some without
-        history_model.update(&mut app, |model, _| {
-            let cloud_metadata = vec![
-                create_server_metadata("Local Conversation 1", "token-1", 10.0, None),
-                create_server_metadata("Local Conversation 2", "token-2", 20.0, None),
-                create_server_metadata("Local Conversation 3", "token-3", 30.0, None),
-            ];
-            model.merge_cloud_conversation_metadata(cloud_metadata);
-        });
-
-        // Fetch server metadata where:
-        // - token-1 and token-2 match existing local (should update)
-        // - token-4 and token-5 are net new (should add)
-        // - token-3 is not in server response (local should remain)
-        history_model.update(&mut app, |model, _| {
-            let cloud_metadata = vec![
-                create_server_metadata("Updated Conversation 1", "token-1", 15.0, None),
-                create_server_metadata("Updated Conversation 2", "token-2", 25.0, None),
-                create_server_metadata("New Conversation 4", "token-4", 40.0, None),
-                create_server_metadata("New Conversation 5", "token-5", 50.0, None),
-            ];
-            model.merge_cloud_conversation_metadata(cloud_metadata);
-        });
-
-        // Verify end state
-        let (titles, token_map): (Vec<String>, HashMap<String, f32>) =
-            history_model.read(&app, |model, _| {
-                let mut titles = Vec::new();
-                let mut token_map = HashMap::new();
-                for meta in model.get_local_conversations_metadata() {
-                    titles.push(meta.title.clone());
-                    if let (Some(token), Some(credits)) =
-                        (meta.server_conversation_token.as_ref(), meta.credits_spent)
-                    {
-                        token_map.insert(token.as_str().to_string(), credits);
-                    }
-                }
-                (titles, token_map)
-            });
-
-        // Should have 5 total: 3 original (token-1, token-2, token-3) + 2 new (token-4, token-5)
-        assert_eq!(titles.len(), 5);
-
-        // token-1 and token-2 should be updated
-        assert_eq!(token_map.get("token-1"), Some(&15.0));
-        assert_eq!(token_map.get("token-2"), Some(&25.0));
-        assert!(titles.contains(&"Updated Conversation 1".to_string()));
-        assert!(titles.contains(&"Updated Conversation 2".to_string()));
-
-        // token-3 should remain unchanged (not in server response)
-        assert_eq!(token_map.get("token-3"), Some(&30.0));
-        assert!(titles.contains(&"Local Conversation 3".to_string()));
-
-        // token-4 and token-5 should be new
-        assert_eq!(token_map.get("token-4"), Some(&40.0));
-        assert_eq!(token_map.get("token-5"), Some(&50.0));
-        assert!(titles.contains(&"New Conversation 4".to_string()));
-        assert!(titles.contains(&"New Conversation 5".to_string()));
-    });
-}
-
-/// Test that when a conversation is restored BEFORE cloud metadata is fetched,
-/// the server_metadata is populated when merge_cloud_conversation_metadata is called.
-#[test]
-fn test_merge_cloud_metadata_updates_already_restored_conversations() {
-    use crate::ai::agent::conversation::AIConversation;
-
-    App::test((), |mut app| async move {
-        let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
-        let terminal_view_id = EntityId::new();
-
-        // Create a conversation with a server token and restore it
-        let mut conversation = AIConversation::new();
-        conversation.set_server_conversation_token("token-1".to_string());
-        let conversation_id = conversation.id();
-
-        // Verify conversation has no server_metadata initially
-        assert!(conversation.server_metadata().is_none());
-
-        // Restore the conversation (simulating app startup restoration)
-        history_model.update(&mut app, |model, ctx| {
-            model.restore_conversations(terminal_view_id, vec![conversation], ctx);
-        });
-
-        // Verify the conversation is still without server_metadata
-        let has_metadata = history_model.read(&app, |model, _| {
-            model
-                .conversation(&conversation_id)
-                .map(|c| c.server_metadata().is_some())
-                .unwrap_or(false)
-        });
-        assert!(
-            !has_metadata,
-            "Conversation should not have server_metadata before merge"
-        );
-
-        // Now merge cloud metadata - this should update the restored conversation
-        history_model.update(&mut app, |model, _| {
-            let cloud_metadata = vec![create_server_metadata(
-                "Conversation from Server",
-                "token-1",
-                42.0,
-                None,
-            )];
-            model.merge_cloud_conversation_metadata(cloud_metadata);
-        });
-
-        // Verify that the restored conversation now has server_metadata
-        let (has_metadata, title) = history_model.read(&app, |model, _| {
-            let conv = model.conversation(&conversation_id).unwrap();
-            let has_metadata = conv.server_metadata().is_some();
-            let title = conv
-                .server_metadata()
-                .map(|m| m.title.clone())
-                .unwrap_or_default();
-            (has_metadata, title)
-        });
-        assert!(
-            has_metadata,
-            "Conversation should have server_metadata after merge"
-        );
-        assert_eq!(title, "Conversation from Server");
-    });
-}
-
 #[test]
 fn test_transcript_viewer_terminal_view_is_not_marked_historical() {
     App::test((), |mut app| async move {
@@ -520,57 +328,6 @@ fn test_transcript_viewer_terminal_view_is_not_marked_historical() {
             history_model.get_local_conversations_metadata().count()
         });
         assert_eq!(historical_count, 0);
-    });
-}
-
-#[test]
-fn test_ambient_agent_conversations_excluded_from_list_but_accessible_by_id() {
-    App::test((), |mut app| async move {
-        let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
-
-        let regular_id = AIConversationId::new();
-        let ambient_id = AIConversationId::new();
-
-        let ambient_task_id: AmbientAgentTaskId = uuid::Uuid::new_v4().to_string().parse().unwrap();
-
-        history_model.update(&mut app, |model, _| {
-            let regular_metadata = AIConversationMetadata::from_server_metadata(
-                regular_id,
-                create_server_metadata("Regular Conversation", "token-regular", 5.0, None),
-            );
-            model
-                .all_conversations_metadata
-                .insert(regular_id, regular_metadata);
-
-            let ambient_metadata = AIConversationMetadata::from_server_metadata(
-                ambient_id,
-                create_server_metadata(
-                    "Ambient Conversation",
-                    "token-ambient",
-                    3.0,
-                    Some(ambient_task_id),
-                ),
-            );
-            model
-                .all_conversations_metadata
-                .insert(ambient_id, ambient_metadata);
-        });
-
-        history_model.read(&app, |model, _| {
-            // get_local_conversations_metadata should exclude the ambient conversation
-            let listed: Vec<&AIConversationMetadata> =
-                model.get_local_conversations_metadata().collect();
-            assert_eq!(listed.len(), 1);
-            assert_eq!(listed[0].id, regular_id);
-
-            // get_conversation_metadata should return both by ID
-            assert!(model.get_conversation_metadata(&regular_id).is_some());
-            assert!(model.get_conversation_metadata(&ambient_id).is_some());
-            assert_eq!(
-                model.get_conversation_metadata(&ambient_id).unwrap().title,
-                "Ambient Conversation"
-            );
-        });
     });
 }
 

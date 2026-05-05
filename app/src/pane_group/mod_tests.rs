@@ -17,7 +17,6 @@ use crate::{
         AIRequestUsageModel,
     },
     auth::auth_manager::AuthManager,
-    cloud_object::model::persistence::CloudModel,
     context_chips::prompt::Prompt,
     experiments,
     network::NetworkStatus,
@@ -80,7 +79,6 @@ fn initialize_app(app: &mut App) {
     app.add_singleton_model(|_| NetworkStatus::new());
     app.add_singleton_model(|_| SystemStats::new());
     app.add_singleton_model(SyncQueue::mock);
-    app.add_singleton_model(CloudModel::mock);
     app.add_singleton_model(UserWorkspaces::default_mock);
     app.add_singleton_model(Listener::mock);
     app.add_singleton_model(UpdateManager::mock);

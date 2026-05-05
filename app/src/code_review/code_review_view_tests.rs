@@ -2,7 +2,6 @@ use super::*;
 use crate::ai::persisted_workspace::PersistedWorkspace;
 use crate::ai::request_limits::AIRequestUsageModel;
 use crate::auth::AuthStateProvider;
-use crate::cloud_object::model::persistence::CloudModel;
 use crate::code::editor::view::{CodeEditorRenderOptions, CodeEditorView};
 use crate::code::local_code_editor::LocalCodeEditorView;
 use crate::code_review::comments::{
@@ -76,8 +75,6 @@ fn initialize_test_app(app: &mut App) {
     app.add_singleton_model(|_| GlobalCodeReviewModel);
     app.add_singleton_model(|ctx| UserWorkspaces::mock(vec![], ctx));
 
-    // Add mocks required by rich text editor (used in the CommentEditor)
-    app.add_singleton_model(CloudModel::mock);
     app.add_singleton_model(|_| ActiveSession::default());
     app.add_singleton_model(NotebookKeybindings::new);
     app.add_singleton_model(|ctx| AIRequestUsageModel::new(ctx));
