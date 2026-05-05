@@ -248,7 +248,10 @@ fn validate_custom_uri_rejects_hosted_hosts_without_server_config() {
 
     for url in [
         format!("{}://auth/desktop_redirect", ChannelState::url_scheme()),
+        format!("{}://billing/checkout", ChannelState::url_scheme()),
         format!("{}://team/settings", ChannelState::url_scheme()),
+        format!("{}://platform/api_keys", ChannelState::url_scheme()),
+        format!("{}://environment/open?id=abc", ChannelState::url_scheme()),
         format!("{}://conversation/abc", ChannelState::url_scheme()),
         format!("{}://drive/notebook?id=abc", ChannelState::url_scheme()),
         format!(
@@ -277,7 +280,10 @@ fn validate_custom_uri_rejects_hosted_hosts_even_with_stale_server_config() {
 
     for url in [
         format!("{}://auth/desktop_redirect", ChannelState::url_scheme()),
+        format!("{}://billing/checkout", ChannelState::url_scheme()),
         format!("{}://team/settings", ChannelState::url_scheme()),
+        format!("{}://platform/api_keys", ChannelState::url_scheme()),
+        format!("{}://environment/open?id=abc", ChannelState::url_scheme()),
         format!("{}://conversation/abc", ChannelState::url_scheme()),
         format!("{}://drive/workflow?id=abc", ChannelState::url_scheme()),
         format!(

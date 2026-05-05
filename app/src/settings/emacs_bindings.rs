@@ -1,7 +1,5 @@
 use crate::banner::BannerState;
-use settings::{
-    macros::define_settings_group, RespectUserSyncSetting, SupportedPlatforms, SyncToCloud,
-};
+use settings::{macros::define_settings_group, SupportedPlatforms, SyncToCloud};
 
 // This isn't exactly a setting, but rather a record of a
 // user action that should be persisted the same way we would a setting.
@@ -15,7 +13,7 @@ define_settings_group!(EmacsBindingsSettings, settings: [
         type: BannerState,
         default: BannerState::NotDismissed,
         supported_platforms: SupportedPlatforms::LINUX,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        sync_to_cloud: SyncToCloud::Never,
         private: true,
     },
 ]);

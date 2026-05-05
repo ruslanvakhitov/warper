@@ -1,8 +1,8 @@
 use super::{EditorAction, EditorView, VoiceTranscriptionOptions};
+use crate::ai::api_errors::TranscribeError;
 use crate::ai::blocklist::InputType;
 use crate::appearance::Appearance;
 use crate::editor::EditorElement;
-use crate::server::server_api::TranscribeError;
 use crate::server::telemetry::TelemetryEvent;
 use crate::settings::{AISettings, VoiceInputToggleKey};
 use crate::themes::theme::Fill;

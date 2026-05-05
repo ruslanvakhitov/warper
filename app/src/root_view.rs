@@ -40,7 +40,6 @@ use std::path::Path;
 use std::sync::mpsc::SyncSender;
 use std::sync::Arc;
 use std::{collections::HashMap, path::PathBuf};
-use url::Url;
 use warp_core::context_flag::ContextFlag;
 use warpui::keymap::{EditableBinding, FixedBinding};
 use warpui::windowing::WindowManager;
@@ -169,11 +168,6 @@ pub struct OpenPath {
 pub struct SubshellCommandArg {
     pub command: String,
     pub shell_type: Option<ShellType>,
-}
-
-// Arguments for creating an ambient agent environment.
-pub struct CreateEnvironmentArg {
-    pub repos: Vec<String>,
 }
 
 /// Arguments for the immediate tab detach action dispatched during drag.
@@ -1277,12 +1271,6 @@ impl RootView {
         Some(&self.workspace)
     }
 
-    // Hosted logout is amputated in Warper.
-    fn log_out(&mut self, _: &(), ctx: &mut ViewContext<Self>) -> bool {
-        ctx.focus_self();
-        false
-    }
-
     fn close_window(&mut self, _: &(), ctx: &mut ViewContext<Self>) -> bool {
         if ContextFlag::CloseWindow.is_enabled() {
             ctx.close_window();
@@ -1345,11 +1333,6 @@ impl RootView {
     }
 
     #[allow(clippy::ptr_arg)]
-    fn handle_incoming_auth_url(&mut self, _url: &Url, _ctx: &mut ViewContext<Self>) -> bool {
-        false
-    }
-
-    #[allow(clippy::ptr_arg)]
     fn add_session_at_path(&mut self, path: &PathBuf, ctx: &mut ViewContext<Self>) -> bool {
         let window_id = ctx.window_id();
         self.workspace.update(ctx, |view, ctx| {
@@ -1396,15 +1379,6 @@ impl RootView {
             ctx.windows().show_window_and_focus_app(window_id);
         });
         true
-    }
-
-    /// Hosted team intent links are amputated in Warper.
-    pub fn handle_team_intent_link_action(&mut self, _: &(), _ctx: &mut ViewContext<Self>) -> bool {
-        false
-    }
-
-    pub fn open_team_settings_page(&mut self, _: &(), _ctx: &mut ViewContext<Self>) -> bool {
-        false
     }
 
     pub fn open_settings_page_in_existing_window(

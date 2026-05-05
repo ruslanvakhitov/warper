@@ -68,7 +68,6 @@ pub mod safe_mode_settings;
 mod secret_regex_updater;
 pub mod session_settings;
 pub mod settings;
-mod share_block_modal;
 mod shell_launch_state;
 pub mod universal_developer_input;
 
@@ -88,7 +87,6 @@ pub(crate) mod cli_agent_sessions;
 
 pub use mock_terminal_manager::MockTerminalManager;
 use model_events::{ModelEvent, ModelEventDispatcher};
-pub use share_block_modal::{ShareBlockModal, ShareBlockModalEvent, ShareBlockType};
 pub use terminal_manager::TerminalManager;
 
 pub use block_list_settings::*;
@@ -119,7 +117,6 @@ const MIN_COLUMNS: usize = 2;
 pub const PTY_READS_BROADCAST_CHANNEL_SIZE: usize = 1024;
 
 pub fn init(app: &mut AppContext) {
-    share_block_modal::init(app);
     view::init(app);
 }
 

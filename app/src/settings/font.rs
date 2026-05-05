@@ -1,9 +1,7 @@
 use warp_core::ui::builder::MIN_FONT_SIZE;
 use warpui::{fonts::Weight, rendering::ThinStrokes, AppContext, SingletonEntity};
 
-use settings::{
-    macros::define_settings_group, RespectUserSyncSetting, Setting, SupportedPlatforms, SyncToCloud,
-};
+use settings::{macros::define_settings_group, Setting, SupportedPlatforms, SyncToCloud};
 use warpui::elements::DEFAULT_UI_LINE_HEIGHT_RATIO;
 
 use super::EnforceMinimumContrast as EnforceMinimumContrastEnum;
@@ -86,7 +84,7 @@ define_settings_group!(FontSettings,
             type: bool,
             default: true,
             supported_platforms: SupportedPlatforms::ALL,
-            sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+            sync_to_cloud: SyncToCloud::Never,
             private: false,
             toml_path: "appearance.text.match_notebook_to_monospace_font_size",
             description: "Whether the notebook font size matches the terminal font size.",
@@ -95,7 +93,7 @@ define_settings_group!(FontSettings,
             type: EnforceMinimumContrastEnum,
             default: EnforceMinimumContrastEnum::default(),
             supported_platforms: SupportedPlatforms::ALL,
-            sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+            sync_to_cloud: SyncToCloud::Never,
             private: false,
             toml_path: "appearance.text.enforce_minimum_contrast",
             description: "Whether to enforce minimum contrast for text readability.",

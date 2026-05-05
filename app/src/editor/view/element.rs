@@ -1450,14 +1450,8 @@ impl EditorElement {
     }
 
     fn should_show_cycle_next_command_hint(&self, is_cycling: bool, ctx: &AppContext) -> bool {
-        FeatureFlag::CycleNextCommandSuggestion.is_enabled()
-            && self
-                .view_snapshot
-                .editor_model
-                .as_ref(ctx)
-                .buffer(ctx)
-                .is_empty()
-            && (self.view_snapshot.active_next_command_suggestion() || is_cycling)
+        let _ = (is_cycling, ctx);
+        false
     }
 
     /// Adds icons used in the input editor but not other editors.

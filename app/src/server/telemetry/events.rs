@@ -50,9 +50,6 @@ use crate::ai::blocklist::AIBlockResponseRating;
 use crate::ai::blocklist::CommandExecutionPermissionAllowedReason;
 use crate::ai::blocklist::InputType;
 use crate::ai::mcp::TemplateVariable;
-use crate::ai::predict::generate_ai_input_suggestions::GenerateAIInputSuggestionsRequest;
-use crate::ai::predict::generate_ai_input_suggestions::GenerateAIInputSuggestionsResponseV2;
-use crate::ai::predict::next_command_model::HistoryBasedAutosuggestionState;
 type LoginGatedFeature = &'static str;
 use crate::channel::Channel;
 #[cfg(feature = "local_fs")]
@@ -98,7 +95,6 @@ use crate::terminal::view::PromptPart;
 use crate::terminal::view::{
     NotificationsDiscoveryBannerAction, NotificationsErrorBannerAction, NotificationsTrigger,
 };
-use crate::terminal::ShareBlockType;
 use crate::tips::WelcomeTipFeature;
 #[cfg(feature = "local_fs")]
 use crate::util::file::external_editor::settings::EditorLayout;
@@ -622,8 +618,6 @@ pub enum CommandCorrectionEvent {
 pub enum CommandSearchResultType {
     History,
     Workflow,
-    OpenWarpAI,
-    TranslateUsingWarpAI,
     ViewInWarpDrive,
     AIQuery,
     Project,
@@ -635,8 +629,6 @@ impl From<&CommandSearchItemAction> for CommandSearchResultType {
         match action {
             AcceptHistory(_) | ExecuteHistory(_) => Self::History,
             AcceptWorkflow(_) => Self::Workflow,
-            OpenWarpAI => Self::OpenWarpAI,
-            TranslateUsingWarpAI => Self::TranslateUsingWarpAI,
             AcceptAIQuery(_) | RunAIQuery(_) => Self::AIQuery,
         }
     }
@@ -664,36 +656,10 @@ pub enum PtySpawnMode {
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-pub enum OpenedWarpAISource {
-    GlobalEntryButton,
-    HelpWithBlock,
-    HelpWithTextSelection,
-    FromAICommandSearch,
-    WarmWelcome,
-}
-
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-pub enum WarpAIRequestResult {
-    Succeeded { latency_ms: i64, truncated: bool },
-    OutOfRequests,
-    Failed,
-}
-
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-pub enum WarpAIActionType {
-    CopyTranscript,
-    Restart,
-    CopyAnswer,
-    CopyCode,
-    InsertIntoInput,
-}
-
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum SaveAsWorkflowModalSource {
     Block,
     Input,
-    WarpAIWorkflowCard,
-    WarpAIPanel,
+    AIWorkflowCard,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
@@ -943,14 +909,6 @@ pub enum AgentModeSetupCodebaseContextActionType {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum AgentModeSetupCreateEnvironmentActionType {
-    #[serde(rename = "create_environment")]
-    CreateEnvironment,
-    #[serde(rename = "skip_environment")]
-    SkipEnvironment,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CpuUsageStats {
     /// The number of logical CPUs on the system.
     pub num_cpus: usize,
@@ -1074,7 +1032,6 @@ pub enum AIAgentInput {
     AutoCodeDiffQuery { query: String },
     ResumeConversation,
     InitProjectRules { display_query: Option<String> },
-    CreateEnvironment { display_query: Option<String> },
     TriggerSuggestPrompt { trigger: PassiveSuggestionTrigger },
     ActionResult { action_id: AIAgentActionId },
     CreateNewProject { query: String },
@@ -1097,9 +1054,6 @@ impl From<FullAIAgentInput> for AIAgentInput {
             FullAIAgentInput::ResumeConversation { .. } => Self::ResumeConversation,
             FullAIAgentInput::InitProjectRules { display_query, .. } => {
                 Self::InitProjectRules { display_query }
-            }
-            FullAIAgentInput::CreateEnvironment { display_query, .. } => {
-                Self::CreateEnvironment { display_query }
             }
             FullAIAgentInput::TriggerPassiveSuggestion { trigger, .. } => {
                 Self::TriggerSuggestPrompt { trigger }
@@ -1166,7 +1120,6 @@ pub enum TelemetryAgentViewEntryOrigin {
     Onboarding,
     Keybinding,
     SlashInit,
-    CreateEnvironment,
     ProjectEntry,
     ClearBuffer,
     DefaultSessionMode,
@@ -1213,7 +1166,6 @@ impl From<AgentViewEntryOrigin> for TelemetryAgentViewEntryOrigin {
             AgentViewEntryOrigin::Onboarding => Self::Onboarding,
             AgentViewEntryOrigin::Keybinding => Self::Keybinding,
             AgentViewEntryOrigin::SlashInit => Self::SlashInit,
-            AgentViewEntryOrigin::CreateEnvironment => Self::CreateEnvironment,
             AgentViewEntryOrigin::ProjectEntry => Self::ProjectEntry,
             AgentViewEntryOrigin::ClearBuffer => Self::ClearBuffer,
             AgentViewEntryOrigin::DefaultSessionMode => Self::DefaultSessionMode,
@@ -1328,7 +1280,6 @@ pub enum TelemetryEvent {
     },
     /// Copy command, output or both for some number of blocks.
     ContextMenuCopy(BlockEntity, BlockSelectionCardinality),
-    ContextMenuOpenShareModal(BlockSelectionCardinality),
     ContextMenuFindWithinBlocks(BlockSelectionCardinality),
     ContextMenuCopyPrompt {
         part: PromptPart,
@@ -1349,13 +1300,6 @@ pub enum TelemetryEvent {
     },
     ReinputCommands(BlockSelectionCardinality),
     JumpToPreviousCommand,
-    CopyBlockSharingLink(ShareBlockType),
-    GenerateBlockSharingLink {
-        share_type: ShareBlockType,
-        display_setting: DisplaySetting,
-        show_prompt: bool,
-        redact_secrets: bool,
-    },
     BlockSelection(BlockSelectionDetails),
     BootstrappingSlow(BootstrappingInfo),
     BootstrappingSlowContents(SlowBootstrapInfo),
@@ -1636,25 +1580,9 @@ pub enum TelemetryEvent {
     InitialWorkingDirectoryConfigurationChanged {
         advanced_mode_enabled: bool,
     },
-    /// Opened legacy Warp AI.
-    OpenedWarpAI {
-        source: OpenedWarpAISource,
-    },
-    /// Issued legacy Warp AI request.
-    WarpAIRequestIssued {
-        result: WarpAIRequestResult,
-    },
-    WarpAIAction {
-        action_type: WarpAIActionType,
-    },
-    /// This is purely for static prompts! Do not send user-written prompts with this event.
-    UsedWarpAIPreparedPrompt {
-        prompt: &'static str,
-    },
     ToggleFocusPaneOnHover {
         enabled: bool,
     },
-    WarpAICharacterLimitExceeded,
     OpenInputContextMenu,
     InputCutSelectedText,
     InputCopySelectedText,
@@ -1662,7 +1590,6 @@ pub enum TelemetryEvent {
     InputPaste,
     InputCommandSearch,
     InputAICommandSearch,
-    InputAskWarpAI,
     SaveAsWorkflowModal {
         source: SaveAsWorkflowModalSource,
     },
@@ -1708,18 +1635,6 @@ pub enum TelemetryEvent {
     /// User Setting for enabling SSH Tmux Wrapper changed.
     ToggleSshTmuxWrapper {
         enabled: bool,
-    },
-    ToggleSshWarpification {
-        enabled: bool,
-    },
-    /// User changed the SSH extension install mode.
-    SetSshExtensionInstallMode {
-        mode: &'static str,
-    },
-    /// User toggled the "Don't ask me this again" checkbox on the SSH
-    /// remote-server choice block.
-    SshRemoteServerChoiceDoNotAskAgainToggled {
-        checked: bool,
     },
     /// An ssh interactive session was detected.
     SshInteractiveSessionDetected(SshInteractiveSessionDetected),
@@ -1771,10 +1686,6 @@ pub enum TelemetryEvent {
     WarpDriveOpened {
         source: WarpDriveSource,
         is_code_mode_v2: bool,
-    },
-    // Toggled the legacy Warp AI side panel.
-    ToggleWarpAI {
-        opened: bool,
     },
     ToggleSecretRedaction {
         enabled: bool,
@@ -2020,23 +1931,6 @@ pub enum TelemetryEvent {
     /// the current input text has been auto-detected as AI input -- this is likely a natural
     /// language auto-detection false-positive.
     AgentModePotentialAutoDetectionFalsePositive(AgentModeAutoDetectionFalsePositivePayload),
-
-    /// This is a telemetry event used to help track performance of Agent Predict in Warp,
-    /// by keeping track of the context given and the predictions generated.
-    AgentModePrediction {
-        was_suggestion_accepted: bool,
-        request_duration_ms: i64,
-        is_from_ai: bool,
-        does_actual_command_match_prediction: bool,
-        does_actual_command_match_history_prediction: bool,
-        history_prediction_likelihood: f64,
-        total_history_count: usize,
-        // The below fields are only collected if telemetry is enabled.
-        actual_next_command_run: Option<String>,
-        history_based_autosuggestion_state: Option<HistoryBasedAutosuggestionState>,
-        generate_ai_input_suggestions_request: Option<GenerateAIInputSuggestionsRequest>,
-        generate_ai_input_suggestions_response: Option<GenerateAIInputSuggestionsResponseV2>,
-    },
 
     /// Keeps track of number of times the user is presented with a Prompt Suggestions banner.
     PromptSuggestionShown {
@@ -2546,9 +2440,6 @@ pub enum TelemetryEvent {
     AgentModeSetupCodebaseContextAction {
         action: AgentModeSetupCodebaseContextActionType,
     },
-    AgentModeSetupCreateEnvironmentAction {
-        action: AgentModeSetupCreateEnvironmentActionType,
-    },
     InputBufferSubmitted {
         input_type: input_classifier::InputType,
         is_locked: bool,
@@ -2801,52 +2692,6 @@ pub enum TelemetryEvent {
     FreeTierLimitHitInterstitialUpgradeButtonClicked,
     /// Emitted when the user clicks close on the free tier limit hit interstitial.
     FreeTierLimitHitInterstitialClosed,
-    /// Emitted when the remote server binary check completes.
-    RemoteServerBinaryCheck {
-        found: bool,
-        error: Option<String>,
-        remote_os: Option<String>,
-        remote_arch: Option<String>,
-    },
-    /// Emitted when the remote server binary installation completes.
-    /// `error` is `None` on success, `Some(reason)` on failure.
-    RemoteServerInstallation {
-        error: Option<String>,
-        remote_os: Option<String>,
-        remote_arch: Option<String>,
-    },
-    /// Emitted when the remote server connection + initialization completes.
-    /// `error` is `None` on success, `Some(reason)` on failure.
-    RemoteServerInitialization {
-        phase: remote_server::manager::RemoteServerInitPhase,
-        error: Option<String>,
-        remote_os: Option<String>,
-        remote_arch: Option<String>,
-    },
-    /// Emitted when an established remote server connection drops.
-    RemoteServerDisconnection {
-        remote_os: Option<String>,
-        remote_arch: Option<String>,
-    },
-    /// Emitted when a client request to the remote server fails.
-    RemoteServerClientRequestError {
-        operation: remote_server::manager::RemoteServerOperation,
-        error_type: remote_server::manager::RemoteServerErrorKind,
-        remote_os: Option<String>,
-        remote_arch: Option<String>,
-    },
-    /// Emitted when a server message cannot be decoded (no parseable request_id).
-    RemoteServerMessageDecodingError {
-        remote_os: Option<String>,
-        remote_arch: Option<String>,
-    },
-    /// Emitted when the full remote server setup flow completes successfully.
-    RemoteServerSetupDuration {
-        duration_ms: u64,
-        installed_binary: bool,
-        remote_os: Option<String>,
-        remote_arch: Option<String>,
-    },
 }
 
 impl TelemetryEventTrait for TelemetryEvent {
@@ -2983,9 +2828,6 @@ impl TelemetryEvent {
                 Some(json!({ "entity": entity.as_str(), "cardinality": cardinality }))
             }
             TelemetryEvent::ContextMenuFindWithinBlocks(cardinality) => {
-                Some(json!({ "cardinality": cardinality }))
-            }
-            TelemetryEvent::ContextMenuOpenShareModal(cardinality) => {
                 Some(json!({ "cardinality": cardinality }))
             }
             TelemetryEvent::ContextMenuCopyPrompt { part } => Some(json!({ "part": part })),
@@ -3179,11 +3021,6 @@ impl TelemetryEvent {
             TelemetryEvent::InitialWorkingDirectoryConfigurationChanged {
                 advanced_mode_enabled,
             } => Some(json!({ "advanced_mode_enabled": advanced_mode_enabled })),
-            TelemetryEvent::OpenedWarpAI { source } => Some(json!({ "source": source })),
-            TelemetryEvent::WarpAIRequestIssued { result } => Some(json!({ "result": result })),
-            TelemetryEvent::WarpAIAction { action_type } => {
-                Some(json!({ "action_type": action_type }))
-            }
             TelemetryEvent::MCPServerCollectionPaneOpened { entrypoint } => {
                 Some(json!({ "entrypoint": entrypoint }))
             }
@@ -3265,9 +3102,6 @@ impl TelemetryEvent {
             TelemetryEvent::AISuggestedRuleContentChanged { rule_id, is_saved } => {
                 Some(json!({ "rule_id": rule_id, "is_saved": is_saved }))
             }
-            TelemetryEvent::UsedWarpAIPreparedPrompt { prompt } => {
-                Some(json!({ "prompt": prompt }))
-            }
             TelemetryEvent::ExperimentTriggered {
                 experiment,
                 layer,
@@ -3305,7 +3139,6 @@ impl TelemetryEvent {
             } => Some(
                 json!({ "ui_location": ui_location, "open_in_active_window": open_in_active_window }),
             ),
-            TelemetryEvent::ToggleWarpAI { opened } => Some(json!({ "opened": opened })),
             TelemetryEvent::ToggleSecretRedaction { enabled } => {
                 Some(json!({ "enabled": enabled }))
             }
@@ -3336,17 +3169,6 @@ impl TelemetryEvent {
             }
             TelemetryEvent::ExportObject(object_type) => {
                 Some(json!({ "object_type": object_type }))
-            }
-            TelemetryEvent::GenerateBlockSharingLink {
-                share_type,
-                display_setting,
-                show_prompt,
-                redact_secrets,
-            } => Some(
-                json!({"share_type": share_type, "display_setting": display_setting, "show_prompt": show_prompt, "redact_secrets": redact_secrets}),
-            ),
-            TelemetryEvent::CopyBlockSharingLink(share_type) => {
-                Some(json!({ "share_type": share_type }))
             }
             TelemetryEvent::PageUpDownInEditorPressed {
                 is_empty_editor,
@@ -3388,11 +3210,6 @@ impl TelemetryEvent {
                 Some(json!({"enabled": enabled}))
             }
             TelemetryEvent::ToggleSshTmuxWrapper { enabled } => Some(json!({"enabled": enabled})),
-            TelemetryEvent::ToggleSshWarpification { enabled } => Some(json!({"enabled": enabled})),
-            TelemetryEvent::SetSshExtensionInstallMode { mode } => Some(json!({"mode": mode})),
-            TelemetryEvent::SshRemoteServerChoiceDoNotAskAgainToggled { checked } => {
-                Some(json!({"checked": checked}))
-            }
             TelemetryEvent::SshInteractiveSessionDetected(ssh_interactive_session_detected) => {
                 Some(json!({"ssh_interactive_session": ssh_interactive_session_detected}))
             }
@@ -3523,44 +3340,6 @@ impl TelemetryEvent {
             } => Some(
                 json!({"input": input, "buffer_length": buffer_length, "is_manually_changed": is_manually_changed, "new_input_type": new_input_type, "active_block_id": active_block_id, "is_udi_enabled": is_udi_enabled}),
             ),
-            TelemetryEvent::AgentModePrediction {
-                was_suggestion_accepted,
-                request_duration_ms,
-                is_from_ai,
-                does_actual_command_match_prediction,
-                does_actual_command_match_history_prediction,
-                history_prediction_likelihood,
-                total_history_count,
-                actual_next_command_run,
-                history_based_autosuggestion_state,
-                generate_ai_input_suggestions_request,
-                generate_ai_input_suggestions_response,
-            } => {
-                let (history_command_prediction, history_command_prediction_likelihood) =
-                    if let Some(state) = history_based_autosuggestion_state {
-                        (
-                            Some(state.history_command_prediction.clone()),
-                            Some(state.history_command_prediction_likelihood),
-                        )
-                    } else {
-                        (None, None)
-                    };
-
-                Some(json!({
-                    "was_suggestion_accepted": was_suggestion_accepted,
-                    "request_duration_ms": request_duration_ms,
-                    "is_from_ai": is_from_ai,
-                    "does_actual_command_match_prediction": does_actual_command_match_prediction,
-                    "does_actual_command_match_history_prediction": does_actual_command_match_history_prediction,
-                    "history_prediction_likelihood": history_prediction_likelihood,
-                    "total_history_count": total_history_count,
-                    "actual_next_command_run": actual_next_command_run,
-                    "generate_ai_input_suggestions_request": generate_ai_input_suggestions_request,
-                    "generate_ai_input_suggestions_response": generate_ai_input_suggestions_response,
-                    "history_command_prediction": history_command_prediction,
-                    "history_command_prediction_likelihood": history_command_prediction_likelihood,
-                }))
-            }
             TelemetryEvent::PromptSuggestionShown {
                 id,
                 request_duration_ms,
@@ -4060,7 +3839,6 @@ impl TelemetryEvent {
             | TelemetryEvent::QuitModalDisabled
             | TelemetryEvent::UserInitiatedLogOut
             | TelemetryEvent::LogOutModalShown
-            | TelemetryEvent::WarpAICharacterLimitExceeded
             | TelemetryEvent::OpenInputContextMenu
             | TelemetryEvent::InputCutSelectedText
             | TelemetryEvent::InputCopySelectedText
@@ -4068,7 +3846,6 @@ impl TelemetryEvent {
             | TelemetryEvent::InputPaste
             | TelemetryEvent::InputCommandSearch
             | TelemetryEvent::InputAICommandSearch
-            | TelemetryEvent::InputAskWarpAI
             | TelemetryEvent::SetNewWindowsAtCustomSize
             | TelemetryEvent::DisableInputSync
             | TelemetryEvent::ShowSubshellBanner
@@ -4126,73 +3903,6 @@ impl TelemetryEvent {
             | TelemetryEvent::GlobalSearchOpened
             | TelemetryEvent::GlobalSearchQueryStarted
             | TelemetryEvent::GetStartedSkipToTerminal => None,
-            TelemetryEvent::RemoteServerBinaryCheck {
-                found,
-                error,
-                remote_os,
-                remote_arch,
-            } => Some(json!({
-                "found": found,
-                "error": error,
-                "remote_os": remote_os,
-                "remote_arch": remote_arch,
-            })),
-            TelemetryEvent::RemoteServerInstallation {
-                error,
-                remote_os,
-                remote_arch,
-            } => Some(json!({
-                "error": error,
-                "remote_os": remote_os,
-                "remote_arch": remote_arch,
-            })),
-            TelemetryEvent::RemoteServerInitialization {
-                phase,
-                error,
-                remote_os,
-                remote_arch,
-            } => Some(json!({
-                "phase": phase,
-                "error": error,
-                "remote_os": remote_os,
-                "remote_arch": remote_arch,
-            })),
-            TelemetryEvent::RemoteServerDisconnection {
-                remote_os,
-                remote_arch,
-            } => Some(json!({
-                "remote_os": remote_os,
-                "remote_arch": remote_arch,
-            })),
-            TelemetryEvent::RemoteServerClientRequestError {
-                operation,
-                error_type,
-                remote_os,
-                remote_arch,
-            } => Some(json!({
-                "operation": operation,
-                "error_type": error_type,
-                "remote_os": remote_os,
-                "remote_arch": remote_arch,
-            })),
-            TelemetryEvent::RemoteServerMessageDecodingError {
-                remote_os,
-                remote_arch,
-            } => Some(json!({
-                "remote_os": remote_os,
-                "remote_arch": remote_arch,
-            })),
-            TelemetryEvent::RemoteServerSetupDuration {
-                duration_ms,
-                installed_binary,
-                remote_os,
-                remote_arch,
-            } => Some(json!({
-                "duration_ms": duration_ms,
-                "installed_binary": installed_binary,
-                "remote_os": remote_os,
-                "remote_arch": remote_arch,
-            })),
             TelemetryEvent::ConversationListItemOpened { is_ambient_agent } => Some(json!({
                 "is_ambient_agent": is_ambient_agent,
             })),
@@ -4268,9 +3978,6 @@ impl TelemetryEvent {
                 "action": action,
             })),
             TelemetryEvent::AgentModeSetupCodebaseContextAction { action } => Some(json!({
-                "action": action,
-            })),
-            TelemetryEvent::AgentModeSetupCreateEnvironmentAction { action } => Some(json!({
                 "action": action,
             })),
             #[cfg(windows)]
@@ -4539,19 +4246,6 @@ impl TelemetryEvent {
             TelemetryEvent::AgentExitedShellProcess { .. } => true,
             TelemetryEvent::CreateProjectPromptSubmitted { .. } => false,
             TelemetryEvent::CreateProjectPromptSubmittedContent { .. } => true,
-            TelemetryEvent::AgentModePrediction {
-                actual_next_command_run,
-                history_based_autosuggestion_state,
-                generate_ai_input_suggestions_request,
-                generate_ai_input_suggestions_response,
-                ..
-            } => {
-                // These fields can contain UGC, so if any are set, assume this event contains UGC.
-                actual_next_command_run.is_some()
-                    || history_based_autosuggestion_state.is_some()
-                    || generate_ai_input_suggestions_request.is_some()
-                    || generate_ai_input_suggestions_response.is_some()
-            }
             TelemetryEvent::AgentModeChangedInputType { input, .. } => input.is_some(),
             TelemetryEvent::UnitTestSuggestionAccepted { query, .. } => query.is_some(),
             TelemetryEvent::AgentModePotentialAutoDetectionFalsePositive(payload) => {
@@ -4578,7 +4272,6 @@ impl TelemetryEvent {
             | TelemetryEvent::ConfirmSuggestion { .. }
             | TelemetryEvent::OpenContextMenu { .. }
             | TelemetryEvent::ContextMenuCopy(_, _)
-            | TelemetryEvent::ContextMenuOpenShareModal(_)
             | TelemetryEvent::ContextMenuFindWithinBlocks(_)
             | TelemetryEvent::ContextMenuCopyPrompt { .. }
             | TelemetryEvent::ContextMenuToggleGitPromptDirtyIndicator { .. }
@@ -4588,8 +4281,6 @@ impl TelemetryEvent {
             | TelemetryEvent::PromptEdited { .. }
             | TelemetryEvent::ReinputCommands(_)
             | TelemetryEvent::JumpToPreviousCommand
-            | TelemetryEvent::CopyBlockSharingLink(_)
-            | TelemetryEvent::GenerateBlockSharingLink { .. }
             | TelemetryEvent::BlockSelection(_)
             | TelemetryEvent::BootstrappingSlow(_)
             | TelemetryEvent::SessionAbandonedBeforeBootstrap { .. }
@@ -4712,12 +4403,7 @@ impl TelemetryEvent {
             | TelemetryEvent::InputModeChanged { .. }
             | TelemetryEvent::PtySpawned { .. }
             | TelemetryEvent::InitialWorkingDirectoryConfigurationChanged { .. }
-            | TelemetryEvent::OpenedWarpAI { .. }
-            | TelemetryEvent::WarpAIRequestIssued { .. }
-            | TelemetryEvent::WarpAIAction { .. }
-            | TelemetryEvent::UsedWarpAIPreparedPrompt { .. }
             | TelemetryEvent::ToggleFocusPaneOnHover { .. }
-            | TelemetryEvent::WarpAICharacterLimitExceeded
             | TelemetryEvent::OpenInputContextMenu
             | TelemetryEvent::InputCutSelectedText
             | TelemetryEvent::InputCopySelectedText
@@ -4725,7 +4411,6 @@ impl TelemetryEvent {
             | TelemetryEvent::InputPaste
             | TelemetryEvent::InputCommandSearch
             | TelemetryEvent::InputAICommandSearch
-            | TelemetryEvent::InputAskWarpAI
             | TelemetryEvent::SaveAsWorkflowModal { .. }
             | TelemetryEvent::ExperimentTriggered { .. }
             | TelemetryEvent::ToggleSyncAllPanesInAllTabs { .. }
@@ -4773,7 +4458,6 @@ impl TelemetryEvent {
             | TelemetryEvent::AnonymousUserHitCloudObjectLimit
             | TelemetryEvent::NeedsReauth
             | TelemetryEvent::WarpDriveOpened { .. }
-            | TelemetryEvent::ToggleWarpAI { .. }
             | TelemetryEvent::ToggleSecretRedaction { .. }
             | TelemetryEvent::CustomSecretRegexAdded
             | TelemetryEvent::ToggleObfuscateSecret { .. }
@@ -4875,9 +4559,6 @@ impl TelemetryEvent {
             | TelemetryEvent::MCPServerSpawned { .. }
             | TelemetryEvent::MCPToolCallAccepted { .. }
             | TelemetryEvent::ExecutedWarpDrivePrompt { .. }
-            | TelemetryEvent::ToggleSshWarpification { .. }
-            | TelemetryEvent::SetSshExtensionInstallMode { .. }
-            | TelemetryEvent::SshRemoteServerChoiceDoNotAskAgainToggled { .. }
             | TelemetryEvent::SettingsImportInitiated
             | TelemetryEvent::AgentModeCreatedAIBlock { .. }
             | TelemetryEvent::AgentModeRatedResponse { .. }
@@ -4924,7 +4605,6 @@ impl TelemetryEvent {
             | TelemetryEvent::AgentModeSetupBannerDismissed
             | TelemetryEvent::AgentModeSetupProjectScopedRulesAction { .. }
             | TelemetryEvent::AgentModeSetupCodebaseContextAction { .. }
-            | TelemetryEvent::AgentModeSetupCreateEnvironmentAction { .. }
             | TelemetryEvent::CloneRepoPromptSubmitted { .. }
             | TelemetryEvent::GetStartedSkipToTerminal
             | TelemetryEvent::FileTreeItemAttachedAsContext { .. }
@@ -4978,14 +4658,7 @@ impl TelemetryEvent {
             | TelemetryEvent::ComputerUseCancelled { .. }
             | TelemetryEvent::FreeTierLimitHitInterstitialDisplayed
             | TelemetryEvent::FreeTierLimitHitInterstitialUpgradeButtonClicked
-            | TelemetryEvent::FreeTierLimitHitInterstitialClosed
-            | TelemetryEvent::RemoteServerBinaryCheck { .. }
-            | TelemetryEvent::RemoteServerInstallation { .. }
-            | TelemetryEvent::RemoteServerInitialization { .. }
-            | TelemetryEvent::RemoteServerDisconnection { .. }
-            | TelemetryEvent::RemoteServerClientRequestError { .. }
-            | TelemetryEvent::RemoteServerMessageDecodingError { .. }
-            | TelemetryEvent::RemoteServerSetupDuration { .. } => false,
+            | TelemetryEvent::FreeTierLimitHitInterstitialClosed => false,
             #[cfg(feature = "local_fs")]
             TelemetryEvent::CodePaneOpened { .. }
             | TelemetryEvent::CodePanelsFileOpened { .. }
@@ -5122,7 +4795,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::ConfirmSuggestion => EnablementState::Always,
             Self::OpenContextMenu => EnablementState::Always,
             Self::ContextMenuCopy => EnablementState::Always,
-            Self::ContextMenuOpenShareModal => EnablementState::Always,
             Self::ContextMenuFindWithinBlocks => EnablementState::Always,
             Self::ContextMenuCopyPrompt => EnablementState::Always,
             Self::ContextMenuToggleGitPromptDirtyIndicator => EnablementState::Always,
@@ -5132,8 +4804,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::PromptEdited => EnablementState::Always,
             Self::ReinputCommands => EnablementState::Always,
             Self::JumpToPreviousCommand => EnablementState::Always,
-            Self::CopyBlockSharingLink => EnablementState::Always,
-            Self::GenerateBlockSharingLink => EnablementState::Always,
             Self::BlockSelection => EnablementState::Always,
             Self::BootstrappingSlow => EnablementState::Always,
             Self::BootstrappingSlowContents => EnablementState::Always,
@@ -5250,11 +4920,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::InputModeChanged => EnablementState::Always,
             Self::PtySpawned => EnablementState::Always,
             Self::InitialWorkingDirectoryConfigurationChanged => EnablementState::Always,
-            Self::OpenedWarpAI => EnablementState::Always,
-            Self::WarpAIRequestIssued => EnablementState::Always,
-            Self::WarpAIAction => EnablementState::Always,
-            Self::UsedWarpAIPreparedPrompt => EnablementState::Always,
-            Self::WarpAICharacterLimitExceeded => EnablementState::Always,
             Self::OpenInputContextMenu => EnablementState::Always,
             Self::InputCutSelectedText => EnablementState::Always,
             Self::InputCopySelectedText => EnablementState::Always,
@@ -5262,7 +4927,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::InputPaste => EnablementState::Always,
             Self::InputCommandSearch => EnablementState::Always,
             Self::InputAICommandSearch => EnablementState::Always,
-            Self::InputAskWarpAI => EnablementState::Always,
             Self::SaveAsWorkflowModal => EnablementState::Always,
             Self::ExperimentTriggered => EnablementState::Always,
             Self::ToggleSyncAllPanesInAllTabs => EnablementState::Always,
@@ -5280,9 +4944,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::AddDenylistedSubshellCommand => EnablementState::Always,
             Self::RemoveDenylistedSubshellCommand => EnablementState::Always,
             Self::ToggleSshTmuxWrapper => EnablementState::Always,
-            Self::ToggleSshWarpification => EnablementState::Always,
-            Self::SetSshExtensionInstallMode => EnablementState::Always,
-            Self::SshRemoteServerChoiceDoNotAskAgainToggled => EnablementState::Always,
             Self::AddDenylistedSshTmuxWrapperHost => EnablementState::Always,
             Self::RemoveDenylistedSshTmuxWrapperHost => EnablementState::Always,
             Self::SshInteractiveSessionDetected => EnablementState::Always,
@@ -5308,7 +4969,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::InitiateReauth => EnablementState::Always,
             Self::NeedsReauth => EnablementState::Always,
             Self::WarpDriveOpened => EnablementState::Always,
-            Self::ToggleWarpAI => EnablementState::Always,
             Self::ToggleSecretRedaction => EnablementState::Always,
             Self::CustomSecretRegexAdded => EnablementState::Always,
             Self::ToggleObfuscateSecret => EnablementState::Always,
@@ -5373,10 +5033,8 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             | Self::SettingsImportConfigParsed
             | Self::SettingsImportResetButtonClicked
             | Self::ITermMultipleHotkeys => EnablementState::Flag(FeatureFlag::SettingsImport),
-            Self::ToggleIntelligentAutosuggestionsSetting | Self::AgentModePrediction => {
-                EnablementState::Always
-            }
-            Self::PromptSuggestionShown
+            Self::ToggleIntelligentAutosuggestionsSetting
+            | Self::PromptSuggestionShown
             | Self::SuggestedCodeDiffBannerShown
             | Self::SuggestedCodeDiffFailed
             | Self::PromptSuggestionAccepted
@@ -5387,9 +5045,7 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             | Self::UnitTestSuggestionShown { .. }
             | Self::UnitTestSuggestionAccepted { .. }
             | Self::UnitTestSuggestionCancelled { .. } => EnablementState::Always,
-            Self::ToggleNaturalLanguageAutosuggestionsSetting => {
-                EnablementState::Flag(FeatureFlag::PredictAMQueries)
-            }
+            Self::ToggleNaturalLanguageAutosuggestionsSetting => EnablementState::Always,
             Self::ToggleSharedBlockTitleGenerationSetting => {
                 EnablementState::Flag(FeatureFlag::SharedBlockTitleGeneration)
             }
@@ -5470,7 +5126,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::AgentModeSetupBannerDismissed => EnablementState::Always,
             Self::AgentModeSetupProjectScopedRulesAction { .. } => EnablementState::Always,
             Self::AgentModeSetupCodebaseContextAction { .. } => EnablementState::Always,
-            Self::AgentModeSetupCreateEnvironmentAction { .. } => EnablementState::Always,
             Self::InputBufferSubmitted => EnablementState::Flag(FeatureFlag::NldImprovements),
             Self::AgentModeContinueConversationButtonClicked { .. } => EnablementState::Always,
             Self::AgentModeRewindDialogOpened { .. } => {
@@ -5526,15 +5181,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
                 EnablementState::Always
             }
             Self::FreeTierLimitHitInterstitialClosed { .. } => EnablementState::Always,
-            Self::RemoteServerBinaryCheck
-            | Self::RemoteServerInstallation
-            | Self::RemoteServerInitialization
-            | Self::RemoteServerDisconnection
-            | Self::RemoteServerClientRequestError
-            | Self::RemoteServerMessageDecodingError
-            | Self::RemoteServerSetupDuration => {
-                EnablementState::Flag(FeatureFlag::SshRemoteServer)
-            }
         }
     }
 
@@ -5564,10 +5210,7 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::JumpToPreviousCommand => "Jumped to Previous Command",
             Self::OpenContextMenu => "Open Context Menu",
             Self::ContextMenuFindWithinBlocks => "Context Menu: Find Within Blocks",
-            Self::ContextMenuOpenShareModal => "Context Menu: Initiate Block Sharing",
             Self::ContextMenuCopy => "Context Menu Copy",
-            Self::CopyBlockSharingLink => "Copy Block Sharing Link",
-            Self::GenerateBlockSharingLink => "Generate Block Sharing Link",
             Self::BlockSelection => "Block Selection",
             Self::BootstrappingSlow => "Bootstrapping Slow",
             Self::BootstrappingSlowContents => "Bootstrap Slow Contents",
@@ -5739,11 +5382,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
                 "InitialWorkingDirectoryConfigurationChanged"
             }
             Self::InputModeChanged => "Input Mode Changed",
-            Self::OpenedWarpAI => "Opened Warp AI",
-            Self::WarpAIRequestIssued => "Warp AI Request Issued",
-            Self::WarpAIAction => "Warp AI Action",
-            Self::UsedWarpAIPreparedPrompt => "Used Warp AI Prepared Prompt",
-            Self::WarpAICharacterLimitExceeded => "Warp AI Character Limit Exceeded",
             Self::OpenInputContextMenu => "OpenInputBoxContextMenu",
             Self::InputCutSelectedText => "InputBoxCutSelectedText",
             Self::InputCopySelectedText => "InputBoxCutSelectedText",
@@ -5751,7 +5389,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::InputPaste => "InputBoxPaste",
             Self::InputCommandSearch => "InputBoxCommandSearch",
             Self::InputAICommandSearch => "InputBoxAICommandSearch",
-            Self::InputAskWarpAI => "InputBoxAskWarpAI",
             Self::SaveAsWorkflowModal => "Opened Save As Workflow Modal",
             Self::ExperimentTriggered => "experiments.client.enroll_client",
             Self::ToggleSyncAllPanesInAllTabs => "Toggle Sync Inputs Across All Panes in All Tabs",
@@ -5770,11 +5407,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::RemoveAddedSubshellCommand => "Remove Added Subshell Command",
             Self::ReceivedSubshellRcFileDcs => "Received Subshell RC File DCS",
             Self::ToggleSshTmuxWrapper => "Toggle SSH Tmux Wrapper",
-            Self::ToggleSshWarpification => "Toggle SSH Warpification",
-            Self::SetSshExtensionInstallMode => "Set SSH Extension Install Mode",
-            Self::SshRemoteServerChoiceDoNotAskAgainToggled => {
-                "SSH Remote Server Choice Do Not Ask Again Toggled"
-            }
             Self::AddDenylistedSshTmuxWrapperHost => "Add Denylisted SSH Tmux Wrapper Host",
             Self::RemoveDenylistedSshTmuxWrapperHost => "Remove Denylisted SSH Tmux Wrapper Host",
             Self::SshInteractiveSessionDetected => "SSH Interactive Session Detected",
@@ -5794,7 +5426,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::InitiateReauth => "Initiate Reauth",
             Self::NeedsReauth => "Needs Reauth",
             Self::WarpDriveOpened => "Warp Drive Opened",
-            Self::ToggleWarpAI => "Toggle Warp AI",
             Self::ToggleSecretRedaction => "Toggle Secret Redaction",
             Self::CustomSecretRegexAdded => "Custom Secret Regex Added",
             Self::ToggleObfuscateSecret => "Toggle Obfuscate Secret",
@@ -5866,7 +5497,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
                 "AgentMode.PotentialAutoDetectionFalsePositive"
             }
             Self::AgentModeChangedInputType => "AgentMode.ChangedInputType",
-            Self::AgentModePrediction => "Agent Predict",
             // Agent Mode Query Suggestions is the legacy name for Prompt Suggestions - we avoid renaming
             // the event to avoid breaking historical telemetry data.
             Self::PromptSuggestionShown => "Agent Mode Query Suggestions Banner Shown",
@@ -5928,13 +5558,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
                 "AIAutonomy.AutoexecutedRequestedCommand"
             }
             Self::AgenticOnboardingBlockSelected => "AgenticOnboarding.BlockSelected",
-            Self::RemoteServerBinaryCheck => "RemoteServer.BinaryCheck",
-            Self::RemoteServerInstallation => "RemoteServer.Installation",
-            Self::RemoteServerInitialization => "RemoteServer.Initialization",
-            Self::RemoteServerDisconnection => "RemoteServer.Disconnection",
-            Self::RemoteServerClientRequestError => "RemoteServer.ClientRequestError",
-            Self::RemoteServerMessageDecodingError => "RemoteServer.MessageDecodingError",
-            Self::RemoteServerSetupDuration => "RemoteServer.SetupDuration",
             #[cfg(windows)]
             Self::WSLRegistryError => "WSL Distribution Registry Error",
             Self::ToggleCodebaseContext => "Toggle Agent Mode Codebase Context",
@@ -6004,9 +5627,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             }
             Self::AgentModeSetupCodebaseContextAction { .. } => {
                 "Agent Mode.Setup Codebase Context Action"
-            }
-            Self::AgentModeSetupCreateEnvironmentAction { .. } => {
-                "AgentMode.SetupCreateEnvironmentAction"
             }
             Self::InputBufferSubmitted => "AgentMode.NaturalLanguageDetection.InputBufferSubmitted",
             Self::RecentMenuItemSelected { .. } => "Recent Menu Item Selected",
@@ -6143,7 +5763,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
                 "Opened context menu (such as right clicking, clicking on ellipses in the top right of a Block, etc.)"
             }
             Self::ContextMenuCopy => "Clicked \"Copy\" in context menu",
-            Self::ContextMenuOpenShareModal => "Opened \"Share\" modal via context menu",
             Self::ContextMenuFindWithinBlocks => "Clicked \"find within blocks\" in context menu",
             Self::ContextMenuCopyPrompt => "Clicked  \"Copy Prompt\" in context menu",
             Self::ContextMenuToggleGitPromptDirtyIndicator => {
@@ -6155,8 +5774,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::PromptEdited => "Edited the prompt using the built-in prompt editor",
             Self::ReinputCommands => "Clicked \"reinput commands\" in context menu",
             Self::JumpToPreviousCommand => "Jumped to a previous command",
-            Self::CopyBlockSharingLink => "Clicked \"Share block...\" in context menu",
-            Self::GenerateBlockSharingLink => "Generated Block sharing link",
             Self::BlockSelection => "Selected Block",
             Self::BootstrappingSlow => "Slow bootstrap on session startup",
             Self::BootstrappingSlowContents => {
@@ -6356,15 +5973,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::InitialWorkingDirectoryConfigurationChanged => {
                 "Replaced the default working directory with a different path"
             }
-            Self::OpenedWarpAI => "Activated Warp AI",
-            Self::WarpAIRequestIssued => "Issued a question to Warp AI",
-            Self::WarpAIAction => "Executed a Warp AI action: Restart, Copy, Insert into terminal",
-            Self::UsedWarpAIPreparedPrompt => {
-                "Used one of the Warp-provided prompts, like \"Show examples\""
-            }
-            Self::WarpAICharacterLimitExceeded => {
-                "Attempted to ask a question longer than 1k chars to Warp AI"
-            }
             Self::OpenInputContextMenu => "Opened the Input Editor's context menu",
             Self::InputCutSelectedText => {
                 "Cut the highlighted text via the Input Editor's context menu (right clicking the buffer)"
@@ -6382,7 +5990,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::InputAICommandSearch => {
                 "Opened AI Command Search via the Input Editor's context menu (right clicking the buffer)"
             }
-            Self::InputAskWarpAI => "Clicked \"Ask Warp AI\" from the Input Editor's context menu",
             Self::SaveAsWorkflowModal => {
                 "Opened the modal to create a new workflow using a Block's context--command, etc."
             }
@@ -6440,13 +6047,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::ToggleSshTmuxWrapper => {
                 "Changed the setting for SSH sessions to prompt for Tmux Wrapper"
             }
-            Self::ToggleSshWarpification => "Changed the setting for SSH sessions to be warified",
-            Self::SetSshExtensionInstallMode => {
-                "Changed the SSH extension install mode (always ask / always allow / always skip)"
-            }
-            Self::SshRemoteServerChoiceDoNotAskAgainToggled => {
-                "Toggled the 'Don't ask me this again' checkbox on the SSH remote-server choice block"
-            }
             Self::AddDenylistedSshTmuxWrapperHost => {
                 "Added a SSH host to the denylist for prompting for Tmux Wrapper"
             }
@@ -6488,9 +6088,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::InitiateReauth => "Started the flow to re-authenticate the client",
             Self::NeedsReauth => "User needs to re-authenticate",
             Self::WarpDriveOpened => "Opened Warp Drive panel",
-            Self::ToggleWarpAI => {
-                "Toggled Warp AI--an AI assistant to help you debug errors, look up forgotten commands and more"
-            }
             Self::ToggleSecretRedaction => {
                 "Toggled on/off the setting for Secret Redaction - attempts to redact secrets and sensitive information"
             }
@@ -6498,10 +6095,10 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::ToggleObfuscateSecret => "Revealed or hid a secret",
             Self::CopySecret => "Copied a secret's obfuscated contents to clipboard",
             Self::AutoGenerateMetadataSuccess => {
-                "Successfully generated metadata for a workflow using Warp AI"
+                "Successfully generated metadata for a workflow using AI"
             }
             Self::AutoGenerateMetadataError => {
-                "Failed to generate metadata for a workflow using Warp AI"
+                "Failed to generate metadata for a workflow using AI"
             }
             Self::UpdateSortingChoice => "Modified the sorting scheme for Warp Drive objects",
             Self::UndoClose => "Re-opened a closed tab or window (undo closing a tab or window)",
@@ -6593,7 +6190,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::AgentModeChangedInputType => {
                 "The input type was changed from shell -> AI or AI -> shell"
             }
-            Self::AgentModePrediction => "Completed an Agent Predict prediction",
             Self::ToggleIntelligentAutosuggestionsSetting => {
                 "Toggled on/off the intelligent autosuggestions setting"
             }
@@ -6795,9 +6391,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             Self::AgentModeSetupCodebaseContextAction { .. } => {
                 "User clicked a button in the Agent Mode setup codebase context step"
             }
-            Self::AgentModeSetupCreateEnvironmentAction { .. } => {
-                "User clicked a button in the Agent Mode setup create environment step"
-            }
             Self::InputBufferSubmitted => "Input buffer submitted",
             Self::RecentMenuItemSelected { .. } => {
                 "User selected an item from the recents list on the new tab zero state"
@@ -6897,25 +6490,6 @@ impl TelemetryEventDesc for TelemetryEventDiscriminants {
             }
             Self::FreeTierLimitHitInterstitialClosed { .. } => {
                 "User closed the free tier limit hit interstitial"
-            }
-            Self::RemoteServerBinaryCheck => {
-                "Remote server binary check completed (found, not found, or error)"
-            }
-            Self::RemoteServerInstallation => {
-                "Remote server binary installation completed (success or failure)"
-            }
-            Self::RemoteServerInitialization => {
-                "Remote server connection and initialization completed (success or failure)"
-            }
-            Self::RemoteServerDisconnection => {
-                "An established remote server connection was dropped"
-            }
-            Self::RemoteServerClientRequestError => "A client request to the remote server failed",
-            Self::RemoteServerMessageDecodingError => {
-                "A server message could not be decoded (no parseable request_id)"
-            }
-            Self::RemoteServerSetupDuration => {
-                "End-to-end duration of the remote server setup flow"
             }
         }
     }

@@ -1,6 +1,6 @@
 use crate::ai::agent::conversation::AIConversationId;
 use serde::Serialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use strum_macros::{EnumDiscriminants, EnumIter};
 use warp_core::telemetry::{EnablementState, TelemetryEvent, TelemetryEventDesc};
 
@@ -21,7 +21,6 @@ pub(crate) enum TeamAgentCommunicationKind {
 #[serde(rename_all = "snake_case")]
 pub(crate) enum TeamAgentCommunicationTransport {
     Local,
-    ServerApi,
 }
 #[derive(Clone, Copy, Debug, Serialize)]
 #[serde(rename_all = "snake_case")]

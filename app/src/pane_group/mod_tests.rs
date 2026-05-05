@@ -29,7 +29,6 @@ use crate::{
     search::files::model::FileSearchModel,
     server::{
         cloud_objects::{listener::Listener, update_manager::UpdateManager},
-        server_api::ServerApiProvider,
         sync_queue::SyncQueue,
         telemetry::context_provider::AppTelemetryContextProvider,
     },
@@ -74,8 +73,6 @@ use warpui::{
 
 fn initialize_app(app: &mut App) {
     initialize_settings_for_tests(app);
-
-    app.add_singleton_model(|_ctx| ServerApiProvider::new_for_test());
     app.add_singleton_model(|_| AuthStateProvider::new_for_test());
     app.add_singleton_model(AppTelemetryContextProvider::new_context_provider);
     app.add_singleton_model(AuthManager::new_for_test);
@@ -118,9 +115,7 @@ fn initialize_app(app: &mut App) {
     app.add_singleton_model(|ctx| {
         AIExecutionProfilesModel::new(&crate::LaunchMode::new_for_unit_test(), ctx)
     });
-    app.add_singleton_model(|ctx| {
-        AIRequestUsageModel::new_for_test(ServerApiProvider::as_ref(ctx).get_ai_client(), ctx)
-    });
+    app.add_singleton_model(|ctx| AIRequestUsageModel::new(ctx));
     app.add_singleton_model(LLMPreferences::new);
     #[cfg(feature = "voice_input")]
     app.add_singleton_model(voice_input::VoiceInput::new);
@@ -134,7 +129,12 @@ fn initialize_app(app: &mut App) {
     app.update(experiments::init);
     AltScreenReporting::register(app);
     app.add_singleton_model(|ctx| {
-        CodebaseIndexManager::new_for_test(ServerApiProvider::as_ref(ctx).get(), ctx)
+        CodebaseIndexManager::new_for_test(
+            std::sync::Arc::new(
+                ::ai::index::full_source_code_embedding::store_client::MockStoreClient,
+            ),
+            ctx,
+        )
     });
     app.add_singleton_model(|ctx| PersistedWorkspace::new(vec![], HashMap::new(), None, ctx));
     app.add_singleton_model(|_| ProjectContextModel::default());
@@ -147,7 +147,6 @@ fn initialize_app(app: &mut App) {
     app.add_singleton_model(AIDocumentModel::new);
     app.add_singleton_model(|_| History::new(vec![]));
     app.add_singleton_model(AgentConversationsModel::new);
-    app.add_singleton_model(remote_server::manager::RemoteServerManager::new);
 }
 
 struct MockOptions {
@@ -177,7 +176,6 @@ fn mock_pane_group(app: &mut App, options: MockOptions) -> ViewHandle<PaneGroup>
             PaneGroup::new_with_panes_layout(
                 tips_model,
                 user_default_shell_changed_banner_dismissal_model_handle,
-                ServerApiProvider::as_ref(ctx).get(),
                 options.layout,
                 block_lists,
                 None,
@@ -1099,7 +1097,6 @@ fn test_focused_pane_is_synchronized_with_application_focus() {
                     PaneGroup::new_with_panes_layout(
                         tips_model,
                         user_default_shell_changed_banner_dismissal_model_handle,
-                        ServerApiProvider::as_ref(ctx).get(),
                         panes_layout,
                         block_lists,
                         None,

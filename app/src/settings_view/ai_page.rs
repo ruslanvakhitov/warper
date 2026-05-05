@@ -290,7 +290,7 @@ pub fn init_actions_from_parent_view<T: Action + Clone>(
             flags::NATURAL_LANGUAGE_AUTOSUGGESTIONS_FLAG,
         )
         .with_group(bindings::BindingGroup::WarpAi)
-        .with_enabled(|| FeatureFlag::PredictAMQueries.is_enabled())],
+        .with_enabled(|| false)],
         app,
     );
     ToggleSettingActionPair::add_toggle_setting_action_pairs_as_bindings(
@@ -1350,10 +1350,6 @@ impl AISettingsPageView {
                     || ai_settings
                         .prompt_suggestions_enabled_internal
                         .is_supported_on_current_platform()
-                    || (FeatureFlag::PredictAMQueries.is_enabled()
-                        && ai_settings
-                            .natural_language_autosuggestions_enabled_internal
-                            .is_supported_on_current_platform())
                     || (FeatureFlag::GitOperationsInCodeReview.is_enabled()
                         && ai_settings
                             .git_operations_autogen_enabled_internal
@@ -1392,10 +1388,6 @@ impl AISettingsPageView {
                     || ai_settings
                         .prompt_suggestions_enabled_internal
                         .is_supported_on_current_platform()
-                    || (FeatureFlag::PredictAMQueries.is_enabled()
-                        && ai_settings
-                            .natural_language_autosuggestions_enabled_internal
-                            .is_supported_on_current_platform())
                     || (FeatureFlag::GitOperationsInCodeReview.is_enabled()
                         && ai_settings
                             .git_operations_autogen_enabled_internal
@@ -2966,10 +2958,8 @@ impl ActiveAIWidget {
     }
 
     fn is_natural_language_autosuggestions_toggleable(&self, app: &AppContext) -> bool {
-        FeatureFlag::PredictAMQueries.is_enabled()
-            && AISettings::as_ref(app)
-                .natural_language_autosuggestions_enabled_internal
-                .is_supported_on_current_platform()
+        let _ = app;
+        false
     }
 
     fn is_git_operations_autogen_toggleable(&self, app: &AppContext) -> bool {
