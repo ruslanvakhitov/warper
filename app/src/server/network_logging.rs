@@ -6,7 +6,6 @@ use enclose::enclose;
 use warpui::{Entity, ModelContext, SingletonEntity};
 
 use crate::server::datetime_ext::DateTimeExt;
-use crate::server::server_api::ServerApiProvider;
 
 /// Maximum number of network log items retained in memory. Matches the
 /// previous file-rotation threshold so the pane surface behaves consistently
@@ -77,11 +76,10 @@ impl SingletonEntity for NetworkLogModel {}
 ///
 /// The logging happens via an async channel so that request hooks never block
 /// on the main thread. Items are delivered to the model on the main thread via
-/// [`ModelContext::spawn_stream_local`], mirroring how `ServerApiProvider`
-/// consumes its own event stream.
-pub(super) fn init<'a>(
+/// [`ModelContext::spawn_stream_local`].
+pub(super) fn init<'a, E: Entity>(
     http_clients: impl IntoIterator<Item = &'a mut http_client::Client>,
-    ctx: &mut ModelContext<ServerApiProvider>,
+    ctx: &mut ModelContext<E>,
 ) {
     let (tx, rx) = async_channel::bounded::<NetworkLogItem>(NETWORK_LOGGING_MAX_QUEUE_SIZE);
 

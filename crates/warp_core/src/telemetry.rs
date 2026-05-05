@@ -2,7 +2,6 @@ use std::{fmt, marker::PhantomData};
 
 use serde_json::Value;
 use strum::IntoEnumIterator;
-use warpui::{AppContext, Entity, SingletonEntity};
 
 // Re-export for macro use.
 #[doc(hidden)]
@@ -14,16 +13,15 @@ use crate::{
     features::FeatureFlag,
 };
 
-/// Core trait defining telemetry event behavior.
+/// Core trait defining retained telemetry event metadata.
 ///
-/// This trait encapsulates the basic functionality required for any telemetry event
-/// in the Warp ecosystem. It enables events to be defined in any crate while maintaining
-/// consistent telemetry reporting behavior.
+/// Warper does not upload, queue, or persist telemetry events. The event surface remains so
+/// existing UI code and event documentation can compile while hosted telemetry is amputated.
 pub trait TelemetryEvent: RegisteredTelemetryEvent {
     /// Returns the name of the telemetry event.
     ///
     /// The name should be a stable identifier that uniquely identifies this type of event.
-    /// It is used for analytics tracking and should remain consistent over time.
+    /// It is used for local event documentation and should remain consistent over time.
     ///
     /// Returns a borrowed string to avoid allocations for static event names.
     fn name(&self) -> &'static str;
@@ -39,9 +37,7 @@ pub trait TelemetryEvent: RegisteredTelemetryEvent {
 
     /// Returns a human-readable description of what this event represents.
     ///
-    /// The description should clearly explain the significance of the event to help
-    /// with analytics and monitoring. This is used both for documentation and
-    /// telemetry dashboards.
+    /// The description should clearly explain the event for local documentation.
     fn description(&self) -> &'static str;
 
     /// Determines if an event is enabled in the current build. This only works when all
@@ -49,11 +45,7 @@ pub trait TelemetryEvent: RegisteredTelemetryEvent {
     /// the bundled app.
     fn enablement_state(&self) -> EnablementState;
 
-    /// Returns whether this event contains user-generated content (UGC).
-    ///
-    /// Events containing UGC may need special handling for privacy and data
-    /// retention reasons. This flag helps route the event to the appropriate
-    /// analytics destination.
+    /// Returns whether this retained event shape can contain user-generated content (UGC).
     fn contains_ugc(&self) -> bool;
 
     /// Returns an iterator over the descriptors for all telemetry events of this type.
@@ -188,18 +180,3 @@ impl EnablementState {
         }
     }
 }
-
-/// Trait for the context provider that allows us to send telemetry payloads.
-pub trait TelemetryContextProvider {
-    fn user_id(&self, ctx: &AppContext) -> Option<String>;
-
-    fn anonymous_id(&self, ctx: &AppContext) -> String;
-}
-
-pub type TelemetryContextModel = Box<dyn TelemetryContextProvider>;
-
-impl Entity for TelemetryContextModel {
-    type Event = ();
-}
-
-impl SingletonEntity for TelemetryContextModel {}

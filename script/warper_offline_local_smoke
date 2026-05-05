@@ -12,7 +12,9 @@ Runs deterministic, credential-free WARPER-001 local-only guardrails.
 
 Validates:
   - startup/channel denylist checks for hosted Warp/Oz/Firebase endpoints
-  - hosted UI/action/deeplink/menu entrypoint vocabulary denylist checks
+    and hosted update/download paths, including /download/cli
+  - hosted UI/action/deeplink/restore/menu entrypoint vocabulary denylist checks
+  - removed auth/billing/team/Drive/shared-session/environment URI roots
   - telemetry, crash reporting, autoupdate, and Sentry upload/download denylist checks
   - app/src and crates runtime endpoint literal checks outside tests/generated schema
   - focused warp_core channel tests for absent hosted service configs
@@ -43,8 +45,9 @@ esac
 echo "WARPER-001 offline local smoke"
 echo
 echo "Validates:"
-echo "  - startup/channel hosted endpoint denylist"
-echo "  - UI/action/deeplink/menu hosted entrypoint denylist"
+echo "  - startup/channel hosted endpoint and update/download denylist"
+echo "  - UI/action/deeplink/restore/menu hosted entrypoint denylist"
+echo "  - removed auth/billing/team/Drive/shared-session/environment URI roots"
 echo "  - telemetry/crash/autoupdate/Sentry upload and download denylist"
 echo "  - runtime endpoint literals in app/src and crates outside tests/generated schema"
 echo "  - warp_core absent hosted service config tests"

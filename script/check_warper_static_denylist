@@ -10,7 +10,7 @@ fi
 
 scope="${1:-startup}"
 
-endpoint_denylist='(app\.warp\.dev|rtc\.app\.warp\.dev|sessions\.app\.warp\.dev|oz\.warp\.dev|AIza[0-9A-Za-z_-]+|identitytoolkit\.googleapis\.com|securetoken\.googleapis\.com|firebaseapp\.com|rudderstack\.com|rudderlabs|api\.segment\.io|dataplane\.rudderstack|sentry\.io|releases\.warp\.dev|warp-releases|channel_versions\.json|warp\.dev/download)'
+endpoint_denylist='(app\.warp\.dev|rtc\.app\.warp\.dev|sessions\.app\.warp\.dev|oz\.warp\.dev|AIza[0-9A-Za-z_-]+|identitytoolkit\.googleapis\.com|securetoken\.googleapis\.com|firebaseapp\.com|rudderstack\.com|rudderlabs|api\.segment\.io|dataplane\.rudderstack|sentry\.io|releases\.warp\.dev|warp-releases|channel_versions\.json|warp\.dev/download|/download/cli)'
 
 common_excluded_globs=(
     --glob '!specs/**'
@@ -75,17 +75,17 @@ case "$scope" in
         cat <<'USAGE'
 Usage: script/check_warper_static_denylist [startup|entrypoints|telemetry-crash-update|all-runtime]
 
-Checks WARPER-001 local-only guardrails for removed hosted endpoint literals
-and high-risk UI/action entrypoint roots. OpenRouter files are not scanned by
-the entrypoint symbol checks because OpenRouter is explicitly out of scope for
-WARPER-001 amputation.
+Checks WARPER-001 local-only guardrails for removed hosted endpoint literals,
+hosted update/download paths, and high-risk UI/action/deeplink entrypoint
+roots. OpenRouter files are not scanned by the entrypoint symbol checks because
+OpenRouter is explicitly out of scope for WARPER-001 amputation.
 
 All modes exclude specs, scripts, tests, generated schema, generated files, and
 OpenRouter implementation files from the scanned runtime surface.
 
 Modes:
   startup                 Check the local startup/channel/config surfaces used by Warper.
-  entrypoints             Check removed UI/action/deeplink/menu roots for hosted surfaces.
+  entrypoints             Check removed UI/action/deeplink/restore/menu roots for hosted surfaces.
   telemetry-crash-update  Check telemetry, crash reporting, autoupdate, and Sentry build hooks.
   all-runtime             Check app/src and crates, excluding explicitly scoped test files.
 USAGE
@@ -142,6 +142,17 @@ if [[ "$scope" == "entrypoints" ]]; then
         "deeplink hosted dispatches" \
         '(root_view:open_(team|billing|platform|environment|warp_drive|shared|auth)|WorkspaceAction::(OpenWarpDrive|ToggleWarpDrive|ImportToTeamDrive|ExportAllWarpDriveObjects|SignupAnonymousUser|Reauth|LogOut)|://(auth|team|conversation|drive|shared_session)/|settings/(billing_and_usage|teams|environments|platform))' \
         app/src/uri
+
+    run_denylist \
+        "removed URI host/path roots" \
+        '(UriHost::(Auth|Billing|Team|Drive|WarpDrive|SharedSession|Environment)|Self::(Auth|Billing|Team|Drive|WarpDrive|SharedSession|Environment)|"(auth|billing|team|teams|drive|warp_drive|shared_session|environment|environments)" => Ok\(Self::|"/(auth|billing|team|teams|drive|warp-drive|warp_drive|shared-session|shared_session|environment|environments|create-environment)|settings/(account|billing_and_usage|teams|team|environments|platform|warp_drive)|root_view:open_(auth|login|billing|team|environment|warp_drive|shared|drive))' \
+        app/src/uri \
+        app/src/workspace/action.rs \
+        app/src/workspace/global_actions.rs \
+        app/src/app_state.rs \
+        app/src/pane_group/mod.rs \
+        app/src/pane_group/pane \
+        app/src/terminal/view/action.rs
 
     echo "WARPER-001 static denylist passed for scope '$scope'."
     exit 0

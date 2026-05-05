@@ -83,8 +83,7 @@ pub trait ManagedSecretsClient: 'static + Send + Sync {
     /// Issue a short-lived OIDC identity token for the current task.
     ///
     /// The workload token is not passed explicitly - it's automatically provided
-    /// as part of the client's cloud agent workload identity token support
-    /// (see the `ServerApi` implementation).
+    /// as part of the client's cloud agent workload identity token support.
     async fn issue_task_identity_token(
         &self,
         options: IdentityTokenOptions,
