@@ -648,7 +648,9 @@ impl RequestedCommandView {
             let Some(mouse_state_handle) =
                 self.citation_state_handles.get(copied_citation).cloned()
             else {
-                log::warn!("Tried to retrieve mouse state handle for citation, but no mouse state handle exists.");
+                log::warn!(
+                    "Tried to retrieve mouse state handle for citation, but no mouse state handle exists."
+                );
                 return None;
             };
             render_citation(
