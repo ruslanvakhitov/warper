@@ -749,7 +749,6 @@ enum SummaryPaneKind {
     CodeDiff,
     File,
     Settings,
-    EnvironmentManagement,
     AIFact,
     AIDocument,
     ExecutionProfileEditor,
@@ -1223,9 +1222,7 @@ fn render_detail_kind_badge_icon(
                 return icon.to_warpui_icon(color).finish();
             }
 
-            let icon = if terminal_view.is_ambient_agent_session(app) {
-                WarpIcon::OzCloud
-            } else if terminal_view
+            let icon = if terminal_view
                 .selected_conversation_display_title(app)
                 .is_some()
             {
@@ -2218,11 +2215,10 @@ fn resolve_icon_with_status_variant(
             let terminal_view = terminal_view.as_ref(app);
             let cli_agent_session = CLIAgentSessionsModel::as_ref(app).session(terminal_view.id());
             let is_plugin_backed = cli_agent_session.is_some_and(|s| s.listener.is_some());
-            let is_ambient = terminal_view.is_ambient_agent_session(app);
             let has_conversation = terminal_view
                 .selected_conversation_display_title(app)
                 .is_some();
-            let is_oz_agent = has_conversation || is_ambient;
+            let is_oz_agent = has_conversation;
 
             if let Some(session) = cli_agent_session
                 .filter(|s| s.listener.is_some())
@@ -2247,7 +2243,7 @@ fn resolve_icon_with_status_variant(
             } else if is_oz_agent {
                 IconWithStatusVariant::OzAgent {
                     status: terminal_view.selected_conversation_status_for_display(app),
-                    is_ambient,
+                    is_ambient: false,
                 }
             } else {
                 // Plain terminal: use foreground color per design spec
@@ -2267,8 +2263,7 @@ fn resolve_icon_with_status_variant(
                 }
             }
         }
-        // Settings and environment management use the foreground color per design spec
-        TypedPane::Settings | TypedPane::EnvironmentManagement => IconWithStatusVariant::Neutral {
+        TypedPane::Settings => IconWithStatusVariant::Neutral {
             icon: typed.icon(),
             icon_color: main_text,
         },
@@ -2404,7 +2399,6 @@ enum TypedPane<'a> {
     CodeDiff,
     File,
     Settings,
-    EnvironmentManagement,
     AIFact,
     AIDocument,
     ExecutionProfileEditor,
@@ -2424,13 +2418,11 @@ impl TypedPane<'_> {
                         agent: session.agent,
                     };
                 }
-                let is_ambient = terminal_view.is_ambient_agent_session(app);
                 if terminal_view
                     .selected_conversation_display_title(app)
                     .is_some()
-                    || is_ambient
                 {
-                    SummaryPaneKind::OzAgent { is_ambient }
+                    SummaryPaneKind::OzAgent { is_ambient: false }
                 } else {
                     SummaryPaneKind::Terminal
                 }
@@ -2441,7 +2433,6 @@ impl TypedPane<'_> {
             TypedPane::CodeDiff => SummaryPaneKind::CodeDiff,
             TypedPane::File => SummaryPaneKind::File,
             TypedPane::Settings => SummaryPaneKind::Settings,
-            TypedPane::EnvironmentManagement => SummaryPaneKind::EnvironmentManagement,
             TypedPane::AIFact => SummaryPaneKind::AIFact,
             TypedPane::AIDocument => SummaryPaneKind::AIDocument,
             TypedPane::ExecutionProfileEditor => SummaryPaneKind::ExecutionProfileEditor,
@@ -2462,7 +2453,6 @@ impl TypedPane<'_> {
             TypedPane::CodeDiff => "Code Diff",
             TypedPane::File => "File",
             TypedPane::Settings => "Settings",
-            TypedPane::EnvironmentManagement => "Environments",
             TypedPane::AIFact => "Rules",
             TypedPane::AIDocument => "Plan",
             TypedPane::ExecutionProfileEditor => "Execution Profile",
@@ -2481,7 +2471,6 @@ impl TypedPane<'_> {
             | TypedPane::CodeDiff
             | TypedPane::File
             | TypedPane::Settings
-            | TypedPane::EnvironmentManagement
             | TypedPane::AIFact
             | TypedPane::AIDocument
             | TypedPane::ExecutionProfileEditor
@@ -2495,7 +2484,7 @@ impl TypedPane<'_> {
             TypedPane::Code(_) => WarpIcon::Code2,
             TypedPane::CodeDiff => WarpIcon::Diff,
             TypedPane::File => WarpIcon::File,
-            TypedPane::Settings | TypedPane::EnvironmentManagement => WarpIcon::Gear,
+            TypedPane::Settings => WarpIcon::Gear,
             TypedPane::AIFact => WarpIcon::BookOpen,
             TypedPane::AIDocument => WarpIcon::Compass,
             TypedPane::ExecutionProfileEditor => WarpIcon::Lightning,
@@ -2629,7 +2618,6 @@ fn build_vertical_tabs_summary_data(
             TypedPane::CodeDiff
             | TypedPane::File
             | TypedPane::Settings
-            | TypedPane::EnvironmentManagement
             | TypedPane::AIFact
             | TypedPane::AIDocument
             | TypedPane::ExecutionProfileEditor
@@ -2749,7 +2737,6 @@ impl<'a> PaneProps<'a> {
             | TypedPane::CodeDiff
             | TypedPane::File
             | TypedPane::Settings
-            | TypedPane::EnvironmentManagement
             | TypedPane::AIFact
             | TypedPane::AIDocument
             | TypedPane::ExecutionProfileEditor
@@ -2980,10 +2967,8 @@ fn preferred_agent_tab_titles(
 fn terminal_agent_text(terminal_view: &TerminalView, app: &AppContext) -> TerminalAgentText {
     let cli_agent_session = CLIAgentSessionsModel::as_ref(app).session(terminal_view.id());
     let is_plugin_backed = cli_agent_session.is_some_and(|session| session.listener.is_some());
-    let is_ambient_agent = terminal_view.is_ambient_agent_session(app);
-
     let mut agent_text = TerminalAgentText {
-        is_oz_agent: is_ambient_agent,
+        is_oz_agent: false,
         cli_agent: cli_agent_session.map(|session| session.agent),
         ..Default::default()
     };
@@ -3044,7 +3029,6 @@ impl PaneGroup {
             IPaneType::CodeDiff => TypedPane::CodeDiff,
             IPaneType::File => TypedPane::File,
             IPaneType::Settings => TypedPane::Settings,
-            IPaneType::EnvironmentManagement => TypedPane::EnvironmentManagement,
             IPaneType::AIFact => TypedPane::AIFact,
             IPaneType::AIDocument => TypedPane::AIDocument,
             IPaneType::ExecutionProfileEditor => TypedPane::ExecutionProfileEditor,
@@ -3576,7 +3560,6 @@ fn render_summary_pane_kind_icon_circle(
         | SummaryPaneKind::CodeDiff
         | SummaryPaneKind::File
         | SummaryPaneKind::Settings
-        | SummaryPaneKind::EnvironmentManagement
         | SummaryPaneKind::AIFact
         | SummaryPaneKind::AIDocument
         | SummaryPaneKind::ExecutionProfileEditor
@@ -3626,9 +3609,7 @@ fn summary_pane_kind_icon(
         SummaryPaneKind::Code { .. } => (WarpIcon::Code2, sub_text),
         SummaryPaneKind::CodeDiff => (WarpIcon::Diff, sub_text),
         SummaryPaneKind::File => (WarpIcon::File, sub_text),
-        SummaryPaneKind::Settings | SummaryPaneKind::EnvironmentManagement => {
-            (WarpIcon::Gear, main_text)
-        }
+        SummaryPaneKind::Settings => (WarpIcon::Gear, main_text),
         SummaryPaneKind::AIFact => (WarpIcon::BookOpen, sub_text),
         SummaryPaneKind::AIDocument => (WarpIcon::Compass, sub_text),
         SummaryPaneKind::ExecutionProfileEditor => (WarpIcon::Lightning, sub_text),
@@ -5449,7 +5430,6 @@ fn render_detail_section(
         TypedPane::CodeDiff
         | TypedPane::File
         | TypedPane::Settings
-        | TypedPane::EnvironmentManagement
         | TypedPane::ExecutionProfileEditor
         | TypedPane::Other => Empty::new().finish(),
     }
