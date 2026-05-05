@@ -5,8 +5,7 @@ use serde::{Serialize, Serializer};
 use warpui::{platform::Cursor, ViewContext};
 
 use crate::{
-    send_telemetry_from_ctx,
-    server::telemetry::{LinkOpenMethod, TelemetryEvent},
+    server::telemetry::{LinkOpenMethod},
     terminal::{
         model::{
             grid::grid_handler::Link,
@@ -373,14 +372,7 @@ impl super::TerminalView {
         ctx.focus(&self.input);
         ctx.notify();
 
-        send_telemetry_from_ctx!(
-            TelemetryEvent::OpenLink {
-                link: link.clone(),
-                open_with: LinkOpenMethod::ToolTip
-            },
-            ctx
-        );
-        match link {
+                match link {
             #[cfg(feature = "local_fs")]
             GridHighlightedLink::File(link) => {
                 let link = link.get_inner();

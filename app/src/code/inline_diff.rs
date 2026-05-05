@@ -113,7 +113,7 @@ impl InlineDiffView {
     ///
     /// The `session_type` determines whether the file is local or remote.
     /// For `Local`, the file is registered by path on the local filesystem.
-    /// Remote sessions are read-only after remote-server removal.
+    /// Remote sessions are read-only after hosted remote file access removal.
     ///
     /// This must be called after construction for non-WASM environments.
     #[cfg(not(target_family = "wasm"))]

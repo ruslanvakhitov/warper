@@ -22,7 +22,7 @@ use crate::{
         paths::host_native_absolute_path,
     },
     auth::auth_state::AuthState,
-    safe_debug, safe_warn, send_telemetry_on_executor,
+    safe_debug, safe_warn,
 };
 
 use super::telemetry::{
@@ -185,16 +185,7 @@ where
     for error in result.errors.iter() {
         match error {
             DiffApplicationError::UnmatchedDiffs { match_failures, .. } => {
-                send_telemetry_on_executor!(
-                    auth_state,
-                    RequestFileEditsTelemetryEvent::DiffMatchFailed(DiffMatchFailedEvent {
-                        identifiers: ai_identifiers.clone(),
-                        failures: *match_failures,
-                        passive_diff,
-                    }),
-                    background_executor
-                );
-            }
+                            }
             DiffApplicationError::MissingFile { .. }
             | DiffApplicationError::ReadFailed { .. }
             | DiffApplicationError::AlreadyExists { .. }
@@ -209,16 +200,7 @@ where
     }
 
     if invalid_file_count > 0 {
-        send_telemetry_on_executor!(
-            auth_state,
-            RequestFileEditsTelemetryEvent::DiffInvalidFile(DiffInvalidFileEvent {
-                count: invalid_file_count,
-                identifiers: ai_identifiers.clone(),
-                passive_diff,
-            }),
-            background_executor
-        );
-    }
+            }
 
     // Send telemetry for any warnings, which don't necessarily prevent diff application.
 
@@ -231,16 +213,7 @@ where
         .sum();
 
     if total_missing_line_numbers > 0 {
-        send_telemetry_on_executor!(
-            auth_state,
-            RequestFileEditsTelemetryEvent::MissingLineNumbers(MissingLineNumbersEvent {
-                identifiers: ai_identifiers.clone(),
-                count: total_missing_line_numbers,
-                passive_diff,
-            }),
-            background_executor
-        );
-    }
+            }
 
     match Vec1::try_from_vec(result.errors) {
         Ok(errors) => Err(errors),

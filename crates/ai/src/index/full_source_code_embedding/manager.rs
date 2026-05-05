@@ -19,7 +19,7 @@ cfg_if::cfg_if! {
         use warp_core::features::FeatureFlag;
         use watcher::{BulkFilesystemWatcher, BulkFilesystemWatcherEvent};
         use warpui::r#async::Timer;
-        use warp_core::{send_telemetry_from_ctx, report_if_error};
+        use warp_core::{report_if_error};
         use crate::telemetry::AITelemetryEvent;
         use instant::Instant;
         use warp_core::channel::ChannelState;
@@ -697,22 +697,10 @@ impl CodebaseIndexManager {
                         ctx,
                     ) {
                         Ok(snapshot_index) => {
-                            send_telemetry_from_ctx!(
-                                AITelemetryEvent::MerkleTreeSnapshotRebuildSuccess {
-                                    duration: read_snapshot_start_time.elapsed()
-                                },
-                                ctx
-                            );
-                            return snapshot_index;
+                                                        return snapshot_index;
                         }
                         Err(err) => {
-                            send_telemetry_from_ctx!(
-                                AITelemetryEvent::MerkleTreeSnapshotRebuildFailed {
-                                    error: err.to_string()
-                                },
-                                ctx
-                            );
-                        }
+                                                    }
                     }
                 }
             }

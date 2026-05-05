@@ -1,6 +1,5 @@
 use crate::telemetry::OnboardingEvent;
 use crate::OnboardingIntention;
-use warp_core::send_telemetry_from_ctx;
 use warpui::{Entity, ModelContext};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -151,8 +150,7 @@ impl OnboardingCalloutModel {
     }
 
     pub fn next(&mut self, ctx: &mut ModelContext<Self>) {
-        send_telemetry_from_ctx!(OnboardingEvent::CalloutNext, ctx);
-        match &self.state {
+                match &self.state {
             OnboardingCalloutState::UniversalInput(universal_input_state) => {
                 self.next_universal_input(*universal_input_state, ctx);
             }
@@ -357,13 +355,7 @@ impl OnboardingCalloutModel {
             _ => None,
         };
         if let Some(callout) = callout_name {
-            send_telemetry_from_ctx!(
-                OnboardingEvent::CalloutDisplayed {
-                    callout: callout.to_string(),
-                },
-                ctx
-            );
-        }
+                    }
     }
 
     fn set_state(&mut self, new_state: OnboardingCalloutState, ctx: &mut ModelContext<Self>) {
@@ -384,13 +376,7 @@ impl OnboardingCalloutModel {
             };
 
             if let Some(final_state) = final_state {
-                send_telemetry_from_ctx!(
-                    OnboardingEvent::CalloutCompleted {
-                        completion_type: final_state.to_string(),
-                    },
-                    ctx
-                );
-                ctx.emit(OnboardingCalloutModelEvent::Completed(final_state));
+                                ctx.emit(OnboardingCalloutModelEvent::Completed(final_state));
             }
         }
     }

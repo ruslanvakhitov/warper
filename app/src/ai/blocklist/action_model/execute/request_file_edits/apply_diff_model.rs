@@ -5,7 +5,7 @@
 //! or remote. Internally the method resolves the session context, then dispatches:
 //!
 //! - **Local**: calls [`apply_edits`] with a `std::fs`-backed closure.
-//! - **Remote**: returns unsupported; Warp-hosted remote-server file access has been removed.
+//! - **Remote**: returns unsupported; hosted remote file access has been removed.
 
 use ai::diff_validation::AIRequestedCodeDiff;
 use futures::FutureExt;

@@ -79,7 +79,7 @@ pub struct TemplatableMCPServerManager {
     /// is received or the spawn task terminates.
     #[cfg(not(target_family = "wasm"))]
     pending_oauth_csrf: HashMap<String, Uuid>,
-    /// UUIDs of MCP servers started via the Oz CLI. We track these so they can be distinguished from
+    /// UUIDs of MCP servers started via the Warp CLI. We track these so they can be distinguished from
     /// file-based ephemeral MCP servers, which are directory-scoped.
     cli_spawned_server_uuids: HashSet<Uuid>,
 }
@@ -331,7 +331,7 @@ impl TemplatableMCPServerManager {
             .collect()
     }
 
-    /// Returns CLI-spawned ephemeral servers (started via `oz agent run --mcp`) that are currently active.
+    /// Returns CLI-spawned ephemeral servers that are currently active.
     pub fn get_active_cli_spawned_servers(&self) -> HashMap<Uuid, &TemplatableMCPServerInfo> {
         self.cli_spawned_server_uuids
             .iter()

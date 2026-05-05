@@ -4,9 +4,7 @@ use crate::editor::{
     PropagateAndNoOpNavigationKeys, SingleLineEditorOptions, TextOptions,
 };
 use crate::modal::{Modal, ModalEvent};
-use crate::send_telemetry_from_ctx;
 use crate::server::ids::SyncId;
-use crate::server::telemetry::TelemetryEvent;
 use crate::view_components::action_button::{ActionButton, PrimaryTheme};
 use crate::{ai::facts::AIMemory, ui_components::blended_colors};
 use pathfinder_geometry::vector::vec2f;
@@ -332,14 +330,7 @@ impl SuggestedRuleView {
             EditorEvent::Edited(_) => {
                 // todo this seems noisy?
                 if let Some(SuggestedRuleAndId { rule, .. }) = &self.rule_and_id {
-                    send_telemetry_from_ctx!(
-                        TelemetryEvent::AISuggestedRuleContentChanged {
-                            rule_id: rule.logging_id.clone(),
-                            is_saved: self.is_saved
-                        },
-                        ctx
-                    );
-                }
+                                    }
             }
             EditorEvent::Navigate(NavigationKey::Tab)
             | EditorEvent::Navigate(NavigationKey::ShiftTab) => {

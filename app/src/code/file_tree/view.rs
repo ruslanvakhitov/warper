@@ -17,7 +17,6 @@ use warp_util::path::LineAndColumnArg;
 use warp_util::standardized_path::StandardizedPath;
 
 use repo_metadata::repositories::DetectedRepositories;
-use warp_core::send_telemetry_from_ctx;
 use warpui::elements::{
     AcceptedByDropTarget, Align, Clipped, ConstrainedBox, Container, Dismiss, Draggable,
     DraggableState, Empty, FormattedTextElement, MainAxisAlignment, Percentage, Rect, SavePosition,
@@ -59,7 +58,6 @@ use crate::util::openable_file_type::{
 use crate::{
     appearance::Appearance,
     menu::{Menu, MenuItem, MenuItemFields},
-    server::telemetry::TelemetryEvent,
     ui_components::icons::Icon,
     view_components::DismissibleToast,
     workspace::ToastStack,
@@ -237,7 +235,7 @@ struct RootDirectory {
 }
 
 impl RootDirectory {
-    /// Returns whether this root is backed by a remote server.
+    /// Returns whether this root is backed by a remote session.
     fn is_remote(&self) -> bool {
         self.remote_host_id.is_some()
     }
@@ -2153,13 +2151,6 @@ impl FileTreeView {
             )
         };
 
-        send_telemetry_from_ctx!(
-            TelemetryEvent::CodePanelsFileOpened {
-                entrypoint: CodePanelsFileOpenEntrypoint::ProjectExplorer,
-                target: target.clone(),
-            },
-            ctx
-        );
 
         ctx.emit(FileTreeEvent::OpenFile {
             path: path.to_path_buf(),
@@ -2385,10 +2376,6 @@ impl FileTreeView {
         };
 
         let is_directory = matches!(item, FileTreeItem::DirectoryHeader { .. });
-        send_telemetry_from_ctx!(
-            TelemetryEvent::FileTreeItemAttachedAsContext { is_directory },
-            ctx
-        );
 
         ctx.emit(FileTreeEvent::AttachAsContext {
             path: relative_path,

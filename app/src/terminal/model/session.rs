@@ -28,7 +28,7 @@ use warp_completer::completer::{
 };
 use warpui::{platform::OperatingSystem, Entity, ModelContext, SingletonEntity};
 
-use crate::server::telemetry::{BootstrappingInfo, TelemetryEvent};
+use crate::server::telemetry::{BootstrappingInfo};
 use crate::terminal::event::ExecutedExecutorCommandEvent;
 use crate::terminal::ShellHost;
 use crate::terminal::ShellLaunchData;
@@ -271,22 +271,6 @@ impl Sessions {
             .map(|info| info.was_triggered_by_rc_file_snippet)
             .unwrap_or(false);
 
-        crate::send_telemetry_from_ctx!(
-            TelemetryEvent::BootstrappingSucceeded(BootstrappingInfo {
-                shell: session.shell().shell_type().name(),
-                shell_version: session.shell().version().clone(),
-                is_ssh: session.is_legacy_ssh_session(),
-                was_triggered_by_rc_file,
-                is_subshell: session.subshell_info().is_some(),
-                is_wsl: session.is_wsl(),
-                bootstrap_duration_seconds,
-                rcfiles_duration_seconds,
-                warp_attributed_bootstrap_duration_seconds,
-                is_msys2: session.is_msys2(),
-                terminal_session_id: Some(session.id()),
-            }),
-            ctx
-        );
 
         History::handle(ctx).update(ctx, |history, ctx| {
             let session_id = session.id();
@@ -713,7 +697,7 @@ impl SessionInfo {
 /// The session type determined at bootstrap time.
 ///
 /// Unlike [`SessionType`], this does not carry a `host_id` because that
-/// information is not available until the remote-server handshake completes,
+/// information is not available until the remote session handshake completes,
 /// which happens *after* the session is bootstrapped.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum BootstrapSessionType {
@@ -733,7 +717,7 @@ pub enum SessionType {
     /// Note that we only know this for sure when we Warpify a block.
     ///
     /// `host_id` is retained for restored remote-session metadata. New
-    /// remote-server handshakes no longer populate it.
+    /// remote session handshakes no longer populate it.
     WarpifiedRemote { host_id: Option<warp_core::HostId> },
 }
 
@@ -808,7 +792,7 @@ impl Session {
     }
 
     /// Updates the `host_id` on a `WarpifiedRemote` session type after the
-    /// remote server handshake completes (or clears it on disconnect).
+    /// remote session handshake completes (or clears it on disconnect).
     pub fn set_remote_host_id(&self, host_id: Option<warp_core::HostId>) {
         let mut st = self.session_type.lock();
         if let SessionType::WarpifiedRemote { host_id: ref mut h } = *st {

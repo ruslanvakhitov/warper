@@ -23,12 +23,10 @@ use crate::terminal::model::session::ExecuteCommandOptions;
 use crate::PrivacySettings;
 use crate::{
     ai::agent::{AIAgentActionResultType, GrepFileMatch, GrepLineMatch},
-    send_telemetry_from_app_ctx,
     terminal::{
         model::session::active_session::ActiveSession, model::session::Session, shell::ShellType,
         ShellLaunchData,
     },
-    TelemetryEvent,
 };
 
 use super::{
@@ -121,45 +119,6 @@ impl GrepError {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn create_redacted_grep_error_event(
-    should_collect_ugc: bool,
-    server_output_id: Option<ServerOutputId>,
-    mut queries: Vec<String>,
-    mut path: String,
-    shell_type: Option<ShellType>,
-    mut working_directory: Option<String>,
-    mut absolute_path: String,
-    mut error: GrepError,
-) -> TelemetryEvent {
-    for query in queries.iter_mut() {
-        redact_secrets(query);
-    }
-    redact_secrets(&mut path);
-    if let Some(working_directory) = working_directory.as_mut() {
-        redact_secrets(working_directory);
-    }
-    redact_secrets(&mut absolute_path);
-    if let Some(command) = error.command.as_mut() {
-        redact_secrets(command);
-    }
-    if let Some(output) = error.output.as_mut() {
-        redact_secrets(output);
-    }
-
-    TelemetryEvent::GrepToolFailed {
-        queries: should_collect_ugc.then_some(queries),
-        path: should_collect_ugc.then_some(path),
-        shell_type,
-        working_directory: should_collect_ugc.then_some(working_directory).flatten(),
-        absolute_path: should_collect_ugc.then_some(absolute_path),
-        error: error.error_message().to_string(),
-        command: should_collect_ugc.then_some(error.command).flatten(),
-        output: should_collect_ugc.then_some(error.output).flatten(),
-        server_output_id,
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
 fn log_grep_error(
     conversation_id: AIConversationId,
     queries: Vec<String>,
@@ -170,25 +129,16 @@ fn log_grep_error(
     error: GrepError,
     ctx: &mut AppContext,
 ) {
-    let should_collect_ugc = should_collect_ai_ugc_telemetry(
-        ctx,
-        PrivacySettings::handle(ctx)
-            .as_ref(ctx)
-            .is_telemetry_enabled,
-    );
-    let server_output_id = get_server_output_id(conversation_id, ctx);
-
-    let event = create_redacted_grep_error_event(
-        should_collect_ugc,
-        server_output_id,
+    let _ = (
+        conversation_id,
         queries,
         path,
         shell_type,
         working_directory,
         absolute_path,
-        error,
+        ctx,
     );
-    send_telemetry_from_app_ctx!(event, ctx);
+    log::debug!("grep tool failed: {}", error.error_message());
 }
 
 pub struct GrepExecutor {
@@ -301,8 +251,7 @@ impl GrepExecutor {
                             );
                         }
                         GrepResult::Success { .. } => {
-                            send_telemetry_from_app_ctx!(TelemetryEvent::GrepToolSucceeded, ctx);
-                        }
+                                                    }
                         _ => {}
                     }
                     AIAgentActionResultType::Grep(grep_result)
@@ -689,7 +638,3 @@ fn parse_grep_output(
 impl Entity for GrepExecutor {
     type Event = ();
 }
-
-#[cfg(test)]
-#[path = "grep_tests.rs"]
-mod tests;

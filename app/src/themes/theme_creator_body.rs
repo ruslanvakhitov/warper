@@ -3,9 +3,7 @@ use crate::editor::{EditorView, Event as EditorEvent};
 use crate::themes::theme::{InMemoryThemeOptions, ThemeKind};
 use crate::user_config;
 #[cfg(feature = "local_fs")]
-use crate::{
-    send_telemetry_from_ctx, server::telemetry::TelemetryEvent, themes::theme::CustomTheme,
-};
+use crate::themes::theme::CustomTheme;
 use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::vec2f;
 use std::default::Default;
@@ -198,8 +196,7 @@ impl ThemeCreatorBody {
                         image_extension,
                     )),
                     |path| {
-                        send_telemetry_from_ctx!(TelemetryEvent::CreateCustomTheme, ctx);
-                        ctx.emit(ThemeCreatorBodyEvent::SetCustomTheme {
+                                                ctx.emit(ThemeCreatorBodyEvent::SetCustomTheme {
                             theme: ThemeKind::Custom(CustomTheme::new(theme_name, path)),
                         });
                         errored = false;

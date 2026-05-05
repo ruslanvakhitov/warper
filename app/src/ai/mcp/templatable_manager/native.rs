@@ -23,8 +23,6 @@ use crate::{
         TemplatableMCPServerInstallation, TransportType,
     },
     persistence::ModelEvent,
-    send_telemetry_from_ctx,
-    server::telemetry::TelemetryEvent,
     settings::AISettings,
     view_components::DismissibleToast,
     workspace::ToastStack,
@@ -404,7 +402,7 @@ impl TemplatableMCPServerManager {
         );
     }
 
-    /// Spawns an ephemeral MCP server started via the CLI (`oz agent run --mcp`).
+    /// Spawns an ephemeral MCP server started via the CLI.
     pub fn spawn_cli_ephemeral_server(
         &mut self,
         installation: TemplatableMCPServerInstallation,
@@ -610,7 +608,6 @@ impl TemplatableMCPServerManager {
 
         // Extract values from mode before moving it into the closure.
         let should_persist = mode.should_persist_running_state_to_sqlite();
-        let should_send_telemetry = mode.should_send_telemetry();
         let is_reconnect = mode.is_reconnect();
 
         self.change_server_state(installation_uuid, MCPServerState::Starting, ctx);
@@ -628,7 +625,7 @@ impl TemplatableMCPServerManager {
                 me.spawned_servers.remove(&installation_uuid);
                 me.pending_oauth_csrf.retain(|_, v| *v != installation_uuid);
 
-                let error = match server_info {
+                match server_info {
                     Ok(info) => {
                         let peer = info.service.clone();
                         me.active_servers.insert(installation_uuid, info);
@@ -645,7 +642,6 @@ impl TemplatableMCPServerManager {
                         if is_reconnect {
                             me.notify_reconnect_waiters(installation_uuid, Ok(peer));
                         }
-                        None
                     }
                     Err(e) => {
                         logger_clone
@@ -671,25 +667,8 @@ impl TemplatableMCPServerManager {
                             me.notify_reconnect_waiters(installation_uuid, Err(error_message));
                         }
 
-                        Some(e.into())
                     }
                 };
-
-                if should_send_telemetry {
-                    send_telemetry_from_ctx!(
-                        TelemetryEvent::MCPServerSpawned {
-                            transport_type: match server.transport_type {
-                                TransportType::CLIServer { .. } =>
-                                    MCPServerTelemetryTransportType::CLIServer,
-                                TransportType::ServerSentEvents { .. } =>
-                                    MCPServerTelemetryTransportType::ServerSentEvents,
-                            },
-                            server_model: MCPServerModel::Templatable,
-                            error
-                        },
-                        ctx
-                    );
-                }
             },
         );
 

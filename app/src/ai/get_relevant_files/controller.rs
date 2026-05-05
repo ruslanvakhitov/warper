@@ -21,7 +21,7 @@ use crate::{
         agent::AIAgentActionId,
         outline::{OutlineStatus, RepoOutlines},
     },
-    report_error, send_telemetry_from_ctx, TelemetryEvent,
+    report_error,
 };
 
 #[derive(Debug)]
@@ -131,13 +131,6 @@ impl GetRelevantFilesController {
                 else {
                     return;
                 };
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::FullEmbedCodebaseContextSearchFailed {
-                        action_id: action_id.clone(),
-                        error: error.to_string(),
-                    },
-                    ctx
-                );
 
                 self.handle_relevant_file_paths_result(
                     Err(anyhow!(error.to_owned())),
@@ -155,14 +148,6 @@ impl GetRelevantFilesController {
                 else {
                     return;
                 };
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::FullEmbedCodebaseContextSearchSuccess {
-                        action_id: action_id.clone(),
-                        total_search_duration: search_start.elapsed(),
-                        out_of_sync_delay: *out_of_sync_delay,
-                    },
-                    ctx
-                );
 
                 self.handle_relevant_file_paths_result(
                     Ok(fragments.clone()),

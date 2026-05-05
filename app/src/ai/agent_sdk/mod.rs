@@ -21,7 +21,7 @@ use warp_core::features::FeatureFlag;
 use warp_logging::log_file_path;
 use warpui::{platform::TerminationMode, AppContext, ModelSpawner};
 
-use crate::{ai::ambient_agents::AgentConfigSnapshot, send_telemetry_sync_from_app_ctx};
+use crate::{ai::ambient_agents::AgentConfigSnapshot};
 use driver::AgentDriverError;
 
 use crate::ai::skills::{resolve_skill_spec, ResolveSkillError, ResolvedSkill};
@@ -55,7 +55,6 @@ pub fn run(
     global_options: GlobalOptions,
 ) -> anyhow::Result<()> {
     let event = command_to_telemetry_event(&command);
-    send_telemetry_sync_from_app_ctx!(event, ctx);
 
     launch_command(ctx, command, global_options)
 }

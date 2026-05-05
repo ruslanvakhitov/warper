@@ -223,7 +223,7 @@ impl StartAgentExecutor {
         let parent_conversation_id = input.conversation_id;
         let (execution_mode, parent_run_id) = match execution_mode.clone() {
             StartAgentExecutionMode::Local { harness_type: None } => {
-                // Legacy local Oz child agents do not use
+                // Legacy local child agents do not use
                 // StartAgentRequest.parent_run_id. Instead, the child
                 // conversation is linked back to its parent on the first
                 // request via Request.metadata.parent_agent_id, sourced

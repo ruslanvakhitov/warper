@@ -243,7 +243,7 @@ use crate::root_view::{
 };
 use crate::server::telemetry::PaletteSource;
 pub use crate::server::telemetry::{
-    AgentModeEntrypoint, AgentModeEntrypointSelectionType, TelemetryEvent,
+    AgentModeEntrypoint, AgentModeEntrypointSelectionType,
 };
 use crate::terminal::CustomSecretRegexUpdater;
 use crate::util::bindings::is_binding_cross_platform;
@@ -251,9 +251,6 @@ use crate::workspace::{PaneViewLocator, Workspace, WorkspaceAction};
 use crate::workspaces::user_workspaces::UserWorkspaces;
 use warp_logging::LogDestination;
 
-// Re-export the send_telemetry_from_ctx macro at the crate root level
-pub use warp_core::send_telemetry_from_app_ctx;
-pub use warp_core::send_telemetry_from_ctx;
 
 // Re-export the safe logging macros at the crate root level for backwards compatibility
 pub use warp_core::{safe_debug, safe_error, safe_info, safe_warn};
@@ -515,10 +512,6 @@ pub fn run() -> Result<()> {
             }
             warp_cli::Command::DumpDebugInfo => {
                 return debug_dump::run();
-            }
-            #[cfg(not(target_family = "wasm"))]
-            warp_cli::Command::PrintTelemetryEvents => {
-                return TelemetryEvent::print_telemetry_events_json();
             }
         }
     }

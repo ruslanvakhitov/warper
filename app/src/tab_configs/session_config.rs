@@ -19,7 +19,7 @@ use super::tab_config::{
 /// The type of session the user wants to start.
 ///
 /// Wraps the existing `CLIAgent` for third-party agents and adds
-/// Terminal and Oz as first-class variants.
+/// Terminal and the built-in Warp agent as first-class variants.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SessionType {
     Terminal,
@@ -29,7 +29,7 @@ pub enum SessionType {
 
 impl SessionType {
     /// The CLI command to auto-run for this session type, if any.
-    /// Returns `None` for Terminal and Oz (Oz uses agent view, not a CLI command).
+    /// Returns `None` for Terminal and the built-in agent, which uses agent view.
     fn command_prefix(&self) -> Option<&'static str> {
         match self {
             SessionType::Terminal | SessionType::Oz => None,
@@ -41,7 +41,7 @@ impl SessionType {
     pub(crate) fn icon(&self) -> Icon {
         match self {
             SessionType::Terminal => Icon::Terminal,
-            SessionType::Oz => Icon::Oz,
+            SessionType::Oz => Icon::Warp,
             SessionType::CliAgent(agent) => agent.icon().unwrap_or(Icon::Terminal),
         }
     }

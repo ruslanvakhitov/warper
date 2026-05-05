@@ -57,7 +57,6 @@ use crate::terminal::{
     model::terminal_model::TerminalModel,
     ShellLaunchData,
 };
-use crate::{send_telemetry_from_ctx, server::telemetry::TelemetryEvent};
 use anyhow::anyhow;
 use chrono::{DateTime, Local};
 use itertools::Itertools;
@@ -111,7 +110,7 @@ impl SessionContext {
     }
 
     /// Returns `true` if this is a remote session (regardless of whether
-    /// the remote server client is connected).
+    /// the remote session client is connected).
     pub fn is_remote(&self) -> bool {
         matches!(self.session_type, Some(SessionType::WarpifiedRemote { .. }))
     }
@@ -1801,20 +1800,7 @@ impl BlocklistAIController {
             .in_flight_response_streams
             .has_active_stream_for_conversation(conversation_id, ctx)
         {
-            send_telemetry_from_ctx!(
-                TelemetryEvent::AIInputNotSent {
-                    entrypoint: query_metadata.map(|metadata| metadata.entrypoint),
-                    inputs: request_input
-                        .all_inputs()
-                        .cloned()
-                        .map(|input| input.into())
-                        .collect(),
-                    active_server_conversation_id: conversation_server_token.clone(),
-                    active_client_conversation_id: Some(conversation_id),
-                },
-                ctx
-            );
-            const AI_INPUT_NOT_SENT_ERROR_STR: &str =
+                        const AI_INPUT_NOT_SENT_ERROR_STR: &str =
                 "Not sending AI input because there is an in-flight request";
             safe_assert!(false, "{}", AI_INPUT_NOT_SENT_ERROR_STR);
             return Err(anyhow::anyhow!(AI_INPUT_NOT_SENT_ERROR_STR));

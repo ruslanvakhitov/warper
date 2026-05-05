@@ -4,7 +4,6 @@ use crate::ai::agent::conversation::ConversationStatus;
 use crate::code::editor::{add_color, remove_color};
 use crate::code::icon_from_file_path;
 use crate::safe_triangle::SafeTriangle;
-use crate::send_telemetry_from_app_ctx;
 use crate::terminal::cli_agent_sessions::listener::agent_supports_rich_status;
 use crate::terminal::cli_agent_sessions::CLIAgentSessionsModel;
 use crate::terminal::view::TerminalViewState;
@@ -1226,12 +1225,12 @@ fn render_detail_kind_badge_icon(
                 .selected_conversation_display_title(app)
                 .is_some()
             {
-                WarpIcon::Oz
+                WarpIcon::Warp
             } else {
                 WarpIcon::Terminal
             };
             let color = match icon {
-                WarpIcon::Oz | WarpIcon::OzCloud => oz_icon_fill(theme),
+                WarpIcon::Warp | WarpIcon::Oz | WarpIcon::OzCloud => oz_icon_fill(theme),
                 WarpIcon::Terminal => disabled_text,
                 _ => sub_text,
             };
@@ -2909,7 +2908,7 @@ fn terminal_kind_badge_label(is_oz_agent: bool, cli_agent: Option<CLIAgent>) -> 
     if let Some(cli_agent) = cli_agent {
         cli_agent.display_name().to_string()
     } else if is_oz_agent {
-        "Oz".to_string()
+        "Warp agent".to_string()
     } else {
         "Terminal".to_string()
     }
@@ -3518,7 +3517,7 @@ fn render_summary_pane_kind_icon_circle(
             let icon = if is_ambient {
                 WarpIcon::OzCloud
             } else {
-                WarpIcon::Oz
+                WarpIcon::Warp
             };
             (
                 icon.to_warpui_icon(oz_icon_fill(theme)).finish(),
@@ -3598,7 +3597,7 @@ fn summary_pane_kind_icon(
             if is_ambient {
                 WarpIcon::OzCloud
             } else {
-                WarpIcon::Oz
+                WarpIcon::Warp
             },
             main_text,
         ),
@@ -3698,7 +3697,7 @@ fn render_terminal_primary_line_for_view(
 
 /// Primary line for terminal pane rows. Precedence:
 /// 1. CLI agent session with plugin data (query/summary) + status
-/// 2. Oz agent conversation title + status
+/// 2. Warp agent conversation title + status
 /// 3. Terminal title
 fn render_terminal_primary_line(
     primary_line: TerminalPrimaryLineData,
@@ -3887,11 +3886,7 @@ fn render_terminal_diff_stats_badge(
         )
     })
     .on_click(move |ctx, app, _| {
-        send_telemetry_from_app_ctx!(
-            VerticalTabsTelemetryEvent::DiffStatsChipClicked { entrypoint },
-            app
-        );
-        let locator = PaneViewLocator {
+                let locator = PaneViewLocator {
             pane_group_id,
             pane_id,
         };
@@ -3920,11 +3915,7 @@ fn render_terminal_pull_request_badge(
         render_badge_container(render_pull_request_badge_content(&label, appearance), bg)
     })
     .on_click(move |ctx, app, _| {
-        send_telemetry_from_app_ctx!(
-            VerticalTabsTelemetryEvent::PrChipClicked { entrypoint },
-            app
-        );
-        ctx.dispatch_typed_action(WorkspaceAction::OpenLink(url.clone()));
+                ctx.dispatch_typed_action(WorkspaceAction::OpenLink(url.clone()));
     })
     .with_cursor(Cursor::PointingHand)
     .finish()

@@ -132,30 +132,6 @@ pub fn all_events() -> impl Iterator<Item = Box<dyn TelemetryEventDesc>> {
     inventory::iter::<&'static dyn AnyTelemetryEventRegistration>().flat_map(|meta| meta.events())
 }
 
-// WARPER-001: hosted Warp telemetry is amputated. Keep the macro surface so
-// downstream UI code compiles while ensuring calls cannot reach telemetry
-// providers, queues, or network upload paths.
-#[macro_export]
-macro_rules! send_telemetry_from_ctx {
-    ($event:expr, $ctx:expr) => {
-        if false {
-            let _ = &$event;
-            let _ = &$ctx;
-        }
-    };
-}
-
-/// Hosted Warp telemetry is amputated in Warper. This macro is intentionally a no-op.
-#[macro_export]
-macro_rules! send_telemetry_from_app_ctx {
-    ($event:expr, $app_ctx:expr) => {
-        if false {
-            let _ = &$event;
-            let _ = &$app_ctx;
-        }
-    };
-}
-
 /// Gives information about when a telemetry event is enabled.
 #[derive(Debug)]
 pub enum EnablementState {

@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 
 use warp_core::ui::theme::color::internal_colors;
-use warp_core::{send_telemetry_from_ctx, ui::Icon};
+use warp_core::{ui::Icon};
 use warp_util::path::LineAndColumnArg;
 use warpui::{
     elements::{
@@ -50,7 +50,6 @@ use crate::{
     },
     util::bindings::keybinding_name_to_display_string,
     workspace::WorkspaceAction,
-    TelemetryEvent,
 };
 
 const MIN_SIDEBAR_WIDTH: f32 = 250.0;
@@ -616,13 +615,6 @@ impl LeftPanelView {
                     None,
                 );
 
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::CodePanelsFileOpened {
-                        entrypoint: CodePanelsFileOpenEntrypoint::GlobalSearch,
-                        target: target.clone(),
-                    },
-                    ctx
-                );
 
                 ctx.emit(LeftPanelEvent::OpenFileWithTarget {
                     path: path.clone(),
@@ -809,24 +801,8 @@ impl LeftPanelView {
             LeftPanelAction::ProjectExplorer => {
                 active_view_state::set(self, ToolPanelView::ProjectExplorer, ctx);
                 if force_open {
-                    send_telemetry_from_ctx!(
-                        TelemetryEvent::FileTreeToggled {
-                            source: FileTreeSource::ForceOpened,
-                            is_code_mode_v2: true,
-                            cli_agent: None,
-                        },
-                        ctx
-                    );
-                } else {
-                    send_telemetry_from_ctx!(
-                        TelemetryEvent::FileTreeToggled {
-                            source: FileTreeSource::LeftPanelToolbelt,
-                            is_code_mode_v2: true,
-                            cli_agent: None,
-                        },
-                        ctx
-                    );
-                }
+                                    } else {
+                                    }
             }
             LeftPanelAction::GlobalSearch { entry_focus } => {
                 let was_active = self.active_view.get()
@@ -841,8 +817,7 @@ impl LeftPanelView {
                     ctx,
                 );
                 if !was_active {
-                    send_telemetry_from_ctx!(TelemetryEvent::GlobalSearchOpened, ctx);
-                }
+                                    }
             }
         }
     }

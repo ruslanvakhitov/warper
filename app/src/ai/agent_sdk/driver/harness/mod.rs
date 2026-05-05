@@ -29,7 +29,7 @@ use gemini::GeminiHarness;
 ///
 /// Each retained harness must be local-only: it may launch and configure the
 /// third-party CLI, but must not create hosted conversations, poll tasks, upload
-/// transcripts, or depend on Warp/Oz server APIs.
+/// transcripts, or depend on hosted Warp server APIs.
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
 pub(crate) trait ThirdPartyHarness: Send + Sync {

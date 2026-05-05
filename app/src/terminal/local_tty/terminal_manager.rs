@@ -34,11 +34,8 @@ use crate::context_chips::prompt_type::PromptType;
 use crate::features::FeatureFlag;
 use crate::pane_group::TerminalViewResources;
 use crate::persistence::ModelEvent;
-
-use crate::send_telemetry_on_executor;
-use crate::server::telemetry::{TelemetryAgentViewEntryOrigin, TelemetryEvent};
+use crate::server::telemetry::{TelemetryAgentViewEntryOrigin};
 use crate::settings::DebugSettings;
-use warp_core::send_telemetry_from_ctx;
 
 use crate::terminal::model::session::Sessions;
 
@@ -335,14 +332,7 @@ impl TerminalManager {
                 final_exchange_count,
                 ..
             } => {
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::AgentViewExited {
-                        origin: TelemetryAgentViewEntryOrigin::from(*origin),
-                        was_empty: *final_exchange_count == 0,
-                    },
-                    ctx
-                );
-            }
+                            }
             AgentViewControllerEvent::EnteredAgentView { .. }
             | AgentViewControllerEvent::ExitConfirmed { .. } => {}
         });
@@ -864,14 +854,7 @@ fn get_shell_starter_internal(
             starter,
         } => {
             if let Some(unsupported_shell) = unsupported_shell {
-                send_telemetry_on_executor!(
-                    auth_state,
-                    TelemetryEvent::UnsupportedShell {
-                        shell: unsupported_shell
-                    },
-                    background_executor
-                );
-            }
+                            }
 
             ShellStarter::Direct(starter)
         }

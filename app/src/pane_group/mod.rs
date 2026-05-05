@@ -101,7 +101,7 @@ use crate::resource_center::{
     mark_feature_used_and_write_to_user_defaults, Tip, TipAction, TipsCompleted,
 };
 use crate::server::ids::SyncId;
-use crate::server::telemetry::{PaletteSource, TelemetryEvent};
+use crate::server::telemetry::{PaletteSource};
 use crate::session_management::SessionNavigationData;
 use crate::settings_view::mcp_servers_page::MCPServersSettingsPage;
 use crate::terminal::general_settings::{GeneralSettings, GeneralSettingsChangedEvent};
@@ -116,7 +116,7 @@ use crate::terminal::view::{
     LeftPanelTargetView, SyncEvent, TerminalViewState,
 };
 use crate::terminal::{MockTerminalManager, ShellLaunchData, ShellLaunchState};
-use crate::{cmd_or_ctrl_shift, send_telemetry_from_ctx};
+use crate::{cmd_or_ctrl_shift};
 use settings::Setting as _;
 
 use crate::code::active_file::ActiveFileModel;
@@ -499,7 +499,7 @@ pub enum Event {
     },
     /// Dirty the workspace so the tab indicator shows.
     MaximizePaneToggled,
-    /// A remote server resolved the repo root for a session in this pane group.
+    /// A remote session resolved the repo root for a session in this pane group.
     RemoteRepoNavigated {
         host_id: HostId,
         indexed_path: String,
@@ -4794,8 +4794,7 @@ impl PaneGroup {
     ) -> Option<PaneId> {
         if self.pane_count() == 1 {
             // Only sending telemetry event the first time a user enters split pane in a session.
-            send_telemetry_from_ctx!(TelemetryEvent::SplitPane, ctx);
-        }
+                    }
 
         self.tips_completed.update(ctx, |tips_completed, ctx| {
             mark_feature_used_and_write_to_user_defaults(

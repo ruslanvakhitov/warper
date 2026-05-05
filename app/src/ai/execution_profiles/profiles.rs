@@ -10,7 +10,7 @@ use warpui::{AppContext, Entity, EntityId, ModelContext, SingletonEntity};
 
 use crate::ai::llms::LLMId;
 use crate::ai::mcp::templatable_manager::TemplatableMCPServerManagerEvent;
-use crate::{send_telemetry_from_ctx, LaunchMode, TelemetryEvent};
+use crate::{LaunchMode};
 
 use crate::ai::mcp::TemplatableMCPServerManager;
 use crate::server::ids::SyncId;
@@ -214,7 +214,6 @@ impl AIExecutionProfilesModel {
 
         self.profiles.insert(profile_id, new_profile);
 
-        send_telemetry_from_ctx!(TelemetryEvent::AIExecutionProfileCreated, ctx);
 
         ctx.emit(AIExecutionProfilesModelEvent::ProfileCreated);
 
@@ -237,8 +236,7 @@ impl AIExecutionProfilesModel {
 
         self.profile_id_to_sync_id.remove(&profile_id);
 
-        send_telemetry_from_ctx!(TelemetryEvent::AIExecutionProfileDeleted, ctx);
-        ctx.emit(AIExecutionProfilesModelEvent::ProfileDeleted);
+                ctx.emit(AIExecutionProfilesModelEvent::ProfileDeleted);
     }
 
     // On logout, we need to clear any existing profile state.
@@ -390,14 +388,7 @@ impl AIExecutionProfilesModel {
         );
 
         if let Some(model_id) = &llm_id {
-            send_telemetry_from_ctx!(
-                TelemetryEvent::AIExecutionProfileModelSelected {
-                    model_type: "base".to_string(),
-                    model_value: model_id.to_string(),
-                },
-                ctx
-            );
-        }
+                    }
     }
 
     pub fn set_coding_model(
@@ -419,14 +410,7 @@ impl AIExecutionProfilesModel {
         );
 
         if let Some(model_id) = &model_id {
-            send_telemetry_from_ctx!(
-                TelemetryEvent::AIExecutionProfileModelSelected {
-                    model_type: "coding".to_string(),
-                    model_value: model_id.to_string(),
-                },
-                ctx
-            );
-        }
+                    }
     }
 
     pub fn set_cli_agent_model(
@@ -448,14 +432,7 @@ impl AIExecutionProfilesModel {
         );
 
         if let Some(model_id) = &model_id {
-            send_telemetry_from_ctx!(
-                TelemetryEvent::AIExecutionProfileModelSelected {
-                    model_type: "cli_agent".to_string(),
-                    model_value: model_id.to_string(),
-                },
-                ctx
-            );
-        }
+                    }
     }
 
     pub fn set_computer_use_model(
@@ -477,14 +454,7 @@ impl AIExecutionProfilesModel {
         );
 
         if let Some(model_id) = &model_id {
-            send_telemetry_from_ctx!(
-                TelemetryEvent::AIExecutionProfileModelSelected {
-                    model_type: "computer_use".to_string(),
-                    model_value: model_id.to_string(),
-                },
-                ctx
-            );
-        }
+                    }
     }
 
     pub fn set_apply_code_diffs(
@@ -505,14 +475,7 @@ impl AIExecutionProfilesModel {
             ctx,
         );
 
-        send_telemetry_from_ctx!(
-            TelemetryEvent::AIExecutionProfileSettingUpdated {
-                setting_type: "apply_code_diffs".to_string(),
-                setting_value: format!("{apply_code_diffs:?}"),
-            },
-            ctx
-        );
-    }
+            }
 
     pub fn set_read_files(
         &mut self,
@@ -532,14 +495,7 @@ impl AIExecutionProfilesModel {
             ctx,
         );
 
-        send_telemetry_from_ctx!(
-            TelemetryEvent::AIExecutionProfileSettingUpdated {
-                setting_type: "read_files".to_string(),
-                setting_value: format!("{read_files:?}"),
-            },
-            ctx
-        );
-    }
+            }
 
     pub fn set_execute_commands(
         &mut self,
@@ -559,14 +515,7 @@ impl AIExecutionProfilesModel {
             ctx,
         );
 
-        send_telemetry_from_ctx!(
-            TelemetryEvent::AIExecutionProfileSettingUpdated {
-                setting_type: "execute_commands".to_string(),
-                setting_value: format!("{execute_commands:?}"),
-            },
-            ctx
-        );
-    }
+            }
 
     pub fn set_write_to_pty(
         &mut self,
@@ -585,14 +534,7 @@ impl AIExecutionProfilesModel {
             },
             ctx,
         );
-        send_telemetry_from_ctx!(
-            TelemetryEvent::AIExecutionProfileSettingUpdated {
-                setting_type: "write_to_pty".to_string(),
-                setting_value: format!("{write_to_pty:?}"),
-            },
-            ctx
-        );
-    }
+            }
 
     pub fn set_mcp_permissions(
         &mut self,
@@ -618,14 +560,7 @@ impl AIExecutionProfilesModel {
             ctx,
         );
 
-        send_telemetry_from_ctx!(
-            TelemetryEvent::AIExecutionProfileSettingUpdated {
-                setting_type: "mcp_permissions".to_string(),
-                setting_value: format!("{mcp_permissions:?}"),
-            },
-            ctx
-        );
-    }
+            }
 
     pub fn set_computer_use(
         &mut self,
@@ -650,14 +585,7 @@ impl AIExecutionProfilesModel {
         );
 
         if current_value != Some(*permission) {
-            send_telemetry_from_ctx!(
-                TelemetryEvent::AIExecutionProfileSettingUpdated {
-                    setting_type: "computer_use".to_string(),
-                    setting_value: format!("{permission:?}"),
-                },
-                ctx
-            );
-        }
+                    }
     }
 
     pub fn set_ask_user_question(
@@ -683,14 +611,7 @@ impl AIExecutionProfilesModel {
         );
 
         if current_value != Some(permission) {
-            send_telemetry_from_ctx!(
-                TelemetryEvent::AIExecutionProfileSettingUpdated {
-                    setting_type: "ask_user_question".to_string(),
-                    setting_value: format!("{permission:?}"),
-                },
-                ctx
-            );
-        }
+                    }
     }
 
     pub fn set_web_search_enabled(
@@ -711,14 +632,7 @@ impl AIExecutionProfilesModel {
             ctx,
         );
 
-        send_telemetry_from_ctx!(
-            TelemetryEvent::AIExecutionProfileSettingUpdated {
-                setting_type: "web_search_enabled".to_string(),
-                setting_value: format!("{enabled}"),
-            },
-            ctx
-        );
-    }
+            }
 
     pub fn set_autosync_plans_to_warp_drive(
         &mut self,
@@ -738,14 +652,7 @@ impl AIExecutionProfilesModel {
             ctx,
         );
 
-        send_telemetry_from_ctx!(
-            TelemetryEvent::AIExecutionProfileSettingUpdated {
-                setting_type: "plan_auto_sync".to_string(),
-                setting_value: format!("{enabled}"),
-            },
-            ctx
-        );
-    }
+            }
 
     pub fn set_profile_name(
         &mut self,
@@ -765,14 +672,7 @@ impl AIExecutionProfilesModel {
             ctx,
         );
 
-        send_telemetry_from_ctx!(
-            TelemetryEvent::AIExecutionProfileSettingUpdated {
-                setting_type: "name".to_string(),
-                setting_value: name.to_string(),
-            },
-            ctx
-        );
-    }
+            }
 
     pub fn add_to_command_allowlist(
         &mut self,
@@ -792,14 +692,7 @@ impl AIExecutionProfilesModel {
             ctx,
         );
 
-        send_telemetry_from_ctx!(
-            TelemetryEvent::AIExecutionProfileAddedToAllowlist {
-                list_type: "command".to_string(),
-                value: predicate.to_string(),
-            },
-            ctx
-        );
-    }
+            }
 
     pub fn remove_from_command_allowlist(
         &mut self,
@@ -817,14 +710,7 @@ impl AIExecutionProfilesModel {
             ctx,
         );
 
-        send_telemetry_from_ctx!(
-            TelemetryEvent::AIExecutionProfileRemovedFromAllowlist {
-                list_type: "command".to_string(),
-                value: predicate.to_string(),
-            },
-            ctx
-        );
-    }
+            }
 
     pub fn add_to_directory_allowlist(
         &mut self,
@@ -844,14 +730,7 @@ impl AIExecutionProfilesModel {
             ctx,
         );
 
-        send_telemetry_from_ctx!(
-            TelemetryEvent::AIExecutionProfileAddedToAllowlist {
-                list_type: "directory".to_string(),
-                value: path.to_string_lossy().to_string(),
-            },
-            ctx
-        );
-    }
+            }
 
     pub fn remove_from_directory_allowlist(
         &mut self,
@@ -869,14 +748,7 @@ impl AIExecutionProfilesModel {
             ctx,
         );
 
-        send_telemetry_from_ctx!(
-            TelemetryEvent::AIExecutionProfileRemovedFromAllowlist {
-                list_type: "directory".to_string(),
-                value: path.to_string_lossy().to_string(),
-            },
-            ctx
-        );
-    }
+            }
 
     pub fn add_to_command_denylist(
         &mut self,
@@ -896,14 +768,7 @@ impl AIExecutionProfilesModel {
             ctx,
         );
 
-        send_telemetry_from_ctx!(
-            TelemetryEvent::AIExecutionProfileAddedToDenylist {
-                list_type: "command".to_string(),
-                value: predicate.to_string(),
-            },
-            ctx
-        );
-    }
+            }
 
     pub fn remove_from_command_denylist(
         &mut self,
@@ -921,14 +786,7 @@ impl AIExecutionProfilesModel {
             ctx,
         );
 
-        send_telemetry_from_ctx!(
-            TelemetryEvent::AIExecutionProfileRemovedFromDenylist {
-                list_type: "command".to_string(),
-                value: predicate.to_string(),
-            },
-            ctx
-        );
-    }
+            }
 
     pub fn add_to_mcp_allowlist(
         &mut self,
@@ -948,14 +806,7 @@ impl AIExecutionProfilesModel {
             ctx,
         );
 
-        send_telemetry_from_ctx!(
-            TelemetryEvent::AIExecutionProfileAddedToAllowlist {
-                list_type: "mcp".to_string(),
-                value: id.to_string(),
-            },
-            ctx
-        );
-    }
+            }
 
     pub fn remove_from_mcp_allowlist(
         &mut self,
@@ -973,14 +824,7 @@ impl AIExecutionProfilesModel {
             ctx,
         );
 
-        send_telemetry_from_ctx!(
-            TelemetryEvent::AIExecutionProfileRemovedFromAllowlist {
-                list_type: "mcp".to_string(),
-                value: id.to_string(),
-            },
-            ctx
-        );
-    }
+            }
 
     pub fn add_to_mcp_denylist(
         &mut self,
@@ -1000,14 +844,7 @@ impl AIExecutionProfilesModel {
             ctx,
         );
 
-        send_telemetry_from_ctx!(
-            TelemetryEvent::AIExecutionProfileAddedToDenylist {
-                list_type: "mcp".to_string(),
-                value: id.to_string(),
-            },
-            ctx
-        );
-    }
+            }
 
     pub fn remove_from_mcp_denylist(
         &mut self,
@@ -1025,14 +862,7 @@ impl AIExecutionProfilesModel {
             ctx,
         );
 
-        send_telemetry_from_ctx!(
-            TelemetryEvent::AIExecutionProfileRemovedFromDenylist {
-                list_type: "mcp".to_string(),
-                value: id.to_string(),
-            },
-            ctx
-        );
-    }
+            }
 
     /// `edit_profile_internal` edits a local AIExecutionProfile.
     /// Parameters:

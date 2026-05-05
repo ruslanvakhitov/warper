@@ -2,8 +2,7 @@ use anyhow::Result;
 use warpui::{AppContext, Entity, SingletonEntity};
 
 use crate::{
-    send_telemetry_from_app_ctx,
-    server::telemetry::{PtySpawnMode, TelemetryEvent},
+    server::telemetry::{PtySpawnMode},
     terminal::local_tty::{self},
 };
 
@@ -170,13 +169,7 @@ impl PtySpawner {
                 report_error!(err);
                 is_fallback = true;
             } else {
-                send_telemetry_from_app_ctx!(
-                    TelemetryEvent::PtySpawned {
-                        mode: PtySpawnMode::TerminalServer
-                    },
-                    ctx
-                );
-                return result;
+                                return result;
             }
         }
 
@@ -185,7 +178,6 @@ impl PtySpawner {
         } else {
             PtySpawnMode::Direct
         };
-        send_telemetry_from_app_ctx!(TelemetryEvent::PtySpawned { mode }, ctx);
 
         Self::spawn_pty_directly(
             options,

@@ -398,8 +398,7 @@ use crate::server::telemetry::{
 };
 use crate::server::telemetry::{
     CommandCorrectionAcceptedType, CommandCorrectionEvent, NotificationsTurnedOnSource,
-    SaveAsWorkflowModalSource, TelemetryEvent,
-};
+    SaveAsWorkflowModalSource, };
 use crate::session_management::{CommandContext, SessionNavigationPromptElements};
 use crate::settings::{PrivacySettings, PrivacySettingsChangedEvent, PrivacySettingsSnapshot};
 use crate::terminal::alt_screen::alt_screen_element::AltScreenElement;
@@ -464,8 +463,6 @@ use crate::terminal::{color::List, model::block::LONG_RUNNING_BOTTOM_PADDING_LIN
 use crate::terminal::{event::AfterBlockCompletedEvent, event::BlockLatencyData, event::BlockType};
 use crate::throttle::throttle;
 use crate::util::color::darken;
-use crate::{send_telemetry_from_ctx, send_telemetry_on_executor, send_telemetry_sync_from_ctx};
-
 use self::link_detection::HighlightedLinkOption;
 use super::available_shells::AvailableShell;
 use super::block_list_viewport::FindMatchScrollLocation;
@@ -3080,7 +3077,7 @@ impl TerminalView {
         );
 
         ctx.subscribe_to_model(&UserWorkspaces::handle(ctx), |me, _, event, ctx| {
-            if matches!(event, UserWorkspacesEvent::TeamsChanged) {
+            if matches!(event, UserWorkspacesEvent::LocalPoliciesChanged) {
                 me.update_focused_terminal_info(ctx);
             }
         });
@@ -3997,17 +3994,7 @@ impl TerminalView {
                 code_exchange_id,
                 block_id,
             } => {
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::SuggestedCodeDiffBannerShown {
-                        prompt_suggestion_id: prompt_suggestion_id.clone(),
-                        code_exchange_id: *code_exchange_id,
-                        block_id: Some(block_id.to_string()),
-                        request_duration_ms: 0,
-                        server_request_token: None,
-                    },
-                    ctx
-                );
-            }
+                            }
             LegacyPassiveSuggestionsEvent::PassiveCodeDiffFailed { reason } => {
                 self.try_clear_prompt_suggestions_banner_code_state(*reason, ctx);
             }
@@ -4716,12 +4703,6 @@ impl TerminalView {
         }
 
         // Send telemetry for follow-up toggle
-        send_telemetry_from_ctx!(
-            TelemetryEvent::AgentModeContinueConversationButtonClicked {
-                conversation_id: *conversation_id,
-            },
-            ctx
-        );
 
         // Focus the input
         self.redetermine_global_focus(ctx);
@@ -5447,24 +5428,24 @@ impl TerminalView {
                 .get_pending_action(app)
                 .map(|action| match &action.action {
                     AIAgentActionType::RequestCommandOutput { command, .. } => {
-                        format!("Oz needs your permission to run `{command}`")
+                        format!("The agent needs your permission to run `{command}`")
                     }
                     AIAgentActionType::ReadFiles(..) => {
-                        "Oz needs your permission to read files".to_string()
+                        "The agent needs your permission to read files".to_string()
                     }
                     AIAgentActionType::SearchCodebase(..) => {
-                        "Oz needs your permission to search your codebase".to_string()
+                        "The agent needs your permission to search your codebase".to_string()
                     }
                     AIAgentActionType::RequestFileEdits { .. } => {
-                        "Oz needs your permission to edit a file".to_string()
+                        "The agent needs your permission to edit a file".to_string()
                     }
                     AIAgentActionType::WriteToLongRunningShellCommand { .. } => {
-                        "Oz needs your permission to interact with a running shell command"
+                        "The agent needs your permission to interact with a running shell command"
                             .to_string()
                     }
-                    _ => "Oz needs your confirmation to continue".to_string(),
+                    _ => "The agent needs your confirmation to continue".to_string(),
                 })
-                .unwrap_or("Oz needs your confirmation to continue".to_string());
+                .unwrap_or("The agent needs your confirmation to continue".to_string());
             return Some(AIBlockNotificationSummary {
                 success: false,
                 title,
@@ -6810,8 +6791,7 @@ impl TerminalView {
 
             ctx.notify();
 
-            send_telemetry_from_ctx!(TelemetryEvent::SSHControlMasterError, ctx);
-        }
+                    }
     }
 
     fn read_from_clipboard(
@@ -6868,13 +6848,7 @@ impl TerminalView {
             self.start_bootstrap_timer(BOOTSTRAP_FAILED_DURATION, ctx);
         }
 
-        send_telemetry_from_ctx!(
-            TelemetryEvent::TriggerSubshellBootstrap {
-                triggered_by_rc_file_snippet
-            },
-            ctx
-        );
-    }
+            }
 
     /// Util method to update the ssh block, with a lock
     fn update_long_running_ssh_block_with_lock(&self, f: impl FnOnce(&mut Block)) -> bool {
@@ -6931,8 +6905,7 @@ impl TerminalView {
     ) {
         if self.warpify_state.ssh_block_state().is_some() {
             if key_event.is_some_and(|key| key.is_ctrl_c()) {
-                send_telemetry_from_ctx!(TelemetryEvent::SshTmuxWarpifyBlockDismissed, ctx);
-                self.cancel_bootstrap_workflow(ctx);
+                                self.cancel_bootstrap_workflow(ctx);
             } else if self.warpify_state.should_prevent_input() {
                 self.warpify_state.focus(ctx);
                 self.warpify_state.collapse_ssh_block(ctx);
@@ -7125,7 +7098,6 @@ impl TerminalView {
 
         ctx.focus(&ssh_install_tmux_block_handle);
 
-        send_telemetry_from_ctx!(TelemetryEvent::SshInstallTmuxBlockDisplayed, ctx);
 
         self.warpify_state.set_block_id(hidden_ssh_block_id);
         self.warpify_state
@@ -7172,13 +7144,6 @@ impl TerminalView {
             ctx,
         );
 
-        send_telemetry_from_ctx!(
-            TelemetryEvent::SshTmuxWarpificationErrorBlock {
-                error: error_reason,
-                tmux_installation: self.warpify_state.tmux_installation(),
-            },
-            ctx
-        );
 
         self.warpify_state
             .set_ssh_block_state(SshBlockState::Error {
@@ -7255,8 +7220,7 @@ impl TerminalView {
         ctx: &mut ViewContext<Self>,
     ) {
         fn dismiss_ssh_warpify_block(me: &mut TerminalView, ctx: &mut ViewContext<TerminalView>) {
-            send_telemetry_from_ctx!(TelemetryEvent::SshTmuxWarpifyBlockDismissed, ctx);
-            me.cancel_bootstrap_workflow(ctx);
+                        me.cancel_bootstrap_workflow(ctx);
         }
 
         match event {
@@ -7270,8 +7234,7 @@ impl TerminalView {
                 self.user_write_ctrl_c_to_pty(ctx);
             }
             SshWarpifyBlockEvent::WarpifySession => {
-                send_telemetry_from_ctx!(TelemetryEvent::SshTmuxWarpifyBlockAccepted, ctx);
-                self.add_ssh_warpifying_block(ctx);
+                                self.add_ssh_warpifying_block(ctx);
                 self.update_scroll_position_locking(
                     ScrollPositionUpdate::AfterRichBlockUpdated,
                     ctx,
@@ -7287,8 +7250,7 @@ impl TerminalView {
         ctx: &mut ViewContext<Self>,
     ) {
         fn cancel_tmux_install(me: &mut TerminalView, ctx: &mut ViewContext<TerminalView>) {
-            send_telemetry_from_ctx!(TelemetryEvent::SshInstallTmuxBlockDismissed, ctx);
-            me.cancel_bootstrap_workflow(ctx);
+                        me.cancel_bootstrap_workflow(ctx);
         }
 
         match event {
@@ -7301,8 +7263,7 @@ impl TerminalView {
                 self.user_write_ctrl_c_to_pty(ctx);
             }
             SshInstallTmuxBlockEvent::InstallTmuxAndWarpify(install_method) => {
-                send_telemetry_from_ctx!(TelemetryEvent::SshInstallTmuxBlockAccepted, ctx);
-                self.clear_ssh_blocks(ctx);
+                                self.clear_ssh_blocks(ctx);
                 self.install_tmux_and_warpify(ctx, install_method);
                 self.update_scroll_position_locking(
                     ScrollPositionUpdate::AfterRichBlockUpdated,
@@ -7414,7 +7375,6 @@ impl TerminalView {
         title: &str,
         lowercase_title: &str,
         warpify_keybinding: Option<Keystroke>,
-        telemetry_event: TelemetryEvent,
         ctx: &mut ViewContext<Self>,
     ) {
         if FeatureFlag::WarpifyFooter.is_enabled() {
@@ -7450,7 +7410,6 @@ impl TerminalView {
         );
         ctx.emit_a11y_content(a11y_content);
 
-        send_telemetry_from_ctx!(telemetry_event, ctx);
 
         ctx.notify();
     }
@@ -7462,16 +7421,7 @@ impl TerminalView {
                 ctx.notify()
             });
 
-            send_telemetry_from_ctx!(
-                TelemetryEvent::CommandCorrection {
-                    event: CommandCorrectionEvent::Accepted {
-                        via: CommandCorrectionAcceptedType::Keybinding,
-                        rule: most_recent_command_correction.rule_applied.to_str(),
                     }
-                },
-                ctx
-            );
-        }
     }
 
     fn alias_expansion_banner_action(
@@ -7492,13 +7442,11 @@ impl TerminalView {
                 });
                 if should_dismiss_banner {
                     self.dismiss_alias_expansion_banner(ctx);
-                    send_telemetry_from_ctx!(TelemetryEvent::EnableAliasExpansionFromBanner, ctx);
-                }
+                                    }
             }
             Dismiss => {
                 self.dismiss_alias_expansion_banner(ctx);
-                send_telemetry_from_ctx!(TelemetryEvent::DismissAliasExpansionBanner, ctx);
-            }
+                            }
         };
     }
 
@@ -7563,8 +7511,7 @@ impl TerminalView {
         );
         ctx.emit_a11y_content(a11y_content);
 
-        send_telemetry_from_ctx!(TelemetryEvent::ShowNotificationsDiscoveryBanner, ctx);
-        ctx.notify();
+                ctx.notify();
     }
 
     /// Inserts a notifications error banner into the block list.
@@ -7602,7 +7549,6 @@ impl TerminalView {
         );
         ctx.emit_a11y_content(a11y_content);
 
-        send_telemetry_from_ctx!(TelemetryEvent::ShowNotificationsErrorBanner, ctx);
 
         ctx.notify();
     }
@@ -7613,16 +7559,7 @@ impl TerminalView {
             ctx.notify()
         });
 
-        send_telemetry_from_ctx!(
-            TelemetryEvent::CommandCorrection {
-                event: CommandCorrectionEvent::Accepted {
-                    via: CommandCorrectionAcceptedType::Banner,
-                    rule: correction.rule_applied.to_str(),
-                }
-            },
-            ctx
-        );
-    }
+            }
 
     /// Returns the view type for prompt suggestion telemetry based on whether agent view is active.
     fn prompt_suggestion_view_type(&self, ctx: &ViewContext<Self>) -> PromptSuggestionViewType {
@@ -7741,24 +7678,8 @@ impl TerminalView {
 
         // Send telemetry.
         if is_static_suggestion {
-            send_telemetry_from_ctx!(
-                TelemetryEvent::StaticPromptSuggestionAccepted {
-                    id: suggestion_id,
-                    view,
-                    interaction_source,
-                },
-                ctx
-            );
-        } else {
-            send_telemetry_from_ctx!(
-                TelemetryEvent::PromptSuggestionAccepted {
-                    id: suggestion_id,
-                    view,
-                    interaction_source,
-                },
-                ctx
-            );
-        }
+                    } else {
+                    }
 
         true
     }
@@ -7777,14 +7698,7 @@ impl TerminalView {
                 input.maybe_set_prompt_suggestions_banner_state_should_hide(false);
                 input.notify_and_notify_children(ctx);
             });
-            send_telemetry_from_ctx!(
-                TelemetryEvent::SuggestedCodeDiffFailed {
-                    prompt_suggestion_id: banner.prompt_suggestion.id.clone(),
-                    reason: fallback_reason,
-                },
-                ctx
-            );
-        }
+                    }
     }
 
     fn associate_and_promote_block_for_conversation(
@@ -7855,7 +7769,6 @@ impl TerminalView {
             },
         };
 
-        send_telemetry_from_ctx!(TelemetryEvent::ShowAliasExpansionBanner, ctx);
 
         self.model
             .lock()
@@ -7881,7 +7794,6 @@ impl TerminalView {
             .block_list_mut()
             .append_inline_banner(InlineBannerItem::new(banner_id, InlineBannerType::VimMode));
 
-        send_telemetry_from_ctx!(TelemetryEvent::ShowVimKeybindingsBanner, ctx);
 
         ctx.notify();
     }
@@ -7899,8 +7811,7 @@ impl TerminalView {
     fn enable_vim_keybindings(&mut self, ctx: &mut ViewContext<Self>) {
         AppEditorSettings::handle(ctx).update(ctx, |editor_settings, ctx| {
             if editor_settings.vim_mode.set_value(true, ctx).is_ok() {
-                send_telemetry_from_ctx!(TelemetryEvent::EnableVimKeybindingsFromBanner, ctx);
-            }
+                            }
         });
     }
 
@@ -7912,8 +7823,7 @@ impl TerminalView {
         if action == VimModeBannerAction::Enable {
             self.enable_vim_keybindings(ctx);
         } else {
-            send_telemetry_from_ctx!(TelemetryEvent::DismissVimKeybindingsBanner, ctx);
-        }
+                    }
         self.remove_vim_mode_banner(ctx);
         VimBannerSettings::handle(ctx).update(ctx, |banner_settings, model_ctx| {
             report_if_error!(banner_settings
@@ -7929,12 +7839,10 @@ impl TerminalView {
     ) {
         match action {
             AgentModeSetupSpeedbumpBannerAction::Close => {
-                send_telemetry_from_ctx!(TelemetryEvent::AgentModeSetupBannerDismissed, ctx);
-                self.remove_agent_setup_speedbump_banner(ctx)
+                                self.remove_agent_setup_speedbump_banner(ctx)
             }
             AgentModeSetupSpeedbumpBannerAction::SetupAgentMode => {
-                send_telemetry_from_ctx!(TelemetryEvent::AgentModeSetupBannerAccepted, ctx);
-                #[cfg(feature = "local_fs")]
+                                #[cfg(feature = "local_fs")]
                 if let Some(repo_path) = self.current_repo_path.clone() {
                     self.mark_agent_init_callout_as_shown_for_directory(&repo_path, ctx);
                 }
@@ -8417,41 +8325,6 @@ impl TerminalView {
                     InlineBannerItem::new(banner_id, InlineBannerType::ShellProcessTerminated),
                 );
         } else {
-            let (termination_reason, termination_details, exit_reason) = match &termination_type {
-                shell_terminated_banner::TerminationType::PtySpawnFailure { .. } => {
-                    (Some("PtySpawnFailure".to_string()), None, None)
-                }
-                shell_terminated_banner::TerminationType::Premature {
-                    shell_detail,
-                    reason,
-                } => (
-                    Some("Premature".to_string()),
-                    Some(shell_detail.into()),
-                    Some(reason),
-                ),
-                _ => (None, None, None),
-            };
-
-            if let Some(termination_reason) = termination_reason {
-                let (shell_path, shell_type) = self.get_shell_starter_local(ctx).unzip();
-                let antivirus_name = AntivirusInfo::as_ref(ctx).get();
-
-                let long_os_version = crate::system::long_os_version(ctx);
-
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::ShellTerminatedPrematurely {
-                        shell_type,
-                        shell_path,
-                        reason: termination_reason,
-                        reason_details: termination_details,
-                        antivirus_name: antivirus_name.map(ToOwned::to_owned),
-                        long_os_version,
-                        exit_reason: exit_reason.map(|exit_reason| format!("{exit_reason:?}")),
-                    },
-                    ctx
-                );
-            };
-
             let banner = ctx.add_typed_action_view(|ctx| {
                 shell_terminated_banner::ShellTerminatedBanner::new(termination_type, ctx)
             });
@@ -8891,14 +8764,7 @@ impl TerminalView {
                             .and_then(|e| e.output_status.server_output_id())
                     })
             });
-            send_telemetry_from_ctx!(
-                TelemetryEvent::AgentExitedShellProcess {
-                    command,
-                    server_output_id,
-                },
-                ctx
-            );
-        }
+                    }
     }
 
     /// Updates the agent view back button's disabled state and tooltip based on whether
@@ -9362,46 +9228,11 @@ impl TerminalView {
                         let is_universal_developer_input_enabled =
                             InputSettings::as_ref(ctx).is_universal_developer_input_enabled(ctx);
                         let is_in_agent_view = self.agent_view_controller.as_ref(ctx).is_active();
-                        send_telemetry_from_ctx!(
-                            TelemetryEvent::BlockCompleted {
-                                block_finished_to_precmd_delay_ms: delay_ms,
-                                honor_ps1_enabled,
-                                num_secrets_redacted: *num_secrets_obfuscated,
-                                num_output_lines: user_block_completed.num_output_lines,
-                                num_output_lines_truncated: user_block_completed
-                                    .num_output_lines_truncated,
-                                terminal_session_id: user_block_completed
-                                    .serialized_block
-                                    .session_id,
-                                is_udi_enabled: is_universal_developer_input_enabled,
-                                is_in_agent_view,
-                            },
-                            ctx
-                        );
 
                         // On dogfood only, we're interested in the block commands, durations,
                         // and exit codes to trial Warp Analytics.
                         if ChannelState::channel().is_dogfood() {
-                            send_telemetry_from_ctx!(
-                                TelemetryEvent::BlockCompletedOnDogfoodOnly {
-                                    block_finished_to_precmd_delay_ms: delay_ms,
-                                    honor_ps1_enabled,
-                                    num_secrets_redacted: *num_secrets_obfuscated,
-                                    num_output_lines: user_block_completed.num_output_lines,
-                                    num_output_lines_truncated: user_block_completed
-                                        .num_output_lines_truncated,
-                                    command: user_block_completed.command.clone(),
-                                    duration: self
-                                        .block_duration(&user_block_completed.serialized_block)
-                                        .unwrap_or_default(),
-                                    exit_code: user_block_completed.serialized_block.exit_code,
-                                    terminal_session_id: user_block_completed
-                                        .serialized_block
-                                        .session_id,
-                                },
-                                ctx
-                            );
-                        }
+                                                    }
                     }
                 }
                 let active_session_id = self.active_block_session_id();
@@ -9620,8 +9451,7 @@ impl TerminalView {
                 // For now, this event is only used for telemetry. It may also
                 // be useful to request attention if the user's session starts
                 //receiving background output, or to auto-scroll it.
-                send_telemetry_from_ctx!(TelemetryEvent::BackgroundBlockStarted, ctx);
-            }
+                            }
             ModelEvent::PreInteractiveSSHSession => {}
             ModelEvent::SSH(remote_shell) => {
                 if let Some(shell) = ShellType::from_name(remote_shell) {
@@ -9631,11 +9461,7 @@ impl TerminalView {
                         self.start_bootstrap_timer(BOOTSTRAP_FAILED_DURATION, ctx);
                     }
                 }
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::SSHBootstrapAttempt(remote_shell.clone()),
-                    ctx
-                );
-            }
+                            }
             ModelEvent::SSHControlMasterError => {
                 self.handle_control_master_error(ctx);
             }
@@ -9955,8 +9781,7 @@ impl TerminalView {
                 self.continue_warpify_ssh_session(&uname, shell_type, ctx);
             }
             ModelEvent::SourcedRcFileInSubshell(event) => {
-                send_telemetry_from_ctx!(TelemetryEvent::ReceivedSubshellRcFileDcs, ctx);
-                let shell_type = event.shell_type;
+                                let shell_type = event.shell_type;
                 let uname = event.uname.clone();
                 let disable_tmux = event.tmux == Some(false);
 
@@ -10043,13 +9868,7 @@ impl TerminalView {
                     );
                 });
                 ctx.notify();
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::ImageReceived {
-                        image_protocol: *image_protocol
-                    },
-                    ctx
-                );
-            }
+                            }
             ModelEvent::BootstrapPrecmdDone => {
                 self.execute_pending_command((), ctx);
             }
@@ -10118,13 +9937,7 @@ impl TerminalView {
         });
 
         if notification.event == CLIAgentEventType::SessionStart {
-            send_telemetry_from_ctx!(
-                TelemetryEvent::CLIAgentPluginDetected {
-                    cli_agent: notification.agent.into(),
-                },
-                ctx
-            );
-            self.maybe_auto_open_cli_agent_rich_input(ctx);
+                        self.maybe_auto_open_cli_agent_rich_input(ctx);
         }
     }
 
@@ -10785,13 +10598,7 @@ impl TerminalView {
                     )
                 });
 
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::AgenticOnboardingBlockSelected {
-                        block_type: *chip_type,
-                    },
-                    ctx
-                );
-            }
+                            }
         }
     }
 
@@ -11741,15 +11548,7 @@ impl TerminalView {
 
             ctx.notify();
 
-            send_telemetry_from_ctx!(
-                TelemetryEvent::CommandCorrection {
-                    event: CommandCorrectionEvent::Proposed {
-                        rule: rule.to_str()
                     }
-                },
-                ctx
-            );
-        }
     }
 
     fn clear_prompt_suggestions(&mut self, ctx: &mut ViewContext<Self>) {
@@ -11990,16 +11789,6 @@ impl TerminalView {
             input.notify_and_notify_children(ctx);
         });
 
-        send_telemetry_from_ctx!(
-            TelemetryEvent::PromptSuggestionShown {
-                id: suggestion_id,
-                request_duration_ms,
-                block_id: block_id.map(|b| b.to_string()),
-                view: self.prompt_suggestion_view_type(ctx),
-                server_request_token: None,
-            },
-            ctx
-        );
 
         ctx.notify();
     }
@@ -12184,16 +11973,6 @@ impl TerminalView {
         });
 
         let suggestion_id = Uuid::new_v4().to_string();
-        send_telemetry_from_ctx!(
-            TelemetryEvent::SuggestedCodeDiffBannerShown {
-                prompt_suggestion_id: suggestion_id,
-                code_exchange_id: None,
-                block_id: trigger_block_id_str,
-                request_duration_ms,
-                server_request_token: None,
-            },
-            ctx
-        );
 
         self.insert_rich_content(
             None,
@@ -12272,30 +12051,8 @@ impl TerminalView {
                 });
 
                 if let Some(static_name) = static_prompt_suggestion_name {
-                    send_telemetry_from_ctx!(
-                        TelemetryEvent::StaticPromptSuggestionsBannerShown {
-                            id: suggestion_id,
-                            query: query_string,
-                            block_id: block_id.to_string(),
-                            block_command,
-                            static_prompt_suggestion_name: static_name,
-                            request_duration_ms,
-                            view: self.prompt_suggestion_view_type(ctx),
-                        },
-                        ctx
-                    );
-                } else {
-                    send_telemetry_from_ctx!(
-                        TelemetryEvent::PromptSuggestionShown {
-                            id: suggestion_id,
-                            request_duration_ms,
-                            block_id: Some(block_id.to_string()),
-                            view: self.prompt_suggestion_view_type(ctx),
-                            server_request_token: None,
-                        },
-                        ctx
-                    );
-                }
+                                    } else {
+                                    }
 
                 ctx.notify();
             }
@@ -12454,14 +12211,7 @@ impl TerminalView {
                             .map_or_else(String::new, ToOwned::to_owned),
                     );
                     ctx.emit(Event::SendNotification(notification_content));
-                    send_telemetry_from_ctx!(
-                        TelemetryEvent::NotificationSent {
-                            trigger: long_running_trigger,
-                            agent_variant: None,
-                        },
-                        ctx
-                    );
-                }
+                                    }
             }
             _ => {}
         }
@@ -12543,14 +12293,7 @@ impl TerminalView {
                 }
                 let notification_content = trigger.create_notification_content(title, description);
                 ctx.emit(Event::SendNotification(notification_content));
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::NotificationSent {
-                        trigger,
-                        agent_variant,
-                    },
-                    ctx
-                );
-            }
+                            }
             _ => {}
         }
     }
@@ -12682,38 +12425,11 @@ impl TerminalView {
         // Send the bootstrapping slow event synchronously to ensure that we don't drop
         // the event if the user quits the app before the event queue is flushed and then
         // never reopens the app.
-        send_telemetry_sync_from_ctx!(
-            TelemetryEvent::BootstrappingSlow(BootstrappingInfo {
-                shell,
-                is_ssh,
-                is_subshell,
-                is_wsl,
-                is_msys2,
-                was_triggered_by_rc_file,
-                bootstrap_duration_seconds: None,
-                shell_version: None,
-                rcfiles_duration_seconds: None,
-                warp_attributed_bootstrap_duration_seconds: None,
-                terminal_session_id: None,
-            }),
-            ctx
-        );
 
         let bootstrap_block_contents = {
             let model = self.model.lock();
             model.block_list().bootstrap_block_contents()
         };
-        send_telemetry_sync_from_ctx!(
-            TelemetryEvent::BootstrappingSlowContents(SlowBootstrapInfo {
-                shell,
-                is_ssh,
-                is_subshell,
-                is_wsl,
-                is_msys2,
-                bootstrap_block_contents,
-            }),
-            ctx
-        );
 
         if !self.is_login_shell_bootstrapped {
             log::warn!("Showing bootstrap slow toast");
@@ -13944,8 +13660,7 @@ impl TerminalView {
             ctx,
         );
 
-        send_telemetry_from_ctx!(TelemetryEvent::OpenInputContextMenu, ctx);
-    }
+            }
 
     fn open_workflow_modal(&mut self, ctx: &mut ViewContext<Self>) {
         let selected_block_contents =
@@ -13987,8 +13702,7 @@ impl TerminalView {
         }
         self.focus_block_filter_editor(ctx);
         if matches!(opened_from_click, OpenedFromClick::Yes) {
-            send_telemetry_from_ctx!(TelemetryEvent::BlockFilterToolbeltButtonClicked, ctx);
-        }
+                    }
     }
 
     fn close_block_filter_editor(&mut self, ctx: &mut ViewContext<Self>) {
@@ -14015,13 +13729,7 @@ impl TerminalView {
             ))
         }
 
-        send_telemetry_from_ctx!(
-            TelemetryEvent::SaveAsWorkflowModal {
-                source: SaveAsWorkflowModalSource::Block
-            },
-            ctx
-        );
-    }
+            }
 
     fn open_workflow_modal_from_ai_generated_workflow(
         &mut self,
@@ -14030,13 +13738,7 @@ impl TerminalView {
     ) {
         ctx.emit(Event::OpenWorkflowModalWithTemporary(Box::new(workflow)));
 
-        send_telemetry_from_ctx!(
-            TelemetryEvent::SaveAsWorkflowModal {
-                source: SaveAsWorkflowModalSource::AIWorkflowCard,
-            },
-            ctx
-        );
-    }
+            }
 
     pub fn open_workflow_modal_with_existing(
         &mut self,
@@ -14522,15 +14224,7 @@ impl TerminalView {
         ctx.focus(&self.context_menu);
         ctx.notify();
 
-        send_telemetry_from_ctx!(
-            TelemetryEvent::OpenContextMenu {
-                context_menu_info: ContextMenuInfo {
-                    menu_type: menu_state.menu_type,
-                }
-            },
-            ctx
-        );
-        self.tips_completed.update(ctx, |tips, ctx| {
+                self.tips_completed.update(ctx, |tips, ctx| {
             mark_feature_used_and_write_to_user_defaults(
                 Tip::Hint(TipHint::BlockAction),
                 tips,
@@ -14769,16 +14463,7 @@ impl TerminalView {
                 if let Some(block_index) = maybe_block_index {
                     self.mouse_down_block_index = Some(*block_index);
 
-                    send_telemetry_from_ctx!(
-                        TelemetryEvent::BlockSelection(BlockSelectionDetails {
-                            cardinality: self.selected_blocks.cardinality(),
-                            delta: BlockSelectionDelta::New,
-                            is_cmd_down: false,
-                            is_shift_down: false,
-                        }),
-                        ctx
-                    );
-                    self.tips_completed.update(ctx, |tips, ctx| {
+                                        self.tips_completed.update(ctx, |tips, ctx| {
                         mark_feature_used_and_write_to_user_defaults(
                             Tip::Hint(TipHint::BlockSelect),
                             tips,
@@ -14873,23 +14558,8 @@ impl TerminalView {
                         }
 
                         if !self.ai_input_model.as_ref(ctx).is_ai_input_enabled() {
-                            send_telemetry_from_ctx!(
-                                TelemetryEvent::BlockSelection(BlockSelectionDetails {
-                                    cardinality: self.selected_blocks.cardinality(),
-                                    delta: BlockSelectionDelta::New,
-                                    is_cmd_down: *is_cmd_down,
-                                    is_shift_down: *is_shift_down
-                                }),
-                                ctx
-                            );
-                        } else if !self.selected_blocks.is_empty() {
-                            send_telemetry_from_ctx!(
-                                TelemetryEvent::AgentModeAttachedBlockContext {
-                                    method: AgentModeAttachContextMethod::Mouse
-                                },
-                                ctx
-                            );
-                        }
+                                                    } else if !self.selected_blocks.is_empty() {
+                                                    }
                         self.tips_completed.update(ctx, |tips, ctx| {
                             mark_feature_used_and_write_to_user_defaults(
                                 Tip::Hint(TipHint::BlockSelect),
@@ -15068,13 +14738,6 @@ impl TerminalView {
         let Some(link) = self.highlighted_link.as_ref() else {
             return;
         };
-        send_telemetry_from_ctx!(
-            TelemetryEvent::OpenLink {
-                link: link.clone(),
-                open_with: link_open_method
-            },
-            ctx
-        );
 
         match link {
             #[cfg(feature = "local_fs")]
@@ -15161,17 +14824,7 @@ impl TerminalView {
             );
         }
         self.dismiss_tooltips(ctx);
-        send_telemetry_from_ctx!(
-            TelemetryEvent::ToggleObfuscateSecret {
-                interaction: if show_secret {
-                    SecretInteraction::RevealSecret
-                } else {
-                    SecretInteraction::HideSecret
-                }
-            },
-            ctx
-        );
-        ctx.notify();
+                ctx.notify();
     }
 
     fn toggle_rich_content_secret(
@@ -15196,17 +14849,7 @@ impl TerminalView {
         }
 
         self.dismiss_tooltips(ctx);
-        send_telemetry_from_ctx!(
-            TelemetryEvent::ToggleObfuscateSecret {
-                interaction: if show_secret {
-                    SecretInteraction::RevealSecret
-                } else {
-                    SecretInteraction::HideSecret
-                }
-            },
-            ctx
-        );
-        ctx.notify();
+                ctx.notify();
     }
 
     fn copy_grid_secret(
@@ -15222,8 +14865,7 @@ impl TerminalView {
                 ctx.clipboard().write(ClipboardContent::plain_text(text));
             }
         }
-        send_telemetry_from_ctx!(TelemetryEvent::CopySecret, ctx);
-        self.dismiss_tooltips(ctx);
+                self.dismiss_tooltips(ctx);
         ctx.notify();
     }
 
@@ -15234,8 +14876,7 @@ impl TerminalView {
     ) {
         ctx.clipboard()
             .write(ClipboardContent::plain_text(tooltip_info.secret));
-        send_telemetry_from_ctx!(TelemetryEvent::CopySecret, ctx);
-        self.dismiss_tooltips(ctx);
+                self.dismiss_tooltips(ctx);
         ctx.notify();
     }
 
@@ -15296,12 +14937,6 @@ impl TerminalView {
     pub fn toggle_snackbar_in_active_pane(&mut self, ctx: &mut ViewContext<Self>) {
         self.show_snackbar = !self.show_snackbar;
 
-        send_telemetry_from_ctx!(
-            TelemetryEvent::ToggleSnackbarInActivePane {
-                show_snackbar: self.show_snackbar
-            },
-            ctx
-        );
 
         ctx.notify()
     }
@@ -15643,8 +15278,7 @@ impl TerminalView {
         overhanging_block: &OverhangingBlock,
         ctx: &mut ViewContext<Self>,
     ) {
-        send_telemetry_from_ctx!(TelemetryEvent::JumpToBottomofBlockButtonClicked, ctx);
-        self.update_scroll_position_locking(
+                self.update_scroll_position_locking(
             ScrollPositionUpdate::ScrollToBottomOfBlock {
                 block_index: overhanging_block.block_index(),
             },
@@ -15761,8 +15395,7 @@ impl TerminalView {
             ctx.clipboard()
                 .write(ClipboardContent::plain_text(selected_input_text));
         }
-        send_telemetry_from_ctx!(TelemetryEvent::InputCutSelectedText, ctx);
-    }
+            }
 
     fn copy_selected_text_from_input(&mut self, ctx: &mut ViewContext<Self>) {
         let selected_input_text = self.input.read(ctx, |input, ctx| {
@@ -15775,8 +15408,7 @@ impl TerminalView {
             ctx.clipboard()
                 .write(ClipboardContent::plain_text(selected_input_text));
         }
-        send_telemetry_from_ctx!(TelemetryEvent::InputCopySelectedText, ctx);
-    }
+            }
 
     fn select_all_text_from_input(&mut self, ctx: &mut ViewContext<Self>) {
         self.input.update(ctx, |input, ctx| {
@@ -15784,8 +15416,7 @@ impl TerminalView {
                 editor.handle_action(&EditorAction::SelectAll, ctx)
             })
         });
-        send_telemetry_from_ctx!(TelemetryEvent::InputSelectAll, ctx);
-    }
+            }
 
     fn paste_in_input(&mut self, ctx: &mut ViewContext<Self>) {
         let clipboard_content = ctx.clipboard().read();
@@ -15794,20 +15425,17 @@ impl TerminalView {
             input.system_insert(clipboard_content.plain_text.as_str(), ctx);
             ctx.focus_self();
         });
-        send_telemetry_from_ctx!(TelemetryEvent::InputPaste, ctx);
-    }
+            }
 
     fn command_search_from_input(&mut self, ctx: &mut ViewContext<Self>) {
-        send_telemetry_from_ctx!(TelemetryEvent::InputCommandSearch, ctx);
-        ctx.emit(Event::ShowCommandSearch(Default::default()))
+                ctx.emit(Event::ShowCommandSearch(Default::default()))
     }
 
     fn ai_command_search_from_input(&mut self, ctx: &mut ViewContext<Self>) {
         self.input.update(ctx, |input, ctx| {
             input.handle_action(&InputAction::ShowAiCommandSearch, ctx)
         });
-        send_telemetry_from_ctx!(TelemetryEvent::InputAICommandSearch, ctx);
-    }
+            }
 
     fn save_as_workflow_from_input(&mut self, ctx: &mut ViewContext<Self>) {
         let (all_current_input_text, selected_input_text) = self.input.read(ctx, |input, ctx| {
@@ -15832,15 +15460,7 @@ impl TerminalView {
         });
 
         // Send the same telemetry event that we do from the features page to make data analysis easier.
-        send_telemetry_from_ctx!(
-            // We purposely keep the FeaturesPageAction event, even though we have moved the setting to AI settings.
-            TelemetryEvent::FeaturesPageAction {
-                action: "ToggleShowInputHintText".to_string(),
-                value: new_val.to_string()
-            },
-            ctx
-        );
-    }
+            }
 
     fn open_workflow_modal_with_command(
         &mut self,
@@ -15850,8 +15470,7 @@ impl TerminalView {
     ) {
         ctx.emit(Event::OpenWorkflowModalWithCommand(command));
 
-        send_telemetry_from_ctx!(TelemetryEvent::SaveAsWorkflowModal { source }, ctx);
-    }
+            }
 
     fn copy_prompt(
         &mut self,
@@ -15902,11 +15521,7 @@ impl TerminalView {
         };
         ctx.clipboard().write(ClipboardContent::plain_text(to_copy));
 
-        send_telemetry_from_ctx!(
-            TelemetryEvent::ContextMenuCopyPrompt { part: part.clone() },
-            ctx
-        );
-        self.tips_completed.update(ctx, |tips, ctx| {
+                self.tips_completed.update(ctx, |tips, ctx| {
             mark_feature_used_and_write_to_user_defaults(
                 Tip::Hint(TipHint::BlockAction),
                 tips,
@@ -16140,13 +15755,8 @@ impl TerminalView {
         let inverted_blocklist = self.is_inverted_blocklist(ctx);
         // Emit a telemetry event depending on whether the find bar is opened in blocklist or alt screen.
         if model.is_alt_screen_active() {
-            send_telemetry_from_ctx!(TelemetryEvent::OpenedAltScreenFind, ctx);
-        } else {
-            send_telemetry_from_ctx!(
-                TelemetryEvent::ContextMenuFindWithinBlocks(self.selected_blocks.cardinality()),
-                ctx
-            );
-        }
+                    } else {
+                    }
         self.find_bar.update(ctx, |view, ctx| {
             let semantic_selection = SemanticSelection::as_ref(ctx);
             if let Some(selected) =
@@ -16304,15 +15914,6 @@ impl TerminalView {
             ctx,
         );
 
-        send_telemetry_from_ctx!(
-            TelemetryEvent::BlockSelection(BlockSelectionDetails {
-                cardinality: self.selected_blocks.cardinality(),
-                delta: BlockSelectionDelta::New,
-                is_cmd_down: false,
-                is_shift_down: false
-            }),
-            ctx
-        );
 
         self.tips_completed.update(ctx, |tips, ctx| {
             mark_feature_used_and_write_to_user_defaults(
@@ -16369,15 +15970,6 @@ impl TerminalView {
             self.scroll_to_if_not_visible(new_block_index, ctx);
             ctx.notify();
 
-            send_telemetry_from_ctx!(
-                TelemetryEvent::BlockSelection(BlockSelectionDetails {
-                    delta: BlockSelectionDelta::Previous,
-                    is_cmd_down: false,
-                    is_shift_down,
-                    cardinality: self.selected_blocks.cardinality(),
-                }),
-                ctx
-            );
 
             self.tips_completed.update(ctx, |tips, ctx| {
                 mark_feature_used_and_write_to_user_defaults(
@@ -16441,16 +16033,7 @@ impl TerminalView {
                     self.reset_selection_to_single_block(new_block_index, ctx);
                 }
                 self.scroll_to_if_not_visible(new_block_index, ctx);
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::BlockSelection(BlockSelectionDetails {
-                        cardinality: self.selected_blocks.cardinality(),
-                        delta: BlockSelectionDelta::Next,
-                        is_cmd_down,
-                        is_shift_down,
-                    }),
-                    ctx
-                );
-                self.tips_completed.update(ctx, |tips, ctx| {
+                                self.tips_completed.update(ctx, |tips, ctx| {
                     mark_feature_used_and_write_to_user_defaults(
                         Tip::Hint(TipHint::BlockSelect),
                         tips,
@@ -17322,8 +16905,7 @@ impl TerminalView {
 
     fn context_menu_insert_selected_text(&mut self, ctx: &mut ViewContext<Self>) {
         {
-            send_telemetry_from_ctx!(TelemetryEvent::ContextMenuInsertSelectedText, ctx);
-            let semantic_selection = SemanticSelection::as_ref(ctx);
+                        let semantic_selection = SemanticSelection::as_ref(ctx);
             // Note: we purposely separate this expression here, to avoid locking the TerminalModel for the duration of the `if let`
             // block, since downstream functions may need the lock (`Input::insert_internal`).
             let selected_text = self.model.lock().selection_to_string(
@@ -17345,11 +16927,7 @@ impl TerminalView {
     }
 
     fn input_command(&mut self, ctx: &mut ViewContext<Self>, command: String) {
-        send_telemetry_from_ctx!(
-            TelemetryEvent::ReinputCommands(self.selected_blocks.cardinality()),
-            ctx
-        );
-        self.input.update(ctx, |input, ctx| {
+                self.input.update(ctx, |input, ctx| {
             input.replace_buffer_content((command).trim(), ctx);
             ctx.focus_self();
         });
@@ -17437,11 +17015,7 @@ impl TerminalView {
     }
 
     fn copy_blocks(&mut self, entity: BlockEntity, ctx: &mut ViewContext<Self>) {
-        send_telemetry_from_ctx!(
-            TelemetryEvent::ContextMenuCopy(entity, self.selected_blocks.cardinality()),
-            ctx
-        );
-        self.tips_completed.update(ctx, |tips, ctx| {
+                self.tips_completed.update(ctx, |tips, ctx| {
             mark_feature_used_and_write_to_user_defaults(
                 Tip::Hint(TipHint::BlockAction),
                 tips,
@@ -17458,8 +17032,7 @@ impl TerminalView {
 
     fn context_menu_copy_selected_text(&mut self, ctx: &mut ViewContext<Self>) {
         {
-            send_telemetry_from_ctx!(TelemetryEvent::ContextMenuCopySelectedText, ctx);
-            let semantic_selection = SemanticSelection::as_ref(ctx);
+                        let semantic_selection = SemanticSelection::as_ref(ctx);
             let model = self.model.lock();
             if let Some(selected_text) =
                 model.selection_to_string(semantic_selection, self.is_inverted_blocklist(ctx), ctx)
@@ -17534,10 +17107,6 @@ impl TerminalView {
             }
         };
 
-        send_telemetry_from_ctx!(
-            TelemetryEvent::BookmarkBlockToggled { enable_bookmark },
-            ctx
-        );
 
         ctx.notify();
     }
@@ -17575,14 +17144,7 @@ impl TerminalView {
                         "Command is waiting for a password".to_string(),
                     );
                     ctx.emit(Event::SendNotification(notification_content));
-                    send_telemetry_from_ctx!(
-                        TelemetryEvent::NotificationSent {
-                            trigger: password_trigger,
-                            agent_variant: None,
-                        },
-                        ctx
-                    );
-                }
+                                    }
                 NotificationsMode::Unset
                     if matches!(
                         self.inline_banners_state.notifications_discovery_banner,
@@ -17651,22 +17213,12 @@ impl TerminalView {
             InputEvent::SelectRecentBlocks { count } => {
                 let is_first_selection = self.selected_blocks.is_empty();
                 if is_first_selection && self.ai_input_model.as_ref(ctx).is_ai_input_enabled() {
-                    send_telemetry_from_ctx!(
-                        TelemetryEvent::AgentModeAttachedBlockContext {
-                            method: AgentModeAttachContextMethod::Keyboard
-                        },
-                        ctx
-                    );
-                }
+                                    }
                 self.select_most_recent_blocks(*count, ctx)
             }
             InputEvent::Copy => self.copy(ctx),
             InputEvent::UnhandledModifierKeyOnEditor(keystroke) => {
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::EditorUnhandledModifierKey(keystroke.as_ref().to_owned()),
-                    ctx
-                );
-            }
+                            }
             InputEvent::ClearSelectionsWhenShellMode => self.clear_selections_when_shell_mode(ctx),
             InputEvent::AutosuggestionAccepted => {
                 // TODO(suraj): maybe pass down the autosuggestion type and send
@@ -17676,16 +17228,7 @@ impl TerminalView {
                 {
                     let buffer_text = self.input.as_ref(ctx).buffer_text(ctx);
                     if buffer_text == most_recent_command_correction.command {
-                        send_telemetry_from_ctx!(
-                            TelemetryEvent::CommandCorrection {
-                                event: CommandCorrectionEvent::Accepted {
-                                    via: CommandCorrectionAcceptedType::Autosuggestion,
-                                    rule: most_recent_command_correction.rule_applied.to_str(),
-                                }
-                            },
-                            ctx
-                        );
-                    }
+                                            }
                 }
                 // When an AI query autosuggestion is accepted, there might be attached context
                 // blocks we need to render the border for.
@@ -18121,8 +17664,7 @@ impl TerminalView {
                 .is_some_and(|previous_filter| !previous_filter.is_active_and_nonempty()))
             && block_filter_query.is_active_and_nonempty()
         {
-            send_telemetry_from_ctx!(TelemetryEvent::UpdateBlockFilterQuery, ctx);
-        }
+                    }
         drop(model);
 
         self.update_block_filter_for_block(
@@ -18491,8 +18033,7 @@ impl TerminalView {
         if let Some(index) = next_index {
             self.reset_selection_to_single_block(index, ctx);
             self.jump_to_previous_command(index, ctx);
-            send_telemetry_from_ctx!(TelemetryEvent::JumpToBookmark, ctx);
-            ctx.notify();
+                        ctx.notify();
         }
     }
 
@@ -18520,8 +18061,7 @@ impl TerminalView {
         if let Some(index) = next_index {
             self.reset_selection_to_single_block(index, ctx);
             self.jump_to_previous_command(index, ctx);
-            send_telemetry_from_ctx!(TelemetryEvent::JumpToBookmark, ctx);
-            ctx.notify();
+                        ctx.notify();
         }
     }
 
@@ -18641,15 +18181,13 @@ impl TerminalView {
         topmost_block_index: BlockIndex,
         ctx: &mut ViewContext<Self>,
     ) {
-        send_telemetry_from_ctx!(TelemetryEvent::JumpToPreviousCommand, ctx);
-        self.scroll_to_if_not_visible(topmost_block_index, ctx);
+                self.scroll_to_if_not_visible(topmost_block_index, ctx);
     }
 
     fn jump_to_bookmark(&mut self, index: BlockIndex, ctx: &mut ViewContext<Self>) {
         self.reset_selection_to_single_block(index, ctx);
         self.jump_to_previous_command(index, ctx);
 
-        send_telemetry_from_ctx!(TelemetryEvent::JumpToBookmark, ctx);
 
         ctx.notify();
     }
@@ -20446,26 +19984,7 @@ impl TerminalView {
             }
             AskAI(ask_source) => {
                 if FeatureFlag::AgentMode.is_enabled() {
-                    send_telemetry_from_ctx!(
-                        TelemetryEvent::AgentModeClickedEntrypoint {
-                            entrypoint: AgentModeEntrypoint::ContextMenu {
-                                selection_type: if matches!(
-                                    ask_source,
-                                    AskAISource::SelectedBlockOrText
-                                        | AskAISource::SelectedTerminalText
-                                        | AskAISource::SelectedInputText
-                                ) {
-                                    telemetry::AgentModeEntrypointSelectionType::Text
-                                } else {
-                                    // The `AskAI` action for the context menu is only triggered
-                                    // with selected text or selected block(s).
-                                    telemetry::AgentModeEntrypointSelectionType::Block
-                                }
-                            },
-                        },
-                        ctx
-                    );
-                }
+                                    }
 
                 self.ask_ai(ask_source, ctx);
             }
@@ -20668,11 +20187,7 @@ impl TerminalView {
         entrypoint: AgentModeRewindEntrypoint,
         ctx: &mut ViewContext<Self>,
     ) {
-        send_telemetry_from_ctx!(
-            TelemetryEvent::AgentModeRewindDialogOpened { entrypoint },
-            ctx
-        );
-        ctx.dispatch_typed_action(&WorkspaceAction::ShowRewindConfirmationDialog {
+                ctx.dispatch_typed_action(&WorkspaceAction::ShowRewindConfirmationDialog {
             ai_block_view_id,
             exchange_id,
             conversation_id,
@@ -20765,13 +20280,7 @@ impl TerminalView {
             controller.clear_finished_action_results(conversation_id, ctx);
         });
 
-        send_telemetry_from_ctx!(
-            TelemetryEvent::AgentModeRewindExecuted {
-                num_blocks_reverted
-            },
-            ctx
-        );
-    }
+            }
 
     fn handle_input_context_menu_action(
         &mut self,
@@ -20841,8 +20350,7 @@ impl TerminalView {
             }
         }
 
-        send_telemetry_from_ctx!(TelemetryEvent::NotificationsErrorBannerAction(action), ctx);
-    }
+            }
 
     fn close_notification_error_banner(&mut self, ctx: &mut ViewContext<Self>) {
         if let NotificationsErrorBannerType::Open { state, .. } = &self
@@ -20913,20 +20421,9 @@ impl TerminalView {
                         );
                     }
 
-                    send_telemetry_from_ctx!(
-                        TelemetryEvent::NotificationsRequestPermissionsOutcome { outcome },
-                        ctx
-                    );
-                    ctx.notify();
+                                        ctx.notify();
                 });
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::NotificationPermissionsRequested {
-                        source: NotificationsTurnedOnSource::Banner,
-                        trigger: Some(trigger),
-                    },
-                    ctx
-                );
-                ctx.notify();
+                                ctx.notify();
             }
             Configure => {
                 ctx.emit(Event::OpenSettings(SettingsSection::Features));
@@ -20958,11 +20455,7 @@ impl TerminalView {
             }
         }
 
-        send_telemetry_from_ctx!(
-            TelemetryEvent::NotificationsDiscoveryBannerAction(action),
-            ctx
-        );
-    }
+            }
 
     fn ssh_banner_action(&self, action: SSHBannerAction, ctx: &mut ViewContext<Self>) {
         use SSHBannerAction::*;
@@ -20998,22 +20491,17 @@ impl TerminalView {
             });
 
         if let Some((is_ssh, shell)) = session_info {
-            let auth_state = self.auth_state.clone();
-            let executor = ctx.background_executor().clone();
             ctx.on_next_frame_drawn(move || {
-                let block_event = TelemetryEvent::BaselineCommandLatency(BlockLatencyInfo {
-                    command: block_latency_data.command,
+                log::debug!(
+                    "block latency: command={} shell={} is_ssh={} execution_ms={}",
+                    block_latency_data.command,
                     shell,
                     is_ssh,
-                    // The execution time is from the time the block started (i.e. user hit
-                    // enter) to when the first frame after the block completed is finished
-                    // drawing.
-                    execution_ms: block_latency_data.started_at.elapsed().as_millis() as u64,
-                });
-                send_telemetry_on_executor!(auth_state, block_event, executor);
+                    block_latency_data.started_at.elapsed().as_millis()
+                );
             })
         } else {
-            log::warn!("Could not log block latency telemetry since session info was none");
+            log::warn!("Could not log block latency since session info was none");
         }
     }
 
@@ -21054,13 +20542,6 @@ impl TerminalView {
                 ..block_filter_query
             };
 
-            send_telemetry_from_ctx!(
-                TelemetryEvent::ToggleBlockFilterQuery {
-                    enabled: new_block_filter_query.is_active,
-                    source
-                },
-                ctx
-            );
 
             self.update_block_filter_for_block(
                 selected_or_last_block_index,
@@ -21631,11 +21112,7 @@ impl TerminalView {
                     }
                 }
 
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::SshInteractiveSessionDetected(ssh_interactive_session_event),
-                    ctx
-                );
-            }
+                            }
         }
     }
 
@@ -21683,8 +21160,7 @@ impl TerminalView {
         });
         self.maybe_show_use_agent_footer_in_blocklist(ctx);
 
-        send_telemetry_from_ctx!(TelemetryEvent::WarpifyFooterShown { is_ssh }, ctx);
-    }
+            }
 
     fn show_initialization_block(&mut self) {
         self.model
@@ -21744,18 +21220,10 @@ impl TerminalView {
         cli_agent: Option<crate::server::telemetry::CLIAgentType>,
         ctx: &mut ViewContext<Self>,
     ) {
-        use crate::server::telemetry::{FileTreeSource, TelemetryEvent};
+        use crate::server::telemetry::{FileTreeSource};
 
         self.toggle_left_panel_file_tree(false, ctx);
-        send_telemetry_from_ctx!(
-            TelemetryEvent::FileTreeToggled {
-                source: FileTreeSource::LeftPanelToolbelt,
-                is_code_mode_v2: true,
-                cli_agent,
-            },
-            ctx
-        );
-    }
+            }
 }
 
 impl Entity for TerminalView {
@@ -22045,7 +21513,6 @@ impl TypedActionView for TerminalView {
             | SelectAgenticSuggestion(_)
             | HideTelemetryBannerPermanently
             | GenerateCodebaseIndex
-            | LoadAgentModeConversation
             | DeleteAttachment { .. }
             | WriteCodebaseIndex
             | ToggleAutoexecuteMode
@@ -22251,13 +21718,7 @@ impl TypedActionView for TerminalView {
                 }
 
                 if is_first_selection && self.ai_input_model.as_ref(ctx).is_ai_input_enabled() {
-                    send_telemetry_from_ctx!(
-                        TelemetryEvent::AgentModeAttachedBlockContext {
-                            method: AgentModeAttachContextMethod::Keyboard
-                        },
-                        ctx
-                    );
-                }
+                                    }
             }
             SelectNextBlock => {
                 match input_mode {
@@ -22378,7 +21839,6 @@ impl TypedActionView for TerminalView {
                 self.open_rich_content_link(link, ctx);
             }
             ShowInFileExplorer(path) => {
-                send_telemetry_from_ctx!(TelemetryEvent::ShowInFileExplorer, ctx);
 
                 ctx.open_file_path_in_explorer(path);
             }
@@ -22414,13 +21874,7 @@ impl TypedActionView for TerminalView {
             OpenBlockListContextMenu => self.open_block_list_context_menu_via_keybinding(ctx),
             AttachBlockAsAgentContext { block_index } => {
                 if FeatureFlag::AgentMode.is_enabled() {
-                    send_telemetry_from_ctx!(
-                        TelemetryEvent::AgentModeClickedEntrypoint {
-                            entrypoint: AgentModeEntrypoint::BlockToolbelt,
-                        },
-                        ctx
-                    );
-                }
+                                    }
 
                 self.ask_ai(&AskAISource::Block(*block_index), ctx)
             }
@@ -22436,7 +21890,6 @@ impl TypedActionView for TerminalView {
                     "Subshell",
                     "subshell",
                     warpify_keybinding,
-                    TelemetryEvent::ShowSubshellBanner,
                     ctx,
                 );
             }
@@ -22448,22 +21901,11 @@ impl TypedActionView for TerminalView {
                     "SSH Session",
                     "SSH session",
                     warpify_keybinding,
-                    TelemetryEvent::SshTmuxWarpifyBannerDisplayed,
                     ctx,
                 );
             }
             DismissWarpifyBanner(remember) => {
                 self.dismiss_warpify_banner(remember, ctx);
-                if remember.is_ssh() {
-                    send_telemetry_from_ctx!(TelemetryEvent::SshTmuxWarpifyBlockDismissed, ctx);
-                } else {
-                    send_telemetry_from_ctx!(
-                        TelemetryEvent::DeclineSubshellBootstrap {
-                            remember: remember.as_bool()
-                        },
-                        ctx
-                    );
-                }
             }
             InsertMostRecentCommandCorrection => self.insert_most_recent_command_correction(ctx),
             AliasExpansionBanner(action) => self.alias_expansion_banner_action(*action, ctx),
@@ -22506,8 +21948,7 @@ impl TypedActionView for TerminalView {
                 #[cfg(feature = "local_fs")]
                 {
                     self.add_settings_import_block(ctx);
-                    send_telemetry_from_ctx!(TelemetryEvent::SettingsImportInitiated, ctx);
-                }
+                                    }
             }
             ToggleBlockFilterOnSelectedOrLastBlock(source) => {
                 self.toggle_block_filter_on_selected_or_last_block(*source, ctx);
@@ -22690,9 +22131,6 @@ impl TypedActionView for TerminalView {
             ShowInitializationBlock => self.show_initialization_block(),
             GenerateCodebaseIndex => {
                 self.generate_codebase_index(ctx);
-            }
-            LoadAgentModeConversation => {
-                self.load_agent_mode_conversation(ctx);
             }
             ShowWarpifySettings => ctx.emit(Event::OpenSettings(SettingsSection::Warpify)),
             DeleteAttachment { index } => {
@@ -23838,12 +23276,7 @@ impl Drop for TerminalView {
                 let was_ever_visible = self.was_ever_visible;
                 let duration_since_start =
                     self.bootstrap_start.unwrap_or_else(Instant::now).elapsed();
-                let _ = TelemetryEvent::SessionAbandonedBeforeBootstrap {
-                    pending_shell,
-                    has_pending_ssh_session,
-                    was_ever_visible,
-                    duration_since_start,
-                };
+                let _ = (was_ever_visible, duration_since_start);
             }
         };
     }

@@ -197,7 +197,7 @@ impl ChannelState {
     }
 
     pub fn oz_root_url() -> Cow<'static, str> {
-        Self::maybe_oz_root_url().expect("Oz config is unavailable")
+        Self::maybe_oz_root_url().expect("Hosted agent config is unavailable")
     }
 
     pub fn server_root_url() -> Cow<'static, str> {

@@ -345,7 +345,7 @@ pub struct Block {
     /// model because they may be shown for debugging purposes.
     pub(super) is_for_in_band_command: bool,
 
-    /// `true` if this command block corresponds to a startup command in an oz environment executed
+    /// `true` if this command block corresponds to a startup command in an agent environment executed
     /// in cloud mode.
     is_oz_environment_startup_command: bool,
 

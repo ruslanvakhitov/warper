@@ -37,11 +37,9 @@ use crate::{
     util::traffic_lights::{TrafficLightData, TrafficLightSide},
     window_settings::WindowSettings,
 };
-use crate::{appearance::AppearanceManager, send_telemetry_from_ctx};
+use crate::{appearance::AppearanceManager};
 use crate::{editor::EditorView, resource_center::TipsCompleted};
-use crate::{
-    server::telemetry::TelemetryEvent, ui_components::window_focus_dimming::WindowFocusDimming,
-};
+use crate::ui_components::window_focus_dimming::WindowFocusDimming;
 use crate::{
     themes::theme::WarpThemeConfig,
     ui_components::buttons::{close_button, icon_button},
@@ -338,13 +336,11 @@ impl ThemeChooser {
     }
 
     pub fn record_open_theme(&mut self, ctx: &mut ViewContext<Self>) -> bool {
-        send_telemetry_from_ctx!(TelemetryEvent::OpenThemeChooser, ctx);
-        true
+                true
     }
 
     pub fn open_theme_creator_modal(&mut self, ctx: &mut ViewContext<Self>) {
-        send_telemetry_from_ctx!(TelemetryEvent::OpenThemeCreatorModal, ctx);
-        ctx.emit(ThemeChooserEvent::OpenThemeCreatorModal);
+                ctx.emit(ThemeChooserEvent::OpenThemeCreatorModal);
     }
 
     pub fn open_theme_deletion_modal(
@@ -396,14 +392,7 @@ impl ThemeChooser {
         ctx: &mut ViewContext<Self>,
     ) {
         self.select_theme(selected_kind.clone(), ctx);
-        send_telemetry_from_ctx!(
-            TelemetryEvent::ThemeSelection {
-                theme: selected_kind.to_string(),
-                entrypoint: "theme_chooser".to_string()
-            },
-            ctx
-        );
-        let theme_settings = ThemeSettings::handle(ctx);
+                let theme_settings = ThemeSettings::handle(ctx);
 
         let selected_themes = respect_system_theme(theme_settings.as_ref(ctx))
             .selected_system_themes()

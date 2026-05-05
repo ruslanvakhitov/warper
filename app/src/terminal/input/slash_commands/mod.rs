@@ -7,7 +7,6 @@ pub use view::*;
 
 use ai::skills::SkillReference;
 use warp_core::features::FeatureFlag;
-use warp_core::send_telemetry_from_ctx;
 use warp_core::ui::appearance::Appearance;
 use warpui::clipboard::ClipboardContent;
 use warpui::{SingletonEntity, ViewContext};
@@ -36,7 +35,6 @@ use crate::terminal::view::TerminalAction;
 use crate::view_components::DismissibleToast;
 use crate::workflows::{WorkflowSelectionSource, WorkflowSource, WorkflowType};
 use crate::workspace::{ForkedConversationDestination, ToastStack, WorkspaceAction};
-use crate::TelemetryEvent;
 
 #[derive(Debug, Clone)]
 pub enum AcceptSlashCommandOrSavedPrompt {
@@ -109,7 +107,7 @@ impl Input {
             .as_ref()
             .is_some_and(|arg| arg.should_execute_on_selection)
         {
-            // TODO (zachbai): this is a hack for Oz launch. Caller
+            // TODO (zachbai): this is a hack for agent launch. Caller
             // should probably be invoking `execute_slash_command` in this case.
             let argument = if !self.suggestions_mode_model.as_ref(ctx).is_slash_commands() {
                 let trimmed = self.buffer_text(ctx).trim().to_owned();
@@ -777,16 +775,7 @@ impl Input {
 
         let is_in_agent_view = FeatureFlag::AgentView.is_enabled()
             && self.agent_view_controller.as_ref(ctx).is_active();
-        send_telemetry_from_ctx!(
-            TelemetryEvent::SlashCommandAccepted {
-                command_details: SlashCommandAcceptedDetails::StaticCommand {
-                    command_name: command.name.to_owned(),
-                },
-                is_in_agent_view,
-            },
-            ctx
-        );
-        true
+                true
     }
 
     /// Handles cmd+enter (Mac) / ctrl+enter (Linux/Windows) for slash commands.

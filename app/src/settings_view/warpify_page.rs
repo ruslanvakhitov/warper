@@ -15,8 +15,6 @@ use warpui::{
 use crate::ui_components::blended_colors;
 use crate::{
     appearance::Appearance,
-    send_telemetry_from_ctx,
-    server::telemetry::TelemetryEvent,
     terminal::warpify::settings::WarpifySettings,
     view_components::{SubmittableTextInput, SubmittableTextInputEvent},
 };
@@ -149,8 +147,6 @@ impl WarpifyPageView {
                 WarpifySettings::handle(ctx).update(ctx, |warpify_settings, ctx| {
                     warpify_settings.add_subshell_command(new_command, ctx);
                 });
-
-                send_telemetry_from_ctx!(TelemetryEvent::AddAddedSubshellCommand, ctx);
             }
             SubmittableTextInputEvent::Escape => ctx.emit(SettingsPageEvent::FocusModal),
         }
@@ -167,22 +163,18 @@ impl WarpifyPageView {
                 WarpifySettings::handle(ctx).update(ctx, |warpify_settings, ctx| {
                     warpify_settings.denylist_subshell_command(new_command, ctx);
                 });
-
-                send_telemetry_from_ctx!(TelemetryEvent::AddDenylistedSubshellCommand, ctx);
             }
             SubmittableTextInputEvent::Escape => ctx.emit(SettingsPageEvent::FocusModal),
         }
     }
 
     fn remove_denylisted_command(&self, index: usize, ctx: &mut ViewContext<Self>) {
-        send_telemetry_from_ctx!(TelemetryEvent::RemoveDenylistedSubshellCommand, ctx);
         WarpifySettings::handle(ctx).update(ctx, |warpify, ctx| {
             warpify.remove_denylisted_subshell_command(index, ctx)
         });
     }
 
     fn remove_added_command(&self, index: usize, ctx: &mut ViewContext<Self>) {
-        send_telemetry_from_ctx!(TelemetryEvent::RemoveAddedSubshellCommand, ctx);
         WarpifySettings::handle(ctx).update(ctx, |warpify, ctx| {
             warpify.remove_added_subshell_command(index, ctx)
         });

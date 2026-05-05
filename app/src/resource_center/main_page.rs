@@ -1,7 +1,6 @@
 use crate::{
     channel::ChannelState, features::FeatureFlag,
-    resource_center::skip_tips_and_write_to_user_defaults, send_telemetry_from_ctx,
-    server::telemetry::TelemetryEvent, settings::Settings,
+    resource_center::skip_tips_and_write_to_user_defaults, settings::Settings,
 };
 use warpui::{
     elements::{
@@ -374,8 +373,7 @@ impl TypedActionView for ResourceCenterMainView {
                 ctx.emit(ResourceCenterMainEvent::Close);
             }
             SkipTips => {
-                send_telemetry_from_ctx!(TelemetryEvent::ResourceCenterTipsSkipped, ctx);
-                self.tips_completed.update(ctx, |tips_completed, ctx| {
+                                self.tips_completed.update(ctx, |tips_completed, ctx| {
                     skip_tips_and_write_to_user_defaults(tips_completed, ctx);
                     ctx.notify();
                 });

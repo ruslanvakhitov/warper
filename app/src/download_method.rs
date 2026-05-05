@@ -1,7 +1,6 @@
 use crate::{
     auth::auth_state::AuthState,
-    send_telemetry_on_executor,
-    server::telemetry::{DownloadSource, TelemetryEvent},
+    server::telemetry::{DownloadSource},
 };
 use std::sync::Arc;
 use warpui::r#async::executor::Background;
@@ -14,12 +13,7 @@ pub fn determine_and_report(auth_state: Arc<AuthState>, executor: Arc<Background
         .spawn(async move {
             let download_source = check_download_source().await;
 
-            send_telemetry_on_executor!(
-                auth_state,
-                TelemetryEvent::DownloadSource(download_source),
-                telemetry_executor
-            );
-        })
+                    })
         .detach();
 }
 

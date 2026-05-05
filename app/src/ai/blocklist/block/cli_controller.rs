@@ -1,10 +1,9 @@
 use std::{collections::HashMap, sync::Arc};
 
-use crate::server::telemetry::{CLISubagentControlState, TelemetryEvent};
+use crate::server::telemetry::{CLISubagentControlState};
 use instant::Instant;
 use parking_lot::FairMutex;
 use serde::{Deserialize, Serialize};
-use warp_core::send_telemetry_from_ctx;
 use warpui::{Entity, EntityId, ModelContext, ModelHandle, SingletonEntity};
 
 use crate::ai::blocklist::context_model::block_context_from_terminal_model;
@@ -349,15 +348,7 @@ impl CLISubagentController {
             agent_has_control,
         });
 
-        send_telemetry_from_ctx!(
-            TelemetryEvent::CLISubagentControlStateChanged {
-                conversation_id,
-                block_id,
-                control_state: CLISubagentControlState::UserInControl,
-            },
-            ctx
-        );
-    }
+            }
 
     pub fn handoff_active_command_control_to_agent(&self, ctx: &mut ModelContext<Self>) {
         let mut terminal_model = self.terminal_model.lock();
@@ -423,15 +414,7 @@ impl CLISubagentController {
             ctx.emit(CLISubagentEvent::ControlHandedBackAfterTransfer);
         }
 
-        send_telemetry_from_ctx!(
-            TelemetryEvent::CLISubagentControlStateChanged {
-                conversation_id,
-                block_id,
-                control_state: CLISubagentControlState::AgentInControl,
-            },
-            ctx
-        );
-    }
+            }
 
     pub fn toggle_hide_responses(&self, ctx: &mut ModelContext<Self>) {
         let mut terminal_model = self.terminal_model.lock();
@@ -445,15 +428,7 @@ impl CLISubagentController {
             ctx.emit(CLISubagentEvent::ToggledHideResponses);
 
             if let Some(conversation_id) = conversation_id {
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::CLISubagentResponsesToggled {
-                        conversation_id,
-                        block_id,
-                        is_hidden,
-                    },
-                    ctx
-                );
-            }
+                            }
         }
     }
 
