@@ -63,19 +63,6 @@ pub enum CLIAgentInputState {
     },
 }
 
-/// Why the CLI agent rich input was closed (for telemetry).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
-pub enum CLIAgentRichInputCloseReason {
-    /// User explicitly closed (Escape, Ctrl-G, footer button).
-    Manual,
-    /// Auto-closed due to agent status change (e.g. Blocked).
-    AutoToggle,
-    /// Auto-dismissed after submitting a prompt.
-    Submit,
-    /// Closed for another reason (chip removed, session ended).
-    Other,
-}
-
 /// How a [`CLIAgentInputState`] was opened.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub enum CLIAgentInputEntrypoint {

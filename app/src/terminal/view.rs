@@ -79,7 +79,7 @@ use crate::ai::blocklist::block::cli_controller::{
 };
 use crate::ai::blocklist::block::status_bar::BlocklistAIStatusBarEvent;
 use crate::ai::blocklist::usage::conversation_usage_view::{
-    ConversationUsageInfo, ConversationUsageView, DisplayMode, TimingInfo,
+    ConversationUsageInfo, ConversationUsageView, TimingInfo,
 };
 use crate::ai::blocklist::{block_context_from_terminal_model, SlashCommandRequest};
 use crate::ai::document::ai_document_model::{AIDocumentId, AIDocumentModel, AIDocumentVersion};
@@ -134,9 +134,8 @@ use crate::terminal::cli_agent_sessions::listener::{is_agent_supported, CLIAgent
 #[cfg(not(target_family = "wasm"))]
 use crate::terminal::cli_agent_sessions::plugin_manager::{plugin_manager_for, PluginModalKind};
 use crate::terminal::cli_agent_sessions::{
-    CLIAgentInputEntrypoint, CLIAgentInputState, CLIAgentRichInputCloseReason, CLIAgentSession,
-    CLIAgentSessionContext, CLIAgentSessionStatus, CLIAgentSessionsModel,
-    CLIAgentSessionsModelEvent,
+    CLIAgentInputEntrypoint, CLIAgentInputState, CLIAgentSession, CLIAgentSessionContext,
+    CLIAgentSessionStatus, CLIAgentSessionsModel, CLIAgentSessionsModelEvent,
 };
 pub use action::{AgentOnboardingVersion, OnboardingIntention, OnboardingVersion, TerminalAction};
 use ai::api_keys::{ApiKeyManager, AwsCredentialsState};
@@ -168,8 +167,6 @@ use crate::ai::agent::{
     FinishedAIAgentOutput, RenderableAIError, StaticQueryType,
 };
 use crate::ai::blocklist::agent_view::agent_input_footer::toolbar_item::AgentToolbarItemKind;
-use crate::ai::blocklist::suggested_agent_mode_workflow_modal::SuggestedAgentModeWorkflowAndId;
-use crate::ai::blocklist::suggested_rule_modal::SuggestedRuleAndId;
 use crate::ai::blocklist::{model::AIBlockModelImpl, ClientIdentifiers};
 use crate::ai::{
     agent::{
@@ -1476,12 +1473,6 @@ pub enum Event {
     OpenWorkflowModalWithLocalWorkflow(SyncId),
     // Tell the pane group to open the workflow modal with an unsaved workflow.
     OpenWorkflowModalWithTemporary(Box<Workflow>),
-    OpenSuggestedAgentModeWorkflowModal {
-        workflow_and_id: SuggestedAgentModeWorkflowAndId,
-    },
-    OpenSuggestedRuleDialog {
-        rule_and_id: SuggestedRuleAndId,
-    },
     OpenAIFactCollection {
         /// If set, open the fact collection to the specific rule.
         sync_id: Option<SyncId>,
@@ -4733,7 +4724,6 @@ impl TerminalView {
         let usage_view = ctx.add_view(|_| {
             ConversationUsageView::new(
                 conversation_usage_info,
-                DisplayMode::Footer,
                 Some(timing_info),
                 MouseStateHandle::default(),
             )
@@ -8652,7 +8642,7 @@ impl TerminalView {
                     // like input config restore happen reactively).
                     // The auto-toggle flag is irrelevant here because the
                     // session is removed immediately afterwards.
-                    self.close_cli_agent_rich_input(CLIAgentRichInputCloseReason::Other, ctx);
+                    self.close_cli_agent_rich_input(ctx);
                     CLIAgentSessionsModel::handle(ctx).update(ctx, |sessions_model, ctx| {
                         sessions_model.remove_session(self.view_id, ctx);
                     });
@@ -9800,10 +9790,7 @@ impl TerminalView {
                     CLIAgentSessionStatus::Blocked { .. } => {
                         // Auto-close rich input when the agent is blocked
                         // (it requires direct keyboard interaction in the terminal).
-                        self.close_cli_agent_rich_input(
-                            CLIAgentRichInputCloseReason::AutoToggle,
-                            ctx,
-                        );
+                        self.close_cli_agent_rich_input(ctx);
                     }
                     CLIAgentSessionStatus::InProgress | CLIAgentSessionStatus::Success => {
                         // Auto-open rich input when the agent resumes or completes.
@@ -16006,22 +15993,6 @@ impl TerminalView {
                     ctx.open_url(url);
                 }
             },
-            AIBlockEvent::OpenAIFactCollection { sync_id } => {
-                ctx.emit(Event::OpenAIFactCollection { sync_id: *sync_id });
-            }
-            AIBlockEvent::OpenWorkflow { sync_id } => {
-                let _ = sync_id;
-            }
-            AIBlockEvent::OpenSuggestedAgentModeWorkflowModal { workflow_and_id } => {
-                ctx.emit(Event::OpenSuggestedAgentModeWorkflowModal {
-                    workflow_and_id: workflow_and_id.clone(),
-                });
-            }
-            AIBlockEvent::OpenSuggestedRuleDialog { rule_and_id } => {
-                ctx.emit(Event::OpenSuggestedRuleDialog {
-                    rule_and_id: rule_and_id.clone(),
-                });
-            }
             AIBlockEvent::FocusTerminal => {
                 self.redetermine_global_focus(ctx);
             }
@@ -18155,7 +18126,7 @@ impl TerminalView {
                 // Force-close rich input when the Rich Input chip is removed so
                 // it doesn't linger open with no toolbar button to manage it.
                 if !is_rich_input_chip_in_cli_toolbar(ctx) {
-                    self.close_cli_agent_rich_input(CLIAgentRichInputCloseReason::Other, ctx);
+                    self.close_cli_agent_rich_input(ctx);
                 }
             }
             _ => {}
