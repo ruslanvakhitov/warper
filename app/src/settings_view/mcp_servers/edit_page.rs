@@ -1,11 +1,5 @@
-#[cfg(not(target_family = "wasm"))]
-use std::sync::Arc;
 use std::{collections::HashMap, path::Path};
 
-#[cfg(not(target_family = "wasm"))]
-use diesel::SqliteConnection;
-#[cfg(not(target_family = "wasm"))]
-use parking_lot::Mutex;
 use pathfinder_geometry::vector::vec2f;
 use uuid::Uuid;
 use warp_core::ui::{appearance::Appearance, theme::color::internal_colors};
@@ -112,10 +106,6 @@ pub struct MCPServersEditPageView {
     destructive_mcp_confirmation_dialog: ViewHandle<DestructiveMCPConfirmationDialog>,
     log_out_icon_button_mouse_handle: MouseStateHandle,
     editing_disabled_banner: ViewHandle<Banner<()>>,
-
-    #[cfg(not(target_family = "wasm"))]
-    #[allow(dead_code)]
-    database_connection: Option<Arc<Mutex<SqliteConnection>>>,
 }
 
 impl MCPServersEditPageView {
@@ -173,16 +163,6 @@ impl MCPServersEditPageView {
             .with_icon(Icon::Warning)
         });
 
-        #[cfg(not(target_family = "wasm"))]
-        let database_connection =
-            crate::persistence::database_file_path()
-                .to_str()
-                .and_then(|db_url| {
-                    crate::persistence::establish_ro_connection(db_url)
-                        .ok()
-                        .map(|conn| Arc::new(Mutex::new(conn)))
-                });
-
         Self {
             server_card_item_id: None,
             server_model: ServerModel::None,
@@ -194,9 +174,6 @@ impl MCPServersEditPageView {
             destructive_mcp_confirmation_dialog,
             log_out_icon_button_mouse_handle: Default::default(),
             editing_disabled_banner,
-
-            #[cfg(not(target_family = "wasm"))]
-            database_connection,
         }
     }
 
@@ -699,9 +676,9 @@ impl TypedActionView for MCPServersEditPageView {
                 ctx.emit(MCPServersEditPageViewEvent::Back);
             }
             MCPServersEditPageViewAction::Delete => {
-                let Some(server_card_item_id) = self.server_card_item_id else {
+                if self.server_card_item_id.is_none() {
                     return;
-                };
+                }
                 self.destructive_mcp_confirmation_dialog
                     .update(ctx, |dialog, ctx| {
                         dialog.show(DestructiveMCPConfirmationDialogVariant::DeleteLocal, ctx);

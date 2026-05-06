@@ -1,5 +1,3 @@
-pub mod metadata;
-
 use crate::ai::agent::conversation::ConversationStatus;
 use crate::code::editor::{add_color, remove_color};
 use crate::code::icon_from_file_path;
@@ -11,7 +9,6 @@ use crate::terminal::CLIAgent;
 use crate::ui_components::icon_with_status::{
     render_icon_with_status, IconWithStatusSizing, IconWithStatusVariant,
 };
-use crate::workspace::view::vertical_tabs::metadata::VerticalTabsChipEntrypoint;
 use crate::FeatureFlag;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -3170,7 +3167,6 @@ fn render_terminal_row_content(
             props.pane_group_id,
             props.pane_id,
             metadata_left,
-            chip_entrypoint_for_granularity(props.display_granularity),
             &props.badge_mouse_states,
             appearance,
             app,
@@ -3179,15 +3175,6 @@ fn render_terminal_row_content(
         .finish(),
     );
     content.finish()
-}
-
-fn chip_entrypoint_for_granularity(
-    granularity: VerticalTabsDisplayGranularity,
-) -> VerticalTabsChipEntrypoint {
-    match granularity {
-        VerticalTabsDisplayGranularity::Panes => VerticalTabsChipEntrypoint::Pane,
-        VerticalTabsDisplayGranularity::Tabs => VerticalTabsChipEntrypoint::Tab,
-    }
 }
 
 fn branch_label_display(git_branch: Option<&str>, fallback: &str) -> (String, bool) {
@@ -3752,7 +3739,6 @@ fn render_terminal_metadata_line(
     pane_group_id: EntityId,
     pane_id: PaneId,
     left_content: MetadataLeftContent,
-    row_entrypoint: VerticalTabsChipEntrypoint,
     badge_mouse_states: &PaneRowBadgeMouseStates,
     appearance: &Appearance,
     app: &AppContext,
@@ -3794,7 +3780,6 @@ fn render_terminal_metadata_line(
         terminal_view,
         pane_group_id,
         pane_id,
-        row_entrypoint,
         badge_mouse_states,
         appearance,
         app,
@@ -3812,7 +3797,6 @@ fn render_terminal_right_badges(
     terminal_view: &TerminalView,
     pane_group_id: EntityId,
     pane_id: PaneId,
-    entrypoint: VerticalTabsChipEntrypoint,
     badge_mouse_states: &PaneRowBadgeMouseStates,
     appearance: &Appearance,
     app: &AppContext,
@@ -3833,7 +3817,6 @@ fn render_terminal_right_badges(
                 &git_line_changes,
                 pane_group_id,
                 pane_id,
-                entrypoint,
                 badge_mouse_states.diff_stats.clone(),
                 appearance,
             ));
@@ -3847,7 +3830,6 @@ fn render_terminal_right_badges(
             right_badges.add_child(render_terminal_pull_request_badge(
                 label,
                 pull_request_url,
-                entrypoint,
                 badge_mouse_states.pull_request.clone(),
                 appearance,
             ));
@@ -3862,7 +3844,6 @@ fn render_terminal_diff_stats_badge(
     git_line_changes: &GitLineChanges,
     pane_group_id: EntityId,
     pane_id: PaneId,
-    entrypoint: VerticalTabsChipEntrypoint,
     mouse_state: MouseStateHandle,
     appearance: &Appearance,
 ) -> Box<dyn Element> {
@@ -3879,7 +3860,7 @@ fn render_terminal_diff_stats_badge(
             bg,
         )
     })
-    .on_click(move |ctx, app, _| {
+    .on_click(move |ctx, _, _| {
         let locator = PaneViewLocator {
             pane_group_id,
             pane_id,
@@ -3894,7 +3875,6 @@ fn render_terminal_diff_stats_badge(
 fn render_terminal_pull_request_badge(
     label: String,
     url: String,
-    entrypoint: VerticalTabsChipEntrypoint,
     mouse_state: MouseStateHandle,
     appearance: &Appearance,
 ) -> Box<dyn Element> {
@@ -3908,7 +3888,7 @@ fn render_terminal_pull_request_badge(
         };
         render_badge_container(render_pull_request_badge_content(&label, appearance), bg)
     })
-    .on_click(move |ctx, app, _| {
+    .on_click(move |ctx, _, _| {
         ctx.dispatch_typed_action(WorkspaceAction::OpenLink(url.clone()));
     })
     .with_cursor(Cursor::PointingHand)
@@ -5261,7 +5241,6 @@ fn render_terminal_detail_section(
             &git_line_changes,
             props.pane_group_id,
             props.pane_id,
-            VerticalTabsChipEntrypoint::DetailsSidecar,
             props.badge_mouse_states.diff_stats.clone(),
             appearance,
         ));
@@ -5271,7 +5250,6 @@ fn render_terminal_detail_section(
         right_badges.add_child(render_terminal_pull_request_badge(
             terminal_pull_request_badge_label(&pull_request_url),
             pull_request_url,
-            VerticalTabsChipEntrypoint::DetailsSidecar,
             props.badge_mouse_states.pull_request.clone(),
             appearance,
         ));

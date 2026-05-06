@@ -56,7 +56,6 @@ use pathfinder_geometry::vector::{vec2f, Vector2F};
 use serde::{Deserialize, Serialize};
 use tree::DEFAULT_FLEX_VALUE;
 use typed_path::TypedPath;
-use url::Url;
 use uuid::Uuid;
 use warp_cli::agent::Harness;
 use warp_core::command::ExitCode;
@@ -2395,12 +2394,6 @@ impl PaneGroup {
             active_session: Some(terminal_pane_id),
         };
         (PaneData::new(pane_id), focus)
-    }
-
-    /// Replaces a stale hosted ambient pane with a local terminal.
-    fn replace_pane_with_local_terminal(&mut self, pane_id: PaneId, ctx: &mut ViewContext<Self>) {
-        let (new_pane, _) = self.create_terminal_pane_data(None, HashMap::new(), None, None, ctx);
-        self.replace_pane(pane_id, new_pane, false, ctx);
     }
 
     /// Initial layout for a [`PaneGroup`] with a single terminal pane.
@@ -4901,16 +4894,6 @@ impl PaneGroup {
                 self.update_browser_url(ctx);
             }
         }
-    }
-
-    fn handle_pane_link_updated(&self, pane_id: PaneId, url: Option<Url>, ctx: &AppContext) {
-        log::debug!("Url for pane should be updated pane_id: {pane_id:?}, url: {url:?}");
-        #[cfg(target_family = "wasm")]
-        if pane_id == self.focused_pane_id(ctx) {
-            update_browser_url(url, false);
-        }
-
-        let _ = ctx;
     }
 
     #[cfg(target_family = "wasm")]

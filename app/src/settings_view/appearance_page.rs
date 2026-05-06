@@ -459,7 +459,6 @@ pub enum AppearancePageAction {
     ToggleBlurTexture,
     ToggleLeftPanelVisibility,
     SetEnforceMinimumContrast(EnforceMinimumContrast),
-    OpenUrl(String),
     ToggleFocusPaneOnHover,
     ToggleInputMode,
     UpdateAltScreenPaddingMode(AltScreenPaddingMode),
@@ -592,9 +591,6 @@ impl TypedActionView for AppearanceSettingsPageView {
             SetCursorType(cursor_display_type) => self.set_cursor_type(*cursor_display_type, ctx),
             OpacitySliderDragged(val) => self.set_opacity(*val, false, ctx),
             BlurSliderDragged(val) => self.set_blur(*val, false, ctx),
-            OpenUrl(url) => {
-                ctx.open_url(url);
-            }
             ToggleTabIndicators => self.toggle_tab_indicators(ctx),
             ToggleShowCodeReviewButton => self.toggle_show_code_review_button(ctx),
             TogglePreserveActiveTabColor => self.toggle_preserve_active_tab_color(ctx),
@@ -605,14 +601,11 @@ impl TypedActionView for AppearanceSettingsPageView {
             ToggleLigatureRendering => self.toggle_ligature_rendering(ctx),
             ToggleFocusPaneOnHover => {
                 PaneSettings::handle(ctx).update(ctx, |pane_settings, ctx| {
-                    match pane_settings
+                    if let Err(e) = pane_settings
                         .focus_panes_on_hover
                         .toggle_and_save_value(ctx)
                     {
-                        Ok(new_val) => {}
-                        Err(e) => {
-                            report_error!(e);
-                        }
+                        report_error!(e);
                     }
                 });
                 ctx.notify();
@@ -2066,11 +2059,8 @@ impl AppearanceSettingsPageView {
 
     fn set_thin_strokes(&mut self, value: &ThinStrokes, ctx: &mut ViewContext<Self>) {
         FontSettings::handle(ctx).update(ctx, |font_settings, ctx| {
-            match font_settings.use_thin_strokes.set_value(*value, ctx) {
-                Ok(_) => {}
-                Err(e) => {
-                    report_error!(e);
-                }
+            if let Err(e) = font_settings.use_thin_strokes.set_value(*value, ctx) {
+                report_error!(e);
             }
         });
     }
@@ -2124,14 +2114,11 @@ impl AppearanceSettingsPageView {
 
     pub fn toggle_dim_inactive_panes(&mut self, ctx: &mut ViewContext<Self>) {
         PaneSettings::handle(ctx).update(ctx, |pane_settings, ctx| {
-            match pane_settings
+            if let Err(e) = pane_settings
                 .should_dim_inactive_panes
                 .toggle_and_save_value(ctx)
             {
-                Ok(new_value) => {}
-                Err(e) => {
-                    report_error!(e);
-                }
+                report_error!(e);
             }
         });
     }
@@ -2165,7 +2152,6 @@ impl AppearanceSettingsPageView {
         from_binding: bool,
         ctx: &mut ViewContext<Self>,
     ) {
-        let old_mode = *InputModeSettings::as_ref(ctx).input_mode.value();
         InputModeSettings::handle(ctx).update(ctx, |input_mode, ctx| {
             report_if_error!(input_mode.input_mode.set_value(new_mode, ctx));
         });
@@ -2192,8 +2178,6 @@ impl AppearanceSettingsPageView {
             });
             self.input_type_radio_state
                 .set_selected_idx(new_type as usize);
-
-            let is_udi_enabled = new_type == InputBoxType::Universal;
 
             // Selecting classic mode must also enable honor_ps1 so the mode takes
             // effect immediately (input_type() requires honor_ps1 to return classic).
@@ -2283,26 +2267,24 @@ impl AppearanceSettingsPageView {
         new_value: WorkspaceDecorationVisibility,
         ctx: &mut ViewContext<Self>,
     ) {
-        let previous_value = TabSettings::handle(ctx).update(ctx, |tab_settings, ctx| {
-            let prev_value = *tab_settings.workspace_decoration_visibility.value();
+        TabSettings::handle(ctx).update(ctx, |tab_settings, ctx| {
             report_if_error!(tab_settings
                 .workspace_decoration_visibility
                 .set_value(new_value, ctx));
-            prev_value
         });
     }
 
     /// Toggle among the supported workspace decoration visibility values.
     fn toggle_workspace_decoration_visiblity(&mut self, ctx: &mut ViewContext<Self>) {
-        let (new_value, previous_value) =
-            TabSettings::handle(ctx).update(ctx, |tab_settings, ctx| {
-                let previous_value = *tab_settings.workspace_decoration_visibility.value();
-                let new_value = previous_value.toggled();
-                report_if_error!(tab_settings
-                    .workspace_decoration_visibility
-                    .set_value(new_value, ctx));
-                (new_value, previous_value)
-            });
+        TabSettings::handle(ctx).update(ctx, |tab_settings, ctx| {
+            let new_value = tab_settings
+                .workspace_decoration_visibility
+                .value()
+                .toggled();
+            report_if_error!(tab_settings
+                .workspace_decoration_visibility
+                .set_value(new_value, ctx));
+        });
     }
 
     fn build_workspace_decoration_visibility_dropdown(

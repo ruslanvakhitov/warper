@@ -1042,10 +1042,6 @@ pub fn init_actions_from_parent_view<T: Action + Clone>(
 }
 
 mod styles {
-    // Apply a negative margin to the description text so it appears closer to the main
-    // settings option text.
-    pub const DESCRIPTION_NEGATIVE_MARGIN_OFFSET: f32 = -8.;
-
     /// The space between a description and the next toggle.
     pub const DESCRIPTION_MARGIN_BOTTOM: f32 = 12.;
 

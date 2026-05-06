@@ -14,7 +14,7 @@ use crate::terminal::general_settings::GeneralSettings;
 use crate::terminal::keys_settings::KeysSettings;
 use crate::terminal::shell::ShellType;
 use crate::terminal::view::cell_size_and_padding;
-use crate::themes::theme::{AnsiColorIdentifier, Blend, Fill};
+use crate::themes::theme::AnsiColorIdentifier;
 use crate::uri::OpenMCPSettingsArgs;
 use crate::util::bindings::{self, is_binding_pty_compliant};
 use crate::window_settings::WindowSettings;
@@ -42,7 +42,7 @@ use warp_core::context_flag::ContextFlag;
 use warpui::keymap::{EditableBinding, FixedBinding};
 use warpui::windowing::WindowManager;
 
-use warpui::elements::{Border, ParentElement, Stack};
+use warpui::elements::{ParentElement, Stack};
 use warpui::rendering::OnGPUDeviceSelected;
 use warpui::{id, AddWindowOptions, DisplayId, SingletonEntity};
 use warpui::{
@@ -58,20 +58,6 @@ const WINDOW_TITLE: &str = "Warp";
 lazy_static! {
     static ref FALLBACK_WINDOW_SIZE: Vector2F = vec2f(800.0, 600.0);
     static ref QUAKE_STATE: Arc<Mutex<Option<QuakeModeState>>> = Arc::new(Mutex::new(None));
-}
-
-/// This is the color of the border wrapping the whole window.
-///
-/// On MacOS, this is drawn for us by the OS. On other platforms, we must draw it ourselves. Note
-/// that this is hard-coded for the default Dark theme. So, do not use this for Views which respect
-/// themes.
-pub(crate) fn unthemed_window_border() -> Border {
-    if cfg!(all(not(target_os = "macos"), not(target_family = "wasm"))) {
-        // The 15% blend of fg into bg is the "ui surface" color.
-        Border::all(1.).with_border_fill(Fill::black().blend(&Fill::white().with_opacity(15)))
-    } else {
-        Border::all(1.).with_border_fill(Fill::black().with_opacity(0))
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -1226,11 +1212,6 @@ struct WorkspaceArgs {
 pub struct RootView {
     workspace: ViewHandle<Workspace>,
     pub model_event_sender: Option<SyncSender<ModelEvent>>,
-    /// The window ID is needed because the "maximize" button needs to change its icon based on
-    /// whether or not the current window is maximized. Ideally the window ID could just be fetched
-    /// in the [`Self::render`] method, but there is no [`ViewContext`] available there. So, we
-    /// need to store it in a field instead.
-    window_id: WindowId,
 }
 
 impl RootView {
@@ -1248,7 +1229,6 @@ impl RootView {
         Self {
             workspace: workspace_args.create_workspace(ctx),
             model_event_sender,
-            window_id: ctx.window_id(),
         }
     }
 

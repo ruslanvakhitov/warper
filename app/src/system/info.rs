@@ -27,8 +27,6 @@ pub struct SystemInfo {
     system: sysinfo::System,
     /// Whether or not we've already emitted an event due to high memory usage.
     has_emitted_memory_warning_event: bool,
-    /// The long OS version.
-    long_os_version: Option<String>,
 }
 
 impl SystemInfo {
@@ -41,7 +39,6 @@ impl SystemInfo {
         let mut me = Self {
             system: sysinfo::System::new(),
             has_emitted_memory_warning_event: false,
-            long_os_version: sysinfo::System::long_os_version(),
         };
 
         // Initialize the underlying system info.  This is necessary in order
@@ -60,40 +57,9 @@ impl SystemInfo {
         me
     }
 
-    /// Returns the amount of memory being used by the current process, in
-    /// bytes.
-    pub fn used_memory(&self) -> Byte {
-        self.system
-            .process(Self::current_pid())
-            .expect("current process should exist")
-            .memory()
-            .into()
-    }
-
     /// Returns the full memory footprint of the current process, in bytes.
-    ///
-    /// Unlike [`used_memory`] (RSS), this includes memory that has been
-    /// swapped out or compressed by the OS.  On macOS this matches the value
-    /// shown by Activity Monitor.
     pub fn memory_footprint(&self) -> Byte {
         memory_footprint::memory_footprint_bytes().into()
-    }
-
-    /// Returns the average CPU usage over the refresh interval.
-    ///
-    /// If one CPU core is utilized at 100%, this will return 1.  It may return
-    /// a value >1 on multi-core machines.
-    pub fn cpu_usage(&self) -> f32 {
-        let total_usage = self
-            .system
-            .process(Self::current_pid())
-            .expect("current process should exist")
-            .cpu_usage();
-        total_usage / 100.
-    }
-
-    pub fn long_os_version(&self) -> Option<&str> {
-        self.long_os_version.as_deref()
     }
 
     fn schedule_refresh(ctx: &mut ModelContext<Self>) {
@@ -165,9 +131,7 @@ impl SystemInfo {
     /// Returns the [`sysinfo::ProcessRefreshKind`] that should be used when
     /// retrieving information about the current process.
     fn refresh_kind() -> sysinfo::ProcessRefreshKind {
-        sysinfo::ProcessRefreshKind::nothing()
-            .with_memory()
-            .with_cpu()
+        sysinfo::ProcessRefreshKind::nothing().with_memory()
     }
 
     #[cfg_attr(not(windows), allow(dead_code))]

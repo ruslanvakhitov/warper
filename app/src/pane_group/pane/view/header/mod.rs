@@ -467,7 +467,7 @@ impl<P: BackingView> PaneHeader<P> {
             required_controls.add_child(close_button);
         }
 
-        let mut optional_controls = Flex::row()
+        let optional_controls = Flex::row()
             .with_main_axis_alignment(MainAxisAlignment::End)
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_main_axis_size(MainAxisSize::Min);

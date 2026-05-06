@@ -14,7 +14,6 @@ use crate::{
         EnablementState, LspRepoStatus, PersistedWorkspace, PersistedWorkspaceEvent,
     },
     appearance::Appearance,
-    code::lsp_metadata::{LspControlActionType, LspEnablementSource},
     settings::{AISettings, CodeSettings},
     terminal::general_settings::GeneralSettings,
     ui_components::{
@@ -554,11 +553,8 @@ impl TypedActionView for CodeSettingsPageView {
         match action {
             CodeSettingsPageAction::ToggleCodebaseContext => {
                 CodeSettings::handle(ctx).update(ctx, |settings, ctx| {
-                    match settings.codebase_context_enabled.toggle_and_save_value(ctx) {
-                        Ok(new_value) => {}
-                        Err(e) => {
-                            log::warn!("Failed to set value for Codebase Context: {e:?}");
-                        }
+                    if let Err(e) = settings.codebase_context_enabled.toggle_and_save_value(ctx) {
+                        log::warn!("Failed to set value for Codebase Context: {e:?}");
                     }
                 });
 
@@ -566,11 +562,8 @@ impl TypedActionView for CodeSettingsPageView {
             }
             CodeSettingsPageAction::ToggleAutoIndexing => {
                 CodeSettings::handle(ctx).update(ctx, |settings, ctx| {
-                    match settings.auto_indexing_enabled.toggle_and_save_value(ctx) {
-                        Ok(new_value) => {}
-                        Err(e) => {
-                            log::warn!("Failed to set value for auto indexing: {e:?}");
-                        }
+                    if let Err(e) = settings.auto_indexing_enabled.toggle_and_save_value(ctx) {
+                        log::warn!("Failed to set value for auto indexing: {e:?}");
                     }
                 });
 
@@ -619,7 +612,6 @@ impl TypedActionView for CodeSettingsPageView {
                 ctx.notify();
             }
             CodeSettingsPageAction::RestartLspServer { server } => {
-                let server_name = server.as_ref(ctx).server_name();
                 server.update(ctx, |server, ctx| {
                     server.restart(ctx);
                 });

@@ -53,8 +53,6 @@ impl AntivirusInfo {
             }
         }
 
-        self.0 = software;
-
         ctx.emit(AntivirusInfoEvent::ScannedComplete);
     }
 }

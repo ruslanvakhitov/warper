@@ -1,11 +1,13 @@
 #[cfg(target_family = "wasm")]
 use crate::uri::browser_url_handler::parse_current_url;
+#[cfg(target_family = "wasm")]
 use anyhow::{anyhow, Result};
 use url::Url;
 
 #[cfg(target_family = "wasm")]
 use warp_core::context_flag::ContextFlag;
 
+#[cfg(target_family = "wasm")]
 #[derive(Debug)]
 /// Represents an intent parsed from a web url
 pub enum WebIntent {
@@ -14,6 +16,7 @@ pub enum WebIntent {
     Action(Url),
 }
 
+#[cfg(target_family = "wasm")]
 impl WebIntent {
     pub fn try_from_url(url: &Url) -> Result<Self> {
         let _ = url;
@@ -32,10 +35,17 @@ impl WebIntent {
 
 /// Attempts to rewrite a Warp web URL into a native desktop intent URL (warp://...).
 /// Returns `None` if the URL is not a recognized Warp web intent.
+#[cfg(target_family = "wasm")]
 pub fn maybe_rewrite_web_url_to_intent(url: &Url) -> Option<Url> {
     WebIntent::try_from_url(url)
         .ok()
         .map(WebIntent::into_intent_url)
+}
+
+/// Hosted Warp web URLs are not supported in Warper.
+#[cfg(not(target_family = "wasm"))]
+pub fn maybe_rewrite_web_url_to_intent(_url: &Url) -> Option<Url> {
+    None
 }
 
 /// On WASM warp, fires an event to try and open the given link on the desktop app.

@@ -20,7 +20,6 @@ const SUGGESTION_ITEM_PADDING: f32 = 12.;
 pub struct CreateProjectView {
     editor: ViewHandle<GlowingEditor>,
     suggestions: Vec<BuildSuggestion>,
-    is_ftux: bool,
 }
 
 struct BuildSuggestion {
@@ -29,7 +28,7 @@ struct BuildSuggestion {
 }
 
 impl CreateProjectView {
-    pub fn new(is_ftux: bool, ctx: &mut ViewContext<Self>) -> Self {
+    pub fn new(_: bool, ctx: &mut ViewContext<Self>) -> Self {
         let editor =
             ctx.add_typed_action_view(|ctx| GlowingEditor::new("What do you want to build?", ctx));
 
@@ -63,7 +62,6 @@ impl CreateProjectView {
         Self {
             editor,
             suggestions,
-            is_ftux,
         }
     }
 

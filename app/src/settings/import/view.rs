@@ -23,7 +23,7 @@ use crate::{
     report_if_error,
     settings::{
         import::{
-            config::{Config, ParsedTerminalSetting, SettingType},
+            config::{Config, SettingType},
             model::{ImportedConfigModel, TerminalTypeAndProfile},
         },
         AppEditorSettings, CursorBlink, FontSettings, GlobalHotkeyMode, SelectionSettings,

@@ -34,7 +34,6 @@ pub enum ExternalEditorAction {
     SetLayout(EditorLayout),
     TogglePreferMarkdownViewer,
     ToggleTabbedEditorView,
-    OpenUrl(String),
 }
 
 pub struct ExternalEditorView {
@@ -206,21 +205,17 @@ impl ExternalEditorView {
     /// Handles [`ExternalEditorAction::TogglePreferMarkdownViewer`]
     /// preference.
     fn toggle_prefer_markdown_viewer(&mut self, ctx: &mut ViewContext<Self>) {
-        let new_value = EditorSettings::handle(ctx).update(ctx, |settings, ctx| {
-            let new_value = settings.prefer_markdown_viewer.toggle_and_save_value(ctx);
-            report_if_error!(new_value);
-            new_value.unwrap_or(PreferMarkdownViewer::default_value())
+        EditorSettings::handle(ctx).update(ctx, |settings, ctx| {
+            report_if_error!(settings.prefer_markdown_viewer.toggle_and_save_value(ctx));
         });
     }
 
     /// Handles [`ExternalEditorAction::TogglePreferTabbedEditorView`] by updating the tabbed file viewer preference.
     fn toggle_prefer_tabbed_editor_view(&mut self, ctx: &mut ViewContext<Self>) {
-        let new_value = EditorSettings::handle(ctx).update(ctx, |settings, ctx| {
-            let new_value = settings
+        EditorSettings::handle(ctx).update(ctx, |settings, ctx| {
+            report_if_error!(settings
                 .prefer_tabbed_editor_view
-                .toggle_and_save_value(ctx);
-            report_if_error!(new_value);
-            new_value.unwrap_or(PreferTabbedEditorView::default_value())
+                .toggle_and_save_value(ctx));
         });
     }
 }
@@ -363,9 +358,6 @@ impl TypedActionView for ExternalEditorView {
             }
             ExternalEditorAction::ToggleTabbedEditorView => {
                 self.toggle_prefer_tabbed_editor_view(ctx);
-            }
-            ExternalEditorAction::OpenUrl(url) => {
-                ctx.open_url(url.as_str());
             }
         }
     }

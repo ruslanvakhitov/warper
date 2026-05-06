@@ -6,7 +6,6 @@ use warpui::{
 
 pub struct CloneRepoView {
     editor: ViewHandle<GlowingEditor>,
-    is_ftux: bool,
 }
 
 pub enum CloneRepoEvent {
@@ -15,7 +14,7 @@ pub enum CloneRepoEvent {
 }
 
 impl CloneRepoView {
-    pub fn new(is_ftux: bool, ctx: &mut ViewContext<Self>) -> Self {
+    pub fn new(_: bool, ctx: &mut ViewContext<Self>) -> Self {
         let editor = ctx.add_typed_action_view(|ctx| {
             GlowingEditor::new(
                 "Provide a repository URL e.g. \"git@github.com:username/project.git\"",
@@ -27,7 +26,7 @@ impl CloneRepoView {
             me.handle_editor_event(event, ctx);
         });
 
-        Self { editor, is_ftux }
+        Self { editor }
     }
 
     fn handle_editor_event(&mut self, event: &GlowingEditorEvent, ctx: &mut ViewContext<Self>) {

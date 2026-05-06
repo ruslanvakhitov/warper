@@ -11025,7 +11025,7 @@ impl Workspace {
         self.previous_theme = Some(current_theme);
 
         self.theme_chooser_view.update(ctx, |view, ctx| {
-            view.record_open_theme(ctx);
+            view.record_open_theme();
             if let Some(theme_chooser_mode) = theme_chooser_mode {
                 view.select_theme(theme_chooser_mode.into_theme_kind(ctx), ctx);
                 view.set_mode(theme_chooser_mode);

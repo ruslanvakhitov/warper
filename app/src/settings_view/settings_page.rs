@@ -172,14 +172,6 @@ impl SettingsPage {
 #[derive(PartialEq, Eq)]
 pub enum SettingsPageEvent {
     FocusModal,
-    Pane(PaneEventWrapper),
-}
-
-/// Wrapper for pane events to avoid circular dependency with pane module.
-/// The actual handling converts this to the real PaneEvent.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PaneEventWrapper {
-    Close,
 }
 
 /// Adds padding to the sub header
@@ -1378,17 +1370,6 @@ impl<V: warpui::View> PageType<V> {
                 ..
             } => {
                 *highlighted_widget_id = None;
-            }
-        }
-    }
-
-    /// Set the minimum page width for narrow panes.
-    pub fn set_min_page_width(&mut self, width: f32) {
-        match self {
-            Self::Monolith { min_page_width, .. }
-            | Self::Uncategorized { min_page_width, .. }
-            | Self::Categorized { min_page_width, .. } => {
-                *min_page_width = width;
             }
         }
     }
