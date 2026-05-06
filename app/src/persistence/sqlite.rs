@@ -29,7 +29,7 @@ use num_traits::FromPrimitive;
 use pathfinder_geometry::{rect::RectF, vector::Vector2F};
 use uuid::Uuid;
 use warpui::platform::FullscreenState;
-use warpui::{AppContext, SingletonEntity};
+use warpui::AppContext;
 
 use super::agent::{delete_agent_conversations, upsert_agent_conversation};
 use super::block_list::{
@@ -37,7 +37,7 @@ use super::block_list::{
     upsert_ai_query,
 };
 use super::model::{
-    self, ActiveMCPServer, CurrentUserInformation, MCPEnvironmentVariables, NewActiveMCPServer,
+    self, ActiveMCPServer, MCPEnvironmentVariables, NewActiveMCPServer,
     NewApp, NewCommand, NewFolder, NewNotebook, NewTab, NewWindow, NewWorkspaceMetadata, Project,
     Tab, Window, WorkspaceMetadata as WorkspaceMetadataModel, AI_DOCUMENT_PANE_KIND,
     AI_FACT_PANE_KIND, CODE_PANE_KIND, ENV_VAR_COLLECTION_PANE_KIND,
@@ -57,15 +57,10 @@ use crate::app_state::{
     AIFactPaneSnapshot, CodeReviewPaneSnapshot, EnvVarCollectionPaneSnapshot, LeftPanelSnapshot,
     RightPanelSnapshot, SettingsPaneSnapshot, WorkflowPaneSnapshot,
 };
-use crate::auth::auth_state::AuthStateProvider;
-use crate::auth::UserUid;
 use crate::code::editor_management::CodeSource;
 use crate::persistence::agent::read_agent_conversations;
 use crate::persistence::block_list::{get_all_restored_blocks, read_ai_queries};
-use crate::persistence::model::{
-    ProjectRules, UserProfile, CODE_REVIEW_PANE_KIND, GET_STARTED_PANE_KIND,
-};
-use crate::persistence::PersistedCurrentUserInformation;
+use crate::persistence::model::{ProjectRules, CODE_REVIEW_PANE_KIND, GET_STARTED_PANE_KIND};
 use crate::settings_view::SettingsSection;
 use crate::suggestions::ignored_suggestions_model::SuggestionType;
 use crate::tab::SelectedTabColor;
@@ -80,7 +75,6 @@ use crate::{
         LeafSnapshot, NotebookPaneSnapshot, PaneFlex, PaneNodeSnapshot, SplitDirection,
         TabSnapshot, TerminalPaneSnapshot, WindowSnapshot,
     },
-    workspaces::user_profiles::UserProfileWithUID,
 };
 use crate::{report_error, report_if_error, safe_info};
 use lsp::supported_servers::LSPServerType;
@@ -99,7 +93,7 @@ const WARP_SQLITE_FILE_NAME: &str = "warp.sqlite";
 /// Runs any migrations and creates the Sqlite database if it doesn't exist.
 /// Reads from the sqlite database to get the app state for session restoration.
 /// Starts a writer thread that listens for ModelEvents and processes them.
-pub fn initialize(ctx: &mut AppContext) -> (Option<PersistedData>, Option<WriterHandles>) {
+pub fn initialize(_ctx: &mut AppContext) -> (Option<PersistedData>, Option<WriterHandles>) {
     unsafe {
         // Set up logging before any SQLite calls.
         init_logging();
@@ -107,8 +101,7 @@ pub fn initialize(ctx: &mut AppContext) -> (Option<PersistedData>, Option<Writer
     let database_path = database_file_path();
     match init_db() {
         Ok(mut conn) => {
-            let user_uid = AuthStateProvider::as_ref(ctx).get().user_id();
-            let app_state = match read_sqlite_data(&mut conn, user_uid) {
+            let app_state = match read_sqlite_data(&mut conn) {
                 Ok(app_state) => Some(app_state),
                 Err(err) => {
                                         report_error!(anyhow::Error::new(err).context("Failed to read app state"));
@@ -475,12 +468,6 @@ fn handle_model_event(event: ModelEvent, connection: &mut SqliteConnection) -> a
         ModelEvent::UpdateFinishedCommand { metadata } => {
             update_finished_command(connection, metadata).context("error updating finished command")
         }
-        ModelEvent::UpsertUserProfiles { profiles } => {
-            upsert_user_profiles(connection, profiles).context("error updating user profiles")
-        }
-        ModelEvent::ClearUserProfiles => {
-            clear_user_profiles(connection).context("error clearing user profiles")
-        }
         ModelEvent::UpsertAIQuery { query } => {
             upsert_ai_query(connection, query).context("error upserting AI query")
         }
@@ -503,10 +490,6 @@ fn handle_model_event(event: ModelEvent, connection: &mut SqliteConnection) -> a
             delete_agent_conversations(connection, conversation_ids)
                 .map_err(anyhow::Error::from)
                 .context("error deleting multi-agent conversation")
-        }
-        ModelEvent::UpsertCurrentUserInformation { user_information } => {
-            upsert_current_user_information(connection, user_information)
-                .context("error upserting user information")
         }
         ModelEvent::UpsertMCPServerEnvironmentVariables {
             mcp_server_uuid,
@@ -1873,10 +1856,7 @@ fn read_node(conn: &mut SqliteConnection, node: model::PaneNode) -> Result<PaneN
 /// happen is the user won't have session restoration.
 ///
 /// In the future, the awkwardness of the transaction interface is resolved in diesel 2.0.0.
-fn read_sqlite_data(
-    conn: &mut SqliteConnection,
-    _current_user_id: Option<UserUid>,
-) -> Result<PersistedData, Error> {
+fn read_sqlite_data(conn: &mut SqliteConnection) -> Result<PersistedData, Error> {
     use schema::windows::dsl::*;
 
     let active_window_id = schema::app::dsl::app
@@ -2039,12 +2019,6 @@ fn read_sqlite_data(
         .map(PersistedCommand::from)
         .collect();
 
-    let user_profiles = schema::user_profiles::dsl::user_profiles
-        .load_iter::<model::UserProfile, DefaultLoadingMode>(conn)?
-        .filter_map(|user_profile| user_profile.ok())
-        .map(UserProfileWithUID::from)
-        .collect();
-
     let restored_blocks = get_all_restored_blocks(conn)?;
 
     // Load active MCP servers from database
@@ -2073,7 +2047,6 @@ fn read_sqlite_data(
         workspaces,
         current_workspace_uid,
         command_history: commands,
-        user_profiles,
         ai_queries,
         codebase_indices,
         workspace_language_servers,
@@ -2155,61 +2128,6 @@ fn update_finished_command(
                 exit_code.eq(completed_command.exit_code.value()),
                 completed_ts.eq(completed_command.completed_ts.naive_utc()),
             ))
-            .execute(conn)?;
-        Ok(())
-    })
-}
-
-fn upsert_user_profiles(
-    conn: &mut SqliteConnection,
-    profiles: Vec<UserProfileWithUID>,
-) -> Result<(), Error> {
-    use schema::user_profiles::dsl::*;
-
-    conn.transaction::<(), Error, _>(|conn| {
-        for profile in profiles {
-            // Delete any stale profile with that uid
-            diesel::delete(
-                schema::user_profiles::dsl::user_profiles
-                    .filter(firebase_uid.eq(profile.firebase_uid.to_string())),
-            )
-            .execute(conn)?;
-
-            // Insert a new user profile row
-            let new_user_profile = UserProfile {
-                firebase_uid: profile.firebase_uid.to_string(),
-                photo_url: profile.photo_url,
-                display_name: profile.display_name,
-                email: profile.email,
-            };
-            diesel::insert_into(schema::user_profiles::dsl::user_profiles)
-                .values(new_user_profile)
-                .execute(conn)?;
-        }
-        Ok(())
-    })
-}
-
-fn clear_user_profiles(conn: &mut SqliteConnection) -> Result<(), Error> {
-    conn.transaction::<(), Error, _>(|conn| {
-        diesel::delete(schema::user_profiles::dsl::user_profiles).execute(conn)?;
-
-        Ok(())
-    })
-}
-
-fn upsert_current_user_information(
-    conn: &mut SqliteConnection,
-    user_information: PersistedCurrentUserInformation,
-) -> Result<(), Error> {
-    conn.transaction::<(), Error, _>(|conn| {
-        diesel::delete(schema::current_user_information::dsl::current_user_information)
-            .execute(conn)?;
-
-        diesel::insert_into(schema::current_user_information::dsl::current_user_information)
-            .values(CurrentUserInformation {
-                email: user_information.email,
-            })
             .execute(conn)?;
         Ok(())
     })

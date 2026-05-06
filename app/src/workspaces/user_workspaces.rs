@@ -237,7 +237,6 @@ impl UserWorkspaces {
         // PrivacySettings can't observe UserWorkspaces for updates, as it's initialized too early in
         // the app initialization flow. So, we update it manually whenever local policy data changes.
         PrivacySettings::handle(ctx).update(ctx, |settings, ctx| {
-            settings.set_is_telemetry_force_enabled(self.is_telemetry_force_enabled());
             settings.set_enterprise_secret_redaction_settings(
                 self.is_enterprise_secret_redaction_enabled(),
                 self.get_enterprise_secret_redaction_regex_list(),
@@ -249,12 +248,6 @@ impl UserWorkspaces {
         ctx.emit(UserWorkspacesEvent::LocalPoliciesChanged);
         ctx.emit(UserWorkspacesEvent::CodebaseContextEnablementChanged);
         ctx.notify();
-    }
-
-    pub fn is_telemetry_force_enabled(&self) -> bool {
-        self.current_workspace()
-            .map(|workspace| workspace.settings.telemetry_settings.force_enabled)
-            .unwrap_or(false)
     }
 
     pub fn is_enterprise_secret_redaction_enabled(&self) -> bool {
@@ -269,7 +262,7 @@ impl UserWorkspaces {
             .unwrap_or_default()
     }
 
-    pub fn get_ugc_collection_enablement_setting(&self) -> UgcCollectionEnablementSetting {
+    pub fn ugc_collection_policy(&self) -> UgcCollectionEnablementSetting {
         self.current_workspace()
             .map(|workspace| workspace.settings.ugc_collection_settings.setting.clone())
             .unwrap_or_default()

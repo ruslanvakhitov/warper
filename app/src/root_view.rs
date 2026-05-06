@@ -5,7 +5,7 @@ use crate::launch_configs::launch_config;
 use crate::linear::LinearIssueWork;
 
 use crate::persistence::ModelEvent;
-use crate::server::event_metadata::LaunchConfigUiLocation;
+use crate::workspace::metadata::LaunchConfigUiLocation;
 use crate::settings::QuakeModeSettings;
 use crate::settings_view::flags;
 use crate::settings_view::mcp_servers_page::MCPServersSettingsPage;

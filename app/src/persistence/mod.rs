@@ -40,7 +40,6 @@ use crate::suggestions::ignored_suggestions_model::SuggestionType;
 use crate::terminal::history::PersistedCommand;
 use crate::terminal::model::block::{SerializedAgentViewVisibility, SerializedBlock};
 use crate::terminal::model::session::SessionId;
-use crate::workspaces::user_profiles::UserProfileWithUID;
 use crate::workspaces::workspace::{Workspace as WorkspaceMetadata, WorkspaceUid};
 use ai::workspace::WorkspaceMetadata as CodeWorkspaceMetadata;
 
@@ -157,12 +156,6 @@ impl Entity for PersistenceWriter {
 
 impl SingletonEntity for PersistenceWriter {}
 
-/// TODO: all of this data should eventually be indexed by user_id so that
-/// the logged in user sees the data for their user (and if another user logs in,
-/// they see their respective data). To do this, we can simply return a mapping
-/// of user ID->SqliteData and get the respective AppState after the user logs in.
-///
-/// For now, to address the global scoping here, we clear all persisted data on logout.
 pub struct PersistedData {
     /// Session restoration data
     pub app_state: AppState,
@@ -170,7 +163,6 @@ pub struct PersistedData {
     pub workspaces: Vec<WorkspaceMetadata>,
     pub current_workspace_uid: Option<WorkspaceUid>,
     pub command_history: Vec<PersistedCommand>,
-    pub user_profiles: Vec<UserProfileWithUID>,
     pub ai_queries: Vec<PersistedAIInput>,
     pub codebase_indices: Vec<CodeWorkspaceMetadata>,
     pub workspace_language_servers: HashMap<PathBuf, HashMap<LSPServerType, EnablementState>>,
@@ -233,13 +225,6 @@ pub enum ModelEvent {
     UpdateFinishedCommand {
         metadata: FinishedCommandMetadata,
     },
-    UpsertUserProfiles {
-        profiles: Vec<UserProfileWithUID>,
-    },
-    ClearUserProfiles,
-    // `PauseAndRemoveDatabase` and `ReconstructAndResume` are used to pause and resume the writer thread.
-    // These are employed as part of Logout v0 to ensure that the writer thread
-    // does not continue writing to the DB after the user has logged out and the DB is deleted.
     PauseAndRemoveDatabase,
     #[cfg(feature = "local_fs")]
     ReconstructAndResume,
@@ -261,9 +246,6 @@ pub enum ModelEvent {
         conversation_ids: Vec<String>,
     },
 
-    UpsertCurrentUserInformation {
-        user_information: PersistedCurrentUserInformation,
-    },
     UpsertCodebaseIndexMetadata {
         index_metadata: Box<CodeWorkspaceMetadata>,
     },
@@ -322,9 +304,4 @@ pub enum ModelEvent {
         version: i32,
         title: String,
     },
-}
-
-#[derive(Clone, Debug)]
-pub struct PersistedCurrentUserInformation {
-    pub email: String,
 }

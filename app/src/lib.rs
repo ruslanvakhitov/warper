@@ -133,8 +133,7 @@ use ai::blocklist::{BlocklistAIHistoryModel, BlocklistAIPermissions};
 use ai::execution_profiles::editor::ExecutionProfileEditorManager;
 use ai::execution_profiles::profiles::AIExecutionProfilesModel;
 use ai::persisted_workspace::PersistedWorkspace;
-use auth::auth_state::AuthState;
-use auth::auth_state::AuthStateProvider;
+use auth::{LocalActorIdentity, LocalActorIdentityProvider};
 use code::editor_management::CodeManager;
 use code::opened_files::OpenedFilesModel;
 use code_review::GlobalCodeReviewModel;
@@ -210,7 +209,6 @@ use crate::vim_registers::VimRegisters;
 use crate::warp_managed_paths_watcher::{ensure_warp_watch_roots_exist, WarpManagedPathsWatcher};
 use crate::workflows::local_workflows::LocalWorkflows;
 use crate::workspace::{ActiveSession, ToastStack};
-use crate::workspaces::user_profiles::UserProfiles;
 #[cfg(feature = "local_tty")]
 use anyhow::Context;
 use anyhow::{anyhow, Result};
@@ -240,10 +238,10 @@ use crate::notification::NotificationContext;
 use crate::root_view::{
     quake_mode_window_id, quake_mode_window_is_open, OpenFromRestoredArg, OpenPath,
 };
-use crate::server::event_metadata::PaletteSource;
-pub use crate::server::event_metadata::{
+pub use crate::ai::blocklist::metadata::{
     AgentModeEntrypoint, AgentModeEntrypointSelectionType,
 };
+use crate::workspace::metadata::PaletteSource;
 use crate::terminal::CustomSecretRegexUpdater;
 use crate::util::bindings::is_binding_cross_platform;
 use crate::workspace::{PaneViewLocator, Workspace, WorkspaceAction};
@@ -846,12 +844,12 @@ fn initialize_app(
         ctx.set_zoom_factor(WindowSettings::as_ref(ctx).zoom_level.as_zoom_factor());
     }
 
-    let auth_state = Arc::new(AuthState::initialize(ctx));
-    timer.mark_interval_end("AUTH_MANAGER_SET_USER");
+    let local_identity = LocalActorIdentity::initialize(ctx);
+    timer.mark_interval_end("LOCAL_IDENTITY_INITIALIZED");
 
     ctx.add_singleton_model(|_ctx| NetworkLogModel::default());
 
-    ctx.add_singleton_model(|_ctx| AuthStateProvider::new(auth_state.clone()));
+    ctx.add_singleton_model(|_ctx| LocalActorIdentityProvider::new(local_identity));
 
     ctx.add_singleton_model(|_ctx| GPUState::new());
 
@@ -884,7 +882,6 @@ fn initialize_app(
         current_workspace_uid,
         app_state,
         command_history,
-        restored_user_profiles,
         ai_queries,
         persisted_workspaces,
         workspace_language_servers,
@@ -901,7 +898,6 @@ fn initialize_app(
                 sqlite_data.current_workspace_uid,
                 Some(sqlite_data.app_state),
                 sqlite_data.command_history,
-                sqlite_data.user_profiles,
                 sqlite_data.ai_queries,
                 sqlite_data.codebase_indices,
                 sqlite_data.workspace_language_servers,
@@ -915,7 +911,6 @@ fn initialize_app(
         })
         .unwrap_or_else(|| {
             (
-                Default::default(),
                 Default::default(),
                 Default::default(),
                 Default::default(),
@@ -1168,8 +1163,6 @@ fn initialize_app(
         )
     });
 
-    ctx.add_singleton_model(|_| UserProfiles::new(restored_user_profiles));
-
     ctx.add_singleton_model(|_| AudibleBell::new());
 
     // LogManager must be registered before any subsystem (e.g. MCP, LSP) that creates file-based loggers.
@@ -1299,10 +1292,10 @@ fn app_callbacks(is_integration_test: bool) -> warpui::platform::AppCallbacks {
                 .update(ctx, move |me, ctx| me.reachability_changed(reachable, ctx));
         })),
         on_become_active: Some(Box::new(move |ctx| {
-            let auth_state = AuthStateProvider::as_ref(ctx).get();
+            let local_identity = LocalActorIdentityProvider::as_ref(ctx).get();
             ctx.record_app_focus(
-                auth_state.user_id().map(|uid| uid.as_string()),
-                auth_state.anonymous_id(),
+                None,
+                local_identity.local_instance_id(),
             );
         })),
         on_screen_changed: Some(Box::new(move |ctx| {
@@ -1353,10 +1346,10 @@ fn app_callbacks(is_integration_test: bool) -> warpui::platform::AppCallbacks {
             }
             ctx.dispatch_global_action("root_view:update_quake_mode_state", &update_quake_mode_arg);
 
-            let auth_state = AuthStateProvider::as_ref(ctx).get();
+            let local_identity = LocalActorIdentityProvider::as_ref(ctx).get();
             ctx.record_app_blur(
-                auth_state.user_id().map(|uid| uid.as_string()),
-                auth_state.anonymous_id(),
+                None,
+                local_identity.local_instance_id(),
             );
         })),
         on_will_terminate: Some(Box::new(move |ctx| {
@@ -1364,10 +1357,10 @@ fn app_callbacks(is_integration_test: bool) -> warpui::platform::AppCallbacks {
                 writer.terminate();
             });
 
-            let auth_state = AuthStateProvider::as_ref(ctx).get();
+            let local_identity = LocalActorIdentityProvider::as_ref(ctx).get();
             ctx.try_record_daily_app_focus_duration(
-                auth_state.user_id().map(|uid| uid.as_string()),
-                auth_state.anonymous_id(),
+                None,
+                local_identity.local_instance_id(),
             );
             // Shutdown all LSP servers gracefully before app termination
             lsp::LspManagerModel::handle(ctx).update(ctx, |manager, ctx| {
@@ -1840,8 +1833,6 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::KittyImages,
         #[cfg(feature = "warp_packs")]
         FeatureFlag::WarpPacks,
-        #[cfg(feature = "global_ai_analytics_banner")]
-        FeatureFlag::GlobalAIAnalyticsBanner,
         #[cfg(feature = "default_adeberry_theme")]
         FeatureFlag::DefaultAdeberryTheme,
         #[cfg(feature = "agent_mode_primary_xml")]
@@ -1948,8 +1939,6 @@ pub fn enabled_features() -> HashSet<FeatureFlag> {
         FeatureFlag::WelcomeTab,
         #[cfg(feature = "projects")]
         FeatureFlag::Projects,
-        #[cfg(feature = "drive_objects_as_context")]
-        FeatureFlag::DriveObjectsAsContext,
         #[cfg(feature = "pr_comments_slash_command")]
         FeatureFlag::PRCommentsSlashCommand,
         #[cfg(feature = "pr_comments_v2")]

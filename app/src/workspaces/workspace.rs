@@ -63,11 +63,6 @@ pub struct LlmSettings {
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct TelemetrySettings {
-    pub force_enabled: bool,
-}
-
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub enum UgcCollectionEnablementSetting {
     Disable,
     Enable,
@@ -177,7 +172,6 @@ pub struct SandboxedAgentSettings {
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct WorkspaceSettings {
     pub llm_settings: LlmSettings,
-    pub telemetry_settings: TelemetrySettings,
     pub ugc_collection_settings: UgcCollectionSettings,
     pub secret_redaction_settings: SecretRedactionSettings,
     pub ai_permissions_settings: AiPermissionsSettings,

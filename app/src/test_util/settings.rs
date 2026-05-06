@@ -14,7 +14,6 @@ pub fn initialize_settings_for_tests_with_mode(
     is_sandboxed: bool,
 ) {
     use crate::{
-        ai::cloud_agent_settings::CloudAgentSettings,
         drive::settings::LocalDriveSettings,
         search::command_search::settings::CommandSearchSettings,
         settings::{
@@ -47,7 +46,6 @@ pub fn initialize_settings_for_tests_with_mode(
     AccessibilitySettings::register(app);
     app.update(AISettings::register_and_subscribe_to_events);
     AliasExpansionSettings::register(app);
-    CloudAgentSettings::register(app);
     AppEditorSettings::register(app);
     BlockVisibilitySettings::register(app);
     BlockListSettings::register(app);
