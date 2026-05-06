@@ -2362,18 +2362,9 @@ impl FileTreeView {
     }
 
     fn attach_as_context(&mut self, id: &FileTreeIdentifier, ctx: &mut ViewContext<Self>) {
-        let Some(root_dir) = self.root_directories.get(&id.root) else {
-            return;
-        };
-        let Some(item) = root_dir.items.get(id.index) else {
-            return;
-        };
-
         let Some(relative_path) = self.relative_path_for_item(id) else {
             return;
         };
-
-        let is_directory = matches!(item, FileTreeItem::DirectoryHeader { .. });
 
         ctx.emit(FileTreeEvent::AttachAsContext {
             path: relative_path,

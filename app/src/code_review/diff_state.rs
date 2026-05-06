@@ -1507,7 +1507,7 @@ impl DiffStateModel {
                 }
                 self.metadata = Some(metadata);
             }
-            Err(e) => {
+            Err(_) => {
                 self.metadata = None;
             }
         }
@@ -1551,8 +1551,6 @@ impl DiffStateModel {
             );
             return;
         }
-
-        if let Err(e) = &diffs.changes {}
 
         self.state = InternalDiffState::Loaded((&diffs).into());
         ctx.emit(DiffStateModelEvent::NewDiffsComputed(diffs.changes.ok()));

@@ -734,8 +734,6 @@ impl LocalCodeEditorView {
         request_offset: CharOffset,
         ctx: &mut ViewContext<Self>,
     ) {
-        if let Some(server) = &self.lsp_server {}
-
         // Get workspace root for relative path display from the LSP server
         let workspace_root = self
             .lsp_server
@@ -1919,32 +1917,21 @@ impl LocalCodeEditorView {
             return;
         };
 
-        let server_type_name = self
-            .lsp_server
-            .as_ref()
-            .map(|s| s.as_ref(ctx).server_name());
-
         self.call_goto_definition(
             lsp_position,
-            move |_me, result, ctx| {
-                let had_result = matches!(&result, Ok(locations) if !locations.is_empty());
-
-                if let Some(server_type) = server_type_name {}
-
-                match result {
-                    Ok(locations) => {
-                        if let Some(location) = locations.first() {
-                            ctx.emit(LocalCodeEditorEvent::GotoDefinition {
-                                path: location.target.path.clone(),
-                                line: location.target.location.line,
-                                column: location.target.location.column,
-                                source_server_id,
-                            });
-                        }
+            move |_me, result, ctx| match result {
+                Ok(locations) => {
+                    if let Some(location) = locations.first() {
+                        ctx.emit(LocalCodeEditorEvent::GotoDefinition {
+                            path: location.target.path.clone(),
+                            line: location.target.location.line,
+                            column: location.target.location.column,
+                            source_server_id,
+                        });
                     }
-                    Err(e) => {
-                        log::debug!("Failed to get goto definition: {e}");
-                    }
+                }
+                Err(e) => {
+                    log::debug!("Failed to get goto definition: {e}");
                 }
             },
             ctx,

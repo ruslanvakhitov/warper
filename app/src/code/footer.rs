@@ -7,7 +7,6 @@ use lsp::{
     LspState as LspModelState,
 };
 
-use crate::code::lsp_metadata::{LspControlActionType, LspEnablementSource};
 use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::vec2f;
 use warp_core::ui::theme::color::internal_colors;
@@ -1829,8 +1828,6 @@ impl TypedActionView for CodeFooterView {
                         _ => None,
                     };
 
-                    if let Some(st) = server_type {}
-
                     if needed_install {
                         ctx.emit(CodeFooterViewEvent::InstallAndEnableLSP {
                             path: path.clone(),
@@ -1846,11 +1843,6 @@ impl TypedActionView for CodeFooterView {
             }
             CodeFooterViewAction::OpenLogs => {
                 self.is_lsp_menu_open = false;
-                let server_name = self
-                    .lsp_servers
-                    .first()
-                    .and_then(|w| w.upgrade(ctx))
-                    .map(|s| s.as_ref(ctx).server_name());
                 ctx.emit(CodeFooterViewEvent::OpenLogs {
                     path: self.mode.path().to_path_buf(),
                 });

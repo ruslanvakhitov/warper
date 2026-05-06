@@ -1,5 +1,3 @@
-use crate::view_components::find::FindDirection;
-use serde::Serialize;
 use serde_with::SerializeDisplay;
 use std::fmt::Display;
 
@@ -49,23 +47,8 @@ impl Display for CodeReviewPaneEntrypoint {
     }
 }
 
-/// Origin of an "Add to context" action.
-#[derive(Clone, Copy, Debug, Serialize)]
-pub enum AddToContextOrigin {
-    /// User selected text and added it to context.
-    #[serde(rename = "selected_text")]
-    SelectedText,
-    /// User clicked the gutter to add a line/hunk to context.
-    #[serde(rename = "gutter")]
-    Gutter,
-    /// User clicked the "Add diff set as context" button in code review header.
-    #[serde(rename = "code_review_header")]
-    #[allow(unused)]
-    CodeReviewHeader,
-}
-
 /// Where code review content was sent after the user action.
-#[derive(Clone, Copy, Debug, Serialize)]
+#[derive(Clone, Copy, Debug, serde::Serialize)]
 pub enum CodeReviewContextDestination {
     /// Written directly to the terminal PTY for an active CLI agent.
     #[serde(rename = "pty")]
@@ -85,27 +68,4 @@ pub enum CodeReviewContextDestination {
     /// Inserted into CLI agent rich input.
     #[serde(rename = "rich_input")]
     RichInput,
-}
-
-/// Scope of a diff set attachment initiated from code review.
-#[derive(Clone, Copy, Debug, Serialize)]
-#[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
-pub enum DiffSetContextScope {
-    /// Attach the full diff set for the current review.
-    #[serde(rename = "all")]
-    All,
-    /// Attach the diff set for a single file.
-    #[serde(rename = "file")]
-    File,
-}
-
-/// Pane state change for minimize/maximize events.
-#[derive(Clone, Copy, Debug, Serialize)]
-pub enum PaneStateChange {
-    /// Pane was minimized.
-    #[serde(rename = "minimized")]
-    Minimized,
-    /// Pane was maximized.
-    #[serde(rename = "maximized")]
-    Maximized,
 }
