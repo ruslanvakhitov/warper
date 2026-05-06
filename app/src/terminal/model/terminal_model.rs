@@ -17,7 +17,7 @@ use crate::terminal::model::iterm_image::{ITermImage, ITermImageMetadata};
 use crate::terminal::ssh::util::{InteractiveSshCommand, SshLoginState};
 use crate::terminal::{block_filter::BlockFilterQuery, model::ansi::Handler};
 use crate::terminal::{color, ssh, BlockPadding, ShellHost, SizeUpdate};
-use crate::terminal::{ShellLaunchData, ShellLaunchState};
+use crate::terminal::{shell::ShellName, ShellLaunchData, ShellLaunchState};
 use crate::util::AsciiDebug;
 
 pub use crate::terminal::history::HistoryEntry;

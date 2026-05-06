@@ -2,10 +2,10 @@ use std::path::PathBuf;
 
 use crate::{
     app_state::{
-        AppState, BranchSnapshot, LeafContents, LeafSnapshot, NotebookPaneSnapshot, PaneFlex,
-        PaneNodeSnapshot, SplitDirection, TabSnapshot, TerminalPaneSnapshot, WindowSnapshot,
+        AppState, BranchSnapshot, LeafContents, LeafSnapshot, LocalObjectOpenSettings,
+        NotebookPaneSnapshot, PaneFlex, PaneNodeSnapshot, SplitDirection, TabSnapshot,
+        TerminalPaneSnapshot, WindowSnapshot,
     },
-    drive::LocalObjectOpenSettings,
     tab::SelectedTabColor,
 };
 

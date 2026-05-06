@@ -9,13 +9,10 @@ use crate::ai::persisted_workspace::PersistedWorkspace;
 use crate::ai::restored_conversations::RestoredAgentConversations;
 use crate::ai::skills::SkillManager;
 use crate::ai::AIRequestUsageModel;
-use crate::cloud_object::model::view::CloudViewModel;
 use crate::context_chips::prompt::Prompt;
 use crate::editor::Event;
 use crate::gpu_state::GPUState;
 use crate::network::NetworkStatus;
-use crate::notebooks::editor::keys::NotebookKeybindings;
-use crate::notebooks::notebook::NotebookView;
 use crate::pane_group::{Direction, PaneGroupAction, PaneId};
 use crate::suggestions::ignored_suggestions_model::IgnoredSuggestionsModel;
 #[cfg(feature = "local_fs")]
@@ -31,8 +28,6 @@ use std::collections::HashMap;
 use tempfile::TempDir;
 use watcher::HomeDirectoryWatcher;
 
-use crate::server::experiments::ServerExperiments;
-
 use crate::settings::PrivacySettings;
 use crate::settings_view::keybindings::KeybindingChangedNotifier;
 use crate::settings_view::DisplayCount;
@@ -47,7 +42,6 @@ use crate::workspaces::user_workspaces::UserWorkspaces;
 use crate::terminal::local_tty::spawner::PtySpawner;
 
 use crate::ai::active_agent_views_model::ActiveAgentViewsModel;
-use crate::ai::agent_conversations_model::AgentConversationsModel;
 use crate::ai::mcp::{
     gallery::MCPGalleryManager, templatable_manager::TemplatableMCPServerManager,
     FileBasedMCPManager, FileMCPWatcher,
@@ -57,13 +51,12 @@ use crate::test_util::settings::initialize_settings_for_tests;
 use crate::undo_close::UndoCloseSettings;
 use crate::warp_managed_paths_watcher::WarpManagedPathsWatcher;
 use crate::workflows::local_workflows::LocalWorkflows;
+use crate::workspace::OneTimeModalModel;
 use crate::{experiments, workspace, GlobalResourceHandlesProvider};
-use crate::{AgentNotificationsModel, ObjectActions};
 
-use crate::settings::cloud_preferences_syncer::CloudPreferencesSyncer;
 use ai::index::full_source_code_embedding::manager::CodebaseIndexManager;
 use ai::project_context::model::ProjectContextModel;
-use pane_group::{NotebookPane, PaneState, SplitPaneState, TerminalPaneId};
+use pane_group::{PaneState, SplitPaneState, TerminalPaneId};
 use terminal::view::ActiveSessionState;
 use warp_editor::editor::NavigationKey;
 use warpui::AddSingletonModel;
@@ -79,7 +72,6 @@ fn initialize_app(app: &mut App) {
     app.add_singleton_model(|_| SystemStats::new());
     app.add_singleton_model(UserWorkspaces::default_mock);
     app.add_singleton_model(MCPGalleryManager::new);
-    app.add_singleton_model(CloudViewModel::mock);
     app.add_singleton_model(|_| Appearance::mock());
     app.add_singleton_model(AppearanceManager::new);
     app.add_singleton_model(|_| DisplayCount::mock());
@@ -91,22 +83,10 @@ fn initialize_app(app: &mut App) {
     app.add_singleton_model(UndoCloseStack::new);
     app.add_singleton_model(|_| ActiveSession::default());
     app.add_singleton_model(|_| WorkspaceToastStack);
-    app.add_singleton_model(|_| ObjectActions::new(Vec::new()));
-    app.add_singleton_model(NotebookKeybindings::new);
     app.add_singleton_model(TerminalKeybindings::new);
-    app.add_singleton_model(NotebookManager::mock);
-    app.add_singleton_model(|ctx| {
-        CloudPreferencesSyncer::new(
-            false,                     // force_local_wins_on_startup
-            std::path::PathBuf::new(), // unused in tests that don't exercise the hash path
-            ctx,
-        )
-    });
     app.add_singleton_model(|_| BlocklistAIHistoryModel::new_for_test());
     app.add_singleton_model(|_| CLIAgentSessionsModel::new());
     app.add_singleton_model(|_| ActiveAgentViewsModel::new());
-    app.add_singleton_model(AgentNotificationsModel::new);
-    app.add_singleton_model(AgentConversationsModel::new);
     app.add_singleton_model(LLMPreferences::new);
     app.add_singleton_model(|_| SettingsPaneManager::new());
     app.add_singleton_model(|_| AIFactManager::new());
@@ -130,10 +110,8 @@ fn initialize_app(app: &mut App) {
     app.add_singleton_model(|_| GPUState::new());
     app.add_singleton_model(|_| RestoredAgentConversations::new(vec![]));
     app.add_singleton_model(OneTimeModalModel::new);
-    // Register GlobalResourceHandlesProvider before ServerExperiments which depends on it
     let global_resource_handles = GlobalResourceHandles::mock(app);
     app.add_singleton_model(|_| GlobalResourceHandlesProvider::new(global_resource_handles));
-    app.add_singleton_model(|ctx| ServerExperiments::new_from_cache(vec![], ctx));
     app.add_singleton_model(DefaultTerminal::new);
     app.add_singleton_model(|_| IgnoredSuggestionsModel::new(vec![]));
     app.add_singleton_model(|_| crate::code_review::git_status_update::GitStatusUpdateModel::new());
@@ -156,9 +134,6 @@ fn initialize_app(app: &mut App) {
     app.update(experiments::init);
 
     app.add_singleton_model(|ctx| AIRequestUsageModel::new(ctx));
-    app.add_singleton_model(
-        crate::workspace::bonus_grant_notification_model::BonusGrantNotificationModel::new,
-    );
     app.add_singleton_model(|ctx| {
         CodebaseIndexManager::new_for_test(
             std::sync::Arc::new(
@@ -913,205 +888,6 @@ fn test_switch_focus_panels() {
             assert!(
                 workspace.is_self_or_child_focused(ctx),
                 "Expected terminal to be focused"
-            );
-        });
-    });
-}
-
-#[test]
-fn test_focus_notebook() {
-    App::test((), |mut app| async move {
-        initialize_app(&mut app);
-
-        let workspace = mock_workspace(&mut app);
-        let pane_group = workspace.read(&app, |workspace, _ctx| {
-            workspace
-                .get_pane_group_view(0)
-                .expect("should have pane group for tab 0")
-                .clone()
-        });
-
-        let first_terminal_id = pane_group.read(&app, |panes, _ctx| {
-            get_newly_created_pane_id(panes, &[])
-                .as_terminal_pane_id()
-                .expect("should be a terminal pane")
-        });
-
-        let notebook_id = pane_group.update(&mut app, |panes, ctx| {
-            // Add a notebook to the left.
-            let notebook_view = ctx.add_typed_action_view(NotebookView::new);
-            panes.add_pane_with_direction(
-                Direction::Left,
-                NotebookPane::new(notebook_view, ctx),
-                true, /* focus_new_pane */
-                ctx,
-            );
-            get_newly_created_pane_id(panes, &[first_terminal_id.into()])
-        });
-
-        // The new pane should be focused, but the terminal is still the active session.
-        pane_group.read(&app, |panes, ctx| {
-            assert_eq!(panes.focused_pane_id(ctx), notebook_id);
-            assert_eq!(panes.active_session_id(ctx), Some(first_terminal_id));
-            assert_eq!(
-                split_pane_state(panes, first_terminal_id, ctx),
-                SplitPaneState::InSplitPane(PaneState::Unfocused)
-            );
-            assert_eq!(
-                active_session_state(panes, first_terminal_id, ctx),
-                ActiveSessionState::Active
-            );
-            assert_eq!(
-                split_pane_state(panes, notebook_id, ctx),
-                SplitPaneState::InSplitPane(PaneState::Focused)
-            );
-        });
-
-        // Add a terminal below.
-        let second_terminal_id = pane_group.update(&mut app, |panes, ctx| {
-            panes.add_terminal_pane(Direction::Down, None, ctx);
-            get_newly_created_pane_id(panes, &[first_terminal_id.into(), notebook_id])
-                .as_terminal_pane_id()
-                .expect("should be a terminal pane")
-        });
-
-        // The new terminal should be both focused and the active session.
-        pane_group.read(&app, |panes, ctx| {
-            assert_eq!(panes.focused_pane_id(ctx), second_terminal_id.into());
-            assert_eq!(panes.active_session_id(ctx), Some(second_terminal_id));
-            assert_eq!(
-                split_pane_state(panes, first_terminal_id, ctx),
-                SplitPaneState::InSplitPane(PaneState::Unfocused)
-            );
-            assert_eq!(
-                active_session_state(panes, first_terminal_id, ctx),
-                ActiveSessionState::Inactive
-            );
-            assert_eq!(
-                split_pane_state(panes, second_terminal_id, ctx),
-                SplitPaneState::InSplitPane(PaneState::Focused)
-            );
-            assert_eq!(
-                active_session_state(panes, second_terminal_id, ctx),
-                ActiveSessionState::Active
-            );
-            assert_eq!(
-                split_pane_state(panes, notebook_id, ctx),
-                SplitPaneState::InSplitPane(PaneState::Unfocused)
-            );
-        });
-
-        // Close the new terminal.
-        pane_group.update(&mut app, |panes, ctx| {
-            panes.close_pane(second_terminal_id.into(), ctx);
-        });
-
-        // Focus should switch to the notebook, and the first terminal session
-        // will activate.
-        pane_group.read(&app, |panes, ctx| {
-            assert_eq!(panes.focused_pane_id(ctx), notebook_id);
-            assert_eq!(panes.active_session_id(ctx), Some(first_terminal_id));
-            assert_eq!(
-                split_pane_state(panes, first_terminal_id, ctx),
-                SplitPaneState::InSplitPane(PaneState::Unfocused)
-            );
-            assert_eq!(
-                split_pane_state(panes, notebook_id, ctx),
-                SplitPaneState::InSplitPane(PaneState::Focused)
-            );
-            assert_eq!(
-                active_session_state(panes, first_terminal_id, ctx),
-                ActiveSessionState::Active
-            );
-        });
-    })
-}
-
-#[test]
-fn test_close_active_session() {
-    App::test((), |mut app| async move {
-        initialize_app(&mut app);
-
-        let workspace = mock_workspace(&mut app);
-        let pane_group = workspace.read(&app, |workspace, _ctx| {
-            workspace
-                .get_pane_group_view(0)
-                .expect("should have pane group for tab 0")
-                .clone()
-        });
-
-        let first_terminal_id = pane_group.read(&app, |panes, _ctx| {
-            get_newly_created_pane_id(panes, &[])
-                .as_terminal_pane_id()
-                .expect("should be a terminal pane")
-        });
-
-        // Add a terminal above.
-        let second_terminal_id = pane_group.update(&mut app, |panes, ctx| {
-            panes.add_terminal_pane(Direction::Up, None, ctx);
-            get_newly_created_pane_id(panes, &[first_terminal_id.into()])
-                .as_terminal_pane_id()
-                .expect("should be a terminal pane")
-        });
-
-        let notebook_id = pane_group.update(&mut app, |panes, ctx| {
-            // Add a notebook to the left.
-            let notebook_view = ctx.add_typed_action_view(NotebookView::new);
-            panes.add_pane_with_direction(
-                Direction::Left,
-                NotebookPane::new(notebook_view, ctx),
-                true, /* focus_new_pane */
-                ctx,
-            );
-            get_newly_created_pane_id(
-                panes,
-                &[first_terminal_id.into(), second_terminal_id.into()],
-            )
-        });
-
-        pane_group.read(&app, |panes, ctx| {
-            assert_eq!(panes.focused_pane_id(ctx), notebook_id);
-            assert_eq!(panes.active_session_id(ctx), Some(second_terminal_id));
-        });
-
-        pane_group.update(&mut app, |panes, ctx| {
-            // Close the active session, which should leave the notebook focused and activate the
-            // remaining session.
-            panes.close_pane(second_terminal_id.into(), ctx);
-        });
-
-        pane_group.read(&app, |panes, ctx| {
-            assert_eq!(panes.focused_pane_id(ctx), notebook_id);
-            assert_eq!(panes.active_session_id(ctx), Some(first_terminal_id));
-            assert_eq!(
-                split_pane_state(panes, first_terminal_id, ctx),
-                SplitPaneState::InSplitPane(PaneState::Unfocused)
-            );
-            assert_eq!(
-                active_session_state(panes, first_terminal_id, ctx),
-                ActiveSessionState::Active
-            );
-        });
-
-        pane_group.update(&mut app, |panes, ctx| {
-            // Now, focus the remaining session, which should keep it activated.
-            panes.focus_pane_by_id(first_terminal_id.into(), ctx);
-        });
-
-        pane_group.read(&app, |panes, ctx| {
-            assert_eq!(panes.focused_pane_id(ctx), first_terminal_id.into());
-            assert_eq!(panes.active_session_id(ctx), Some(first_terminal_id));
-            assert_eq!(
-                split_pane_state(panes, first_terminal_id, ctx),
-                SplitPaneState::InSplitPane(PaneState::Focused)
-            );
-            assert_eq!(
-                split_pane_state(panes, notebook_id, ctx),
-                SplitPaneState::InSplitPane(PaneState::Unfocused)
-            );
-            assert_eq!(
-                active_session_state(panes, first_terminal_id, ctx),
-                ActiveSessionState::Active
             );
         });
     });

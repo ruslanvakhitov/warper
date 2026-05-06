@@ -14,7 +14,7 @@ use crate::terminal::keys::TerminalKeybindings;
 use crate::{
     notebooks::{editor::keys::NotebookKeybindings, file::is_markdown_file},
     search::files::model::FileSearchModel,
-    server::settings_view::keybindings::KeybindingChangedNotifier,
+    settings_view::keybindings::KeybindingChangedNotifier,
     terminal::model::session::Session,
     test_util::settings::initialize_settings_for_tests,
     workspace::ActiveSession,

@@ -2,6 +2,7 @@ use crate::settings::init_and_register_user_preferences;
 
 use super::*;
 use settings::manager::SettingsManager;
+use warpui::SingletonEntity;
 
 #[test]
 fn test_set_aliases() {

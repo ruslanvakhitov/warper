@@ -53,7 +53,7 @@ fn summary_pane_kind_icons_pick_two_oldest_distinct_pane_kinds() {
             (EntityId::from_usize(20), code_summary_kind("main.rs")),
             (
                 EntityId::from_usize(40),
-                SummaryPaneKind::Notebook { is_plan: false },
+                SummaryPaneKind::LocalAgent { is_ambient: false },
             ),
             (EntityId::from_usize(10), SummaryPaneKind::Terminal),
         ]),

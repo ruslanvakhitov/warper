@@ -1,7 +1,5 @@
-use crate::{
-    warp_server_client::ids::{ClientId, HashableId, ServerId, SyncId},
-    workflows::workflow::{Argument, ArgumentType, Workflow},
-};
+use crate::workflows::workflow::{Argument, ArgumentType, Workflow};
+use warp_server_client::ids::{ClientId, HashableId, ServerId, SyncId};
 
 #[test]
 fn test_workflow_serialization_with_enum_params() {

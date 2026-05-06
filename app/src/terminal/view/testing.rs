@@ -1,4 +1,6 @@
 //! Module for test-only convenience methods on `TerminalView`.
+use std::sync::Arc;
+
 use warpui::ModelHandle;
 
 use crate::terminal::find::TerminalFindModel;

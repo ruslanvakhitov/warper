@@ -144,7 +144,7 @@ fn test_sqlite_round_trips_vertical_tabs_panel_open() {
 
     save_app_state(&mut conn, &app_state).expect("app state should save");
 
-    let restored = read_sqlite_data(&mut conn, None)
+    let restored = read_sqlite_data(&mut conn)
         .expect("app state should load")
         .app_state;
 
@@ -211,7 +211,7 @@ fn test_sqlite_round_trips_custom_vertical_tabs_title() {
 
     save_app_state(&mut conn, &app_state).expect("app state should save");
 
-    let restored = read_sqlite_data(&mut conn, None)
+    let restored = read_sqlite_data(&mut conn)
         .expect("app state should load")
         .app_state;
 
@@ -280,7 +280,7 @@ fn test_sqlite_round_trips_code_pane_with_multiple_tabs() {
 
     save_app_state(&mut conn, &app_state).expect("app state should save");
 
-    let restored = read_sqlite_data(&mut conn, None)
+    let restored = read_sqlite_data(&mut conn)
         .expect("app state should load")
         .app_state;
 

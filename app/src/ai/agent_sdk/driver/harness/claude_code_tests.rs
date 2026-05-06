@@ -57,10 +57,11 @@ fn prepare_claude_config_accepts_project_and_api_key_suffix_locally() {
 
     let config: serde_json::Value =
         serde_json::from_slice(&std::fs::read(config_path).unwrap()).unwrap();
+    let working_dir_key = working_dir.to_string_lossy().to_string();
     assert_eq!(config["hasCompletedOnboarding"], true);
     assert_eq!(config["lspRecommendationDisabled"], true);
     assert_eq!(
-        config["projects"][working_dir.to_string_lossy().as_ref()]["hasTrustDialogAccepted"],
+        config["projects"][working_dir_key.as_str()]["hasTrustDialogAccepted"],
         true
     );
     assert_eq!(
