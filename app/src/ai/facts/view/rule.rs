@@ -16,63 +16,34 @@ use warp_core::ui::{
     theme::color::internal_colors,
 };
 use warpui::elements::Shrinkable;
-use warpui::ui_components::button::ButtonVariant;
 use warpui::{
     elements::{
         Align, Border, ChildView, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment,
-        Expanded, Flex, FormattedTextElement, HighlightedHyperlink, Hoverable, MainAxisAlignment,
-        MainAxisSize, MouseStateHandle, ParentElement,
+        Expanded, Flex, FormattedTextElement, HighlightedHyperlink, MainAxisAlignment,
+        MainAxisSize, ParentElement,
     },
-    platform::Cursor,
-    ui_components::components::{UiComponent, UiComponentStyles},
+    ui_components::components::UiComponent,
     AppContext, Element, Entity, FocusContext, SingletonEntity, TypedActionView, View, ViewContext,
     ViewHandle,
 };
 
 use super::style;
-use crate::view_components::action_button::{ActionButton, NakedTheme};
 
 pub const HEADER_TEXT: &str = "Rules";
-const DESCRIPTION_TEXT: &str = "Rules enhance the agent by providing structured guidelines that help maintain consistency, enforce best practices, and adapt to specific workflows, including codebases or broader tasks.";
+const DESCRIPTION_TEXT: &str =
+    "Project rules enhance the agent with local WARP.md guidance for this codebase.";
 
 const SEARCH_PLACEHOLDER_TEXT: &str = "Search rules";
-const ZERO_STATE_TEXT: &str = "Once you add a rule, it will be shown here.";
-const ZERO_STATE_TEXT_PROJECT: &str =
-    "Once you generate a WARP.md rules file for a project, it will appear here.";
+const ZERO_STATE_TEXT: &str = "No project rules found.";
 
 const DISABLED_BANNER_TEXT: &str =
     "Your rules are disabled and won't be used as context in sessions. You can ";
 const DISABLED_BANNER_LINK_TEXT: &str = "turn it back on";
 const DISABLED_BANNER_TEXT_2: &str = " anytime.";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RuleScope {
-    Global,
-    ProjectBased,
-}
-
-#[derive(Debug, Clone)]
-pub enum RuleViewEvent {
-    AddRule,
-}
-
-#[derive(Debug, Clone)]
-pub enum RuleViewAction {
-    AddRule,
-    SelectScope(RuleScope),
-}
-
-#[derive(Default, Debug, Clone)]
-pub struct MouseStateHandles {
-    pub hover: MouseStateHandle,
-    pub sync_status_hover: MouseStateHandle,
-    pub sync_status_icon: MouseStateHandle,
-}
-
 #[derive(Debug, Clone)]
 struct ProjectScopedRow {
     file_path: PathBuf,
-    mouse_state: MouseStateHandle,
 }
 
 #[derive(Debug, Clone)]
@@ -102,12 +73,7 @@ pub struct RuleView {
     project_rules: Vec<ProjectScopedRow>,
     search_editor: ViewHandle<EditorView>,
     search_bar: ViewHandle<SearchBar>,
-    add_button: ViewHandle<ActionButton>,
-    initialize_button: ViewHandle<ActionButton>,
     disabled_banner_highlight_index: HighlightedHyperlink,
-    current_scope: RuleScope,
-    global_tab_mouse_state: MouseStateHandle,
-    project_tab_mouse_state: MouseStateHandle,
 }
 
 impl RuleView {
@@ -126,10 +92,7 @@ impl RuleView {
         let project_rules = project_context
             .as_ref(ctx)
             .indexed_rules()
-            .map(|p| ProjectScopedRow {
-                file_path: p,
-                mouse_state: Default::default(),
-            })
+            .map(|p| ProjectScopedRow { file_path: p })
             .collect();
 
         ctx.subscribe_to_model(&project_context, |me, context_model, event, ctx| {
@@ -137,10 +100,7 @@ impl RuleView {
                 me.project_rules = context_model
                     .as_ref(ctx)
                     .indexed_rules()
-                    .map(|p| ProjectScopedRow {
-                        file_path: p,
-                        mouse_state: Default::default(),
-                    })
+                    .map(|p| ProjectScopedRow { file_path: p })
                     .collect();
 
                 ctx.notify();
@@ -178,26 +138,11 @@ impl RuleView {
         });
         let search_bar = ctx.add_typed_action_view(|_| SearchBar::new(search_editor.clone()));
 
-        let add_button = ctx.add_typed_action_view(|_| {
-            ActionButton::new("Add", NakedTheme)
-                .with_icon(Icon::Plus)
-                .on_click(|ctx| ctx.dispatch_typed_action(RuleViewAction::AddRule))
-        });
-
-        let initialize_button = ctx.add_typed_action_view(|_| {
-            ActionButton::new("Initialize Project", NakedTheme).with_icon(Icon::Plus)
-        });
-
         Self {
             project_rules,
             search_editor,
             search_bar,
-            add_button,
-            initialize_button,
             disabled_banner_highlight_index: Default::default(),
-            current_scope: RuleScope::Global,
-            global_tab_mouse_state: Default::default(),
-            project_tab_mouse_state: Default::default(),
         }
     }
 
@@ -205,29 +150,12 @@ impl RuleView {
         ctx.notify();
     }
 
-    fn select_scope(&mut self, scope: RuleScope, ctx: &mut ViewContext<Self>) {
-        self.current_scope = scope;
-        ctx.notify();
-    }
-
     fn get_filtered_rules(&self) -> Vec<RuleRow> {
-        match self.current_scope {
-            RuleScope::Global => Vec::new(),
-            RuleScope::ProjectBased => self
-                .project_rules
-                .iter()
-                .cloned()
-                .map(RuleRow::ProjectScoped)
-                .collect(),
-        }
-    }
-
-    pub fn add_ai_rule(
-        &mut self,
-        _name: Option<String>,
-        _content: String,
-        _ctx: &mut ViewContext<Self>,
-    ) {
+        self.project_rules
+            .iter()
+            .cloned()
+            .map(RuleRow::ProjectScoped)
+            .collect()
     }
 
     fn render_header(&self, appearance: &Appearance) -> Box<dyn Element> {
@@ -272,103 +200,6 @@ impl RuleView {
                 .finish(),
         )
         .with_vertical_margin(style::ITEM_BOTTOM_MARGIN)
-        .finish()
-    }
-
-    fn render_scope_tabs(&self, appearance: &Appearance) -> Box<dyn Element> {
-        let global_tab = Container::new(self.render_scope_tab(
-            "Global",
-            RuleScope::Global,
-            appearance,
-            self.global_tab_mouse_state.clone(),
-        ))
-        .with_padding_right(4.)
-        .finish();
-        let project_tab = self.render_scope_tab(
-            "Project based",
-            RuleScope::ProjectBased,
-            appearance,
-            self.project_tab_mouse_state.clone(),
-        );
-
-        Container::new(
-            Flex::row()
-                .with_child(global_tab)
-                .with_child(project_tab)
-                .finish(),
-        )
-        .with_margin_bottom(style::SECTION_MARGIN)
-        .finish()
-    }
-
-    fn render_scope_tab(
-        &self,
-        title: &str,
-        scope: RuleScope,
-        appearance: &Appearance,
-        mouse_state: MouseStateHandle,
-    ) -> Box<dyn Element> {
-        let is_selected = self.current_scope == scope;
-        let text_color = if is_selected {
-            appearance
-                .theme()
-                .main_text_color(appearance.theme().background())
-        } else {
-            appearance
-                .theme()
-                .sub_text_color(appearance.theme().background())
-        };
-        let title_owned = title.to_string();
-
-        Hoverable::new(mouse_state, move |state| {
-            let mut container = Container::new(
-                appearance
-                    .ui_builder()
-                    .wrappable_text(title_owned.clone(), true)
-                    .with_style(UiComponentStyles {
-                        font_size: Some(style::TEXT_FONT_SIZE),
-                        font_color: Some(text_color.into()),
-                        ..Default::default()
-                    })
-                    .build()
-                    .finish(),
-            )
-            .with_horizontal_padding(style::ROW_HORIZONTAL_PADDING)
-            .with_vertical_padding(8.);
-
-            if is_selected {
-                container = container
-                    .with_background(appearance.theme().surface_2())
-                    .with_corner_radius(CornerRadius::with_all(warpui::elements::Radius::Pixels(
-                        4.,
-                    )));
-            } else if state.is_hovered() {
-                container = container
-                    .with_background(appearance.theme().surface_1())
-                    .with_corner_radius(CornerRadius::with_all(warpui::elements::Radius::Pixels(
-                        4.,
-                    )));
-            }
-
-            container.finish()
-        })
-        .with_cursor(Cursor::PointingHand)
-        .on_click(move |ctx, _, _| {
-            ctx.dispatch_typed_action(RuleViewAction::SelectScope(scope));
-        })
-        .finish()
-    }
-
-    fn render_add_button(&self) -> Box<dyn Element> {
-        Container::new(
-            ChildView::new(if self.current_scope == RuleScope::ProjectBased {
-                &self.initialize_button
-            } else {
-                &self.add_button
-            })
-            .finish(),
-        )
-        .with_margin_left(style::SECTION_MARGIN)
         .finish()
     }
 
@@ -425,14 +256,10 @@ impl RuleView {
         .finish()
     }
 
-    fn render_search_bar_row(&self, filtered_rules: &[RuleRow]) -> Box<dyn Element> {
-        let mut row = Flex::row()
+    fn render_search_bar_row(&self) -> Box<dyn Element> {
+        let row = Flex::row()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
             .with_child(Expanded::new(1., ChildView::new(&self.search_bar).finish()).finish());
-
-        if !filtered_rules.is_empty() {
-            row.add_child(self.render_add_button());
-        }
         Container::new(row.finish())
             .with_margin_bottom(style::SECTION_MARGIN)
             .finish()
@@ -444,35 +271,19 @@ impl RuleView {
         appearance: &Appearance,
     ) -> Option<Box<dyn Element>> {
         let row_name = project_row.file_path.to_str().map(|s| s.to_string())?;
-        let mut row = Flex::row()
-            .with_main_axis_size(MainAxisSize::Max)
-            .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
-            .with_cross_axis_alignment(CrossAxisAlignment::Center);
-
-        row.add_child(
-            Shrinkable::new(
-                1.,
-                appearance
-                    .ui_builder()
-                    .wrappable_text(row_name, true)
-                    .with_style(style::fact_project_based_row_text(appearance))
-                    .build()
-                    .finish(),
-            )
-            .finish(),
-        );
-
-        row.add_child(
+        let row = Shrinkable::new(
+            1.,
             appearance
                 .ui_builder()
-                .button(ButtonVariant::Outlined, project_row.mouse_state.clone())
-                .with_text_label("Open file".to_string())
+                .wrappable_text(row_name, true)
+                .with_style(style::fact_project_based_row_text(appearance))
                 .build()
                 .finish(),
-        );
+        )
+        .finish();
 
         Some(
-            Container::new(row.finish())
+            Container::new(row)
                 .with_background(internal_colors::neutral_1(appearance.theme()))
                 .with_corner_radius(CornerRadius::with_all(warpui::elements::Radius::Pixels(4.)))
                 .with_border(
@@ -521,11 +332,6 @@ impl RuleView {
     }
 
     fn render_zero_state(&self, appearance: &Appearance) -> Box<dyn Element> {
-        let text = match self.current_scope {
-            RuleScope::Global => ZERO_STATE_TEXT,
-            RuleScope::ProjectBased => ZERO_STATE_TEXT_PROJECT,
-        };
-
         Container::new(
             ConstrainedBox::new(
                 Align::new(
@@ -536,12 +342,11 @@ impl RuleView {
                         .with_child(
                             appearance
                                 .ui_builder()
-                                .wrappable_text(text, true)
+                                .wrappable_text(ZERO_STATE_TEXT, true)
                                 .with_style(style::description_text(appearance))
                                 .build()
                                 .finish(),
                         )
-                        .with_child(self.render_add_button())
                         .finish(),
                 )
                 .finish(),
@@ -563,14 +368,14 @@ impl RuleView {
         app: &AppContext,
     ) -> Box<dyn Element> {
         Flex::column()
-            .with_child(self.render_search_bar_row(&filtered_rules))
+            .with_child(self.render_search_bar_row())
             .with_child(self.render_items(appearance, filtered_rules, app))
             .finish()
     }
 }
 
 impl Entity for RuleView {
-    type Event = RuleViewEvent;
+    type Event = ();
 }
 
 impl View for RuleView {
@@ -590,8 +395,6 @@ impl View for RuleView {
             .with_child(self.render_header(appearance))
             .with_child(self.render_description(appearance));
 
-        col.add_child(self.render_scope_tabs(appearance));
-
         let ai_settings = AISettings::as_ref(app);
         if !ai_settings.is_memory_enabled(app) {
             col.add_child(self.render_disabled_banner(appearance));
@@ -608,16 +411,7 @@ impl View for RuleView {
 }
 
 impl TypedActionView for RuleView {
-    type Action = RuleViewAction;
+    type Action = ();
 
-    fn handle_action(&mut self, action: &RuleViewAction, ctx: &mut ViewContext<Self>) {
-        match action {
-            RuleViewAction::AddRule => {
-                ctx.emit(RuleViewEvent::AddRule);
-            }
-            RuleViewAction::SelectScope(scope) => {
-                self.select_scope(*scope, ctx);
-            }
-        }
-    }
+    fn handle_action(&mut self, _action: &(), _ctx: &mut ViewContext<Self>) {}
 }

@@ -1,38 +1,32 @@
 use crate::pane_group::focus_state::PaneFocusHandle;
 use crate::pane_group::{pane::view, BackingView, PaneConfiguration, PaneEvent};
 use warp_core::ui::appearance::Appearance;
-use warp_server_client::ids::SyncId;
 use warpui::{
     elements::{
         Align, ClippedScrollStateHandle, ClippedScrollable, ConstrainedBox, Container, Flex,
         MainAxisSize, ParentElement, ScrollbarWidth,
     },
-    AppContext, Element, Entity, FocusContext, ModelHandle, TypedActionView, View, ViewContext,
+    AppContext, Element, Entity, FocusContext, ModelHandle, SingletonEntity, TypedActionView, View,
+    ViewContext,
 };
 
 use warpui::elements::ChildView;
-use warpui::{SingletonEntity, ViewHandle};
+use warpui::ViewHandle;
 
 pub mod rule;
-pub mod rule_editor;
 mod style;
 use rule::*;
-use rule_editor::*;
 
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq)]
 pub enum AIFactPage {
     #[default]
     Rules,
-    RuleEditor {
-        sync_id: Option<SyncId>,
-    },
 }
 
 impl std::fmt::Display for AIFactPage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             AIFactPage::Rules => write!(f, "Rules"),
-            AIFactPage::RuleEditor { .. } => write!(f, "Rule Editor"),
         }
     }
 }
@@ -44,7 +38,6 @@ pub enum AIFactViewEvent {
 
 #[derive(Debug, Clone)]
 pub enum AIFactViewAction {
-    AddRule,
     UpdatePage(AIFactPage),
 }
 
@@ -53,7 +46,6 @@ pub struct AIFactView {
     focus_handle: Option<PaneFocusHandle>,
     current_page: AIFactPage,
     rule_view: ViewHandle<RuleView>,
-    rule_editor_view: ViewHandle<RuleEditorView>,
     clipped_scroll_state: ClippedScrollStateHandle,
 }
 
@@ -66,15 +58,9 @@ impl AIFactView {
             me.handle_rule_view_event(event, ctx);
         });
 
-        let rule_editor_view = ctx.add_typed_action_view(RuleEditorView::new);
-        ctx.subscribe_to_view(&rule_editor_view, |me, _, event, ctx| {
-            me.handle_rule_editor_view_event(event, ctx);
-        });
-
         Self {
             pane_configuration,
             focus_handle: None,
-            rule_editor_view,
             rule_view,
             current_page: AIFactPage::default(),
             clipped_scroll_state: Default::default(),
@@ -92,41 +78,13 @@ impl AIFactView {
     pub fn focus(&mut self, ctx: &mut ViewContext<Self>) {
         match self.current_page {
             AIFactPage::Rules => ctx.focus(&self.rule_view),
-            AIFactPage::RuleEditor { .. } => ctx.focus(&self.rule_editor_view),
         }
     }
 
-    fn handle_rule_view_event(&mut self, event: &RuleViewEvent, ctx: &mut ViewContext<Self>) {
-        match event {
-            RuleViewEvent::AddRule => {
-                self.update_page(AIFactPage::RuleEditor { sync_id: None }, ctx);
-            }
-        }
-    }
-
-    fn handle_rule_editor_view_event(
-        &mut self,
-        event: &RuleEditorViewEvent,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        self.update_page(AIFactPage::Rules, ctx);
-        match event {
-            RuleEditorViewEvent::Add { name, content } => {
-                self.rule_view.update(ctx, |rule_view, ctx| {
-                    rule_view.add_ai_rule(name.clone(), content.clone(), ctx);
-                });
-            }
-            _ => {}
-        }
-    }
+    fn handle_rule_view_event(&mut self, _event: &(), _ctx: &mut ViewContext<Self>) {}
 
     pub fn update_page(&mut self, page: AIFactPage, ctx: &mut ViewContext<Self>) {
         self.current_page = page;
-        if let AIFactPage::RuleEditor { sync_id } = page {
-            self.rule_editor_view.update(ctx, |rule_editor_view, ctx| {
-                rule_editor_view.set_ai_rule(sync_id, ctx);
-            });
-        }
         self.focus(ctx);
         ctx.notify();
     }
@@ -145,7 +103,6 @@ impl View for AIFactView {
         if focus_ctx.is_self_focused() {
             match self.current_page {
                 AIFactPage::Rules => ctx.focus(&self.rule_view),
-                AIFactPage::RuleEditor { .. } => ctx.focus(&self.rule_editor_view),
             }
         }
     }
@@ -155,9 +112,6 @@ impl View for AIFactView {
         let mut col = Flex::column().with_main_axis_size(MainAxisSize::Min);
         match self.current_page {
             AIFactPage::Rules => col.add_child(ChildView::new(&self.rule_view).finish()),
-            AIFactPage::RuleEditor { .. } => {
-                col.add_child(ChildView::new(&self.rule_editor_view).finish())
-            }
         }
 
         ClippedScrollable::vertical(
@@ -187,12 +141,6 @@ impl TypedActionView for AIFactView {
 
     fn handle_action(&mut self, action: &AIFactViewAction, ctx: &mut ViewContext<Self>) {
         match action {
-            AIFactViewAction::AddRule => {
-                self.rule_editor_view.update(ctx, |rule_editor_view, ctx| {
-                    rule_editor_view.set_ai_rule(None, ctx);
-                });
-                self.update_page(AIFactPage::RuleEditor { sync_id: None }, ctx);
-            }
             AIFactViewAction::UpdatePage(page) => self.update_page(*page, ctx),
         }
     }

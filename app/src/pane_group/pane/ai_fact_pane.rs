@@ -1,7 +1,7 @@
-use warpui::{AppContext, ModelHandle, SingletonEntity, View, ViewContext, ViewHandle};
+use warpui::{AppContext, ModelHandle, View, ViewContext, ViewHandle};
 
 use crate::{
-    ai::facts::{AIFactManager, AIFactView, AIFactViewEvent},
+    ai::facts::{AIFactView, AIFactViewEvent},
     app_state::{AIFactPaneSnapshot, LeafContents},
 };
 
@@ -31,9 +31,7 @@ impl AIFactPane {
     }
 
     pub fn new<V: View>(ctx: &mut ViewContext<V>) -> Self {
-        let window_id = ctx.window_id();
-        let view =
-            AIFactManager::handle(ctx).read(ctx, |manager, _ctx| manager.ai_fact_view(window_id));
+        let view = ctx.add_typed_action_view(AIFactView::new);
         Self::from_view(view, ctx)
     }
 
@@ -57,19 +55,12 @@ impl PaneContent for AIFactPane {
             .update(ctx, |view, ctx| view.set_focus_handle(focus_handle, ctx));
 
         let pane_id = self.id();
-        let pane_group_id = ctx.view_id();
-        let window_id = ctx.window_id();
-
         ctx.subscribe_to_view(&self.ai_fact_view(ctx), move |pane_group, _, event, ctx| {
             let AIFactViewEvent::Pane(pane_event) = event;
             pane_group.handle_pane_event(pane_id, pane_event, ctx)
         });
         ctx.subscribe_to_view(&self.view, move |group, _, event, ctx| {
             group.handle_pane_view_event(pane_id, event, ctx);
-        });
-
-        AIFactManager::handle(ctx).update(ctx, |manager, ctx| {
-            manager.register_pane(self, pane_group_id, window_id, ctx);
         });
     }
 
@@ -83,12 +74,6 @@ impl PaneContent for AIFactPane {
         let ai_fact_view = self.ai_fact_view(ctx);
         ctx.unsubscribe_to_view(&ai_fact_view);
         ctx.unsubscribe_to_view(&self.view);
-
-        // Always deregister from AIFactManager - it will be re-registered on attach if restored
-        let window_id = ctx.window_id();
-        AIFactManager::handle(ctx).update(ctx, |manager, ctx| {
-            manager.deregister_pane(&window_id, ctx);
-        });
     }
 
     fn snapshot(&self, _app: &AppContext) -> LeafContents {

@@ -20,11 +20,6 @@ pub const RULE_VERTICAL_PADDING: f32 = 12.;
 pub const ROW_HORIZONTAL_PADDING: f32 = 12.;
 pub const ITEM_BOTTOM_MARGIN: f32 = 12.;
 
-pub const EDITOR_HORIZONTAL_PADDING: f32 = 16.;
-pub const EDITOR_VERTICAL_PADDING: f32 = 10.;
-pub const EDITOR_MIN_HEIGHT: f32 = 240.;
-pub const EDITOR_MAX_HEIGHT: f32 = 320.;
-
 pub const SECTION_MARGIN: f32 = 16.;
 pub const PANE_PADDING: f32 = 16.;
 pub const PANE_WIDTH: f32 = 800.;
@@ -66,32 +61,6 @@ pub fn description_text(appearance: &Appearance) -> UiComponentStyles {
             bottom: 8.,
             ..Default::default()
         }),
-        ..Default::default()
-    }
-}
-
-pub fn fact_row_subtext(appearance: &Appearance) -> UiComponentStyles {
-    UiComponentStyles {
-        font_size: Some(SUBTEXT_FONT_SIZE),
-        font_color: Some(
-            appearance
-                .theme()
-                .sub_text_color(appearance.theme().background())
-                .into(),
-        ),
-        ..Default::default()
-    }
-}
-
-pub fn fact_row_text(appearance: &Appearance) -> UiComponentStyles {
-    UiComponentStyles {
-        font_size: Some(TEXT_FONT_SIZE),
-        font_color: Some(
-            appearance
-                .theme()
-                .main_text_color(appearance.theme().background())
-                .into(),
-        ),
         ..Default::default()
     }
 }
