@@ -1,1 +1,1 @@
-DROP TABLE IF EXISTS user_profiles;
+-- WARPER-001: hosted account profile persistence was removed.

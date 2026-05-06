@@ -9,12 +9,12 @@ use warp_multi_agent_api::{self as api, response_event::stream_finished};
 
 use super::schema::{
     active_mcp_servers, agent_conversations, agent_tasks, ai_document_panes, ai_memory_panes, app,
-    blocks, code_pane_tabs, code_panes, code_review_panes, commands, current_user_information,
-    env_var_collection_panes, folders, ignored_suggestions, mcp_environment_variables,
-    mcp_server_installations, mcp_server_panes, notebook_panes, notebooks, pane_branches,
-    pane_leaves, pane_nodes, panels, project_rules, projects, server_experiments, settings_panes,
-    tabs, terminal_panes, user_profiles, welcome_panes, windows, workflow_panes, workflows,
-    workspace_language_server, workspace_metadata, workspaces,
+    blocks, code_pane_tabs, code_panes, code_review_panes, commands, env_var_collection_panes,
+    folders, ignored_suggestions, mcp_environment_variables, mcp_server_installations,
+    mcp_server_panes, notebook_panes, notebooks, pane_branches, pane_leaves, pane_nodes, panels,
+    project_rules, projects, server_experiments, settings_panes, tabs, terminal_panes,
+    welcome_panes, windows, workflow_panes, workflows, workspace_language_server,
+    workspace_metadata, workspaces,
 };
 
 #[derive(Insertable)]
@@ -630,16 +630,6 @@ pub struct Command {
     pub is_agent_executed: Option<bool>,
 }
 
-#[derive(Identifiable, Queryable, Insertable)]
-#[diesel(table_name = user_profiles)]
-#[diesel(primary_key(firebase_uid))]
-pub struct UserProfile {
-    pub firebase_uid: String,
-    pub photo_url: String,
-    pub email: String,
-    pub display_name: Option<String>,
-}
-
 #[derive(Insertable, Queryable)]
 pub struct ServerExperiment {
     pub experiment: String,
@@ -649,12 +639,6 @@ pub struct ServerExperiment {
 #[diesel(table_name = server_experiments)]
 pub struct NewServerExperiment {
     pub experiment: String,
-}
-
-#[derive(Debug, Insertable)]
-#[diesel(table_name = current_user_information)]
-pub struct CurrentUserInformation {
-    pub email: String,
 }
 
 #[derive(Debug, Insertable, Queryable, AsChangeset)]

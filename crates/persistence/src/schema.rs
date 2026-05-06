@@ -142,12 +142,6 @@ diesel::table! {
 }
 
 diesel::table! {
-    current_user_information (email) {
-        email -> Text,
-    }
-}
-
-diesel::table! {
     env_var_collection_panes (id) {
         id -> Integer,
         kind -> Text,
@@ -303,22 +297,6 @@ diesel::table! {
         active_profile_id -> Nullable<Text>,
         conversation_ids -> Nullable<Text>,
         active_conversation_id -> Nullable<Text>,
-    }
-}
-
-diesel::table! {
-    user_profiles (firebase_uid) {
-        firebase_uid -> Text,
-        photo_url -> Text,
-        email -> Text,
-        display_name -> Nullable<Text>,
-    }
-}
-
-diesel::table! {
-    users (id) {
-        id -> Integer,
-        firebase_uid -> Text,
     }
 }
 
