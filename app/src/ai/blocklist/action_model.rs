@@ -30,9 +30,8 @@ pub(crate) use execute::coerce_integer_args;
 pub(crate) use execute::FileReadResult;
 pub use execute::{
     read_local_file_context, NewConversationDecision, PromptSuggestionExecutor,
-    ReadFileContextResult, RequestFileEditsExecutor, RequestFileEditsFormatKind,
-    ShellCommandExecutor, ShellCommandExecutorEvent, StartAgentExecutor, StartAgentExecutorEvent,
-    StartAgentRequest,
+    RequestFileEditsExecutor, RequestFileEditsFormatKind, ShellCommandExecutor,
+    ShellCommandExecutorEvent, StartAgentExecutor, StartAgentExecutorEvent, StartAgentRequest,
 };
 
 use futures::future::{join_all, BoxFuture};

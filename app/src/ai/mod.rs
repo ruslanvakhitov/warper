@@ -48,7 +48,5 @@ pub fn init(app: &mut AppContext) {
     blocklist::keyboard_navigable_buttons::init(app);
     blocklist::block::number_shortcut_buttons::init(app);
     blocklist::toggleable_items::init(app);
-    blocklist::suggested_agent_mode_workflow_modal::init(app);
-    blocklist::suggested_rule_modal::init(app);
     ai_document_view::init(app);
 }

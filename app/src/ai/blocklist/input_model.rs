@@ -641,8 +641,6 @@ impl BlocklistAIInputModel {
         let buffer_cloned = input.buffer_text.clone();
         let current_input_type = self.input_type();
 
-        let is_udi_enabled = InputSettings::as_ref(ctx).is_universal_developer_input_enabled(ctx);
-
         // Determine if the input is a follow-up to an AI block.
         let is_agent_follow_up = {
             let model = self.model.lock();
