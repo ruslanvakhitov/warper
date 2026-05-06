@@ -655,10 +655,6 @@ impl TypedActionView for LaunchConfigSaveModal {
     type Action = ActionRequest;
 
     fn handle_action(&mut self, action: &ActionRequest, ctx: &mut ViewContext<Self>) {
-        // TODO(vorporeal): We should figure out a better way to handle the
-        // interactions with the filesystem here, whether it's compiling out
-        // the save modal more completely or doing something else.  Perhaps
-        // this will become moot when we put launch configs in Warp Drive.
         let action = match action {
             ActionRequest::Action(action) => action.clone(),
             ActionRequest::Enter => LaunchConfigSaveAction::from_state(&self.save_state),

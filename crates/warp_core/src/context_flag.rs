@@ -86,19 +86,6 @@ impl ContextFlag {
         disable_flag(Self::ShowMCPServers);
     }
 
-    pub fn set_warp_drive_link_only() {
-        disable_flag(Self::ForceSidePanelOpen);
-        disable_flag(Self::ShowRewardModal);
-        disable_flag(Self::HideOpenOnDesktopButton);
-        disable_flag(Self::RunWorkflow);
-        disable_flag(Self::CreateNewSession);
-        disable_flag(Self::CloseWindow);
-        disable_flag(Self::PromptForVersionUpdates);
-        disable_flag(Self::WarpEssentials);
-        disable_flag(Self::NetworkLogConsole);
-        disable_flag(Self::ShowMCPServers);
-    }
-
     // ContextFlag flag sets:
     pub fn set_shared_session_only() {
         disable_flag(Self::CreateNewSession);

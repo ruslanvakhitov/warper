@@ -610,9 +610,17 @@ pub fn test_suggestions_menu_positioning() -> Builder {
                 ),
         )
         .with_step(
-            new_step_with_default_assertions("Open Warp Drive")
+            new_step_with_default_assertions("Open left panel")
                 .with_click_on_saved_position("workspace:toggle_left_panel")
-                .add_assertion(assert_is_left_panel_open()),
+                .add_assertion(Box::new(|app, window_id| {
+                    let workspace = workspace_view(app, window_id);
+                    workspace.read(app, |workspace, ctx| {
+                        async_assert!(
+                            workspace.is_left_panel_open(ctx),
+                            "Expected left panel to be open, but it was closed"
+                        )
+                    })
+                })),
         )
         .with_step(
             new_step_with_default_assertions("Assert that suggestions menu updated")

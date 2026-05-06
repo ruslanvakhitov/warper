@@ -33,7 +33,6 @@ pub mod terminal;
 pub mod themes;
 pub mod type_getters;
 pub mod view_getters;
-pub mod warp_drive;
 pub mod window;
 pub mod workflow;
 pub mod workspace;

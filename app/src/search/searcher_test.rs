@@ -42,7 +42,7 @@ fn test_tokenizer_simple() {
 #[test]
 fn test_tokenizer_warp_special_chars() {
     // Test string includes warp-related terms with hyphen, underscore, forward slash, backslash, and colon
-    let test_string = "warp-cli/launch_command:run C:\\\\Program_Files\\\\Warp\\\\core-engine.dll check_status:/dev/warp_drive-0";
+    let test_string = "warp-cli/launch_command:run C:\\\\Program_Files\\\\Warp\\\\core-engine.dll check_status:/dev/local_state-0";
     let tokens = token_stream_helper(test_string);
 
     assert_eq!(tokens.len(), 25);
@@ -61,7 +61,7 @@ fn test_tokenizer_warp_special_chars() {
         64,
     );
     assert_token(&tokens[15], 15, "dll", 65, 68);
-    assert_token(&tokens[16], 16, "check_status:/dev/warp_drive-0", 69, 99);
+    assert_token(&tokens[16], 16, "check_status:/dev/local_state-0", 69, 99);
 }
 
 #[test]
