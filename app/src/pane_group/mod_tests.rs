@@ -47,7 +47,7 @@ use crate::{
     workspace::{
         sync_inputs::SyncedInputState, ActiveSession, OneTimeModalModel, WorkspaceRegistry,
     },
-    workspaces::{user_profiles::UserProfiles, user_workspaces::UserWorkspaces},
+    workspaces::user_workspaces::UserWorkspaces,
     AgentNotificationsModel, GlobalResourceHandles, GlobalResourceHandlesProvider,
 };
 #[cfg(feature = "local_fs")]
@@ -90,7 +90,6 @@ fn initialize_app(app: &mut App) {
     app.add_singleton_model(|_| FileBasedMCPManager::default());
 
     app.add_singleton_model(|_| TemplatableMCPServerManager::default());
-    app.add_singleton_model(|_ctx| UserProfiles::new(Vec::new()));
     app.add_singleton_model(|_| Appearance::mock());
     app.add_singleton_model(PrivacySettings::mock);
     app.add_singleton_model(|_ctx| SyncedInputState::mock());

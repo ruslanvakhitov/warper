@@ -16,6 +16,7 @@ Validates:
   - startup graph denylist checks for hosted clients and direct network primitives
   - hosted UI/action/deeplink/restore/menu entrypoint vocabulary denylist checks
   - removed auth/billing/team/Drive/shared-session/environment URI roots
+  - stale hosted auth/profile/task/telemetry restore and startup vocabulary checks
   - telemetry, crash reporting, autoupdate, and Sentry upload/download denylist checks
   - app/src and crates runtime endpoint literal checks outside tests/generated schema
   - focused warp_core channel tests for absent hosted service configs
@@ -25,6 +26,8 @@ Validates:
 Does not validate:
   - launching the macOS .app (run script/warper_app_help_smoke after bundling)
   - enforcing an OS-level outbound network block
+  - credential-free GUI terminal-session network interception; no deterministic
+    command here opens a live terminal session under the interposer
   - manual terminal creation, pane splitting, or settings edits in a live UI
   - app crate `#[cfg(test)]` modules for amputated hosted features
   - private credentials, hosted Warp/Oz service availability, or OpenRouter behavior
@@ -51,6 +54,7 @@ echo "  - startup/channel hosted endpoint and update/download denylist"
 echo "  - startup graph hosted-client and direct-network primitive denylist"
 echo "  - UI/action/deeplink/restore/menu hosted entrypoint denylist"
 echo "  - removed auth/billing/team/Drive/shared-session/environment URI roots"
+echo "  - hosted auth/profile/task/telemetry restore and startup vocabulary denylist"
 echo "  - telemetry/crash/autoupdate/Sentry upload and download denylist"
 echo "  - runtime endpoint literals in app/src and crates outside tests/generated schema"
 echo "  - warp_core absent hosted service config tests"
@@ -60,6 +64,7 @@ echo
 echo "Does not validate:"
 echo "  - macOS .app launch (run script/warper_app_help_smoke after bundling)"
 echo "  - OS-level outbound network blocking"
+echo "  - credential-free GUI terminal-session network interception"
 echo "  - live UI terminal creation, pane splitting, or settings edits"
 echo "  - app crate #[cfg(test)] modules for amputated hosted features"
 echo "  - private credentials, hosted Warp/Oz availability, or OpenRouter behavior"
@@ -71,6 +76,8 @@ echo "Running static denylist: startup-network"
 ./script/check_warper_static_denylist startup-network
 echo "Running static denylist: entrypoints"
 ./script/check_warper_static_denylist entrypoints
+echo "Running static denylist: hosted-restore-startup"
+./script/check_warper_static_denylist hosted-restore-startup
 echo "Running static denylist: telemetry-crash-update"
 ./script/check_warper_static_denylist telemetry-crash-update
 echo "Running static denylist: all-runtime"

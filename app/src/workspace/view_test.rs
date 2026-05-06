@@ -45,7 +45,6 @@ use crate::terminal::history::History;
 use crate::terminal::keys::TerminalKeybindings;
 #[cfg(windows)]
 use crate::util::traffic_lights::windows::RendererState;
-use crate::workspaces::user_profiles::UserProfiles;
 use crate::workspaces::user_workspaces::UserWorkspaces;
 
 use crate::terminal::local_tty::spawner::PtySpawner;
@@ -85,7 +84,6 @@ fn initialize_app(app: &mut App) {
     app.add_singleton_model(|_| SystemStats::new());
     app.add_singleton_model(SyncQueue::mock);
     app.add_singleton_model(UserWorkspaces::default_mock);
-    app.add_singleton_model(|_ctx| UserProfiles::new(Vec::new()));
     app.add_singleton_model(UpdateManager::mock);
     app.add_singleton_model(MCPGalleryManager::new);
     app.add_singleton_model(CloudViewModel::mock);

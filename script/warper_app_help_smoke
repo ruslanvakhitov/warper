@@ -11,7 +11,9 @@ Usage: script/warper_app_help_smoke [path/to/Warper.app]
 Runs the bundled Warper executable with --help under the WARPER-001 network
 interposer and verifies it exits successfully. This is a deterministic
 bundle-entrypoint smoke; it does not open the UI or validate OS-level
-outbound-network blocking.
+outbound-network blocking. It also does not validate credential-free GUI
+terminal-session network interception because this script has no deterministic
+command to open a live terminal session under the interposer.
 
 Default bundle path:
   target/aarch64-apple-darwin/debug/bundle/osx/Warper.app
