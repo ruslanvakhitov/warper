@@ -27,7 +27,6 @@ pub(crate) mod predict;
 pub mod request_limits;
 pub(crate) mod restored_conversations;
 pub(crate) mod skills;
-pub(crate) mod voice;
 pub use agent_tips::*;
 pub use request_limits::*;
 use warpui::AppContext;

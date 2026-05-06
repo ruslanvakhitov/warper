@@ -1,6 +1,5 @@
 use crate::pane_group::focus_state::PaneFocusHandle;
 use crate::pane_group::{pane::view, BackingView, PaneConfiguration, PaneEvent};
-use std::path::PathBuf;
 use warp_core::ui::appearance::Appearance;
 use warp_server_client::ids::SyncId;
 use warpui::{
@@ -41,9 +40,6 @@ impl std::fmt::Display for AIFactPage {
 #[derive(Debug, Clone)]
 pub enum AIFactViewEvent {
     Pane(PaneEvent),
-    OpenSettings,
-    OpenFile(PathBuf),
-    InitializeProject(PathBuf),
 }
 
 #[derive(Debug, Clone)]
@@ -105,23 +101,6 @@ impl AIFactView {
             RuleViewEvent::AddRule => {
                 self.update_page(AIFactPage::RuleEditor { sync_id: None }, ctx);
             }
-            RuleViewEvent::Edit(sync_id) => {
-                self.update_page(
-                    AIFactPage::RuleEditor {
-                        sync_id: Some(*sync_id),
-                    },
-                    ctx,
-                );
-            }
-            RuleViewEvent::OpenSettings => {
-                ctx.emit(AIFactViewEvent::OpenSettings);
-            }
-            RuleViewEvent::OpenFile(path) => {
-                ctx.emit(AIFactViewEvent::OpenFile(path.clone()));
-            }
-            RuleViewEvent::InitializeProject(path) => {
-                ctx.emit(AIFactViewEvent::InitializeProject(path.clone()));
-            }
         }
     }
 
@@ -135,27 +114,6 @@ impl AIFactView {
             RuleEditorViewEvent::Add { name, content } => {
                 self.rule_view.update(ctx, |rule_view, ctx| {
                     rule_view.add_ai_rule(name.clone(), content.clone(), ctx);
-                });
-            }
-            RuleEditorViewEvent::Edit {
-                name,
-                content,
-                sync_id,
-                revision_ts,
-            } => {
-                self.rule_view.update(ctx, |rule_view, ctx| {
-                    rule_view.edit_ai_rule(
-                        name.clone(),
-                        content.clone(),
-                        *sync_id,
-                        revision_ts.clone(),
-                        ctx,
-                    );
-                });
-            }
-            RuleEditorViewEvent::Delete { sync_id } => {
-                self.rule_view.update(ctx, |rule_view, ctx| {
-                    rule_view.delete_ai_rule(*sync_id, ctx);
                 });
             }
             _ => {}
@@ -272,8 +230,4 @@ impl BackingView for AIFactView {
     fn set_focus_handle(&mut self, focus_handle: PaneFocusHandle, _ctx: &mut ViewContext<Self>) {
         self.focus_handle = Some(focus_handle);
     }
-}
-
-pub fn is_online(_app: &AppContext) -> bool {
-    true
 }

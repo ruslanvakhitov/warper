@@ -61,9 +61,8 @@ impl PaneContent for AIFactPane {
         let window_id = ctx.window_id();
 
         ctx.subscribe_to_view(&self.ai_fact_view(ctx), move |pane_group, _, event, ctx| {
-            if let AIFactViewEvent::Pane(pane_event) = event {
-                pane_group.handle_pane_event(pane_id, pane_event, ctx)
-            }
+            let AIFactViewEvent::Pane(pane_event) = event;
+            pane_group.handle_pane_event(pane_id, pane_event, ctx)
         });
         ctx.subscribe_to_view(&self.view, move |group, _, event, ctx| {
             group.handle_pane_view_event(pane_id, event, ctx);

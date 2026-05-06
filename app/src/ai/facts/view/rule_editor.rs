@@ -3,7 +3,7 @@ use crate::editor::{
     PropagateAndNoOpNavigationKeys, SingleLineEditorOptions, TextOptions,
 };
 use crate::ui_components::buttons::icon_button;
-use crate::view_components::action_button::{ActionButton, DangerSecondaryTheme, PrimaryTheme};
+use crate::view_components::action_button::{ActionButton, PrimaryTheme};
 use warp_core::ui::{appearance::Appearance, theme::color::internal_colors};
 use warp_editor::editor::NavigationKey;
 use warp_server_client::ids::SyncId;
@@ -39,22 +39,12 @@ pub enum RuleEditorViewEvent {
         name: Option<String>,
         content: String,
     },
-    Edit {
-        name: Option<String>,
-        content: String,
-        sync_id: SyncId,
-        revision_ts: Option<()>,
-    },
-    Delete {
-        sync_id: SyncId,
-    },
 }
 
 #[derive(Debug, Clone)]
 pub enum RuleEditorViewAction {
     Back,
     Save,
-    Delete,
 }
 pub struct RuleEditorView {
     // Is None if we are adding a new rule, otherwise it is the existing rule we are editing.
@@ -65,7 +55,6 @@ pub struct RuleEditorView {
     content_editor: ViewHandle<EditorView>,
 
     save_button: ViewHandle<ActionButton>,
-    delete_button: ViewHandle<ActionButton>,
     back_button: MouseStateHandle,
     clipped_scroll_state: ClippedScrollStateHandle,
 }
@@ -134,21 +123,12 @@ impl RuleEditorView {
             button
         });
 
-        let delete_button = ctx.add_typed_action_view(|_| {
-            ActionButton::new("Delete rule", DangerSecondaryTheme)
-                .with_icon(Icon::Trash)
-                .on_click(|ctx| {
-                    ctx.dispatch_typed_action(RuleEditorViewAction::Delete);
-                })
-        });
-
         Self {
             ai_fact: None,
             current_editor: EditorType::Name,
             name_editor,
             content_editor,
             save_button,
-            delete_button,
             back_button: Default::default(),
             clipped_scroll_state: Default::default(),
         }
@@ -339,7 +319,7 @@ impl View for RuleEditorView {
 
     fn render(&self, app: &AppContext) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
-        let mut col = Flex::column()
+        let col = Flex::column()
             .with_child(self.render_header(appearance))
             .with_child(self.render_form(appearance));
 
@@ -361,9 +341,6 @@ impl TypedActionView for RuleEditorView {
                 let name = if name.is_empty() { None } else { Some(name) };
                 let content = self.content_editor.as_ref(ctx).buffer_text(ctx);
                 ctx.emit(RuleEditorViewEvent::Add { name, content });
-            }
-            RuleEditorViewAction::Delete => {
-                ctx.emit(RuleEditorViewEvent::Back);
             }
         }
     }

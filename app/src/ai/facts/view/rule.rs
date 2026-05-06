@@ -5,11 +5,6 @@ use crate::editor::{
 use crate::search_bar::SearchBar;
 use crate::settings::{AISettings, AISettingsChangedEvent};
 use crate::ui_components::icons::Icon;
-use crate::view_components::{
-    action_button::{ActionButton, NakedTheme},
-    DismissibleToast,
-};
-use crate::workspace::ToastStack;
 use ai::project_context::model::{ProjectContextModel, ProjectContextModelEvent};
 use markdown_parser::{
     weight::CustomWeight, FormattedText, FormattedTextFragment, FormattedTextLine,
@@ -20,9 +15,7 @@ use warp_core::ui::{
     appearance::{Appearance, AppearanceEvent},
     theme::color::internal_colors,
 };
-use warp_server_client::ids::SyncId;
 use warpui::elements::Shrinkable;
-use warpui::platform::FilePickerConfiguration;
 use warpui::ui_components::button::ButtonVariant;
 use warpui::{
     elements::{
@@ -37,6 +30,7 @@ use warpui::{
 };
 
 use super::style;
+use crate::view_components::action_button::{ActionButton, NakedTheme};
 
 pub const HEADER_TEXT: &str = "Rules";
 const DESCRIPTION_TEXT: &str = "Rules enhance the agent by providing structured guidelines that help maintain consistency, enforce best practices, and adapt to specific workflows, including codebases or broader tasks.";
@@ -60,20 +54,12 @@ pub enum RuleScope {
 #[derive(Debug, Clone)]
 pub enum RuleViewEvent {
     AddRule,
-    Edit(SyncId),
-    OpenSettings,
-    OpenFile(PathBuf),
-    InitializeProject(PathBuf),
 }
 
 #[derive(Debug, Clone)]
 pub enum RuleViewAction {
     AddRule,
-    InitializeProject,
-    Edit(SyncId),
-    OpenSettings,
     SelectScope(RuleScope),
-    OpenFile(PathBuf),
 }
 
 #[derive(Default, Debug, Clone)]
@@ -199,9 +185,7 @@ impl RuleView {
         });
 
         let initialize_button = ctx.add_typed_action_view(|_| {
-            ActionButton::new("Initialize Project", NakedTheme)
-                .with_icon(Icon::Plus)
-                .on_click(|ctx| ctx.dispatch_typed_action(RuleViewAction::InitializeProject))
+            ActionButton::new("Initialize Project", NakedTheme).with_icon(Icon::Plus)
         });
 
         Self {
@@ -245,18 +229,6 @@ impl RuleView {
         _ctx: &mut ViewContext<Self>,
     ) {
     }
-
-    pub fn edit_ai_rule(
-        &mut self,
-        _name: Option<String>,
-        _content: String,
-        _sync_id: SyncId,
-        _revision_ts: Option<()>,
-        _ctx: &mut ViewContext<Self>,
-    ) {
-    }
-
-    pub fn delete_ai_rule(&mut self, _id: SyncId, _ctx: &mut ViewContext<Self>) {}
 
     fn render_header(&self, appearance: &Appearance) -> Box<dyn Element> {
         Flex::row()
@@ -420,9 +392,7 @@ impl RuleView {
             self.disabled_banner_highlight_index.clone(),
         )
         .with_hyperlink_font_color(internal_colors::accent_fg_strong(appearance.theme()).into())
-        .register_default_click_handlers(|_, ctx, _| {
-            ctx.dispatch_typed_action(RuleViewAction::OpenSettings);
-        });
+        .register_default_click_handlers(|_, _ctx, _| {});
 
         Container::new(
             Flex::row()
@@ -492,16 +462,12 @@ impl RuleView {
             .finish(),
         );
 
-        let file_path = project_row.file_path.clone();
         row.add_child(
             appearance
                 .ui_builder()
                 .button(ButtonVariant::Outlined, project_row.mouse_state.clone())
                 .with_text_label("Open file".to_string())
                 .build()
-                .on_click(move |ctx, _, _| {
-                    ctx.dispatch_typed_action(RuleViewAction::OpenFile(file_path.clone()));
-                })
                 .finish(),
         );
 
@@ -649,42 +615,8 @@ impl TypedActionView for RuleView {
             RuleViewAction::AddRule => {
                 ctx.emit(RuleViewEvent::AddRule);
             }
-            RuleViewAction::Edit(sync_id) => {
-                ctx.emit(RuleViewEvent::Edit(*sync_id));
-            }
-            RuleViewAction::OpenSettings => {
-                ctx.emit(RuleViewEvent::OpenSettings);
-            }
             RuleViewAction::SelectScope(scope) => {
                 self.select_scope(*scope, ctx);
-            }
-            RuleViewAction::OpenFile(path) => {
-                ctx.emit(RuleViewEvent::OpenFile(path.clone()));
-            }
-            RuleViewAction::InitializeProject => {
-                let file_picker_config = FilePickerConfiguration::new().folders_only();
-                let window_id = ctx.window_id();
-
-                ctx.open_file_picker(
-                    move |result, ctx| match result {
-                        Ok(paths) => {
-                            if let Some(directory_path) = paths.first() {
-                                let path = PathBuf::from(directory_path);
-                                ctx.emit(RuleViewEvent::InitializeProject(path));
-                            }
-                        }
-                        Err(err) => {
-                            ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
-                                toast_stack.add_ephemeral_toast(
-                                    DismissibleToast::error(format!("{err}")),
-                                    window_id,
-                                    ctx,
-                                );
-                            });
-                        }
-                    },
-                    file_picker_config,
-                );
             }
         }
     }

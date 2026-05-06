@@ -7,12 +7,6 @@ pub use manager::AIFactManager;
 pub use view::{AIFactView, AIFactViewEvent};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum AIFact {
-    #[serde(rename = "memory")]
-    Memory(AIMemory),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AIMemory {
     #[serde(default)]
     pub name: Option<String>,
@@ -24,18 +18,4 @@ pub struct AIMemory {
     /// so we can suppress re-surfacing the same suggestion in future responses.
     #[serde(default)]
     pub suggested_logging_id: Option<SuggestedLoggingId>,
-}
-
-impl AIFact {
-    pub fn is_memory(&self) -> bool {
-        matches!(self, AIFact::Memory { .. })
-    }
-}
-
-impl AIFact {
-    pub fn display_name(&self) -> String {
-        match self {
-            AIFact::Memory(memory) => memory.content.clone(),
-        }
-    }
 }
