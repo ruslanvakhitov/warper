@@ -1,8 +1,6 @@
 use std::collections::HashMap;
 
-use crate::ai::mcp::templatable::{
-    GalleryData, JsonTemplate, TemplatableMCPServer, TemplateVariable,
-};
+use crate::ai::mcp::templatable::{GalleryData, JsonTemplate, TemplatableMCPServer};
 use chrono::Utc;
 use uuid::Uuid;
 use warpui::{Entity, ModelContext, SingletonEntity};
@@ -95,28 +93,6 @@ pub struct MCPGalleryManager {
     templatable_mcp_servers: HashMap<Uuid, TemplatableMCPServer>,
 }
 
-#[derive(Debug, Clone)]
-pub struct MCPTemplateVariable {
-    pub key: String,
-    pub allowed_values: Option<Vec<String>>,
-}
-
-#[derive(Debug, Clone)]
-pub struct MCPJsonTemplate {
-    pub json: String,
-    pub variables: Vec<MCPTemplateVariable>,
-}
-
-#[derive(Debug, Clone)]
-pub struct MCPGalleryTemplate {
-    pub description: String,
-    pub gallery_item_id: String,
-    pub instructions_in_markdown: Option<String>,
-    pub json_template: MCPJsonTemplate,
-    pub title: String,
-    pub version: i32,
-}
-
 impl MCPGalleryManager {
     pub fn new(_ctx: &mut ModelContext<Self>) -> Self {
         Self {
@@ -136,71 +112,10 @@ impl MCPGalleryManager {
     pub fn get_templatable_mcp_server(&self, gallery_uuid: Uuid) -> Option<&TemplatableMCPServer> {
         self.templatable_mcp_servers.get(&gallery_uuid)
     }
-
-    /// Replace gallery items from a locally owned template list.
-    pub fn update_gallery_items(
-        &mut self,
-        templates: Vec<MCPGalleryTemplate>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        let mut gallery_items = HashMap::new();
-        let mut templatable_mcp_servers = HashMap::new();
-
-        for gallery_template in templates {
-            let Ok(uuid) = Uuid::parse_str(&gallery_template.gallery_item_id) else {
-                log::debug!(
-                    "Failed to parse uuid for gallery item {}",
-                    gallery_template.gallery_item_id
-                );
-                continue;
-            };
-
-            let json_template = JsonTemplate {
-                json: gallery_template.json_template.json,
-                variables: gallery_template
-                    .json_template
-                    .variables
-                    .into_iter()
-                    .map(|v| TemplateVariable {
-                        key: v.key,
-                        allowed_values: v.allowed_values,
-                    })
-                    .collect(),
-            };
-
-            let gallery_item = GalleryMCPServer::new(
-                uuid,
-                gallery_template.title,
-                gallery_template.description,
-                gallery_template.version,
-                gallery_template.instructions_in_markdown,
-                json_template,
-            );
-
-            let Ok(templatable_mcp_server): Result<TemplatableMCPServer, _> =
-                gallery_item.clone().try_into()
-            else {
-                log::debug!("Failed to parse template for gallery item {}", uuid);
-                continue;
-            };
-
-            gallery_items.insert(uuid, gallery_item);
-            templatable_mcp_servers.insert(uuid, templatable_mcp_server);
-        }
-
-        self.gallery_items = gallery_items;
-        self.templatable_mcp_servers = templatable_mcp_servers;
-
-        ctx.emit(MCPGalleryManagerEvent::ItemsRefreshed);
-    }
-}
-
-pub enum MCPGalleryManagerEvent {
-    ItemsRefreshed,
 }
 
 impl Entity for MCPGalleryManager {
-    type Event = MCPGalleryManagerEvent;
+    type Event = ();
 }
 
 impl SingletonEntity for MCPGalleryManager {}

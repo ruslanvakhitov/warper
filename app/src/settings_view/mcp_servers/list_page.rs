@@ -20,7 +20,6 @@ use crate::util::truncation::truncate_from_end;
 
 use crate::{
     ai::mcp::{
-        gallery::MCPGalleryManagerEvent,
         logs,
         templatable::TemplatableMCPServer,
         templatable_manager::{TemplatableMCPServerManager, TemplatableMCPServerManagerEvent},
@@ -837,20 +836,6 @@ impl MCPServersListPageView {
             | TemplatableMCPServerManagerEvent::LegacyServerConverted => {
                 self.refresh_server_cards(ctx);
                 self.refresh_file_based_server_cards(ctx);
-            }
-        }
-    }
-
-    fn handle_mcp_gallery_manager_event(
-        &mut self,
-        event: &MCPGalleryManagerEvent,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        match event {
-            MCPGalleryManagerEvent::ItemsRefreshed => {
-                self.refresh_gallery_cards(ctx);
-                // We also need to refresh the server cards, because they use the gallery information to determine if an update is available
-                self.refresh_server_cards(ctx);
             }
         }
     }

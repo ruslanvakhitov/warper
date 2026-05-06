@@ -49,8 +49,6 @@ impl DestructiveMCPConfirmationDialogDisplayOptions {
 #[derive(Debug, Clone)]
 pub enum DestructiveMCPConfirmationDialogVariant {
     DeleteLocal,
-    DeleteShared,
-    Unshare,
 }
 
 impl From<&DestructiveMCPConfirmationDialogVariant>
@@ -63,22 +61,6 @@ impl From<&DestructiveMCPConfirmationDialogVariant>
                     "Delete MCP server?".to_string(),
                     "This will remove this MCP server from local settings.".to_string(),
                     "Delete MCP".to_string(),
-                    "Cancel".to_string(),
-                )
-            }
-            DestructiveMCPConfirmationDialogVariant::DeleteShared => {
-                DestructiveMCPConfirmationDialogDisplayOptions::new(
-                    "Delete MCP server?".to_string(),
-                    "This will remove this MCP server from local settings.".to_string(),
-                    "Delete MCP".to_string(),
-                    "Cancel".to_string(),
-                )
-            }
-            DestructiveMCPConfirmationDialogVariant::Unshare => {
-                DestructiveMCPConfirmationDialogDisplayOptions::new(
-                    "Remove MCP server?".to_string(),
-                    "This will remove this MCP server from local settings.".to_string(),
-                    "Remove".to_string(),
                     "Cancel".to_string(),
                 )
             }

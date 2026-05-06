@@ -829,7 +829,11 @@ impl AIExecutionProfilesModel {
 
     /// Handle deleted MCP servers by deleting its uuid from all profiles.
     fn remove_deleted_mcp_servers(&mut self, ctx: &mut ModelContext<Self>) {
-        let all_valid_uuids = TemplatableMCPServerManager::get_all_cloud_synced_mcp_servers(ctx);
+        let all_valid_uuids: std::collections::HashSet<_> =
+            TemplatableMCPServerManager::get_all_runnable_mcp_servers(ctx)
+                .into_iter()
+                .map(|(uuid, _)| uuid)
+                .collect();
         for profile_id in self.get_all_profile_ids() {
             self.edit_profile_internal(
                 profile_id,
@@ -838,10 +842,10 @@ impl AIExecutionProfilesModel {
                     let original_denylist_len = profile.mcp_denylist.len();
                     profile
                         .mcp_allowlist
-                        .retain(|uuid| all_valid_uuids.contains_key(uuid));
+                        .retain(|uuid| all_valid_uuids.contains(uuid));
                     profile
                         .mcp_denylist
-                        .retain(|uuid| all_valid_uuids.contains_key(uuid));
+                        .retain(|uuid| all_valid_uuids.contains(uuid));
                     profile.mcp_allowlist.len() != original_allowlist_len
                         || profile.mcp_denylist.len() != original_denylist_len
                 },

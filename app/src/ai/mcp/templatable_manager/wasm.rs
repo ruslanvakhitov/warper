@@ -138,18 +138,6 @@ impl TemplatableMCPServerManager {
         log::warn!("Deleting credentials for MCP servers is not supported in WASM")
     }
 
-    pub fn is_server_installation_shared(
-        &self,
-        _installation_uuid: Uuid,
-        _app: &AppContext,
-    ) -> bool {
-        false
-    }
-
-    pub fn is_server_template_shared(&self, _template_uuid: Uuid, _app: &AppContext) -> bool {
-        false
-    }
-
     pub fn is_update_available_for_installation(
         &self,
         _installation_uuid: Uuid,
@@ -183,45 +171,6 @@ impl TemplatableMCPServerManager {
         false
     }
 
-    pub fn is_author(&self, _template_uuid: Uuid, _ctx: &AppContext) -> bool {
-        log::warn!(
-            "Checking if a user is the author of a templatable MCP server is not supported in WASM"
-        );
-        false
-    }
-
-    pub fn share_templatable_mcp_server(
-        &mut self,
-        _template_uuid: Uuid,
-        _ctx: &mut ModelContext<Self>,
-    ) {
-        log::warn!("Sharing a templatable MCP server is not supported in WASM");
-    }
-
-    pub fn share_templatable_mcp_server_installation(
-        &mut self,
-        _installation_uuid: Uuid,
-        _ctx: &mut ModelContext<Self>,
-    ) {
-        log::warn!("Sharing a templatable MCP server installation is not supported in WASM");
-    }
-
-    pub fn unshare_templatable_mcp_server(
-        &mut self,
-        _template_uuid: Uuid,
-        _ctx: &mut ModelContext<Self>,
-    ) {
-        log::warn!("Unsharing a templatable MCP server is not supported in WASM");
-    }
-
-    pub fn unshare_templatable_mcp_server_installation(
-        &mut self,
-        _installation_uuid: Uuid,
-        _ctx: &mut ModelContext<Self>,
-    ) {
-        log::warn!("Unsharing a templatable MCP server installation is not supported in WASM");
-    }
-
     pub fn get_installation_by_template_uuid(
         &self,
         _template_uuid: Uuid,
@@ -229,7 +178,7 @@ impl TemplatableMCPServerManager {
         None
     }
 
-    pub fn get_all_cloud_synced_mcp_servers(_ctx: &AppContext) -> HashMap<Uuid, String> {
+    pub fn get_all_runnable_mcp_servers(_ctx: &AppContext) -> Vec<(Uuid, String)> {
         Default::default()
     }
 

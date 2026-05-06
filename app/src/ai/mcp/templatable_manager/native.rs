@@ -215,14 +215,6 @@ impl TemplatableMCPServerManager {
         me
     }
 
-    pub fn is_server_installation_shared(
-        &self,
-        _installation_uuid: Uuid,
-        _app: &AppContext,
-    ) -> bool {
-        false
-    }
-
     pub fn change_server_state(
         &mut self,
         installation_uuid: Uuid,
@@ -242,10 +234,6 @@ impl TemplatableMCPServerManager {
             uuid: installation_uuid,
             state: new_state,
         });
-    }
-
-    pub fn is_server_template_shared(&self, _template_uuid: Uuid, _app: &AppContext) -> bool {
-        false
     }
 
     /// Gets a TemplatableMCPServer by its UUID.
@@ -303,15 +291,6 @@ impl TemplatableMCPServerManager {
             .get_installed_templatable_servers()
             .iter()
             .map(|(uuid, installation)| (*uuid, installation.templatable_mcp_server().name.clone()))
-            .collect()
-    }
-
-    /// Get all cloud synced MCP servers (templatable templates).
-    pub fn get_all_cloud_synced_mcp_servers(ctx: &AppContext) -> HashMap<Uuid, String> {
-        TemplatableMCPServerManager::as_ref(ctx)
-            .get_all_templatable_mcp_servers()
-            .iter()
-            .map(|&server| (server.uuid, server.name.clone()))
             .collect()
     }
 
@@ -992,48 +971,6 @@ impl TemplatableMCPServerManager {
 
     pub fn is_authorized_editor(&self, template_uuid: Uuid, _ctx: &AppContext) -> bool {
         self.get_templatable_mcp_server(template_uuid).is_some()
-    }
-
-    pub fn is_author(&self, template_uuid: Uuid, _ctx: &AppContext) -> bool {
-        self.get_templatable_mcp_server(template_uuid).is_some()
-    }
-
-    pub fn share_templatable_mcp_server(
-        &mut self,
-        _template_uuid: Uuid,
-        _ctx: &mut ModelContext<Self>,
-    ) {
-        log::warn!("Sharing MCP servers is unavailable in local-only WARPER-001 builds.");
-    }
-
-    pub fn share_templatable_mcp_server_installation(
-        &mut self,
-        installation_uuid: Uuid,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        let template_uuid = self.get_template_uuid(installation_uuid);
-        if let Some(template_uuid) = template_uuid {
-            self.share_templatable_mcp_server(template_uuid, ctx);
-        }
-    }
-
-    pub fn unshare_templatable_mcp_server(
-        &mut self,
-        _template_uuid: Uuid,
-        _ctx: &mut ModelContext<Self>,
-    ) {
-        log::warn!("Unsharing MCP servers is unavailable in local-only WARPER-001 builds.");
-    }
-
-    pub fn unshare_templatable_mcp_server_installation(
-        &mut self,
-        installation_uuid: Uuid,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        let template_uuid = self.get_template_uuid(installation_uuid);
-        if let Some(template_uuid) = template_uuid {
-            self.unshare_templatable_mcp_server(template_uuid, ctx);
-        }
     }
 
     pub fn has_oauth_credentials_for_server(&self, template_uuid: Uuid) -> bool {
