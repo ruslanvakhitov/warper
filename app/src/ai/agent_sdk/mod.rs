@@ -7,7 +7,6 @@ use std::path::Path;
 use crate::ai::agent_sdk::driver::harness::{harness_kind, HarnessKind};
 use crate::ai::agent_sdk::driver::{AgentDriverOptions, AgentRunPrompt, Task};
 use crate::ai::agent_sdk::mcp_config::build_mcp_servers_from_specs;
-use crate::ai::llms::LLMId;
 use anyhow::Context;
 use warp_cli::{agent::AgentCommand, CliCommand, GlobalOptions};
 use warp_core::features::FeatureFlag;
@@ -33,8 +32,6 @@ mod model;
 pub mod output;
 mod profiles;
 mod provider;
-#[cfg(test)]
-mod test_support;
 
 /// Run a Warp CLI command.
 pub fn run(
@@ -177,12 +174,7 @@ fn build_merged_config_and_task(
         harness_auth_secrets: None,
     };
 
-    let runtime_mcp_specs = match merged_config.mcp_servers.as_ref() {
-        Some(mcp_servers) => config_file::mcp_specs_from_mcp_servers(mcp_servers)?,
-        None => Vec::new(),
-    };
-
-    let model_override: Option<LLMId> = merged_config
+    let model_override = merged_config
         .model_id
         .as_deref()
         .map(|model_id| common::validate_agent_mode_base_model_id(model_id, ctx))
@@ -216,9 +208,6 @@ fn build_merged_config_and_task(
 
     let task = Task {
         prompt: AgentRunPrompt::Local(resolve_prompt(&local_prompt, ctx)?),
-        model: model_override,
-        profile: args.profile.clone(),
-        mcp_specs: runtime_mcp_specs,
         harness: harness_kind(selected_harness)?,
     };
 

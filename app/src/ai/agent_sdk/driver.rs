@@ -1,7 +1,6 @@
 use std::{
     borrow::Cow,
-    cell::RefCell,
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     ffi::OsString,
     future::Future,
     io,
@@ -17,17 +16,6 @@ use std::{
 use crate::ai::agent_sdk::driver::harness::{
     HarnessKind, HarnessRunner, SavePoint, ThirdPartyHarness,
 };
-use crate::ai::llms::{LLMId, LLMPreferences};
-use crate::ai::mcp::MCPServerState;
-use crate::ai::{
-    blocklist::BlocklistAIPermissions,
-    execution_profiles::profiles::AIExecutionProfilesModel,
-    mcp::{
-        parsing::{normalize_mcp_json, ParsedTemplatableMCPServerResult},
-        templatable_manager::TemplatableMCPServerManagerEvent,
-        TemplatableMCPServerInstallation, TemplatableMCPServerManager,
-    },
-};
 use crate::terminal::cli_agent_sessions::plugin_manager::{
     plugin_manager_for, CliAgentPluginManager,
 };
@@ -35,27 +23,17 @@ use crate::terminal::cli_agent_sessions::{
     CLIAgentSessionStatus, CLIAgentSessionsModel, CLIAgentSessionsModelEvent,
 };
 use anyhow::Context as _;
-use futures::{
-    channel::oneshot,
-    future::{self, Either},
-    FutureExt as _,
-};
-use oneshot::{Canceled, Sender};
-use uuid::Uuid;
-use warp_cli::mcp::MCPSpec;
+use futures::{channel::oneshot, FutureExt as _};
+use oneshot::Canceled;
 use warp_core::{report_if_error, safe_debug, safe_info};
 use warp_managed_secrets::ManagedSecretValue;
-use warpui::{
-    r#async::{FutureExt, TimeoutError},
-    Entity, ModelContext, ModelHandle, ModelSpawner, SingletonEntity,
-};
+use warpui::{Entity, ModelContext, ModelHandle, ModelSpawner, SingletonEntity};
 
 pub(crate) mod harness;
 pub(crate) mod terminal;
 
 use terminal::TerminalDriverEvent;
 
-const MCP_SERVER_STARTUP_TIMEOUT: Duration = Duration::from_secs(60);
 const HARNESS_SAVE_INTERVAL: Duration = Duration::from_secs(30);
 /// IdleTimeoutSender is wrapper around a sender that signals when a run is done after
 /// an idle timeout. Used for local and third-party harnesses.
@@ -164,11 +142,6 @@ pub struct AgentDriver {
 pub struct Task {
     /// The prompt for the agent.
     pub prompt: AgentRunPrompt,
-    pub model: Option<LLMId>,
-    /// Local execution profile ID. If None, use the default profile.
-    pub profile: Option<String>,
-    /// MCP server specifications to start prior to execution.
-    pub mcp_specs: Vec<MCPSpec>,
     /// Which harness to use for executing the agent run.
     pub harness: HarnessKind,
 }
@@ -186,16 +159,6 @@ pub enum AgentDriverError {
     TerminalUnavailable,
     #[error("Invalid runtime state - please file a bug report.")]
     InvalidRuntimeState,
-    #[error("Requested MCP server not found: {0}")]
-    MCPServerNotFound(uuid::Uuid),
-    #[error("Failed to start MCP servers")]
-    MCPStartupFailed,
-    #[error("Failed to parse MCP server JSON: {0}")]
-    MCPJsonParseError(String),
-    #[error("MCP server configuration is missing required variables")]
-    MCPMissingVariables,
-    #[error("Agent profile \"{0}\" not found")]
-    ProfileError(String),
     #[error("Saved prompt not found for id {0}")]
     AIWorkflowNotFound(String),
     #[error("Terminal bootstrap failed")]
@@ -407,346 +370,6 @@ impl AgentDriver {
         }
     }
 
-    /// Resolve MCP specs into UUIDs for existing servers and ephemeral installations for inline specs.
-    ///
-    /// Returns (existing_server_uuids, ephemeral_installations)
-    fn resolve_mcp_specs(
-        specs: &[MCPSpec],
-    ) -> Result<(Vec<Uuid>, Vec<TemplatableMCPServerInstallation>), AgentDriverError> {
-        let mut existing_uuids = Vec::new();
-        let mut ephemeral_installations = Vec::new();
-
-        for spec in specs {
-            match spec {
-                MCPSpec::Uuid(uuid) => {
-                    existing_uuids.push(*uuid);
-                }
-                MCPSpec::Json(json_str) => {
-                    // Normalize the JSON - if it's a single server definition (has command or url
-                    // at top level), wrap it with a generated name.
-                    let normalized_json = normalize_mcp_json(json_str)
-                        .map_err(|e| AgentDriverError::MCPJsonParseError(e.to_string()))?;
-
-                    // Parse as inline MCP server configuration
-                    let parsed_results =
-                        ParsedTemplatableMCPServerResult::from_user_json(&normalized_json)
-                            .map_err(|e| AgentDriverError::MCPJsonParseError(e.to_string()))?;
-
-                    for result in parsed_results {
-                        let installation = result
-                            .templatable_mcp_server_installation
-                            .ok_or(AgentDriverError::MCPMissingVariables)?;
-                        ephemeral_installations.push(installation);
-                    }
-                }
-            }
-        }
-
-        Ok((existing_uuids, ephemeral_installations))
-    }
-
-    /// Start MCP servers from profile allowlist for the terminal.
-    fn start_profile_mcp_servers(
-        &self,
-        ctx: &mut ModelContext<Self>,
-    ) -> impl Future<Output = Result<(), AgentDriverError>> {
-        let terminal_id = self.terminal_driver.as_ref(ctx).terminal_view().id();
-        let permissions = BlocklistAIPermissions::as_ref(ctx);
-        let profile_allowlist = permissions.get_mcp_allowlist(ctx, Some(terminal_id));
-
-        if !profile_allowlist.is_empty() {
-            log::info!(
-                "Starting {} MCP servers allowlisted in profile",
-                profile_allowlist.len()
-            );
-        }
-        self.start_mcp_servers(&profile_allowlist, ctx)
-    }
-
-    fn get_mcp_servers_to_start(
-        &self,
-        uuids: &[uuid::Uuid],
-        ctx: &mut ModelContext<Self>,
-    ) -> Result<HashSet<Uuid>, AgentDriverError> {
-        let templatable_mcp_manager = TemplatableMCPServerManager::handle(ctx);
-
-        let mut servers_to_start: HashSet<Uuid> = HashSet::new();
-
-        for uuid in uuids.iter() {
-            if templatable_mcp_manager
-                .as_ref(ctx)
-                .is_server_active_or_pending(*uuid)
-            {
-                log::debug!("MCP server {uuid} is already active or pending; skipping");
-                continue;
-            } else if templatable_mcp_manager
-                .as_ref(ctx)
-                .get_installed_server(uuid)
-                .is_some()
-            {
-                servers_to_start.insert(*uuid);
-            } else {
-                return Err(AgentDriverError::MCPServerNotFound(*uuid));
-            }
-        }
-
-        Ok(servers_to_start)
-    }
-
-    fn subscribe_to_mcp_managers(
-        &self,
-        tx: Sender<Result<(), AgentDriverError>>,
-        servers_to_start: HashSet<Uuid>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        use std::rc::Rc;
-
-        let templatable_mcp_manager = TemplatableMCPServerManager::handle(ctx);
-        let mcp_to_start = Rc::new(RefCell::new(servers_to_start));
-        let manager_clone = templatable_mcp_manager.clone();
-        let mut tx = Some(tx);
-        ctx.subscribe_to_model(
-            &templatable_mcp_manager,
-            move |_me, event, ctx| match event {
-                TemplatableMCPServerManagerEvent::StateChanged { uuid, state } => {
-                    let mut pending_ids = mcp_to_start.borrow_mut();
-                    if !pending_ids.contains(uuid) {
-                        return;
-                    }
-                    match state {
-                        MCPServerState::Running => {
-                            pending_ids.remove(uuid);
-                            if pending_ids.is_empty() {
-                                log::info!("All MCP servers started");
-                                if let Some(sender) = tx.take() {
-                                    let _ = sender.send(Ok(()));
-                                }
-                                ctx.unsubscribe_from_model(&manager_clone);
-                            }
-                        }
-                        MCPServerState::FailedToStart => {
-                            log::warn!("Failed to start MCP server {uuid}");
-                            if let Some(sender) = tx.take() {
-                                let _ = sender.send(Err(AgentDriverError::MCPStartupFailed));
-                            }
-                            ctx.unsubscribe_from_model(&manager_clone);
-                        }
-                        _ => {}
-                    }
-                }
-                TemplatableMCPServerManagerEvent::ServerInstallationAdded(_)
-                | TemplatableMCPServerManagerEvent::ServerInstallationDeleted(_)
-                | TemplatableMCPServerManagerEvent::TemplatableMCPServersUpdated
-                | TemplatableMCPServerManagerEvent::LegacyServerConverted => {}
-            },
-        );
-    }
-
-    fn spawn_inactive_servers(
-        &self,
-        servers_to_start: HashSet<Uuid>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        let templatable_mcp_manager = TemplatableMCPServerManager::handle(ctx);
-        templatable_mcp_manager.update(ctx, |manager, ctx| {
-            for uuid in servers_to_start {
-                manager.spawn_server(uuid, ctx);
-            }
-        });
-    }
-
-    fn start_mcp_servers(
-        &self,
-        uuids: &[uuid::Uuid],
-        ctx: &mut ModelContext<Self>,
-    ) -> impl Future<Output = Result<(), AgentDriverError>> {
-        let (tx, rx) = oneshot::channel();
-        let servers_to_start = match self.get_mcp_servers_to_start(uuids, ctx) {
-            Ok(val) => val,
-            Err(e) => {
-                return Either::Right(future::ready(Err(e)));
-            }
-        };
-
-        // If we don't need to start any servers, complete immediately.
-        if servers_to_start.is_empty() {
-            return Either::Right(future::ready(Ok(())));
-        }
-
-        log::info!("Starting {} MCP servers...", servers_to_start.len());
-
-        self.subscribe_to_mcp_managers(tx, servers_to_start.clone(), ctx);
-
-        self.spawn_inactive_servers(servers_to_start, ctx);
-
-        Either::Left(async move {
-            match rx.with_timeout(MCP_SERVER_STARTUP_TIMEOUT).await {
-                Ok(Ok(result)) => result,
-                Ok(Err(Canceled)) => {
-                    log::error!("Subscription dropped before MCP servers started");
-                    Err(AgentDriverError::InvalidRuntimeState)
-                }
-                Err(TimeoutError) => {
-                    log::error!("Timed out waiting for MCP servers to start");
-                    Err(AgentDriverError::MCPStartupFailed)
-                }
-            }
-        })
-    }
-
-    /// Start ephemeral MCP servers from inline JSON specifications.
-    /// These servers are not persisted and exist only for the duration of the agent run.
-    fn start_ephemeral_mcp_servers(
-        &self,
-        mut installations: Vec<TemplatableMCPServerInstallation>,
-        ctx: &mut ModelContext<Self>,
-    ) -> impl Future<Output = Result<(), AgentDriverError>> {
-        if installations.is_empty() {
-            return Either::Right(future::ready(Ok(())));
-        }
-
-        // Inject secrets into the ephemeral MCP server installations.
-        for installation in installations.iter_mut() {
-            installation.apply_secrets(&self.secrets);
-        }
-
-        let (tx, rx) = oneshot::channel();
-        let mut tx = Some(tx);
-        let mut uuids_to_start: HashSet<Uuid> = installations.iter().map(|i| i.uuid()).collect();
-
-        log::info!("Starting {} ephemeral MCP servers...", installations.len());
-
-        // Subscribe to state changes for these ephemeral servers.
-        let templatable_mcp_manager = TemplatableMCPServerManager::handle(ctx);
-        let manager_clone = templatable_mcp_manager.clone();
-
-        ctx.subscribe_to_model(&templatable_mcp_manager, move |_me, event, ctx| {
-            if let TemplatableMCPServerManagerEvent::StateChanged { uuid, state } = event {
-                if !uuids_to_start.contains(uuid) {
-                    return;
-                }
-                match state {
-                    MCPServerState::Running => {
-                        uuids_to_start.remove(uuid);
-                        if uuids_to_start.is_empty() {
-                            log::info!("All ephemeral MCP servers started");
-                            if let Some(sender) = tx.take() {
-                                let _ = sender.send(Ok(()));
-                            }
-                            ctx.unsubscribe_from_model(&manager_clone);
-                        }
-                    }
-                    MCPServerState::FailedToStart => {
-                        log::warn!("Failed to start ephemeral MCP server {uuid}");
-                        if let Some(sender) = tx.take() {
-                            let _ = sender.send(Err(AgentDriverError::MCPStartupFailed));
-                        }
-                        ctx.unsubscribe_from_model(&manager_clone);
-                    }
-                    _ => {}
-                }
-            }
-        });
-
-        // Spawn the ephemeral servers.
-        templatable_mcp_manager.update(ctx, move |manager, ctx| {
-            for installation in installations {
-                manager.spawn_cli_ephemeral_server(installation, ctx);
-            }
-        });
-
-        Either::Left(async move {
-            match rx.with_timeout(MCP_SERVER_STARTUP_TIMEOUT).await {
-                Ok(Ok(result)) => result,
-                Ok(Err(Canceled)) => {
-                    log::error!("Subscription dropped before ephemeral MCP servers started");
-                    Err(AgentDriverError::InvalidRuntimeState)
-                }
-                Err(TimeoutError) => {
-                    log::error!("Timed out waiting for ephemeral MCP servers to start");
-                    Err(AgentDriverError::MCPStartupFailed)
-                }
-            }
-        })
-    }
-
-    /// Wait for all file-based MCP servers with the given UUIDs to reach a terminal state
-    /// (`Running` or `FailedToStart`). Non-fatal: always completes without returning an error.
-    ///
-    /// **Sequencing note:** `AgentDriver` supports only one active subscription to
-    /// [`TemplatableMCPServerManager`] at a time. This function, [`Self::start_mcp_servers`],
-    /// and [`Self::start_ephemeral_mcp_servers`] must therefore run sequentially, never
-    /// concurrently.
-    fn wait_for_file_based_mcps_running(
-        &self,
-        uuids: Vec<Uuid>,
-        ctx: &mut ModelContext<Self>,
-    ) -> impl Future<Output = ()> {
-        // Filter out UUIDs that have already reached a terminal state.
-        let mut pending_uuids: HashSet<Uuid> = {
-            let templatable_manager = TemplatableMCPServerManager::as_ref(ctx);
-            uuids
-                .into_iter()
-                .filter(|uuid| {
-                    !matches!(
-                        templatable_manager.get_server_state(*uuid),
-                        Some(MCPServerState::Running) | Some(MCPServerState::FailedToStart)
-                    )
-                })
-                .collect()
-        };
-
-        if pending_uuids.is_empty() {
-            log::info!("All file-based MCP servers are already running; proceeding");
-            return Either::Right(future::ready(()));
-        }
-
-        let (tx, rx) = oneshot::channel::<()>();
-        let mut tx = Some(tx);
-
-        let templatable_manager_handle = TemplatableMCPServerManager::handle(ctx);
-        let manager_clone = templatable_manager_handle.clone();
-
-        ctx.subscribe_to_model(&templatable_manager_handle, move |_me, event, ctx| {
-            if let TemplatableMCPServerManagerEvent::StateChanged { uuid, state } = event {
-                if !pending_uuids.contains(uuid) {
-                    return;
-                }
-                match state {
-                    MCPServerState::Running | MCPServerState::FailedToStart => {
-                        pending_uuids.remove(uuid);
-                    }
-                    _ => {
-                        return;
-                    }
-                }
-                if pending_uuids.is_empty() {
-                    log::info!("All file-based MCP servers reached a terminal state; proceeding");
-                    if let Some(sender) = tx.take() {
-                        let _ = sender.send(());
-                    }
-                    ctx.unsubscribe_from_model(&manager_clone);
-                }
-            }
-        });
-
-        Either::Left(async move {
-            match rx.with_timeout(MCP_SERVER_STARTUP_TIMEOUT).await {
-                Ok(Ok(())) => {}
-                Ok(Err(Canceled)) => {
-                    log::warn!(
-                        "File-based MCP server readiness subscription dropped early; proceeding"
-                    );
-                }
-                Err(TimeoutError) => {
-                    log::warn!(
-                        "Timed out waiting for file-based MCP servers to reach a terminal state; proceeding without"
-                    );
-                }
-            }
-        })
-    }
-
     /// Runs the agent to completion.
     /// Driving the agent mostly requires main-thread UI framework updates, but using `async` and
     /// a `ModelSpawner` lets us express the high-level process linearly rather than in a
@@ -938,46 +561,6 @@ impl AgentDriver {
                 exit_code: exit_code.value(),
             })
         }
-    }
-
-    /// Configure the active terminal session with the specified profile.
-    fn configure_terminal(
-        &self,
-        profile: Option<String>,
-        ctx: &mut ModelContext<Self>,
-    ) -> Result<(), AgentDriverError> {
-        let terminal_id = self.terminal_driver.as_ref(ctx).terminal_view().id();
-
-        if let Some(profile) = profile {
-            let profile_id = profile
-                .parse::<usize>()
-                .map(crate::ai::execution_profiles::profiles::ClientProfileId::from_raw)
-                .map_err(|_| AgentDriverError::ProfileError(profile.clone()))?;
-            AIExecutionProfilesModel::handle(ctx).update(ctx, |model, ctx| {
-                if model.get_profile_by_id(profile_id, ctx).is_some() {
-                    model.set_active_profile(terminal_id, profile_id, ctx);
-                } else {
-                    return Err(AgentDriverError::ProfileError(profile.clone()));
-                }
-                Ok(())
-            })?;
-        }
-
-        Ok(())
-    }
-
-    fn set_base_model_override(
-        &self,
-        model_id: LLMId,
-        ctx: &mut ModelContext<Self>,
-    ) -> Result<(), AgentDriverError> {
-        let terminal_view_id = self.terminal_driver.as_ref(ctx).terminal_view().id();
-        log::info!("Selecting base agent model {model_id} (from agent driver)");
-
-        LLMPreferences::handle(ctx).update(ctx, |preferences, ctx| {
-            preferences.update_preferred_agent_mode_llm(&model_id, terminal_view_id, ctx);
-        });
-        Ok(())
     }
 
     /// Subscribe to the singleton `CLIAgentSessionsModel` so that idle-on-complete

@@ -4,7 +4,6 @@ use anyhow::Context as _;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{Map, Value};
 use warp_cli::agent::Harness;
-use warp_cli::mcp::MCPSpec;
 
 use crate::ai::ambient_agents::AgentConfigSnapshot;
 
@@ -132,46 +131,6 @@ fn parse_yaml(input: &str) -> anyhow::Result<AgentConfigSnapshotFile> {
 
 fn supported_keys_context() -> String {
     "Supported keys: name, environment_id, model_id, base_prompt, mcp_servers, host, computer_use_enabled".to_string()
-}
-
-/// Convert an unwrapped `mcp_servers` map into runtime MCP specs for AgentDriver.
-///
-/// Behavior:
-/// - Entries with `warp_id` become `MCPSpec::Uuid`.
-/// - Entries with `command`/`url` remain as inline JSON (`MCPSpec::Json`) containing the unwrapped server map.
-pub fn mcp_specs_from_mcp_servers(
-    mcp_servers: &Map<String, Value>,
-) -> anyhow::Result<Vec<MCPSpec>> {
-    let mut uuids: Vec<uuid::Uuid> = Vec::new();
-    let mut json_map: Map<String, Value> = Map::new();
-
-    for (name, config) in mcp_servers {
-        let obj = config
-            .as_object()
-            .ok_or_else(|| anyhow::anyhow!("MCP server '{name}' config must be a JSON object"))?;
-
-        if let Some(warp_id) = obj.get("warp_id").and_then(Value::as_str) {
-            let uuid = uuid::Uuid::parse_str(warp_id).map_err(|_| {
-                anyhow::anyhow!("MCP server '{name}' field 'warp_id' must be a UUID")
-            })?;
-            uuids.push(uuid);
-        } else {
-            json_map.insert(name.clone(), config.clone());
-        }
-    }
-
-    uuids.sort();
-    uuids.dedup();
-
-    let mut specs: Vec<MCPSpec> = uuids.into_iter().map(MCPSpec::Uuid).collect();
-
-    if !json_map.is_empty() {
-        let json =
-            serde_json::to_string(&json_map).context("Failed to serialize MCP server map")?;
-        specs.push(MCPSpec::Json(json));
-    }
-
-    Ok(specs)
 }
 
 /// Merge config file settings with CLI-provided overrides.

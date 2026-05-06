@@ -5,7 +5,6 @@ use std::io::Write as _;
 use serde_json::json;
 
 use crate::ai::ambient_agents::AgentConfigSnapshot;
-use warp_cli::mcp::MCPSpec;
 
 fn write_temp(suffix: &str, contents: &str) -> tempfile::NamedTempFile {
     let mut file = tempfile::Builder::new().suffix(suffix).tempfile().unwrap();
@@ -131,26 +130,6 @@ fn file_empty_mcp_servers_is_loaded_as_empty_map() {
 
     assert!(loaded.file.mcp_servers.is_some());
     assert!(loaded.file.mcp_servers.as_ref().unwrap().is_empty());
-}
-
-#[test]
-fn mcp_servers_map_converts_to_runtime_specs() {
-    let contents = json!({
-        "mcp_servers": {
-            "existing": { "warp_id": "550e8400-e29b-41d4-a716-446655440000" },
-            "ephemeral": { "command": "npx", "args": [] }
-        }
-    })
-    .to_string();
-
-    let file = write_temp(".json", &contents);
-    let loaded = super::load_config_file(file.path()).unwrap();
-
-    let map = loaded.file.mcp_servers.as_ref().unwrap();
-    let specs = super::mcp_specs_from_mcp_servers(map).unwrap();
-
-    assert!(specs.iter().any(|s| matches!(s, MCPSpec::Uuid(_))));
-    assert!(specs.iter().any(|s| matches!(s, MCPSpec::Json(_))));
 }
 
 #[test]
