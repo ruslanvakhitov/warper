@@ -459,15 +459,10 @@ impl EditorView {
                 log::debug!("Transcribed voice input: {transcribe_response:?}");
                 self.user_insert(&transcribe_response, ctx);
             }
-            Err(e) => match e {
-                TranscribeError::QuotaLimit => {
-                    self.voice_error_toast(super::VOICE_LIMIT_HIT_TOAST_TEXT, ctx)
-                }
-                _ => {
-                    log::error!("Failed to transcribe voice input: {e:?}");
-                    self.voice_error_toast(super::VOICE_ERROR_TOAST_TEXT, ctx)
-                }
-            },
+            Err(e) => {
+                log::error!("Failed to transcribe voice input: {e:?}");
+                self.voice_error_toast(super::VOICE_ERROR_TOAST_TEXT, ctx)
+            }
         }
         ctx.notify();
     }

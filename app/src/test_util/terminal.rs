@@ -28,7 +28,7 @@ use crate::terminal::view::inline_banner::ByoLlmAuthBannerSessionState;
 use crate::undo_close::UndoCloseStack;
 use crate::workspace::{OneTimeModalModel, WorkspaceRegistry};
 use crate::{
-    ai::{blocklist::BlocklistAIHistoryModel, AIRequestUsageModel},
+    ai::blocklist::BlocklistAIHistoryModel,
     context_chips::prompt::Prompt,
     experiments,
     network::NetworkStatus,
@@ -66,7 +66,6 @@ pub fn initialize_app_for_terminal_view(app: &mut App) {
     app.add_singleton_model(BlocklistAIPermissions::new);
     app.add_singleton_model(UndoCloseStack::new);
 
-    app.add_singleton_model(|ctx| AIRequestUsageModel::new(ctx));
     app.add_singleton_model(|_| KeybindingChangedNotifier::new());
     app.add_singleton_model(TerminalKeybindings::new);
     app.add_singleton_model(|_| ActiveSession::default());

@@ -19,16 +19,13 @@ pub(crate) mod conversation_status_ui;
 pub(crate) mod conversation_utils;
 pub(crate) mod document;
 pub(crate) mod get_relevant_files;
-pub(crate) mod harness_display;
 pub(crate) mod llms;
 pub mod onboarding;
 pub(crate) mod persisted_workspace;
 pub(crate) mod predict;
-pub mod request_limits;
 pub(crate) mod restored_conversations;
 pub(crate) mod skills;
 pub use agent_tips::*;
-pub use request_limits::*;
 use warpui::AppContext;
 #[cfg(not(target_family = "wasm"))]
 pub mod agent_sdk;

@@ -610,8 +610,6 @@ impl AIAgentOutput {
 /// Represents user visible errors.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum RenderableAIError {
-    QuotaLimit,
-    ServerOverloaded,
     InternalWarpError,
     ContextWindowExceeded(String),
     InvalidApiKey {
@@ -653,14 +651,10 @@ impl RenderableAIError {
 
 impl From<&AIApiError> for RenderableAIError {
     fn from(value: &AIApiError) -> Self {
-        match value {
-            AIApiError::QuotaLimit => Self::QuotaLimit,
-            AIApiError::ServerOverloaded => Self::ServerOverloaded,
-            _ => Self::Other {
-                error_message: format!("Request failed with error: {value:?}"),
-                will_attempt_resume: false,
-                waiting_for_network: false,
-            },
+        Self::Other {
+            error_message: format!("Request failed with error: {value:?}"),
+            will_attempt_resume: false,
+            waiting_for_network: false,
         }
     }
 }
@@ -668,10 +662,6 @@ impl From<&AIApiError> for RenderableAIError {
 impl Display for RenderableAIError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::QuotaLimit => write!(f, "Quota limit reached."),
-            Self::ServerOverloaded => {
-                write!(f, "Warp is currently overloaded. Please try again later.")
-            }
             Self::InternalWarpError => write!(f, "Internal Warp error."),
             Self::ContextWindowExceeded(message) => {
                 write!(f, "Context window exceeded: {message}")

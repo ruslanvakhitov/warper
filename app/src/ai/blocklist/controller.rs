@@ -2357,17 +2357,6 @@ impl BlocklistAIController {
                     );
                 });
             }
-            Some(warp_multi_agent_api::response_event::stream_finished::Reason::QuotaLimit(_)) => {
-                history_model.update(ctx, |history_model, ctx| {
-                    history_model.mark_response_stream_completed_with_error(
-                        RenderableAIError::QuotaLimit,
-                        stream_id,
-                        conversation_id,
-                        self.terminal_view_id,
-                        ctx,
-                    );
-                });
-            }
             Some(warp_multi_agent_api::response_event::stream_finished::Reason::LlmUnavailable(_)) => {
                 let error_message = "The LLM is currently unavailable.";
                 history_model.update(ctx, |history_model, ctx| {
@@ -2445,6 +2434,22 @@ impl BlocklistAIController {
                 history_model.update(ctx, |history_model, ctx| {
                     history_model.mark_response_stream_completed_with_error(
                         RenderableAIError::ContextWindowExceeded(error_message.to_owned()),
+                        stream_id,
+                        conversation_id,
+                        self.terminal_view_id,
+                        ctx,
+                    );
+                });
+            }
+            Some(_) => {
+                let error_message = "The AI provider rejected the request.";
+                history_model.update(ctx, |history_model, ctx| {
+                    history_model.mark_response_stream_completed_with_error(
+                        RenderableAIError::Other {
+                            error_message: error_message.to_owned(),
+                            will_attempt_resume: false,
+                            waiting_for_network: false,
+                        },
                         stream_id,
                         conversation_id,
                         self.terminal_view_id,
