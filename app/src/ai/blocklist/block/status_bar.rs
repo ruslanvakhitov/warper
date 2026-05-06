@@ -689,8 +689,7 @@ impl BlocklistAIStatusBar {
             // Get the current tip from the model
             self.current_tip = tip_model.as_ref(ctx).current_tip().cloned();
 
-            if let Some(tip) = self.current_tip.as_ref() {
-                            }
+            if let Some(tip) = self.current_tip.as_ref() {}
         } else {
             self.current_tip = None;
         }
@@ -893,14 +892,14 @@ fn render_agent_tip(tip: &AgentTip, app: &AppContext) -> Box<dyn Element> {
         use warpui::elements::HyperlinkLens;
         match link {
             HyperlinkLens::Url(url) => {
-                                app.open_url(url);
+                app.open_url(url);
             }
             HyperlinkLens::Action(action_ref) => {
                 if let Some(action) = action_ref
                     .as_any()
                     .downcast_ref::<crate::workspace::WorkspaceAction>()
                 {
-                                        evt.dispatch_typed_action(action.clone());
+                    evt.dispatch_typed_action(action.clone());
                 }
             }
         }

@@ -89,29 +89,3 @@ fn default_download_filename_falls_back_to_artifact_uid_with_extension() {
         "artifact-artifact-123.txt"
     );
 }
-
-#[test]
-fn converts_graphql_file_artifact() {
-    let artifact = Artifact::try_from(warp_graphql::ai::AIConversationArtifact::FileArtifact(
-        warp_graphql::ai::FileArtifact {
-            artifact_uid: "artifact-file-1".into(),
-            filepath: "outputs/report.txt".to_string(),
-            mime_type: "text/plain".to_string(),
-            description: Some("Daily summary".to_string()),
-            size_bytes: Some(42),
-        },
-    ))
-    .expect("expected file artifact conversion");
-
-    assert_eq!(
-        artifact,
-        Artifact::File {
-            artifact_uid: "artifact-file-1".to_string(),
-            filepath: "outputs/report.txt".to_string(),
-            filename: "report.txt".to_string(),
-            mime_type: "text/plain".to_string(),
-            description: Some("Daily summary".to_string()),
-            size_bytes: Some(42),
-        }
-    );
-}

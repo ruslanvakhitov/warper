@@ -13,7 +13,6 @@ use warp_core::{
 use warpui::{AppContext, Entity, EntityId, ModelContext, SingletonEntity};
 
 use crate::{
-    auth::AuthStateProvider,
     network::{NetworkStatus, NetworkStatusEvent, NetworkStatusKind},
     workspaces::user_workspaces::{UserWorkspaces, UserWorkspacesEvent},
 };
@@ -1158,11 +1157,7 @@ impl LLMPreferences {
             return;
         }
 
-        if AuthStateProvider::as_ref(ctx).get().is_logged_in() {
-            self.refresh_authed_models(ctx);
-        } else {
-            self.refresh_public_models(ctx);
-        }
+        let _ = ctx;
     }
 
     fn refresh_openrouter_models(&self, ctx: &mut ModelContext<Self>) {

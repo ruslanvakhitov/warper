@@ -65,7 +65,7 @@ impl ProviderCommandRunner {
                 }
 
                 let allowed_str = allowed_for.join(", ");
-                let status = "❌ Not Connected".to_string(); // TODO(bens): get this from gql
+                let status = "❌ Not Connected".to_string();
 
                 ProviderInfo {
                     name,

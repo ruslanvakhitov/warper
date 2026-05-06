@@ -3,7 +3,6 @@ use crate::ai::agent::AIAgentExchangeId;
 use crate::ai::blocklist::controller::{
     response_stream::ResponseStreamId, BlocklistAIController, BlocklistAIControllerEvent,
 };
-use crate::server::event_metadata::PromptSuggestionFallbackReason;
 use crate::settings::AISettings;
 use crate::terminal::event::{BlockType, UserBlockCompleted};
 use crate::terminal::model::block::BlockId;
@@ -29,9 +28,6 @@ pub enum PassiveSuggestionsEvent {
         prompt_suggestion_id: String,
         code_exchange_id: Option<AIAgentExchangeId>,
         block_id: BlockId,
-    },
-    PassiveCodeDiffFailed {
-        reason: PromptSuggestionFallbackReason,
     },
 }
 

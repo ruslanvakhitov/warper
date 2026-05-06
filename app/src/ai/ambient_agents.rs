@@ -1,5 +1,33 @@
 use chrono::{DateTime, Utc};
-use warp_graphql::ai::PlatformErrorCode;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AgentTaskState {
+    Blocked,
+    Cancelled,
+    Claimed,
+    Error,
+    InProgress,
+    Succeeded,
+    Failed,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PlatformErrorCode {
+    AuthenticationRequired,
+    BudgetExceeded,
+    ContentPolicyViolation,
+    EnvironmentSetupFailed,
+    ExternalAuthenticationRequired,
+    FeatureNotAvailable,
+    InsufficientCredits,
+    IntegrationDisabled,
+    IntegrationNotConfigured,
+    InternalError,
+    InvalidRequest,
+    NotAuthorized,
+    ResourceUnavailable,
+    ResourceNotFound,
+}
 
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize, PartialEq)]
 pub struct AgentConfigSnapshot {

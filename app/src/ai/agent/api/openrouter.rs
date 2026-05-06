@@ -619,7 +619,6 @@ mod tests {
             cli_agent_model: model.clone(),
             computer_use_model: model,
             is_memory_enabled: false,
-            warp_drive_context_enabled: false,
             mcp_context: None,
             planning_enabled: true,
             should_redact_secrets: false,

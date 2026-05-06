@@ -4,12 +4,9 @@ use std::fmt;
 use std::future::Future;
 use std::time::Duration;
 
-use warp_cli::agent::Harness;
 use warpui::{AppContext, SingletonEntity as _};
 
 use crate::ai::agent::conversation::AmbientAgentTaskId;
-use crate::ai::agent::conversation::ServerAIConversationMetadata;
-use crate::ai::agent_sdk::driver::AgentDriverError;
 use crate::ai::llms::{LLMId, LLMPreferences};
 
 /// How long to wait for workspace metadata to refresh.
@@ -67,30 +64,6 @@ pub fn refresh_workspace_metadata<C>(
     _ctx: &mut C,
 ) -> impl Future<Output = anyhow::Result<()>> + Send + 'static {
     async { Ok(()) }
-}
-
-/// Retained compatibility hook for callers that previously waited on hosted sync.
-pub fn refresh_warp_drive(
-    _ctx: &AppContext,
-) -> impl Future<Output = anyhow::Result<()>> + Send + 'static {
-    async { Ok(()) }
-}
-
-/// Fetch the conversation's server metadata and validate that its harness matches the caller's
-/// local runner choice. Returns the metadata on success so the caller can reuse it (e.g. for the
-/// server conversation token).
-///
-/// Called up-front before any task/config-build logic consumes `args.harness`, so a mismatch
-/// error surfaces before side effects like task creation. We deliberately do NOT auto-upgrade
-/// the harness: an unknown default with a Claude conversation id is treated as a mismatch
-/// and errors out.
-pub(super) async fn fetch_and_validate_conversation_harness(
-    conversation_id: &str,
-    _args_harness: Harness,
-) -> Result<ServerAIConversationMetadata, AgentDriverError> {
-    Err(AgentDriverError::ConversationLoadFailed(format!(
-        "conversation {conversation_id} is unavailable because hosted agent metadata is amputated in local-only Warper"
-    )))
 }
 
 /// An error resolving an agent option, which we may have prompted the user for.

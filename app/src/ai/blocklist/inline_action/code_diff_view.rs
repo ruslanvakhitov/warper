@@ -1,5 +1,5 @@
 use crate::ai::blocklist::view_util::render_provider_icon_button;
-use crate::ai::skills::{SkillOpenOrigin};
+use crate::ai::skills::SkillOpenOrigin;
 use anyhow::Result;
 use lazy_static::lazy_static;
 use markdown_parser::{FormattedText, FormattedTextFragment, FormattedTextLine};
@@ -96,7 +96,6 @@ use crate::{
         pane::{view, PaneId},
         BackingView, PaneEvent,
     },
-    server::event_metadata::{AgentModeCodeFileNavigationSource, ToggleCodeSuggestionsSettingSource},
     settings::AISettings,
     terminal::{input::SET_INPUT_MODE_AGENT_ACTION_NAME, ShellLaunchData},
     ui_components::{blended_colors, icons::Icon},
@@ -1069,10 +1068,8 @@ impl CodeDiffView {
         }
 
         match selection {
-            AcceptSelection::Only => {
-                            }
-            AcceptSelection::AndContinueWithAgent => {
-                            }
+            AcceptSelection::Only => {}
+            AcceptSelection::AndContinueWithAgent => {}
             AcceptSelection::AndAutoExecute => {}
         }
 
@@ -2090,8 +2087,7 @@ impl CodeDiffView {
                 .update(ctx, |v, ctx| v.navigate_previous_diff_hunk(ctx)),
         };
 
-        if let Some(output_id) = self.server_output_id() {
-                    }
+        if let Some(output_id) = self.server_output_id() {}
     }
 
     fn select_file(&mut self, direction: Direction, ctx: &mut ViewContext<Self>) {
@@ -2119,8 +2115,7 @@ impl CodeDiffView {
         });
         ctx.notify();
 
-        if let Some(output_id) = self.server_output_id() {
-                    }
+        if let Some(output_id) = self.server_output_id() {}
     }
 
     fn set_display_mode(&mut self, display_mode: DisplayMode, ctx: &mut ViewContext<Self>) {
@@ -2352,8 +2347,7 @@ impl CodeDiffView {
                         ));
                     }
                 }
-                if correction_count > 0 {
-                                    }
+                if correction_count > 0 {}
 
                 // Extract accepted file contents from editor buffers so the
                 // executor doesn't need to re-read from disk or the network.
@@ -2715,8 +2709,7 @@ impl TypedActionView for CodeDiffView {
                     self.selected_tab = *idx;
                     ctx.notify();
 
-                    if let Some(output_id) = self.server_output_id() {
-                                            }
+                    if let Some(output_id) = self.server_output_id() {}
                 }
             }
             CodeDiffViewAction::Edit => {
@@ -2735,7 +2728,7 @@ impl TypedActionView for CodeDiffView {
             }
             CodeDiffViewAction::ScrollToExpand => {
                 self.expand_inline_banner(ctx);
-                            }
+            }
             CodeDiffViewAction::ToggleCodeSuggestions => {
                 let checked = AISettings::handle(ctx).update(ctx, |settings, ctx| {
                     settings
@@ -2744,8 +2737,7 @@ impl TypedActionView for CodeDiffView {
                 });
                 ctx.notify();
 
-                if let Ok(checked) = checked {
-                                    }
+                if let Ok(checked) = checked {}
             }
             CodeDiffViewAction::OpenSettings => {
                 ctx.emit(CodeDiffViewEvent::OpenSettings);

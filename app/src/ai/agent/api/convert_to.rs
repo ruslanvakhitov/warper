@@ -8,8 +8,8 @@ use warp_multi_agent_api as api;
 use crate::ai::{
     agent::{
         AIAgentActionResult, AIAgentActionResultType, AIAgentAttachment, AIAgentContext,
-        AIAgentInput, DriveObjectPayload, MCPContext, PassiveSuggestionResultType,
-        PassiveSuggestionTrigger, RunningCommand, StaticQueryType, Suggestions, UserQueryMode,
+        AIAgentInput, MCPContext, PassiveSuggestionResultType, PassiveSuggestionTrigger,
+        RunningCommand, StaticQueryType, Suggestions, UserQueryMode,
     },
     block_context::BlockContext,
 };
@@ -488,37 +488,6 @@ impl From<AIAgentAttachment> for api::Attachment {
             },
             AIAgentAttachment::Block(block) => api::Attachment {
                 value: Some(api::attachment::Value::ExecutedShellCommand(block.into())),
-            },
-            AIAgentAttachment::DriveObject { uid, payload } => api::Attachment {
-                value: Some(api::attachment::Value::DriveObject(api::DriveObject {
-                    uid,
-                    object_payload: payload.map(|p| match p {
-                        DriveObjectPayload::Workflow {
-                            name,
-                            description,
-                            command,
-                        } => api::drive_object::ObjectPayload::Workflow(api::Workflow {
-                            name,
-                            description,
-                            command,
-                        }),
-                        DriveObjectPayload::Notebook { title, content } => {
-                            api::drive_object::ObjectPayload::Notebook(api::Notebook {
-                                title,
-                                content,
-                            })
-                        }
-                        DriveObjectPayload::GenericStringObject {
-                            payload,
-                            object_type,
-                        } => api::drive_object::ObjectPayload::GenericStringObject(
-                            api::GenericStringObject {
-                                payload,
-                                object_type,
-                            },
-                        ),
-                    }),
-                })),
             },
             #[allow(deprecated)]
             AIAgentAttachment::DiffHunk {

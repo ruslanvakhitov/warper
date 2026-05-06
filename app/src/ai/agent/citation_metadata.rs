@@ -1,36 +1,10 @@
 use serde::Serialize;
-use warpui::AppContext;
 
 use crate::ai::llms::LLMId;
-use crate::{
-    server::event_metadata::AgentModeCitation as AgentModeCitationMetadata,
-    terminal::view::block_onboarding::onboarding_agentic_suggestions_block::OnboardingChipType,
-};
+use crate::terminal::view::block_onboarding::onboarding_agentic_suggestions_block::OnboardingChipType;
 
 use super::conversation::AIConversationId;
-use super::{
-    AIAgentCitation, AIAgentExchangeId, EntrypointType, PassiveSuggestionTriggerType,
-    ServerOutputId,
-};
-
-pub trait ForEventMetadata {
-    type Output;
-
-    fn for_event_metadata(&self, ctx: &AppContext) -> Option<Self::Output>;
-}
-
-impl ForEventMetadata for AIAgentCitation {
-    type Output = AgentModeCitationMetadata;
-
-    fn for_event_metadata(&self, _ctx: &AppContext) -> Option<Self::Output> {
-        match self {
-            Self::WarpDocumentation { path } => {
-                Some(AgentModeCitationMetadata::WarpDocs { page: path.clone() })
-            }
-            Self::WebPage { url } => Some(AgentModeCitationMetadata::WebPage { url: url.clone() }),
-        }
-    }
-}
+use super::{AIAgentExchangeId, EntrypointType, PassiveSuggestionTriggerType, ServerOutputId};
 
 impl EntrypointType {
     pub fn entrypoint(&self) -> String {

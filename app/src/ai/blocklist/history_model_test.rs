@@ -631,37 +631,6 @@ fn test_toggle_autoexecute_override_persists_updated_conversation_state() {
 }
 
 #[test]
-fn test_find_by_token_after_merge_cloud_metadata() {
-    App::test((), |mut app| async move {
-        let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
-
-        history_model.update(&mut app, |model, _| {
-            model.merge_cloud_conversation_metadata(vec![create_server_metadata(
-                "New cloud conversation",
-                "cloud-token-1",
-                12.0,
-                None,
-            )]);
-        });
-
-        let token = ServerConversationToken::new("cloud-token-1".to_string());
-        history_model.read(&app, |model, _| {
-            let id = model
-                .find_conversation_id_by_server_token(&token)
-                .expect("token should resolve after merge_cloud_conversation_metadata");
-            let metadata = model
-                .get_conversation_metadata(&id)
-                .expect("metadata should exist for resolved id");
-            assert_eq!(
-                metadata.server_conversation_token.as_ref(),
-                Some(&token),
-                "reverse index must point at the same metadata entry as the forward map",
-            );
-        });
-    });
-}
-
-#[test]
 fn test_find_by_token_after_restore_conversations() {
     use crate::ai::agent::conversation::AIConversation;
 
@@ -683,80 +652,6 @@ fn test_find_by_token_after_restore_conversations() {
                 model.find_conversation_id_by_server_token(&token),
                 Some(conversation_id),
             );
-        });
-    });
-}
-
-#[test]
-fn test_find_by_token_returns_none_after_remove_conversation() {
-    App::test((), |mut app| async move {
-        initialize_settings_for_tests(&mut app);
-
-        // `delete_conversation` publishes persistence events via
-        // `GlobalResourceHandlesProvider`, so we need a mock sender wired up.
-        let (sender, _receiver) = std::sync::mpsc::sync_channel(2);
-        let mut global_resource_handles = GlobalResourceHandles::mock(&mut app);
-        global_resource_handles.model_event_sender = Some(sender);
-        app.add_singleton_model(|_| GlobalResourceHandlesProvider::new(global_resource_handles));
-
-        let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
-
-        history_model.update(&mut app, |model, _| {
-            model.merge_cloud_conversation_metadata(vec![create_server_metadata(
-                "Cloud conversation to remove",
-                "removable-token",
-                1.0,
-                None,
-            )]);
-        });
-
-        let token = ServerConversationToken::new("removable-token".to_string());
-        let conversation_id = history_model.read(&app, |model, _| {
-            model
-                .find_conversation_id_by_server_token(&token)
-                .expect("token should resolve before removal")
-        });
-
-        history_model.update(&mut app, |model, ctx| {
-            model.delete_conversation(conversation_id, None, ctx);
-        });
-
-        history_model.read(&app, |model, _| {
-            assert_eq!(
-                model.find_conversation_id_by_server_token(&token),
-                None,
-                "reverse index must be cleared when the conversation is removed",
-            );
-        });
-    });
-}
-
-#[test]
-fn test_find_by_token_returns_none_after_reset() {
-    App::test((), |mut app| async move {
-        let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
-
-        history_model.update(&mut app, |model, _| {
-            model.merge_cloud_conversation_metadata(vec![create_server_metadata(
-                "Cloud conversation",
-                "reset-token",
-                1.0,
-                None,
-            )]);
-        });
-
-        let token = ServerConversationToken::new("reset-token".to_string());
-
-        history_model.read(&app, |model, _| {
-            assert!(model.find_conversation_id_by_server_token(&token).is_some());
-        });
-
-        history_model.update(&mut app, |model, _| {
-            model.reset();
-        });
-
-        history_model.read(&app, |model, _| {
-            assert_eq!(model.find_conversation_id_by_server_token(&token), None);
         });
     });
 }

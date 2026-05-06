@@ -5,7 +5,6 @@ use crate::ai::blocklist::{RequestInput, ResponseStreamId, SerializedBlockListIt
 use crate::ai::skills::SkillDescriptor;
 use crate::notebooks::NotebookId;
 use crate::persistence::model::{ConversationUsageMetadata, ModelTokenUsage, ToolUsageMetadata};
-use crate::server::ids::ServerId;
 use crate::terminal::general_settings::GeneralSettings;
 use crate::terminal::model::block::{
     AgentInteractionMetadata, AgentViewVisibility, BlockId, SerializedAIMetadata, SerializedBlock,
@@ -28,7 +27,6 @@ use warp_core::features::FeatureFlag;
 use warp_core::ui::appearance::Appearance;
 use warp_core::ui::theme::color::internal_colors;
 use warp_core::ui::theme::WarpTheme;
-use warp_graphql::scalars::time::ServerTimestamp;
 use warp_multi_agent_api::response_event::stream_finished;
 use warp_multi_agent_api::{self as api, response_event::stream_finished::TokenUsage};
 use warpui::color::ColorU;
@@ -184,13 +182,6 @@ pub struct AIConversation {
     /// The server conversation ID of the source conversation if this conversation was forked.
     forked_from_server_conversation_token: Option<ServerConversationToken>,
 
-    /// Metadata from the server for this conversation (permissions, timestamps, etc.).
-    /// This is None for new conversations and gets populated after the first response completes.
-    /// TODO (roland): server_conversation_token, conversation_usage_metadata, and artifacts are duplicated in here.
-    /// Those are updated via stream events on init and finished respectively, while this is fetched via graphQL
-    /// Consider consolidating by having the stream events return this whole metadata
-    server_metadata: Option<ServerAIConversationMetadata>,
-
     /// The active transaction for this conversation, if any.
     transaction: Option<Transaction>,
 
@@ -275,7 +266,6 @@ impl AIConversation {
             server_conversation_token: None,
             task_id: None,
             forked_from_server_conversation_token: None,
-            server_metadata: None,
             transaction: None,
             autoexecute_override: Default::default(),
             added_exchanges_by_response: Default::default(),
@@ -454,7 +444,6 @@ impl AIConversation {
             server_conversation_token,
             task_id: run_id.as_deref().and_then(|id| id.parse().ok()),
             forked_from_server_conversation_token,
-            server_metadata: None,
             transaction: None,
             autoexecute_override,
             added_exchanges_by_response: Default::default(),
@@ -762,20 +751,6 @@ impl AIConversation {
     /// This ensures we only send the forked_from token once during session sharing.
     pub(crate) fn clear_forked_from_server_conversation_token(&mut self) {
         self.forked_from_server_conversation_token = None;
-    }
-
-    pub fn server_id(&self) -> Option<ServerId> {
-        self.server_metadata
-            .as_ref()
-            .map(|metadata| metadata.metadata.uid)
-    }
-
-    pub fn server_metadata(&self) -> Option<&ServerAIConversationMetadata> {
-        self.server_metadata.as_ref()
-    }
-
-    pub fn set_server_metadata(&mut self, metadata: ServerAIConversationMetadata) {
-        self.server_metadata = Some(metadata);
     }
 
     pub fn parent_agent_id(&self) -> Option<&str> {
@@ -1168,7 +1143,7 @@ impl AIConversation {
         });
     }
 
-    /// Updates the notebook_uid for a plan artifact when it's synced to Warp Drive.
+    /// Updates the notebook_uid for a plan artifact when it is saved locally.
     pub fn update_plan_notebook_uid(
         &mut self,
         document_uid: AIDocumentId,
@@ -3422,47 +3397,15 @@ pub struct AIAgentConversationFormat {
     pub block_snapshot: Option<AIAgentSerializedBlockFormat>,
 }
 
-/// Metadata for an AI conversation, containing all information from the GraphQL API
-/// except the full task list data.
+/// Local metadata retained for restoring a CLI-agent transcript.
 #[derive(Debug, Clone)]
-pub struct ServerAIConversationMetadata {
-    /// The title of the conversation.
-    pub title: String,
-
+pub struct LocalAIConversationMetadata {
     /// The working directory where the conversation was started.
     pub working_directory: Option<String>,
 
     /// The harness that produced this conversation.
     pub harness: AIAgentHarness,
-
-    /// Usage metadata including token counts, credits spent, etc.
-    pub usage: ConversationUsageMetadata,
-
-    /// Local server metadata retained for restored conversation display.
-    pub metadata: ServerConversationObjectMetadata,
-
-    /// Hosted sharing permissions were removed by WARPER-001.
-    pub permissions: ServerConversationPermissions,
-
-    /// The ID of the associated ambient agent task, if any.
-    pub ambient_agent_task_id: Option<crate::ai::agent::conversation::AmbientAgentTaskId>,
-
-    /// The server conversation token used to identify this conversation on the server.
-    pub server_conversation_token: ServerConversationToken,
-
-    /// Artifacts (plans, PRs) created during this conversation.
-    pub artifacts: Vec<Artifact>,
 }
-
-#[derive(Debug, Clone)]
-pub struct ServerConversationObjectMetadata {
-    pub uid: ServerId,
-    pub creator_uid: Option<String>,
-    pub metadata_last_updated_ts: ServerTimestamp,
-}
-
-#[derive(Debug, Clone)]
-pub struct ServerConversationPermissions;
 
 /// Returns an iterator over `AIAgentContext`s attached to inputs in the given `exchanges`, in the
 /// same order in which they appeared.
@@ -3497,7 +3440,7 @@ impl AIAgentExchange {
                         server_output_id: Some(server_output_id),
                         api_metadata_bytes: None,
                         suggestions: None,
-                                        model_info: None,
+                        model_info: None,
                         request_cost: None,
                     }));
                 }

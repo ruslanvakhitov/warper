@@ -149,10 +149,7 @@ impl ConversationDetailsData {
             directory = first_exchange.working_directory.clone();
         }
 
-        let harness = conversation
-            .server_metadata()
-            .map(|m| Harness::from(m.harness))
-            .or(Some(Harness::Unknown));
+        let harness = Some(Harness::Unknown);
 
         ConversationDetailsData {
             mode: PanelMode::Conversation {

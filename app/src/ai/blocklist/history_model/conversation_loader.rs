@@ -8,9 +8,7 @@ use std::future::Future;
 use warpui::AppContext;
 
 use crate::ai::agent::api::ServerConversationToken;
-use crate::ai::agent::conversation::{
-    AIConversation, AIConversationId, ServerAIConversationMetadata,
-};
+use crate::ai::agent::conversation::{AIConversation, AIConversationId, LocalAIConversationMetadata};
 use crate::ai::agent::task::Task;
 use crate::persistence::model::{AgentConversation, AgentConversationData};
 use crate::terminal::model::block::SerializedBlock;
@@ -24,7 +22,7 @@ use super::{AIConversationMetadata, BlocklistAIHistoryModel, MAX_HISTORICAL_CONV
 #[derive(Debug, Clone)]
 pub struct CLIAgentConversation {
     /// Local harness metadata about this conversation.
-    pub metadata: ServerAIConversationMetadata,
+    pub metadata: LocalAIConversationMetadata,
     /// A snapshot of the final agent TUI state.
     pub block: SerializedBlock,
 }
@@ -211,15 +209,6 @@ impl BlocklistAIHistoryModel {
         }
 
         None
-    }
-
-    /// Ignores hosted conversation metadata. Local history is loaded from local persistence only.
-    pub fn merge_cloud_conversation_metadata(
-        &mut self,
-        cloud_metadata_list: Vec<ServerAIConversationMetadata>,
-    ) {
-        let ignored_count = cloud_metadata_list.len();
-        log::info!("Ignoring {ignored_count} hosted conversation metadata records");
     }
 
     /// Initializes historical conversations from restored agent conversations.

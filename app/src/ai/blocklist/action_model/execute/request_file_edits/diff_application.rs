@@ -21,7 +21,6 @@ use crate::{
         blocklist::SessionContext,
         paths::host_native_absolute_path,
     },
-    auth::auth_state::AuthState,
     safe_debug, safe_warn,
 };
 
@@ -162,7 +161,6 @@ pub(crate) async fn apply_edits<F, Fut>(
     session_context: &SessionContext,
     ai_identifiers: &AIIdentifiers,
     background_executor: Arc<Background>,
-    auth_state: Arc<AuthState>,
     passive_diff: bool,
     read_file: F,
 ) -> Result<Vec<AIRequestedCodeDiff>, Vec1<DiffApplicationError>>

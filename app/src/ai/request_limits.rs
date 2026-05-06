@@ -1,14 +1,44 @@
-use chrono::Utc;
+use anyhow::{anyhow, Result};
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use warp_graphql::ai::{
-    BonusGrantType,
-    RequestLimitInfo as RequestLimitInfoGraphql,
-    RequestLimitRefreshDuration as RequestLimitRefreshDurationGraphql,
-};
-use warp_graphql::scalars::time::ServerTimestamp;
 use warpui::{AppContext, Entity, ModelContext, SingletonEntity};
 
 use crate::workspaces::workspace::WorkspaceUid;
+
+#[derive(Copy, Clone, Debug, Serialize, Deserialize, Eq, PartialEq, Ord, PartialOrd)]
+pub struct ServerTimestamp(DateTime<Utc>);
+
+impl ServerTimestamp {
+    pub fn new(time: DateTime<Utc>) -> Self {
+        Self(time)
+    }
+
+    pub fn from_unix_timestamp_micros(micros_since_epoch: i64) -> Result<Self> {
+        let date_time = DateTime::from_timestamp_micros(micros_since_epoch)
+            .ok_or_else(|| anyhow!("Unable to convert microseconds into DateTime"))?;
+        Ok(Self::new(date_time))
+    }
+
+    pub fn timestamp_micros(&self) -> i64 {
+        self.0.timestamp_micros()
+    }
+
+    pub fn utc(&self) -> DateTime<Utc> {
+        self.0
+    }
+}
+
+impl From<DateTime<Utc>> for ServerTimestamp {
+    fn from(value: DateTime<Utc>) -> Self {
+        Self::new(value)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BonusGrantType {
+    AmbientOnly,
+    Any,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum BonusGrantScope {
@@ -80,38 +110,6 @@ impl Default for RequestLimitInfo {
 impl RequestLimitInfo {
     pub fn new_for_evals() -> Self {
         Self::default()
-    }
-}
-
-impl From<RequestLimitRefreshDurationGraphql> for RequestLimitRefreshDuration {
-    fn from(value: RequestLimitRefreshDurationGraphql) -> Self {
-        match value {
-            RequestLimitRefreshDurationGraphql::Monthly => RequestLimitRefreshDuration::Monthly,
-            RequestLimitRefreshDurationGraphql::Weekly => RequestLimitRefreshDuration::Weekly,
-            RequestLimitRefreshDurationGraphql::EveryTwoWeeks => {
-                RequestLimitRefreshDuration::EveryTwoWeeks
-            }
-        }
-    }
-}
-
-impl From<RequestLimitInfoGraphql> for RequestLimitInfo {
-    fn from(value: RequestLimitInfoGraphql) -> Self {
-        RequestLimitInfo {
-            is_unlimited: value.is_unlimited,
-            limit: value.request_limit as usize,
-            num_requests_used_since_refresh: value.requests_used_since_last_refresh as usize,
-            next_refresh_time: value.next_refresh_time,
-            request_limit_refresh_duration: value.request_limit_refresh_duration.into(),
-            is_unlimited_voice: value.is_unlimited_voice,
-            voice_request_limit: value.voice_request_limit as usize,
-            voice_requests_used_since_last_refresh: value.voice_requests_used_since_last_refresh
-                as usize,
-            is_unlimited_codebase_indices: value.is_unlimited_codebase_indices,
-            max_codebase_indices: value.max_codebase_indices as usize,
-            max_files_per_repo: value.max_files_per_repo as usize,
-            embedding_generation_batch_size: value.embedding_generation_batch_size as usize,
-        }
     }
 }
 

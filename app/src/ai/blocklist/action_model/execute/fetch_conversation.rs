@@ -44,8 +44,8 @@ impl FetchConversationExecutor {
         let history = BlocklistAIHistoryModel::as_ref(ctx);
         let load_future = history.load_conversation_by_server_token(&server_token, ctx);
 
-        ActionExecution::new_async(load_future, move |cloud_conversation, _ctx| {
-            let conversation = cloud_conversation.and_then(|cc| match cc {
+        ActionExecution::new_async(load_future, move |local_conversation, _ctx| {
+            let conversation = local_conversation.and_then(|cc| match cc {
                 LocalConversationData::AI(c) => Some(c),
                 LocalConversationData::CLIAgent(_) => {
                     log::warn!("FetchConversation does not support CLI agent conversations");

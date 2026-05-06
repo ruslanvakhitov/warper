@@ -21,7 +21,6 @@ use crate::{
             ACCEPT_PROMPT_SUGGESTION_KEYBINDING, REJECT_PROMPT_SUGGESTION_KEYSTROKE,
         },
     },
-    server::event_metadata::ToggleCodeSuggestionsSettingSource,
     settings::AISettings,
     ui_components::{blended_colors, icons::Icon},
     view_components::{
@@ -412,8 +411,7 @@ impl TypedActionView for SuggestedUnitTestsView {
                 });
                 ctx.notify();
 
-                if let Ok(checked) = checked {
-                                    }
+                if let Ok(checked) = checked {}
             }
             SuggestedUnitTestsAction::OpenSettings => {
                 ctx.emit(SuggestedUnitTestsEvent::OpenSettings)

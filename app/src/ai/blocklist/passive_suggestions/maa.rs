@@ -14,7 +14,6 @@ use crate::ai::blocklist::{
     SessionContext,
 };
 use crate::ai::paths::host_native_absolute_path;
-use crate::auth::auth_state::AuthStateProvider;
 use crate::settings::AISettings;
 use crate::terminal::event::{BlockType, UserBlockCompleted};
 use crate::terminal::model::session::active_session::ActiveSession;
@@ -222,8 +221,6 @@ impl PassiveSuggestionsModel {
                             SessionContext::from_session(me.active_session.as_ref(ctx), ctx);
                         let identifiers = AIIdentifiers::default();
                         let background_executor = ctx.background_executor();
-                        let auth_state = AuthStateProvider::as_ref(ctx).get().clone();
-
                         ctx.spawn(
                             async move {
                                 apply_edits(
@@ -231,7 +228,6 @@ impl PassiveSuggestionsModel {
                                     &session_context,
                                     &identifiers,
                                     background_executor,
-                                    auth_state,
                                     true,
                                     |path| async move {
                                         FileReadResult::from(std::fs::read_to_string(path))

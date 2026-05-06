@@ -38,7 +38,7 @@ impl Entity for UgcPolicyBanner {
 }
 
 /// Returns `true` if local AI features may retain user-generated content in diagnostic metadata.
-pub fn should_collect_ai_ugc(app: &AppContext, is_telemetry_enabled: bool) -> bool {
-    let _ = (app, is_telemetry_enabled);
+pub fn should_collect_ai_ugc(app: &AppContext) -> bool {
+    let _ = app;
     false
 }

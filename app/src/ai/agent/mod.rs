@@ -3,13 +3,13 @@ pub(crate) mod conversation_yaml;
 pub(crate) mod todos;
 
 pub(crate) mod api;
+pub(super) mod citation_metadata;
 pub(crate) mod comment;
 pub(crate) mod icons;
 pub(crate) mod linearization;
 pub(crate) mod redaction;
 pub(crate) mod task;
 mod task_store;
-pub(super) mod citation_metadata;
 pub(super) mod util;
 
 // Re-export types that were moved to the ai crate.
@@ -29,9 +29,9 @@ use crate::code_review::comments::{
 use crate::search::slash_command_menu::static_commands::commands;
 use ai::skills::ParsedSkill;
 use chrono::{DateTime, Local, TimeDelta};
+pub use citation_metadata::AIIdentifiers;
 use comment::ReviewComment;
 use task::TaskId;
-pub use citation_metadata::AIIdentifiers;
 
 use warp_editor::render::model::LineCount;
 
@@ -2054,12 +2054,6 @@ pub enum AIAgentAttachment {
         source: DocumentContentAttachmentSource,
         line_range: Option<Range<LineCount>>,
     },
-    DriveObject {
-        /// The UID of the drive object.
-        uid: String,
-        /// The payload of the drive object (e.g., workflow content).
-        payload: Option<DriveObjectPayload>,
-    },
     DiffHunk {
         file_path: String,
         line_range: Range<LineCount>,
@@ -2193,23 +2187,6 @@ impl DiffSetHunk {
             lines_removed: self.lines_removed,
         }
     }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum DriveObjectPayload {
-    Workflow {
-        name: String,
-        description: String,
-        command: String,
-    },
-    Notebook {
-        title: String,
-        content: String,
-    },
-    GenericStringObject {
-        payload: String,
-        object_type: String,
-    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

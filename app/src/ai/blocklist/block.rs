@@ -18,7 +18,6 @@ pub use pending_user_query_block::{PendingUserQueryBlock, PendingUserQueryBlockE
 #[cfg(feature = "agent_mode_debug")]
 use self::code_diff_view::FileDiff;
 use crate::ai::agent::redaction::redact_secrets;
-use crate::ai::agent::citation_metadata::ForEventMetadata as _;
 use crate::ai::agent::CancellationReason;
 use crate::ai::agent::PassiveSuggestionTrigger;
 use crate::ai::agent::SuggestPromptRequest;
@@ -36,9 +35,9 @@ use crate::ai::blocklist::SuggestionDismissButtonTheme;
 #[cfg(not(target_family = "wasm"))]
 use repo_metadata::repositories::DetectedRepositories;
 
+use crate::ai::skills::SkillManager;
 #[cfg(feature = "local_fs")]
 use crate::ai::skills::SkillOpenOrigin;
-use crate::ai::skills::{SkillManager};
 use crate::code::editor::comment_editor::create_readonly_comment_markdown_editor;
 use crate::code::editor::view::CodeEditorRenderOptions;
 use crate::code::editor_management::CodeSource;
@@ -92,9 +91,9 @@ use crate::ai::blocklist::inline_action::search_codebase::{
 };
 use crate::ai::blocklist::inline_action::web_fetch::WebFetchView;
 use crate::ai::blocklist::inline_action::web_search::WebSearchView;
+use crate::ai::blocklist::metadata::AgentModeRewindEntrypoint;
 use crate::code_review::metadata::CodeReviewPaneEntrypoint;
 use crate::server::ids::SyncId;
-use crate::server::event_metadata::AgentModeRewindEntrypoint;
 use crate::settings::InputSettings;
 use crate::terminal::view::{CodeDiffAction, TerminalAction};
 use crate::ui_components::icons::Icon;
@@ -166,7 +165,6 @@ use crate::ai::document::ai_document_model::{AIDocumentId, AIDocumentModel, AIDo
 use crate::ai::get_relevant_files::controller::{
     GetRelevantFilesController, GetRelevantFilesControllerEvent,
 };
-use crate::auth::AuthStateProvider;
 use crate::code::editor::view::{CodeEditorEvent, CodeEditorView};
 use crate::notebooks::editor::model::FileLinkResolutionContext;
 use crate::notebooks::editor::view::{EditorViewEvent, RichTextEditorView};
@@ -179,11 +177,11 @@ use crate::{report_error, report_if_error, ToastStack};
 use ai::agent::action::{AskUserQuestionItem, InsertReviewComment};
 
 use crate::editor::InteractionState;
-use crate::server::event_metadata::{AutonomySettingToggleSource, InteractionSource};
 use crate::settings::{
     AISettingsChangedEvent, AgentModeCodingPermissionsType, FontSettings, InputModeSettings,
     InputModeSettingsChangedEvent,
 };
+use crate::terminal::metadata::InteractionSource;
 use crate::view_components::find::FindEvent;
 
 use crate::terminal::{
@@ -205,7 +203,6 @@ use crate::code_review::comments::{
     attach_pending_imported_comments, convert_insert_review_comments, AttachedReviewComment,
     CommentId, CommentOrigin,
 };
-use crate::PrivacySettings;
 use crate::{
     ai::agent::{AIAgentInput, ServerOutputId},
     settings::AISettings,
@@ -971,10 +968,7 @@ impl AIBlock {
         terminal_view_id: EntityId,
         ctx: &mut ViewContext<Self>,
     ) -> Self {
-        let auth_state = AuthStateProvider::as_ref(ctx).get().clone();
-        let user_display_name = auth_state
-            .username_for_display()
-            .unwrap_or_else(|| DEFAULT_USER_DISPLAY_NAME.to_owned());
+        let user_display_name = DEFAULT_USER_DISPLAY_NAME.to_owned();
         let num_attached_context_blocks = num_attached_context_blocks(model.inputs_to_render(ctx));
         let has_attached_context_selected_text =
             has_attached_context_selected_text(model.inputs_to_render(ctx));
@@ -1258,7 +1252,7 @@ impl AIBlock {
             model,
             terminal_model,
             client_ids,
-            profile_image_path: auth_state.user_photo_url(),
+            profile_image_path: None,
             user_display_name,
             controller,
             action_model,
@@ -1666,7 +1660,7 @@ impl AIBlock {
                 let server_output_id = self.model.server_output_id(ctx);
                 self.handle_updated_output(&output, ctx);
                 self.handle_complete_output(&output, ctx);
-                            }
+            }
             AIBlockOutputStatus::Cancelled { partial_output, .. } => {
                 if let Some(output) = partial_output.as_ref() {
                     let output = output.get();
@@ -1676,10 +1670,10 @@ impl AIBlock {
                 self.finish(FinishReason::Cancelled, ctx);
 
                 let server_output_id = self.model.server_output_id(ctx);
-                            }
+            }
             AIBlockOutputStatus::Failed { error, .. } => {
                 let server_output_id = self.model.server_output_id(ctx);
-                                self.maybe_create_aws_bedrock_credentials_error_view(&error, ctx);
+                self.maybe_create_aws_bedrock_credentials_error_view(&error, ctx);
                 // There are no actions to be taken in this block, it is finished.
                 self.finish(FinishReason::Error, ctx);
             }
@@ -2409,14 +2403,6 @@ impl AIBlock {
             self.secret_redaction_state
                 .run_redaction_on_complete_output(output);
         }
-
-        let surfaced_citations = output
-            .citations
-            .iter()
-            .filter_map(|citation| citation.for_event_metadata(ctx))
-            .collect_vec();
-        if !surfaced_citations.is_empty() {
-                    }
 
         // This is used to trigger the theme chooser opening when the theme chooser onboarding block is active.
         if let Some(text_message) = output.text_from_agent_output().last() {
@@ -3560,7 +3546,7 @@ impl AIBlock {
             view.set_is_hidden(true);
         });
 
-                ctx.emit(AIBlockEvent::DismissedPassiveBlock);
+        ctx.emit(AIBlockEvent::DismissedPassiveBlock);
         true
     }
 
@@ -3606,8 +3592,7 @@ impl AIBlock {
         let identifiers = view.as_ref(ctx).identifiers().clone();
         let query = view.as_ref(ctx).query().unwrap_or_default();
 
-        let should_collect_ugc =
-            should_collect_ai_ugc(ctx, PrivacySettings::as_ref(ctx).is_telemetry_enabled);
+        let should_collect_ugc = should_collect_ai_ugc(ctx);
         let redacted_query = if should_collect_ugc {
             let mut redacted_query = query.clone();
             redact_secrets(&mut redacted_query);
@@ -3615,7 +3600,7 @@ impl AIBlock {
         } else {
             None
         };
-                ctx.notify();
+        ctx.notify();
         true
     }
 
@@ -3692,8 +3677,7 @@ impl AIBlock {
             .block_list_mut()
             .mark_rich_content_dirty(ctx.view_id());
         ctx.notify();
-
-            }
+    }
 
     fn handle_suggested_prompt_view_event(
         &mut self,
@@ -4175,8 +4159,7 @@ impl AIBlock {
         let flattened = attach_pending_imported_comments(pending, repo_path);
         let thread_count = flattened.len();
 
-        if !self.model.is_restored() {
-                    }
+        if !self.model.is_restored() {}
 
         let cards: Vec<CommentViewCard> = flattened
             .into_iter()
@@ -5735,13 +5718,6 @@ impl TypedActionView for AIBlock {
             }
             AIBlockAction::OpenCitation(citation) => {
                 ctx.emit(AIBlockEvent::OpenCitation(citation.clone()));
-                let server_output_id = self
-                    .model
-                    .status(ctx)
-                    .output_to_render()
-                    .and_then(|output| output.get().server_output_id.clone());
-                if let Some(citation) = citation.for_event_metadata(ctx) {
-                                    }
             }
             AIBlockAction::OpenAIFactCollection => {
                 ctx.emit(AIBlockEvent::OpenAIFactCollection { sync_id: None });
@@ -5808,12 +5784,11 @@ impl TypedActionView for AIBlock {
                 {
                     *checked = !*checked;
                     BlocklistAIPermissions::handle(ctx).update(ctx, |model, ctx| {
-                                match model.set_should_autoexecute_readonly_commands(*checked, ctx) {
-                                    Ok(_) => {
-                                                                            }
-                                    Err(e) => report_error!(e),
-                                }
-                            });
+                        match model.set_should_autoexecute_readonly_commands(*checked, ctx) {
+                            Ok(_) => {}
+                            Err(e) => report_error!(e),
+                        }
+                    });
                 }
             }
             AIBlockAction::ToggleAutoreadFilesSpeedbumpCheckbox => {
@@ -5828,8 +5803,7 @@ impl TypedActionView for AIBlock {
                     };
                     BlocklistAIPermissions::handle(ctx).update(ctx, |model, ctx| {
                         match model.set_coding_permissions(permission, ctx) {
-                            Ok(_) => {
-                                                            }
+                            Ok(_) => {}
                             Err(e) => report_error!(e),
                         }
                     });
@@ -5849,8 +5823,7 @@ impl TypedActionView for AIBlock {
                     };
                     BlocklistAIPermissions::handle(ctx).update(ctx, |model, ctx| {
                         match model.set_coding_permissions(permission, ctx) {
-                            Ok(_) => {
-                                                            }
+                            Ok(_) => {}
                             Err(e) => report_error!(e),
                         }
                     });
@@ -5906,8 +5879,7 @@ impl TypedActionView for AIBlock {
                         DismissibleToast::default(String::from("Thank you for the feedback!"));
                     toast_stack.add_ephemeral_toast(toast, window_id, ctx);
                 });
-
-                            }
+            }
             AIBlockAction::ClearOtherSelections {
                 source_view_id,
                 source_window_id,
@@ -6011,8 +5983,7 @@ impl TypedActionView for AIBlock {
                 if let CodeSource::Skill {
                     reference, origin, ..
                 } = source
-                {
-                                    }
+                {}
 
                 #[cfg(feature = "local_fs")]
                 {

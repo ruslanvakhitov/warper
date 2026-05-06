@@ -43,8 +43,7 @@ pub fn brand_color(harness: Harness) -> Option<ColorU> {
     }
 }
 
-/// Map [`AIAgentHarness`] (from `ServerAIConversationMetadata`) to the
-/// canonical [`Harness`].
+/// Map a locally restored [`AIAgentHarness`] to the canonical [`Harness`].
 impl From<AIAgentHarness> for Harness {
     fn from(harness: AIAgentHarness) -> Self {
         match harness {

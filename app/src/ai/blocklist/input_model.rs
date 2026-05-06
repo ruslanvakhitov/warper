@@ -23,7 +23,6 @@ use super::agent_view::{AgentViewController, AgentViewControllerEvent, AgentView
 use crate::terminal::cli_agent_sessions::{
     CLIAgentInputState, CLIAgentSessionsModel, CLIAgentSessionsModelEvent,
 };
-use crate::PrivacySettings;
 use warp_completer::completer::CompletionContext;
 
 use crate::{
@@ -732,11 +731,8 @@ impl BlocklistAIInputModel {
                     );
                     if current_input_type != new_input_type {
                         let buffer_length = other_buffer_cloned.len();
-                        let input_buffer_text_for_event_metadata = should_collect_ai_ugc(
-                            ctx,
-                            PrivacySettings::as_ref(ctx).is_telemetry_enabled,
-                        )
-                        .then_some(other_buffer_cloned);
+                        let input_buffer_text_for_event_metadata =
+                            should_collect_ai_ugc(ctx).then_some(other_buffer_cloned);
                                             }
                 },
             )

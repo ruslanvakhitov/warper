@@ -11,6 +11,7 @@ pub(super) use controller::RequestInput;
 pub mod history_model;
 pub mod inline_action;
 mod input_model;
+pub mod metadata;
 mod permissions;
 mod persistence;
 pub mod prompt;
