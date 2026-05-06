@@ -4,7 +4,7 @@ use std::{
     collections::{HashMap, HashSet},
     ffi::OsString,
     future::Future,
-    io::{self, Write},
+    io,
     path::PathBuf,
     sync::{
         atomic::{AtomicUsize, Ordering},
@@ -14,23 +14,13 @@ use std::{
     time::Duration,
 };
 
+use crate::ai::agent_sdk::driver::harness::{
+    HarnessKind, HarnessRunner, SavePoint, ThirdPartyHarness,
+};
 use crate::ai::llms::{LLMId, LLMPreferences};
 use crate::ai::mcp::MCPServerState;
 use crate::ai::{
-    agent::conversation::{AIConversation, AIConversationId, ConversationStatus, LocalAgentRunId},
-    agent_sdk::driver::harness::{
-        task_env_vars, HarnessKind, HarnessRunner, SavePoint, ThirdPartyHarness,
-    },
-};
-use crate::ai::{
-    agent::{
-        AIAgentExchange, AIAgentInput, AIAgentOutput, AIAgentOutputStatus, CancellationReason,
-        FinishedAIAgentOutput, RenderableAIError,
-    },
-    blocklist::{
-        agent_view::AgentViewEntryOrigin, BlocklistAIHistoryEvent, BlocklistAIHistoryModel,
-        BlocklistAIPermissions,
-    },
+    blocklist::BlocklistAIPermissions,
     execution_profiles::profiles::AIExecutionProfilesModel,
     mcp::{
         parsing::{normalize_mcp_json, ParsedTemplatableMCPServerResult},
@@ -50,30 +40,23 @@ use futures::{
     future::{self, Either},
     FutureExt as _,
 };
-use oneshot::{Canceled, Receiver, Sender};
+use oneshot::{Canceled, Sender};
 use uuid::Uuid;
-use warp_cli::agent::{Harness, OutputFormat};
 use warp_cli::mcp::MCPSpec;
-use warp_core::{features::FeatureFlag, report_if_error, safe_debug, safe_info};
+use warp_core::{report_if_error, safe_debug, safe_info};
 use warp_managed_secrets::ManagedSecretValue;
 use warpui::{
     r#async::{FutureExt, TimeoutError},
-    AppContext, Entity, ModelContext, ModelHandle, ModelSpawner, SingletonEntity,
+    Entity, ModelContext, ModelHandle, ModelSpawner, SingletonEntity,
 };
 
 pub(crate) mod harness;
-pub(super) mod output;
 pub(crate) mod terminal;
 
 use terminal::TerminalDriverEvent;
 
 const MCP_SERVER_STARTUP_TIMEOUT: Duration = Duration::from_secs(60);
 const HARNESS_SAVE_INTERVAL: Duration = Duration::from_secs(30);
-const SETUP_FAILED_IDLE_TIMEOUT: Duration = Duration::from_secs(120);
-/// Maximum time to wait for an automatic error resume before propagating the error.
-/// If no follow-up status arrives within this window, the driver terminates with the
-/// original error so the CLI does not hang indefinitely.
-const AUTO_RESUME_TIMEOUT: Duration = Duration::from_secs(120);
 /// IdleTimeoutSender is wrapper around a sender that signals when a run is done after
 /// an idle timeout. Used for local and third-party harnesses.
 ///
@@ -144,31 +127,14 @@ impl<T: Send + 'static> IdleTimeoutSender<T> {
     }
 }
 
-/// Hosted conversation resume is removed from Warper. The type remains as a
-/// fail-closed API boundary while callers are amputated.
-pub enum ResumeOptions {
-    Unsupported,
-}
-
 /// Options for initializing the agent driver.
 pub struct AgentDriverOptions {
     /// Initial working directory for the agent's terminal session.
     pub working_dir: PathBuf,
     /// Secrets to inject into the agent's terminal session.
     pub secrets: HashMap<String, ManagedSecretValue>,
-    /// Local run ID for the agent execution.
-    pub local_run_id: Option<LocalAgentRunId>,
-    /// Parent run ID for child orchestration flows, if this task was spawned by another run.
-    pub parent_run_id: Option<String>,
-    /// Whether the agent run should share its session.
-    pub should_share: bool,
     /// How long to keep the session alive after the agent run completes, if at all.
     pub idle_on_complete: Option<Duration>,
-    /// If set, resume an existing conversation instead of starting fresh. The variant
-    /// is ignored because hosted transcript restoration is removed.
-    pub resume: Option<ResumeOptions>,
-    /// Selected execution harness for this run.
-    pub selected_harness: Harness,
 }
 
 /// `AgentDriver` is a model for driving an ambient Warp agent to completion.
@@ -183,8 +149,6 @@ pub struct AgentDriver {
     /// - Secrets are passed to MCP servers during spawning.
     secrets: Arc<HashMap<String, ManagedSecretValue>>,
 
-    output_format: OutputFormat,
-
     /// Harness adapter for the running agent. This is only set if:
     /// - The harness has started successfully.
     /// - We're using a third-party harness.
@@ -193,61 +157,6 @@ pub struct AgentDriver {
     // Optional idle timeout after completion. If set, the process will stay alive for follow-ups
     // and exit after this period of inactivity.
     idle_on_complete: Option<Duration>,
-
-    // The conversation ID to continue (if provided).
-    restored_conversation_id: Option<AIConversationId>,
-}
-
-pub(crate) enum SDKConversationOutputStatus {
-    Success,
-    Error { error: RenderableAIError },
-    Cancelled { reason: CancellationReason },
-    Blocked { blocked_action: String },
-}
-
-impl SDKConversationOutputStatus {
-    pub fn into_result(self) -> Result<(), AgentDriverError> {
-        match self {
-            SDKConversationOutputStatus::Success => Ok(()),
-            SDKConversationOutputStatus::Error { error } => {
-                Err(AgentDriverError::ConversationError { error })
-            }
-            // NOTE: this doesn't happen in the SDK (yet) because CTRL+C kills the whole program.
-            SDKConversationOutputStatus::Cancelled { reason } => {
-                Err(AgentDriverError::ConversationCancelled { reason })
-            }
-            SDKConversationOutputStatus::Blocked { blocked_action } => {
-                Err(AgentDriverError::ConversationBlocked { blocked_action })
-            }
-        }
-    }
-}
-
-fn sdk_output_status_from_conversation(
-    conversation: &AIConversation,
-) -> Option<SDKConversationOutputStatus> {
-    if let ConversationStatus::Blocked { blocked_action } = conversation.status() {
-        return Some(SDKConversationOutputStatus::Blocked {
-            blocked_action: blocked_action.clone(),
-        });
-    }
-
-    let last_exchange = conversation.root_task_exchanges().last()?;
-    if let AIAgentOutputStatus::Finished { finished_output } = &last_exchange.output_status {
-        return Some(match finished_output {
-            FinishedAIAgentOutput::Cancelled { output: _, reason } => {
-                SDKConversationOutputStatus::Cancelled { reason: *reason }
-            }
-            FinishedAIAgentOutput::Error { output: _, error } => {
-                SDKConversationOutputStatus::Error {
-                    error: error.clone(),
-                }
-            }
-            FinishedAIAgentOutput::Success { output: _ } => SDKConversationOutputStatus::Success,
-        });
-    }
-
-    None
 }
 
 /// Task configuration for running an agent.
@@ -287,75 +196,20 @@ pub enum AgentDriverError {
     MCPMissingVariables,
     #[error("Agent profile \"{0}\" not found")]
     ProfileError(String),
-    #[error("Hosted server authentication is unavailable in this build")]
-    NotLoggedIn,
     #[error("Saved prompt not found for id {0}")]
     AIWorkflowNotFound(String),
     #[error("Terminal bootstrap failed")]
     BootstrapFailed,
-    #[error("Unable to share agent session")]
-    ShareSessionFailed {
-        #[source]
-        error: terminal::ShareSessionError,
-    },
-    #[error("Hosted sync is unavailable in this build")]
-    HostedSyncUnavailable,
-    #[error("Requested environment not found: {0}")]
-    EnvironmentNotFound(String),
-    #[error("Environment setup failed: {0}")]
-    EnvironmentSetupFailed(String),
     #[error("Could not resolve working directory {}", path.display())]
     InvalidWorkingDirectory {
         path: PathBuf,
         #[source]
         source: io::Error,
     },
-    #[error("{error}")]
-    ConversationError { error: RenderableAIError },
-    #[error("Conversation was canceled: {reason}")]
-    ConversationCancelled { reason: CancellationReason },
-    #[error("The agent got stuck waiting for user confirmation on the action: {blocked_action}")]
-    ConversationBlocked { blocked_action: String },
-    #[error("Timed out refreshing team metadata")]
-    TeamMetadataRefreshTimeout,
     #[error("{0}")]
     SkillResolutionFailed(String),
     #[error("Failed to build agent configuration")]
     ConfigBuildFailed(#[source] anyhow::Error),
-    #[error("Failed to resolve server-side prompt")]
-    PromptResolutionFailed(#[source] anyhow::Error),
-    #[error("Failed to fetch task secrets")]
-    SecretsFetchFailed(#[source] anyhow::Error),
-    #[error("Failed to load conversation: {0}")]
-    ConversationLoadFailed(String),
-    #[error("Failed to initialize AWS Bedrock credentials: {0}")]
-    AwsBedrockCredentialsFailed(String),
-    #[error(
-        "Conversation {conversation_id} was produced by the {expected} runner, but --runner {got} was requested. \
-         Re-run with --runner {expected} to continue this conversation."
-    )]
-    ConversationHarnessMismatch {
-        conversation_id: String,
-        expected: String,
-        got: String,
-    },
-    #[error(
-        "Task {task_id} was created with the {expected} runner, but --runner {got} was requested. \
-         Task continuation is unavailable in this build."
-    )]
-    TaskHarnessMismatch {
-        task_id: String,
-        expected: String,
-        got: String,
-    },
-    #[error(
-        "Conversation {conversation_id} has no stored transcript for the {harness} harness. \
-         The prior run may have crashed before saving any state."
-    )]
-    ConversationResumeStateMissing {
-        harness: String,
-        conversation_id: String,
-    },
     #[error("Harness command exited with code {exit_code}")]
     HarnessCommandFailed { exit_code: i32 },
     #[error("Harness '{harness}' setup failed: {reason}")]
@@ -381,23 +235,14 @@ impl AgentDriver {
     ) -> Result<Self, AgentDriverError> {
         let AgentDriverOptions {
             working_dir,
-            local_run_id,
-            parent_run_id,
-            should_share,
             idle_on_complete,
             secrets,
-            resume,
-            selected_harness,
         } = options;
 
-        if resume.is_some() {
-            log::warn!("Ignoring hosted conversation resume; it is unavailable in Warper");
-        }
-
         safe_info!(
-            safe: ("Initializing agent driver: share={should_share}, idle_on_complete={idle_on_complete:?}"),
+            safe: ("Initializing agent driver: idle_on_complete={idle_on_complete:?}"),
             full: (
-                "Initializing agent driver: share={should_share}, idle_on_complete={idle_on_complete:?}, working_dir={}",
+                "Initializing agent driver: idle_on_complete={idle_on_complete:?}, working_dir={}",
                 working_dir.display()
             )
         );
@@ -475,12 +320,6 @@ impl AgentDriver {
             env_vars.insert(OsString::from(env_name), OsString::from(env_value));
         }
 
-        env_vars.extend(task_env_vars(
-            local_run_id.as_ref(),
-            parent_run_id.as_deref(),
-            selected_harness,
-        ));
-
         // Signal to third-party harnesses (e.g. Claude Code) that we're in a sandbox
         // so they allow root execution with permissive flags.
         if warp_isolation_platform::detect().is_some() {
@@ -505,15 +344,9 @@ impl AgentDriver {
             terminal_driver,
             working_dir,
             secrets: Arc::new(secrets),
-            output_format: OutputFormat::default(),
             harness: None,
             idle_on_complete,
-            restored_conversation_id: None,
         })
-    }
-
-    pub fn set_output_format(&mut self, output_format: OutputFormat) {
-        self.output_format = output_format;
     }
 
     pub fn run(
@@ -523,7 +356,6 @@ impl AgentDriver {
     ) -> impl Future<Output = Result<(), AgentDriverError>> {
         let (tx, rx) = oneshot::channel();
         let foreground = ctx.spawner();
-        let idle_on_complete = self.idle_on_complete;
 
         ctx.spawn(
             async move {
@@ -547,23 +379,8 @@ impl AgentDriver {
                 }
             };
 
-            // Keep the local session alive after environment setup failures so the user can
-            // inspect scrollback before the CLI exits.
-            if let (Err(err), Some(idle_timeout)) = (&result, idle_on_complete) {
-                if matches!(err, AgentDriverError::EnvironmentSetupFailed(_)) {
-                    let timeout = idle_timeout.min(SETUP_FAILED_IDLE_TIMEOUT);
-                    log::info!("Environment setup failed; keeping session alive for {timeout:?}");
-                    warpui::r#async::Timer::after(timeout).await;
-                }
-            }
-
             result
         }
-    }
-
-    /// Log all valid environment IDs for the user.
-    pub(super) fn log_valid_environments(_app: &AppContext) {
-        log::error!("Hosted cloud environments are unavailable in local-only Warper.");
     }
 
     /// Check that the working directory exists. Since it's user-specified, we don't automatically
@@ -1161,235 +978,6 @@ impl AgentDriver {
             preferences.update_preferred_agent_mode_llm(&model_id, terminal_view_id, ctx);
         });
         Ok(())
-    }
-
-    /// Execute an AI run in the terminal session and wait for it to complete.
-    ///
-    /// Conversation output is streamed as it's available.
-    fn execute_run(
-        &self,
-        task_prompt: AgentRunPrompt,
-        ctx: &mut ModelContext<Self>,
-    ) -> Receiver<SDKConversationOutputStatus> {
-        // Create a oneshot channel to signal task completion.
-        let (tx, rx) = oneshot::channel();
-        let run_exit = IdleTimeoutSender::new(tx);
-
-        // Subscribe before the conversation starts.
-        let history_model_handle = BlocklistAIHistoryModel::handle(ctx);
-        let terminal_id = self.terminal_driver.as_ref(ctx).terminal_view().id();
-        let mut written_conversation_id = false;
-
-        // Create shared storage for the conversation ID
-        let conversation_id_cell = Arc::new(Mutex::new(Option::<String>::None));
-        let conversation_id_cell_for_handler = Arc::clone(&conversation_id_cell);
-
-        ctx.subscribe_to_model(&history_model_handle, move |me, event, ctx| {
-            if event.terminal_view_id().is_some_and(|id| id != terminal_id) {
-                return;
-            }
-
-            match event {
-                BlocklistAIHistoryEvent::UpdatedTodoList { .. } => {
-                    // TODO: Log TODO list updates.
-                }
-                BlocklistAIHistoryEvent::AppendedExchange {
-                    exchange_id,
-                    conversation_id,
-                    ..
-                } => {
-                    let Some(conversation) = BlocklistAIHistoryModel::as_ref(ctx)
-                        .conversation(conversation_id)
-                    else {
-                        log::warn!("Invalid conversation ID: {conversation_id:?}");
-                        return;
-                    };
-
-                    let Some(exchange) = conversation.exchange_with_id(*exchange_id) else {
-                        log::warn!("Invalid exchange ID: {exchange_id:?}");
-                        return;
-                    };
-
-                    // When a new exchange is appended, we should already have its inputs available.
-                    report_if_error!(me
-                        .write_exchange_inputs(exchange)
-                        .context("Failed to write exchange inputs"));
-
-                    // Reset the idle timer only if we've already scheduled one.
-                    // This handles the case where a follow-up query creates new exchanges after
-                    // the conversation has finished and an idle timer was set.
-                    run_exit.cancel_idle_timeout();
-                }
-                BlocklistAIHistoryEvent::UpdatedStreamingExchange {
-                    exchange_id,
-                    conversation_id,
-                    ..
-                } => {
-                    // Get conversation data first to avoid borrowing conflicts
-                    let history_model = BlocklistAIHistoryModel::handle(ctx);
-                    let conversation_data = history_model.as_ref(ctx).conversation(conversation_id)
-                        .and_then(|conv| {
-                            let token = conv.server_conversation_token().map(|t| t.as_str().to_string());
-                            let exchange = conv.exchange_with_id(*exchange_id)?;
-                            Some((token, exchange))
-                        });
-                    let Some((token_opt, exchange)) = conversation_data else {
-                        log::warn!("Invalid conversation or exchange ID: {conversation_id:?}, {exchange_id:?}");
-                        return;
-                    };
-
-                    if !written_conversation_id {
-                        if let Some(token) = token_opt {
-                            report_if_error!(output::with_stdout_buffered(|buf| match me.output_format {
-                                OutputFormat::Json | OutputFormat::Ndjson => output::json::conversation_started(&token, buf),
-                                OutputFormat::Text | OutputFormat::Pretty => output::text::conversation_started(&token, buf),
-                            }).context("Failed to write conversation ID"));
-                            written_conversation_id = true;
-                            if let Ok(mut guard) = conversation_id_cell_for_handler.lock() {
-                                *guard = Some(token);
-                            }
-                        }
-                    }
-
-                    // Once the outputs are fully streamed from the server, write them to stdout.
-                    if exchange.output_status.is_finished() {
-                        report_if_error!(me
-                            .write_exchange_output(exchange)
-                            .context("Failed to write exchange output"));
-                    }
-
-                }
-
-                BlocklistAIHistoryEvent::UpdatedConversationStatus { terminal_view_id: conversation_terminal_id, conversation_id, .. } => {
-                    if *conversation_terminal_id != terminal_id {
-                        return;
-                    }
-                    let history_model = BlocklistAIHistoryModel::as_ref(ctx);
-                    let Some(conversation) = history_model.conversation(conversation_id) else {
-                        log::warn!("No active conversation for terminal view {conversation_terminal_id} with id {conversation_id}");
-                        return;
-                    };
-
-                    if conversation.status().is_in_progress() {
-                        // Conversation resumed or a new one started; cancel any pending idle timeout.
-                        run_exit.cancel_idle_timeout();
-                        return;
-                    }
-
-                    // Conversation is no longer in progress. Handle completion based on the result.
-                    if let Some(output_status) = sdk_output_status_from_conversation(conversation) {
-                        match output_status {
-                            SDKConversationOutputStatus::Success
-                            | SDKConversationOutputStatus::Blocked { .. }
-                            | SDKConversationOutputStatus::Cancelled { .. } => {
-                                // Whether to keep the process alive after completion is controlled by
-                                // the `warp agent run --idle-on-complete[=<DURATION>]` flag.
-                                if let Some(idle_timeout) = me.idle_on_complete {
-                                    run_exit.end_run_after(idle_timeout, output_status);
-                                } else {
-                                    run_exit.end_run_now(output_status);
-                                }
-                            }
-                            // For errors, check if we expect an automatic retry.
-                            SDKConversationOutputStatus::Error { ref error } => {
-                                // If the error indicates that an automatic resume will be attempted,
-                                // don't terminate yet - give the retry a chance to succeed.
-                                // However, bound the wait so the CLI doesn't hang indefinitely
-                                // if the follow-up never arrives.
-                                if error.will_attempt_resume() {
-                                    log::info!("Error occurred but automatic resume will be attempted; waiting up to {AUTO_RESUME_TIMEOUT:?} for retry");
-                                    run_exit.end_run_after(AUTO_RESUME_TIMEOUT, output_status);
-                                    return;
-                                }
-
-                                run_exit.end_run_now(output_status);
-                            }
-                        }
-                    }
-                }
-
-                BlocklistAIHistoryEvent::SetActiveConversation { .. } => {
-                    // Continuing an existing conversation should reset the idle timer.
-                    run_exit.cancel_idle_timeout();
-                }
-                BlocklistAIHistoryEvent::StartedNewConversation { .. }
-                | BlocklistAIHistoryEvent::ReassignedExchange { .. }
-                | BlocklistAIHistoryEvent::ClearedConversationsInTerminalView { .. }
-                | BlocklistAIHistoryEvent::UpdatedAutoexecuteOverride { .. }
-                | BlocklistAIHistoryEvent::SplitConversation { .. }
-                | BlocklistAIHistoryEvent::RemoveConversation { .. }
-                | BlocklistAIHistoryEvent::DeletedConversation { .. }
-                | BlocklistAIHistoryEvent::RestoredConversations { .. }
-                | BlocklistAIHistoryEvent::CreatedSubtask { .. }
-                | BlocklistAIHistoryEvent::UpgradedTask { .. }
-                | BlocklistAIHistoryEvent::UpdatedConversationMetadata { .. }
-                | BlocklistAIHistoryEvent::ClearedActiveConversation { .. }
-                | BlocklistAIHistoryEvent::UpdatedConversationArtifacts { .. }
-                | BlocklistAIHistoryEvent::ConversationServerTokenAssigned { .. } => (),
-            }
-        });
-
-        // Submit the AI query.
-        // If a retained local runner restores conversation state, use that conversation ID.
-        // so the prompt is sent as a follow-up to the restored conversation.
-        let restored_conversation_id = self.restored_conversation_id;
-        self.terminal_driver.update(ctx, |td, ctx| {
-            td.with_terminal_view(ctx, |terminal, ctx| match task_prompt {
-                AgentRunPrompt::Local(prompt_str) => {
-                    if FeatureFlag::AgentView.is_enabled() {
-                        terminal.enter_agent_view(
-                            Some(prompt_str),
-                            restored_conversation_id,
-                            AgentViewEntryOrigin::Cli,
-                            ctx,
-                        );
-                    } else {
-                        terminal.set_ai_input_mode_with_query(Some(&prompt_str), ctx);
-                        terminal
-                            .input()
-                            .update(ctx, |input, ctx| input.input_enter(ctx));
-                    }
-                }
-            })
-        });
-
-        rx
-    }
-
-    /// Write the inputs to an exchange to stdout.
-    fn write_exchange_inputs(&self, exchange: &AIAgentExchange) -> io::Result<()> {
-        output::with_stdout_buffered(|buf| {
-            for input in &exchange.input {
-                self.write_input(buf, input)?;
-            }
-            Ok(())
-        })
-    }
-
-    /// Write the outputs of an exchange to stdout.
-    fn write_exchange_output(&self, exchange: &AIAgentExchange) -> io::Result<()> {
-        let Some(shared) = exchange.output_status.output() else {
-            return Ok(());
-        };
-        let output = shared.get();
-
-        output::with_stdout_buffered(|buf| self.write_output(buf, &output))
-    }
-
-    /// Format an agent input for display.
-    fn write_input<W: Write>(&self, w: &mut W, input: &AIAgentInput) -> io::Result<()> {
-        match self.output_format {
-            OutputFormat::Json | OutputFormat::Ndjson => output::json::format_input(input, w),
-            OutputFormat::Text | OutputFormat::Pretty => output::text::format_input(input, w),
-        }
-    }
-
-    /// Format an agent output for display.
-    fn write_output<W: Write>(&self, w: &mut W, output: &AIAgentOutput) -> io::Result<()> {
-        match self.output_format {
-            OutputFormat::Json | OutputFormat::Ndjson => output::json::format_output(output, w),
-            OutputFormat::Text | OutputFormat::Pretty => output::text::format_output(output, w),
-        }
     }
 
     /// Subscribe to the singleton `CLIAgentSessionsModel` so that idle-on-complete

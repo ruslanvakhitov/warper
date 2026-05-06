@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use super::super::controller::{BlocklistAIController, BlocklistAIControllerEvent};
 use crate::ai::agent::api::generate_multi_agent_output;
-use crate::ai::agent::AIIdentifiers;
 use crate::ai::agent::FileContext;
 use crate::ai::agent::PassiveCodeDiffEntry;
 use crate::ai::agent::PassiveSuggestionTrigger;
@@ -219,16 +218,11 @@ impl PassiveSuggestionsModel {
 
                         let session_context =
                             SessionContext::from_session(me.active_session.as_ref(ctx), ctx);
-                        let identifiers = AIIdentifiers::default();
-                        let background_executor = ctx.background_executor();
                         ctx.spawn(
                             async move {
                                 apply_edits(
                                     file_edits,
                                     &session_context,
-                                    &identifiers,
-                                    background_executor,
-                                    true,
                                     |path| async move {
                                         FileReadResult::from(std::fs::read_to_string(path))
                                     },

@@ -1,14 +1,8 @@
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
 use futures::channel::oneshot;
-use warp_cli::agent::Harness;
 
 use super::IdleTimeoutSender;
-use crate::ai::agent::{
-    task::TaskId, AIAgentActionResult, AIAgentActionResultType, AIAgentInput, AIAgentOutput,
-    AIAgentOutputMessage, ArtifactCreatedData, MessageId, UploadArtifactResult,
-};
-use crate::ai::agent_sdk::task_env_vars;
 use crate::ai::mcp::parsing::normalize_mcp_json;
 
 #[test]
@@ -166,77 +160,4 @@ fn idle_timeout_sender_later_send_after_supersedes_earlier() {
 
     std::thread::sleep(Duration::from_millis(100));
     assert_eq!(rx.try_recv().unwrap(), Some(2));
-}
-
-#[test]
-fn task_env_vars_do_not_propagate_hosted_or_child_orchestration_state() {
-    let task_id = "550e8400-e29b-41d4-a716-446655440000".parse().unwrap();
-    let env_vars = task_env_vars(Some(&task_id), Some("parent-run-123"), Harness::Claude);
-
-    assert!(env_vars.is_empty());
-}
-
-#[test]
-fn json_format_output_includes_filename_for_file_artifact_created_event() {
-    let output = AIAgentOutput {
-        messages: vec![AIAgentOutputMessage::artifact_created(
-            MessageId::new("message-1".to_string()),
-            ArtifactCreatedData::File {
-                artifact_uid: "artifact-uid".to_string(),
-                filepath: "outputs/report.txt".to_string(),
-                filename: "report.txt".to_string(),
-                mime_type: "text/plain".to_string(),
-                description: Some("Build output for the latest run".to_string()),
-                size_bytes: 42,
-            },
-        )],
-        ..Default::default()
-    };
-
-    let mut bytes = Vec::new();
-    super::output::json::format_output(&output, &mut bytes).expect("json formatting should work");
-
-    let value: serde_json::Value =
-        serde_json::from_slice(&bytes).expect("output should be valid json");
-
-    assert_eq!(value["type"], "artifact_created");
-    assert_eq!(value["artifact_type"], "file");
-    assert_eq!(value["artifact_uid"], "artifact-uid");
-    assert_eq!(value["filepath"], "outputs/report.txt");
-    assert_eq!(value["filename"], "report.txt");
-    assert_eq!(value["mime_type"], "text/plain");
-    assert_eq!(value["description"], "Build output for the latest run");
-    assert_eq!(value["size_bytes"], 42);
-}
-
-#[test]
-fn json_format_input_omits_filepath_and_description_for_proto_upload_result() {
-    let input = AIAgentInput::ActionResult {
-        result: AIAgentActionResult {
-            id: "tool-call-1".to_string().into(),
-            task_id: TaskId::new("task-1".to_string()),
-            result: AIAgentActionResultType::UploadArtifact(UploadArtifactResult::Success {
-                artifact_uid: "artifact-123".to_string(),
-                filepath: None,
-                mime_type: "text/plain".to_string(),
-                description: None,
-                size_bytes: 42,
-            }),
-        },
-        context: Arc::from([]),
-    };
-
-    let mut bytes = Vec::new();
-    super::output::json::format_input(&input, &mut bytes).expect("json formatting should work");
-
-    let value: serde_json::Value =
-        serde_json::from_slice(&bytes).expect("output should be valid json");
-
-    assert_eq!(value["type"], "tool_result");
-    assert_eq!(value["tool"], "upload_artifact");
-    assert_eq!(value["artifact_uid"], "artifact-123");
-    assert_eq!(value["mime_type"], "text/plain");
-    assert_eq!(value["size_bytes"], 42);
-    assert!(value.get("filepath").is_none());
-    assert!(value.get("description").is_none());
 }

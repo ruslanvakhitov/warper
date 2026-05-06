@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::ffi::OsString;
 use std::fmt;
 use std::io::Write;
 use std::path::Path;
@@ -128,14 +127,6 @@ pub(crate) fn validate_cli_installed(
         });
     }
     Ok(())
-}
-
-pub(crate) fn task_env_vars(
-    _local_run_id: Option<&crate::ai::agent::conversation::LocalAgentRunId>,
-    _parent_run_id: Option<&str>,
-    _selected_harness: Harness,
-) -> HashMap<OsString, OsString> {
-    HashMap::new()
 }
 
 /// Indicates when the harness conversation is being saved.

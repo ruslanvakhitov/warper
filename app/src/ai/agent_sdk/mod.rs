@@ -9,10 +9,7 @@ use crate::ai::agent_sdk::driver::{AgentDriverOptions, AgentRunPrompt, Task};
 use crate::ai::agent_sdk::mcp_config::build_mcp_servers_from_specs;
 use crate::ai::llms::LLMId;
 use anyhow::Context;
-use warp_cli::{
-    agent::{AgentCommand, OutputFormat},
-    CliCommand, GlobalOptions,
-};
+use warp_cli::{agent::AgentCommand, CliCommand, GlobalOptions};
 use warp_core::features::FeatureFlag;
 #[cfg(not(target_family = "wasm"))]
 use warp_logging::log_file_path;
@@ -23,9 +20,7 @@ use driver::AgentDriverError;
 
 use crate::ai::skills::{resolve_skill_spec, ResolveSkillError, ResolvedSkill};
 
-pub(crate) use driver::harness::{
-    task_env_vars, validate_cli_installed, ClaudeHarness, ThirdPartyHarness,
-};
+pub(crate) use driver::harness::{validate_cli_installed, ClaudeHarness, ThirdPartyHarness};
 pub use driver::AgentDriver;
 use warp_cli::agent::{Harness, Prompt, RunAgentArgs};
 
@@ -123,11 +118,7 @@ fn run_agent(
             runner.update(ctx, move |_, ctx| {
                 let spawner = ctx.spawner();
                 ctx.spawn(
-                    AgentDriverRunner::setup_and_run_driver(
-                        spawner,
-                        args,
-                        global_options.output_format,
-                    ),
+                    AgentDriverRunner::setup_and_run_driver(spawner, args),
                     |_, result, _ctx| {
                         if let Err(e) = result {
                             report_fatal_error(e.into(), _ctx);
@@ -259,7 +250,6 @@ impl AgentDriverRunner {
     async fn setup_and_run_driver(
         foreground: ModelSpawner<Self>,
         args: RunAgentArgs,
-        output_format: OutputFormat,
     ) -> Result<(), AgentDriverError> {
         let result: Result<(), AgentDriverError> = async {
             let (driver_options, task) =
@@ -285,7 +275,7 @@ impl AgentDriverRunner {
             // Run the driver
             foreground
                 .spawn(move |_, ctx| {
-                    Self::create_and_run_driver(ctx, driver_options, output_format, task);
+                    Self::create_and_run_driver(ctx, driver_options, task);
                 })
                 .await?;
 
@@ -351,13 +341,8 @@ impl AgentDriverRunner {
 
                 let driver_options = driver::AgentDriverOptions {
                     working_dir: working_dir.clone(),
-                    local_run_id: None,
-                    parent_run_id: None,
-                    should_share: false,
                     idle_on_complete: args.idle_on_complete.map(|d| d.into()),
                     secrets: Default::default(),
-                    resume: None,
-                    selected_harness: args.harness.map(Into::into).unwrap_or(Harness::Unknown),
                 };
 
                 Ok((merged_config, task, driver_options))
@@ -372,7 +357,6 @@ impl AgentDriverRunner {
     fn create_and_run_driver(
         ctx: &mut AppContext,
         driver_options: driver::AgentDriverOptions,
-        output_format: OutputFormat,
         task: driver::Task,
     ) {
         let driver = ctx.add_singleton_model(|ctx| {
@@ -380,7 +364,6 @@ impl AgentDriverRunner {
         });
 
         driver.update(ctx, |driver, ctx| {
-            driver.set_output_format(output_format);
             let agent_future = driver.run(task, ctx);
 
             ctx.spawn(agent_future, |_, result, ctx| match result {

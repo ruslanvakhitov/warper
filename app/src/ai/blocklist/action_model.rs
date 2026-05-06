@@ -410,12 +410,9 @@ impl BlocklistAIActionModel {
     pub fn set_local_agent_run_id(
         &mut self,
         id: Option<crate::ai::agent::conversation::LocalAgentRunId>,
-        ctx: &mut ModelContext<Self>,
+        _ctx: &mut ModelContext<Self>,
     ) {
         self.local_agent_run_id = id;
-        self.executor.update(ctx, |executor, ctx| {
-            executor.set_local_agent_run_id(id, ctx);
-        });
     }
 
     fn blocked_action_for_conversation(

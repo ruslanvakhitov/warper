@@ -81,7 +81,7 @@ use crate::{
         agent::{
             conversation::AIConversationId, AIAgentAction, AIAgentActionId, AIAgentActionResult,
             AIAgentActionResultType, AIAgentActionType, CancellationReason, FileContext,
-            FileLocations, ServerOutputId,
+            FileLocations,
         },
         get_relevant_files::controller::GetRelevantFilesController,
     },
@@ -91,7 +91,6 @@ use crate::{
         shell::ShellType,
         ShellLaunchData, TerminalModel,
     },
-    BlocklistAIHistoryModel,
 };
 
 /// Types of actions that can be executed in parallel.
@@ -405,17 +404,6 @@ impl BlocklistAIActionExecutor {
 
     pub fn ask_user_question_executor(&self) -> &ModelHandle<AskUserQuestionExecutor> {
         &self.ask_user_question_executor
-    }
-
-    pub fn set_local_agent_run_id(
-        &self,
-        _id: Option<crate::ai::agent::conversation::LocalAgentRunId>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        self.request_computer_use_executor
-            .update(ctx, |executor, _| {
-                executor.set_local_agent_run_id(None);
-            });
     }
 
     pub fn preprocess_action(
@@ -1183,17 +1171,6 @@ async fn is_git_repository(absolute_path: &str, session: &Session) -> anyhow::Re
         )
         .await?;
     Ok(command_output.success())
-}
-
-fn get_server_output_id(
-    conversation_id: AIConversationId,
-    ctx: &mut AppContext,
-) -> Option<ServerOutputId> {
-    BlocklistAIHistoryModel::as_ref(ctx)
-        .conversation(&conversation_id)?
-        .latest_exchange()?
-        .output_status
-        .server_output_id()
 }
 
 #[cfg(feature = "local_fs")]

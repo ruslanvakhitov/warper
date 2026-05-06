@@ -3,9 +3,6 @@ use crate::terminal::model::session::active_session::ActiveSession;
 use futures::{future::BoxFuture, FutureExt};
 use warpui::{Entity, EntityId, ModelContext, ModelHandle};
 
-#[cfg(not(target_family = "wasm"))]
-use super::get_server_output_id;
-#[cfg(not(target_family = "wasm"))]
 use crate::ai::{
     agent::{AIAgentAction, AIAgentActionResultType, CallMCPToolResult},
     blocklist::{action_model::AIAgentActionType, BlocklistAIPermissions},
@@ -81,7 +78,6 @@ impl CallMCPToolExecutor {
 
         #[cfg(not(target_family = "wasm"))]
         {
-            let server_output_id = get_server_output_id(input.conversation_id, ctx);
             let AIAgentAction {
                 action:
                     AIAgentActionType::CallMCPTool {
@@ -96,7 +92,6 @@ impl CallMCPToolExecutor {
             };
 
             let name_owned = name.to_owned();
-            let name_clone = name_owned.clone();
 
             let serde_json::Value::Object(mut arguments) = input.clone() else {
                 return ActionExecution::Sync(AIAgentActionResultType::CallMCPTool(
@@ -144,7 +139,7 @@ impl CallMCPToolExecutor {
                         })
                         .await
                 },
-                move |res, ctx| handle_call_tool_result(res, server_output_id, name_clone, ctx),
+                move |res, _ctx| handle_call_tool_result(res),
             )
         }
     }
@@ -203,9 +198,6 @@ mod tests;
 #[cfg(not(target_family = "wasm"))]
 fn handle_call_tool_result(
     res: Result<rmcp::model::CallToolResult, rmcp::ServiceError>,
-    server_output_id: Option<crate::ai::blocklist::action_model::execute::ServerOutputId>,
-    tool_name: String,
-    ctx: &warpui::AppContext,
 ) -> AIAgentActionResultType {
     let action_result = match res {
         Ok(result) => {

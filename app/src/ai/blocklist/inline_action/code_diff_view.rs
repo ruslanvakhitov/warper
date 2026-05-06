@@ -1,5 +1,4 @@
 use crate::ai::blocklist::view_util::render_provider_icon_button;
-use crate::ai::skills::SkillOpenOrigin;
 use anyhow::Result;
 use lazy_static::lazy_static;
 use markdown_parser::{FormattedText, FormattedTextFragment, FormattedTextLine};
@@ -50,13 +49,12 @@ use warpui::{
     ViewContext, ViewHandle,
 };
 
-use super::malformed_line_heuristics::has_malformed_terminal_correction_signal;
 use crate::view_components::action_button::{ActionButton, NakedTheme};
 use crate::{
     ai::{
         agent::{
             icons::{self, yellow_stop_icon},
-            AIAgentActionId, AIIdentifiers, FileEdit, FileLocations, ServerOutputId,
+            AIAgentActionId, AIIdentifiers, FileEdit, FileLocations,
         },
         blocklist::{
             action_model::{
@@ -69,7 +67,6 @@ use crate::{
                 inline_action_icons::{cancelled_icon, green_check_icon, icon_size, reverted_icon},
             },
             model::{AIBlockModel, AIBlockModelHelper},
-            RequestedEditResolution,
         },
         mcp::{mcp_provider_from_file_path, MCPProvider},
         paths::host_native_absolute_path,
@@ -666,12 +663,7 @@ impl CodeDiffView {
                     return;
                 }
                 me.user_edited_file_contents = true;
-
-                let Some(output_id) = me.server_output_id() else {
-                    return;
-                };
-
-                            }
+            }
         });
     }
 
@@ -2086,8 +2078,6 @@ impl CodeDiffView {
                 .diff_view
                 .update(ctx, |v, ctx| v.navigate_previous_diff_hunk(ctx)),
         };
-
-        if let Some(output_id) = self.server_output_id() {}
     }
 
     fn select_file(&mut self, direction: Direction, ctx: &mut ViewContext<Self>) {
@@ -2114,8 +2104,6 @@ impl CodeDiffView {
             mode: ScrollToPositionMode::FullyIntoView,
         });
         ctx.notify();
-
-        if let Some(output_id) = self.server_output_id() {}
     }
 
     fn set_display_mode(&mut self, display_mode: DisplayMode, ctx: &mut ViewContext<Self>) {
@@ -2213,10 +2201,6 @@ impl CodeDiffView {
         }
     }
 
-    fn server_output_id(&self) -> Option<ServerOutputId> {
-        self.identifiers.server_output_id.clone()
-    }
-
     /// We are processing unified diff and saving files concurrently. That's why
     /// we need to have separate handlers for diff calculation and save completed.
     ///
@@ -2283,10 +2267,6 @@ impl CodeDiffView {
 
                 let mut updated_files = Vec::new();
                 let mut deleted_files = Vec::new();
-                let mut edited_file_count = 0;
-                let mut correction_count = 0;
-                let mut edited_correction_count = 0;
-                let mut unedited_correction_count = 0;
 
                 for diff in self.pending_diffs.iter() {
                     let Some(path) = diff.diff_view.as_ref(ctx).file_path() else {
@@ -2311,28 +2291,6 @@ impl CodeDiffView {
                         }
                         let was_edited = diff.diff_view.as_ref(ctx).was_edited();
                         let changed_lines = diff.diff_view.as_ref(ctx).changed_lines(ctx);
-                        let has_malformed_terminal_signal = diff
-                            .diff_view
-                            .as_ref(ctx)
-                            .diff()
-                            .is_some_and(|editor_diff| {
-                                has_malformed_terminal_correction_signal(
-                                    editor_diff,
-                                    &changed_lines,
-                                )
-                            });
-
-                        if was_edited {
-                            edited_file_count += 1;
-                        }
-                        if has_malformed_terminal_signal {
-                            correction_count += 1;
-                            if was_edited {
-                                edited_correction_count += 1;
-                            } else {
-                                unedited_correction_count += 1;
-                            }
-                        }
                         updated_files.push((
                             FileLocations {
                                 name: file_path_str,
@@ -2347,7 +2305,6 @@ impl CodeDiffView {
                         ));
                     }
                 }
-                if correction_count > 0 {}
 
                 // Extract accepted file contents from editor buffers so the
                 // executor doesn't need to re-read from disk or the network.
@@ -2708,8 +2665,6 @@ impl TypedActionView for CodeDiffView {
                 if *idx < self.pending_diffs.len() {
                     self.selected_tab = *idx;
                     ctx.notify();
-
-                    if let Some(output_id) = self.server_output_id() {}
                 }
             }
             CodeDiffViewAction::Edit => {
@@ -2730,14 +2685,14 @@ impl TypedActionView for CodeDiffView {
                 self.expand_inline_banner(ctx);
             }
             CodeDiffViewAction::ToggleCodeSuggestions => {
-                let checked = AISettings::handle(ctx).update(ctx, |settings, ctx| {
+                if let Err(error) = AISettings::handle(ctx).update(ctx, |settings, ctx| {
                     settings
                         .code_suggestions_enabled_internal
                         .toggle_and_save_value(ctx)
-                });
+                }) {
+                    log::warn!("Failed to toggle code suggestions: {error}");
+                }
                 ctx.notify();
-
-                if let Ok(checked) = checked {}
             }
             CodeDiffViewAction::OpenSettings => {
                 ctx.emit(CodeDiffViewEvent::OpenSettings);
