@@ -1,21 +1,16 @@
-use crate::schema;
-
-#[derive(cynic::QueryFragment, Debug, Clone)]
-#[cynic(graphql_type = "MCPTemplateVariable")]
+#[derive(Debug, Clone)]
 pub struct MCPTemplateVariable {
     pub key: String,
     pub allowed_values: Option<Vec<String>>,
 }
 
-#[derive(cynic::QueryFragment, Debug, Clone)]
-#[cynic(graphql_type = "MCPJsonTemplate")]
+#[derive(Debug, Clone)]
 pub struct MCPJsonTemplate {
     pub json: String,
     pub variables: Vec<MCPTemplateVariable>,
 }
 
-#[derive(cynic::QueryFragment, Debug, Clone)]
-#[cynic(graphql_type = "MCPGalleryTemplate")]
+#[derive(Debug, Clone)]
 pub struct MCPGalleryTemplate {
     pub description: String,
     pub gallery_item_id: String,

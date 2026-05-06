@@ -5,7 +5,6 @@ use crate::terminal::model::{
 };
 use chrono::{DateTime, FixedOffset, Utc};
 use serde::{Deserialize, Serialize};
-use warp_graphql::mutations::share_block::DisplaySetting as GqlDisplaySetting;
 
 // These are pixel heights of various parts of an embedded block.
 pub const TITLE_HEIGHT: u32 = 34;
@@ -17,26 +16,12 @@ pub const OUTPUT_CELL_WIDTH: u32 = 10;
 pub const EMBED_FOOTER_HEIGHT: u32 = 38;
 pub const EXTRA_PADDING: u32 = 35;
 
-/// This enum is a replica of the `share_block::DisplaySetting` struct auto-generated from the GraphQL Schema.
-/// We cannot derive traits on the auto-generated structs because any rust attributes
-/// will be rewritten.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum DisplaySetting {
     Command,
     Output,
     CommandAndOutput,
     Other(String),
-}
-
-impl From<DisplaySetting> for GqlDisplaySetting {
-    fn from(value: DisplaySetting) -> Self {
-        match value {
-            DisplaySetting::Command => GqlDisplaySetting::Command,
-            DisplaySetting::Output => GqlDisplaySetting::Output,
-            DisplaySetting::CommandAndOutput => GqlDisplaySetting::CommandAndOutput,
-            DisplaySetting::Other(s) => GqlDisplaySetting::Other(s),
-        }
-    }
 }
 
 /// A representation of a Block for the server.

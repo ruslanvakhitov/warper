@@ -1,10 +1,10 @@
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use warp_graphql::ai::{
+    BonusGrantType,
     RequestLimitInfo as RequestLimitInfoGraphql,
     RequestLimitRefreshDuration as RequestLimitRefreshDurationGraphql,
 };
-use warp_graphql::billing::BonusGrantType;
 use warp_graphql::scalars::time::ServerTimestamp;
 use warpui::{AppContext, Entity, ModelContext, SingletonEntity};
 
