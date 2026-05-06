@@ -1291,13 +1291,7 @@ fn app_callbacks(is_integration_test: bool) -> warpui::platform::AppCallbacks {
             NetworkStatus::handle(ctx)
                 .update(ctx, move |me, ctx| me.reachability_changed(reachable, ctx));
         })),
-        on_become_active: Some(Box::new(move |ctx| {
-            let local_identity = LocalActorIdentityProvider::as_ref(ctx).get();
-            ctx.record_app_focus(
-                None,
-                local_identity.local_instance_id(),
-            );
-        })),
+        on_become_active: None,
         on_screen_changed: Some(Box::new(move |ctx| {
             ctx.dispatch_global_action(
                 "root_view:move_quake_mode_window_from_screen_change",
@@ -1346,22 +1340,12 @@ fn app_callbacks(is_integration_test: bool) -> warpui::platform::AppCallbacks {
             }
             ctx.dispatch_global_action("root_view:update_quake_mode_state", &update_quake_mode_arg);
 
-            let local_identity = LocalActorIdentityProvider::as_ref(ctx).get();
-            ctx.record_app_blur(
-                None,
-                local_identity.local_instance_id(),
-            );
         })),
         on_will_terminate: Some(Box::new(move |ctx| {
             PersistenceWriter::handle(ctx).update(ctx, |writer, _ctx| {
                 writer.terminate();
             });
 
-            let local_identity = LocalActorIdentityProvider::as_ref(ctx).get();
-            ctx.try_record_daily_app_focus_duration(
-                None,
-                local_identity.local_instance_id(),
-            );
             // Shutdown all LSP servers gracefully before app termination
             lsp::LspManagerModel::handle(ctx).update(ctx, |manager, ctx| {
                 manager.terminate(ctx);
