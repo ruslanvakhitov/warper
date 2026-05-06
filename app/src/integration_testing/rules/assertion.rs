@@ -2,7 +2,7 @@ use warpui::{async_assert_eq, integration::AssertionWithDataCallback};
 
 use crate::{
     ai::facts::view::AIFactPage, integration_testing::view_getters::workspace_view,
-    server::ids::SyncId,
+    warp_server_client::ids::SyncId,
 };
 
 pub fn assert_rule_pane_open(key: impl Into<String>) -> AssertionWithDataCallback {

@@ -2,7 +2,7 @@ use warpui::{integration::TestStep, windowing::WindowManager, WindowId};
 
 use crate::{
     ai::facts::view::AIFactPage, integration_testing::view_getters::workspace_view,
-    server::ids::SyncId,
+    warp_server_client::ids::SyncId,
 };
 
 /// Open the rule pane saved at `key` in the active tab of the window saved at `window_key`

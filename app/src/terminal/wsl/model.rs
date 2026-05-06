@@ -32,7 +32,7 @@ impl WslInfo {
                 // This error merely occurs when user doesn't have WSL installed/enabled.
                 Error::MainKey(err) => {
                     log::info!("{err:#}");
-                                    }
+                }
                 _ => {
                     log::error!("{err:#}");
                 }

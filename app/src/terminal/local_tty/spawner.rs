@@ -99,7 +99,7 @@ pub struct PtySpawner {
 
 #[cfg(unix)]
 pub fn run_local_terminal_smoke() -> Result<()> {
-    use crate::terminal::{SizeInfo, available_shells::AvailableShell};
+    use crate::terminal::{available_shells::AvailableShell, SizeInfo};
     use std::{collections::HashMap, ffi::OsString};
 
     let mut spawner = PtySpawner::new().context("failed to create terminal server spawner")?;

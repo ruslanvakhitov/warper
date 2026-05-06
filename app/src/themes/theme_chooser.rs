@@ -21,8 +21,10 @@ use warpui::{
     UpdateModel, View, ViewContext, ViewHandle,
 };
 
+use crate::appearance::AppearanceManager;
 use crate::resource_center::{mark_feature_used_and_write_to_user_defaults, Tip, TipAction};
 use crate::themes::theme::{RespectSystemTheme, ThemeKind, WarpTheme};
+use crate::ui_components::window_focus_dimming::WindowFocusDimming;
 use crate::util::traffic_lights::traffic_light_data;
 use crate::workspace::PANEL_HEADER_HEIGHT;
 use crate::{
@@ -37,9 +39,7 @@ use crate::{
     util::traffic_lights::{TrafficLightData, TrafficLightSide},
     window_settings::WindowSettings,
 };
-use crate::{appearance::AppearanceManager};
 use crate::{editor::EditorView, resource_center::TipsCompleted};
-use crate::ui_components::window_focus_dimming::WindowFocusDimming;
 use crate::{
     themes::theme::WarpThemeConfig,
     ui_components::buttons::{close_button, icon_button},
@@ -336,11 +336,11 @@ impl ThemeChooser {
     }
 
     pub fn record_open_theme(&mut self, ctx: &mut ViewContext<Self>) -> bool {
-                true
+        true
     }
 
     pub fn open_theme_creator_modal(&mut self, ctx: &mut ViewContext<Self>) {
-                ctx.emit(ThemeChooserEvent::OpenThemeCreatorModal);
+        ctx.emit(ThemeChooserEvent::OpenThemeCreatorModal);
     }
 
     pub fn open_theme_deletion_modal(
@@ -392,7 +392,7 @@ impl ThemeChooser {
         ctx: &mut ViewContext<Self>,
     ) {
         self.select_theme(selected_kind.clone(), ctx);
-                let theme_settings = ThemeSettings::handle(ctx);
+        let theme_settings = ThemeSettings::handle(ctx);
 
         let selected_themes = respect_system_theme(theme_settings.as_ref(ctx))
             .selected_system_themes()

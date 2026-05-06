@@ -61,11 +61,10 @@ use crate::{
     editor::InteractionState,
     features::FeatureFlag,
     notebooks::{
+        actions::{ActionEntrypoint, BlockInfo, EmbeddedObjectInfo, SelectionMode},
         editor::{find_bar::FindBarAction, model::word_unit},
         link::{LinkTarget, NotebookLinks, ResolveError},
-        actions::{ActionEntrypoint, BlockInfo, EmbeddedObjectInfo, SelectionMode},
     },
-    server::ids::SyncId,
     settings::{AppEditorSettings, FontSettings, SelectionSettings},
     terminal::{grid_renderer::URL_COLOR, links::directly_open_link_keybinding_string},
     ui_components::icons::ICON_DIMENSIONS,
@@ -75,6 +74,7 @@ use crate::{
     },
     view_components::DismissibleToast,
 };
+use warp_server_client::ids::SyncId;
 
 #[cfg(feature = "local_fs")]
 use crate::util::link_detection::{detect_file_paths, get_word_range_at_offset, DetectedLinkType};

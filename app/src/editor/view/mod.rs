@@ -38,7 +38,7 @@ use pathfinder_color::ColorU;
 use settings::Setting as _;
 use snapshot::{EditorHeightShrinkDelay, ViewSnapshot};
 use vec1::{vec1, Vec1};
-use warp_core::{safe_error};
+use warp_core::safe_error;
 use warp_util::{path::ShellFamily, user_input::UserInput};
 use warpui::platform::keyboard::KeyCode;
 use warpui::ui_components::button::ButtonTooltipPosition;
@@ -3048,7 +3048,6 @@ impl EditorView {
                             item_count,
                             query_length,
                         } => {
-
                             ctx.emit(Event::SetAIContextMenuOpen(false));
                             ctx.focus_self();
                             ctx.notify();
@@ -3058,7 +3057,6 @@ impl EditorView {
                             item_count,
                             query_length,
                         } => {
-
                             ctx.emit(Event::AcceptAIContextMenuItem(action.clone()));
                             ctx.focus_self();
                             ctx.notify();
@@ -5121,7 +5119,6 @@ impl EditorView {
         }
 
         let is_udi_enabled = InputSettings::as_ref(ctx).is_universal_developer_input_enabled(ctx);
-
 
         self.process_attached_images_future_handle = Some(ctx.spawn(
             async move {

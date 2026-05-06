@@ -1829,8 +1829,7 @@ impl TypedActionView for CodeFooterView {
                         _ => None,
                     };
 
-                    if let Some(st) = server_type {
-                                            }
+                    if let Some(st) = server_type {}
 
                     if needed_install {
                         ctx.emit(CodeFooterViewEvent::InstallAndEnableLSP {
@@ -1852,7 +1851,7 @@ impl TypedActionView for CodeFooterView {
                     .first()
                     .and_then(|w| w.upgrade(ctx))
                     .map(|s| s.as_ref(ctx).server_name());
-                                ctx.emit(CodeFooterViewEvent::OpenLogs {
+                ctx.emit(CodeFooterViewEvent::OpenLogs {
                     path: self.mode.path().to_path_buf(),
                 });
                 ctx.notify();
@@ -1860,7 +1859,7 @@ impl TypedActionView for CodeFooterView {
             CodeFooterViewAction::RestartServer => {
                 self.is_lsp_menu_open = false;
                 if let Some(server) = self.lsp_servers.first().and_then(|w| w.upgrade(ctx)) {
-                                        ctx.emit(CodeFooterViewEvent::RestartServer {
+                    ctx.emit(CodeFooterViewEvent::RestartServer {
                         server: server.clone(),
                     });
                 }
@@ -1869,7 +1868,7 @@ impl TypedActionView for CodeFooterView {
             CodeFooterViewAction::StopServer => {
                 self.is_lsp_menu_open = false;
                 if let Some(server) = self.lsp_servers.first().and_then(|w| w.upgrade(ctx)) {
-                                        ctx.emit(CodeFooterViewEvent::StopServer {
+                    ctx.emit(CodeFooterViewEvent::StopServer {
                         server: server.clone(),
                     });
                 }
@@ -1878,7 +1877,7 @@ impl TypedActionView for CodeFooterView {
             CodeFooterViewAction::StartServer => {
                 self.is_lsp_menu_open = false;
                 if let Some(server) = self.lsp_servers.first().and_then(|w| w.upgrade(ctx)) {
-                                        ctx.emit(CodeFooterViewEvent::StartServer {
+                    ctx.emit(CodeFooterViewEvent::StartServer {
                         server: server.clone(),
                     });
                 }
@@ -1889,7 +1888,6 @@ impl TypedActionView for CodeFooterView {
                 if let Some(server) = self.lsp_servers.first().and_then(|w| w.upgrade(ctx)) {
                     let workspace_root = server.as_ref(ctx).initial_workspace().to_path_buf();
                     let server_type = server.as_ref(ctx).server_type();
-
 
                     // Remove from manager (stops and removes)
                     LspManagerModel::handle(ctx).update(ctx, |manager, ctx| {
@@ -1905,13 +1903,13 @@ impl TypedActionView for CodeFooterView {
             }
             CodeFooterViewAction::RestartAllServers => {
                 self.is_lsp_menu_open = false;
-                                let live = self.live_servers(ctx);
+                let live = self.live_servers(ctx);
                 ctx.emit(CodeFooterViewEvent::RestartAllServers { servers: live });
                 ctx.notify();
             }
             CodeFooterViewAction::StopAllServers => {
                 self.is_lsp_menu_open = false;
-                                let live = self.live_servers(ctx);
+                let live = self.live_servers(ctx);
                 ctx.emit(CodeFooterViewEvent::StopAllServers { servers: live });
                 ctx.notify();
             }

@@ -361,8 +361,7 @@ impl LocalCodeEditorView {
                 } else {
                     let had_content = !segments.is_empty();
                     let had_diagnostics = !diagnostics.is_empty();
-                    if let Some(server) = me.lsp_server.as_ref() {
-                                            }
+                    if let Some(server) = me.lsp_server.as_ref() {}
 
                     let editor = me.editor().as_ref(ctx);
 

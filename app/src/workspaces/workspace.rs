@@ -2,10 +2,11 @@ use crate::ai::execution_profiles::{
     ActionPermission, ComputerUsePermission, WriteToPtyPermission,
 };
 use crate::ai::llms::LLMModelHost;
-use crate::{server::ids::ServerId, settings::AgentModeCommandExecutionPredicate};
+use crate::settings::AgentModeCommandExecutionPredicate;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use warp_server_client::ids::ServerId;
 
 #[derive(Clone, Copy, Hash, Debug, PartialEq, Eq)]
 pub struct WorkspaceUid(ServerId);

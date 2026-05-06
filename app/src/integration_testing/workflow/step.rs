@@ -3,7 +3,7 @@ use warpui::{integration::TestStep, windowing::WindowManager, WindowId};
 use crate::{
     drive::LocalObjectOpenSettings,
     integration_testing::view_getters::workspace_view,
-    server::ids::SyncId,
+    warp_server_client::ids::SyncId,
     workflows::{manager::WorkflowOpenSource, WorkflowViewMode},
 };
 

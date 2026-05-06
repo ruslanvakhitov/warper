@@ -24,24 +24,22 @@ use crate::terminal::ssh::error::SshErrorBlockAction;
 use crate::terminal::view::inline_banner::AgentModeSetupSpeedbumpBannerAction;
 use crate::terminal::view::passive_suggestions::PromptSuggestionResolution;
 use crate::terminal::view::RichContentSecretTooltipInfo;
-use crate::workflows::workflow::Workflow;
-use crate::workspace::metadata::PaletteSource;
-use crate::{
-    server::ids::SyncId,
-    terminal::{
-        block_list_element::{
-            BlockHoverAction, BlockListMenuSource, BlockSelectAction, BlockTextSelectAction,
-        },
-        block_list_viewport::OverhangingBlock,
-        model::{
-            index::Point,
-            mouse::MouseState,
-            selection::{SelectAction, SelectionDirection},
-            terminal_model::{BlockIndex, WithinModel},
-            SecretHandle,
-        },
+use crate::terminal::{
+    block_list_element::{
+        BlockHoverAction, BlockListMenuSource, BlockSelectAction, BlockTextSelectAction,
+    },
+    block_list_viewport::OverhangingBlock,
+    model::{
+        index::Point,
+        mouse::MouseState,
+        selection::{SelectAction, SelectionDirection},
+        terminal_model::{BlockIndex, WithinModel},
+        SecretHandle,
     },
 };
+use crate::workflows::workflow::Workflow;
+use crate::workspace::metadata::PaletteSource;
+use warp_server_client::ids::SyncId;
 
 use super::inline_banner::{
     AnonymousUserLoginBannerAction, AwsBedrockLoginBannerAction, AwsCliNotInstalledBannerAction,

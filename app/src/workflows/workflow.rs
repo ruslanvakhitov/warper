@@ -2,7 +2,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use warp_workflows;
 
-use crate::server::ids::{ServerId, SyncId};
+use warp_server_client::ids::{ServerId, SyncId};
 
 /// Workflow model to be used inside of `warp-internal`
 #[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq, Hash)]

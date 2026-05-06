@@ -3,7 +3,7 @@ use warp_cli::agent::Harness;
 use warpui::{Entity, EntityId, ModelContext};
 
 use crate::ai::agent::conversation::AIConversationId;
-use crate::server::ids::SyncId;
+use warp_server_client::ids::SyncId;
 
 #[derive(Debug, Clone)]
 pub struct AgentProgress {

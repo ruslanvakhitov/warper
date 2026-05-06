@@ -1572,8 +1572,7 @@ impl TypedActionView for DisplayChip {
                         if is_menu_open {
                             let is_udi_enabled = InputSettings::as_ref(ctx)
                                 .is_universal_developer_input_enabled(ctx);
-
-                                                    }
+                        }
                         ctx.notify();
                     }
                     DisplayChipKind::WorkingDirectory {
@@ -1599,8 +1598,7 @@ impl TypedActionView for DisplayChip {
                         if is_menu_open {
                             let is_udi_enabled = InputSettings::as_ref(ctx)
                                 .is_universal_developer_input_enabled(ctx);
-
-                                                    }
+                        }
                         ctx.notify();
                     }
                     DisplayChipKind::NodeVersion { popup, popup_open } => {

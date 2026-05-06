@@ -164,7 +164,7 @@ impl ModelEventDispatcher {
                             .as_millis()
                             // Clip large durations to u64::MAX
                             .min(u64::MAX as u128) as u64;
-                                            }
+                    }
                 }
                 ModelEvent::Handler(AnsiHandlerEvent::TmuxControlModeReady { primary_pane })
             }

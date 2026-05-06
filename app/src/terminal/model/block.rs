@@ -23,7 +23,6 @@ use crate::ai::blocklist::agent_view::{AgentViewDisplayMode, AgentViewState};
 use crate::{
     ai::agent::redaction::redact_secrets,
     context_chips::prompt_snapshot::PromptSnapshot,
-    server::{block::DisplaySetting, ids::SyncId},
     terminal::{
         block_filter::BlockFilterQuery,
         block_list_element::GridType,
@@ -54,10 +53,20 @@ use hex;
 use instant::Instant;
 use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::Vector2F;
+use serde::{Deserialize, Serialize};
 use warp_core::command::ExitCode;
+use warp_server_client::ids::SyncId;
 use warp_terminal::model::grid::Dimensions as _;
 use warp_util::path::user_friendly_path;
 use warpui::units::{IntoLines, Lines};
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub enum DisplaySetting {
+    Command,
+    Output,
+    CommandAndOutput,
+    Other(String),
+}
 use warpui::{r#async::executor::Background, record_trace_event};
 
 use enum_iterator::all;

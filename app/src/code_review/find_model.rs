@@ -112,7 +112,7 @@ impl CodeReviewFindModel {
         ctx: &mut ModelContext<Self>,
     ) {
         self.case_sensitive = case_sensitive;
-                self.run_search(editor_handles, ctx);
+        self.run_search(editor_handles, ctx);
     }
 
     pub fn set_regex(
@@ -122,7 +122,7 @@ impl CodeReviewFindModel {
         ctx: &mut ModelContext<Self>,
     ) {
         self.regex = regex;
-                self.run_search(editor_handles, ctx);
+        self.run_search(editor_handles, ctx);
     }
 
     #[cfg(not(target_family = "wasm"))]
@@ -139,7 +139,6 @@ impl CodeReviewFindModel {
         if results.is_empty() {
             return;
         }
-
 
         let next_index = if let Some(selected) = &self.selected_match {
             match direction {

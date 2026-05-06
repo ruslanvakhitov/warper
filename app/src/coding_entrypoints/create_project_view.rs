@@ -1,7 +1,7 @@
 use crate::ai::blocklist::ugc_policy_banner::should_collect_ai_ugc;
 use crate::appearance::Appearance;
 use crate::coding_entrypoints::glowing_editor::{GlowingEditor, GlowingEditorEvent};
-use warp_core::{ui::icons::Icon};
+use warp_core::ui::icons::Icon;
 use warpui::elements::{ChildView, Expanded, Fill, MainAxisAlignment, MainAxisSize};
 use warpui::{
     elements::{
@@ -75,8 +75,7 @@ impl CreateProjectView {
 
                 // Send content event only if UGC collection is enabled
                 let should_collect_ugc = should_collect_ai_ugc(ctx);
-                if should_collect_ugc {
-                                    }
+                if should_collect_ugc {}
 
                 ctx.emit(CreateProjectEvent::SubmitPrompt(prompt.clone()));
             }
@@ -171,7 +170,7 @@ impl TypedActionView for CreateProjectView {
         match action {
             CreateProjectAction::SuggestionSelected { prompt } => {
                 // Always send metadata event with suggested prompt content (non-UGC)
-                                ctx.emit(CreateProjectEvent::SubmitPrompt(prompt.clone()));
+                ctx.emit(CreateProjectEvent::SubmitPrompt(prompt.clone()));
             }
         }
     }

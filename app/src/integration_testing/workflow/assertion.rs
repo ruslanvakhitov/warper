@@ -5,7 +5,7 @@ use warpui::{
 };
 
 use crate::{
-    integration_testing::view_getters::workflow_view, server::ids::SyncId,
+    integration_testing::view_getters::workflow_view, warp_server_client::ids::SyncId,
     workflows::workflow_view::WorkflowView,
 };
 

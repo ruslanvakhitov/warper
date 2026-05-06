@@ -8,7 +8,7 @@ use crate::{
     drive::LocalObjectOpenSettings,
     integration_testing::view_getters::{notebook_view, workspace_view},
     notebooks::manager::NotebookSource,
-    server::ids::SyncId,
+    warp_server_client::ids::SyncId,
 };
 
 fn notebook_editor(

@@ -14,7 +14,7 @@ use crate::{
     },
     notebooks::notebook::NotebookView,
     pane_group::PaneGroup,
-    server::ids::SyncId,
+    warp_server_client::ids::SyncId,
 };
 
 /// Asserts that the notebook in the given pane has the expected Markdown content.

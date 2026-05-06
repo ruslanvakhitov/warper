@@ -38,7 +38,7 @@ use super::diff_size_limits::compute_diff_size;
 
 #[cfg(not(target_family = "wasm"))]
 use warp_core::channel::ChannelState;
-use warp_core::{safe_warn};
+use warp_core::safe_warn;
 
 cfg_if::cfg_if! {
     if #[cfg(feature = "local_fs")] {
@@ -1508,7 +1508,7 @@ impl DiffStateModel {
                 self.metadata = Some(metadata);
             }
             Err(e) => {
-                                self.metadata = None;
+                self.metadata = None;
             }
         }
 
@@ -1552,8 +1552,7 @@ impl DiffStateModel {
             return;
         }
 
-        if let Err(e) = &diffs.changes {
-                    }
+        if let Err(e) = &diffs.changes {}
 
         self.state = InternalDiffState::Loaded((&diffs).into());
         ctx.emit(DiffStateModelEvent::NewDiffsComputed(diffs.changes.ok()));

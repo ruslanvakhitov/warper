@@ -1,11 +1,9 @@
-use crate::{
-    server::ids::SyncId,
-    workflows::{
-        command_parser::{compute_workflow_display_data, WorkflowArgumentIndex},
-        workflow::Argument,
-        WorkflowType,
-    },
+use crate::workflows::{
+    command_parser::{compute_workflow_display_data, WorkflowArgumentIndex},
+    workflow::Argument,
+    WorkflowType,
 };
+use warp_server_client::ids::SyncId;
 use warpui::{elements::Empty, AppContext, Element, Entity, TypedActionView, View, ViewContext};
 
 pub const WORKFLOW_PARAMETER_HIGHLIGHT_COLOR: u32 = 0x42C0FA4D;

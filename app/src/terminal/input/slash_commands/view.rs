@@ -10,7 +10,6 @@ use crate::ai::blocklist::agent_view::AgentViewController;
 use crate::search::data_source::{Query, QueryFilter};
 use crate::search::mixer::{AddAsyncSourceOptions, SearchMixer};
 use crate::search::slash_command_menu::SlashCommandId;
-use crate::server::ids::SyncId;
 use crate::terminal::input::buffer_model::InputBufferModel;
 use crate::terminal::input::inline_menu::{InlineMenuEvent, InlineMenuPositioner, InlineMenuView};
 use crate::terminal::input::slash_command_model::SlashCommandEntryState;
@@ -22,6 +21,7 @@ use crate::terminal::input::slash_commands::{
 use crate::terminal::input::suggestions_mode_model::{
     InputSuggestionsModeEvent, InputSuggestionsModeModel,
 };
+use warp_server_client::ids::SyncId;
 
 lazy_static! {
     static ref SLASH_COMMAND_FILTERS: HashSet<QueryFilter> =

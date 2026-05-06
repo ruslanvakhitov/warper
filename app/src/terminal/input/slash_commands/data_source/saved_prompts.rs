@@ -5,7 +5,7 @@ use crate::appearance::Appearance;
 use crate::search::async_snapshot_data_source::AsyncSnapshotDataSource;
 use crate::search::data_source::{Query, QueryResult};
 use crate::search::mixer::{BoxFuture, DataSourceRunErrorWrapper};
-use crate::server::ids::SyncId;
+use warp_server_client::ids::SyncId;
 
 use super::AcceptSlashCommandOrSavedPrompt;
 

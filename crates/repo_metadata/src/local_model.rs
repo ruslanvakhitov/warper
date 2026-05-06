@@ -9,7 +9,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use warp_core::{safe_warn};
+use warp_core::safe_warn;
 use warpui::ModelHandle;
 
 /// Represents either a file or directory in a repository.

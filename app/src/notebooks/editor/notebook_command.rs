@@ -45,8 +45,8 @@ use crate::{
     debounce::debounce,
     editor::InteractionState,
     notebooks::{
-        styles::block_footer_action_button,
         actions::{ActionEntrypoint, BlockInfo},
+        styles::block_footer_action_button,
     },
     settings::FontSettings,
     terminal::input::{

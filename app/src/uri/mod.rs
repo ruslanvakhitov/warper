@@ -8,17 +8,15 @@ pub mod browser_url_handler;
 use crate::launch_configs::launch_config::LaunchConfig;
 use crate::linear::{LinearAction, LinearIssueWork};
 use crate::root_view::{open_new_window_get_handles, OpenLaunchConfigArg};
-use crate::workspace::metadata::LaunchConfigUiLocation;
 use crate::util::openable_file_type::{is_file_openable_in_warp, is_markdown_file};
 use crate::workspace::active_terminal_in_window;
+use crate::workspace::metadata::LaunchConfigUiLocation;
 use crate::workspace::{Workspace, WorkspaceAction, WorkspaceRegistry};
 use crate::{view_components::DismissibleToast, workspace::ToastStack};
 
 use crate::settings_view::SettingsSection;
 use crate::user_config::load_launch_configs;
-use crate::{
-    quake_mode_window_id, quake_mode_window_is_open, safe_info, ChannelState, OpenPath,
-};
+use crate::{quake_mode_window_id, quake_mode_window_is_open, safe_info, ChannelState, OpenPath};
 use anyhow::{anyhow, ensure, Result};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -679,8 +677,7 @@ fn open_file(window_id: Option<WindowId>, path: PathBuf, ctx: &mut AppContext) {
                 }
             }
         }
-
-            }
+    }
 }
 
 fn execute_file(window_id: WindowId, path_str: &str, ctx: &mut AppContext) {
@@ -690,8 +687,7 @@ fn execute_file(window_id: WindowId, path_str: &str, ctx: &mut AppContext) {
             input.set_pending_command(&path_str, i_ctx);
         })
     });
-
-    }
+}
 
 fn open_window_with_action(active_window_id: Option<WindowId>, action: &str, ctx: &mut AppContext) {
     if let Some(primary_window_id) = active_window_id {

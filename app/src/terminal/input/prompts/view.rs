@@ -4,13 +4,13 @@ use warpui::{Element, Entity, ModelHandle, View, ViewContext, ViewHandle};
 use crate::ai::blocklist::agent_view::AgentViewController;
 use crate::search::data_source::Query;
 use crate::search::mixer::SearchMixer;
-use crate::server::ids::SyncId;
 use crate::terminal::input::buffer_model::{InputBufferModel, InputBufferUpdateEvent};
 use crate::terminal::input::inline_menu::{InlineMenuEvent, InlineMenuPositioner, InlineMenuView};
 use crate::terminal::input::prompts::AcceptPrompt;
 use crate::terminal::input::suggestions_mode_model::{
     InputSuggestionsModeEvent, InputSuggestionsModeModel,
 };
+use warp_server_client::ids::SyncId;
 
 #[derive(Debug, Clone)]
 pub enum InlinePromptsMenuEvent {

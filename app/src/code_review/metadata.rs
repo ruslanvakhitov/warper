@@ -109,4 +109,3 @@ pub enum PaneStateChange {
     #[serde(rename = "maximized")]
     Maximized,
 }
-

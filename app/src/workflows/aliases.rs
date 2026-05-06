@@ -9,7 +9,7 @@ use warp_core::{
 };
 use warpui::{AppContext, ModelContext};
 
-use crate::server::ids::SyncId;
+use warp_server_client::ids::SyncId;
 
 define_settings_group!(WorkflowAliases, settings: [
     aliases: Aliases {

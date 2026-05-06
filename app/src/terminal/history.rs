@@ -14,7 +14,6 @@ use super::{
     shell::ShellType,
 };
 use crate::{
-    server::ids::{ClientId, HashableId as _, SyncId},
     terminal::model::session::{Session, SessionId},
     util::dedupe_from_last,
     workflows::{
@@ -22,6 +21,7 @@ use crate::{
         WorkflowType,
     },
 };
+use warp_server_client::ids::{ClientId, HashableId as _, SyncId};
 
 mod up_arrow;
 pub(crate) use up_arrow::UpArrowHistoryConfig;

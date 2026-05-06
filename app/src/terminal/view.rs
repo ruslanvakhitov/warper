@@ -210,7 +210,6 @@ use crate::env_vars::{
 use crate::pane_group::focus_state::PaneFocusHandle;
 use crate::persistence::{self, FinishedCommandMetadata};
 use crate::safe_warn;
-use crate::server::ids::SyncId;
 #[cfg(feature = "local_fs")]
 use crate::settings::import::model::ImportedConfigModel;
 use crate::settings::import::view::{SettingsImportEvent, SettingsImportView};
@@ -289,6 +288,7 @@ use crate::workspace::{ForkAIConversationParams, ForkFromExchange, ForkedConvers
 use crate::workspaces::user_workspaces::UserWorkspaces;
 use crate::ActiveSession as WindowActiveSession;
 use crate::{report_if_error, AIAgentActionResultType};
+use warp_server_client::ids::SyncId;
 
 use async_channel::{Receiver, Sender};
 use chrono::{Local, NaiveDateTime};

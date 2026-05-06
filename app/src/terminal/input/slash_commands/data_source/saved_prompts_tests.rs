@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::server::ids::{ClientId, SyncId};
+use warp_server_client::ids::{ClientId, SyncId};
 use crate::workflows::workflow::Workflow;
 use crate::workflows::CloudWorkflowModel;
 use ordered_float::OrderedFloat;

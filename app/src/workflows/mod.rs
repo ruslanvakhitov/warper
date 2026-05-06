@@ -13,7 +13,7 @@ pub mod workflow;
 pub mod workflow_enum;
 
 use crate::notebooks::{NotebookId, NotebookLocation};
-use crate::server::ids::ServerId;
+use warp_server_client::ids::ServerId;
 
 pub use categories::{CategoriesView, CategoriesViewEvent};
 
@@ -62,7 +62,7 @@ impl WorkflowViewMode {
     ///
     /// Editing is disabled if the user does not have edit permissions.
     pub fn supported_edit_mode(
-        _workflow_id: Option<crate::server::ids::SyncId>,
+        _workflow_id: Option<warp_server_client::ids::SyncId>,
         _app: &AppContext,
     ) -> Self {
         Self::Edit
@@ -73,7 +73,7 @@ impl WorkflowViewMode {
     /// Viewing is disabled if the user is allowed to edit the workflow and in a context where
     /// running workflows is supported.
     pub fn supported_view_mode(
-        _workflow_id: Option<crate::server::ids::SyncId>,
+        _workflow_id: Option<warp_server_client::ids::SyncId>,
         _app: &AppContext,
     ) -> Self {
         if ContextFlag::RunWorkflow.is_enabled() {
@@ -93,7 +93,7 @@ impl WorkflowViewMode {
 
 #[derive(Clone, Debug, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 pub struct WorkflowId(ServerId);
-crate::server_id_traits! { WorkflowId, "Workflow" }
+warp_server_client::server_id_traits! { WorkflowId, "Workflow" }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum AIWorkflowOrigin {

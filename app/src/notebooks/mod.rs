@@ -9,12 +9,12 @@ use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use warpui::AppContext;
 
-use crate::server::ids::{ServerId, SyncId};
+use warp_server_client::ids::{ServerId, SyncId};
 
 /// This is the notebook_id in the database associated with this notebook.
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub struct NotebookId(ServerId);
-crate::server_id_traits! { NotebookId, "Notebook" }
+warp_server_client::server_id_traits! { NotebookId, "Notebook" }
 
 impl From<NotebookId> for SyncId {
     fn from(id: NotebookId) -> Self {

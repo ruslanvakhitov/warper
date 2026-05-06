@@ -27,4 +27,3 @@ pub enum LspControlActionType {
     #[serde(rename = "stop_all")]
     StopAll,
 }
-

@@ -293,17 +293,17 @@ impl BlockFilterEditor {
     fn toggle_regex(&mut self, ctx: &mut ViewContext<Self>) {
         self.regex_enabled = !self.regex_enabled;
         self.update_query(ctx);
-            }
+    }
 
     fn toggle_case_sensitivity(&mut self, ctx: &mut ViewContext<Self>) {
         self.case_sensitivity_enabled = !self.case_sensitivity_enabled;
         self.update_query(ctx);
-            }
+    }
 
     fn toggle_invert_filter(&mut self, ctx: &mut ViewContext<Self>) {
         self.invert_filter_enabled = !self.invert_filter_enabled;
         self.update_query(ctx);
-            }
+    }
 
     /// Sends a block filter query update.
     fn update_query(&mut self, ctx: &mut ViewContext<Self>) {
@@ -324,7 +324,7 @@ impl BlockFilterEditor {
         }));
 
         if num_context_lines != self.prev_num_context_lines {
-                        self.prev_num_context_lines = num_context_lines;
+            self.prev_num_context_lines = num_context_lines;
         }
     }
 
@@ -349,8 +349,7 @@ impl BlockFilterEditor {
                 // the user now types in a non-empty query, then we should count this as an `UpdateBlockFilterQuery` event.
                 if self.previous_editor_event_was_select_all
                     && !self.query_editor_text(ctx).is_empty()
-                {
-                                    }
+                {}
                 self.previous_editor_event_was_select_all = false;
             }
             EditorEvent::Escape => self.close(ctx),
