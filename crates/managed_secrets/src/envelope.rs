@@ -2,7 +2,7 @@ use std::{io, sync::Once};
 
 use base64::Engine;
 
-use crate::{secret_value::ManagedSecretValue, ManagedSecretType};
+use crate::{ManagedSecretType, secret_value::ManagedSecretValue};
 
 mod hpke_impl;
 

@@ -37,12 +37,12 @@ use super::block_list::{
     upsert_ai_query,
 };
 use super::model::{
-    self, ActiveMCPServer, MCPEnvironmentVariables, NewActiveMCPServer,
-    NewApp, NewCommand, NewFolder, NewNotebook, NewTab, NewWindow, NewWorkspaceMetadata, Project,
-    Tab, Window, WorkspaceMetadata as WorkspaceMetadataModel, AI_DOCUMENT_PANE_KIND,
-    AI_FACT_PANE_KIND, CODE_PANE_KIND, ENV_VAR_COLLECTION_PANE_KIND,
-    EXECUTION_PROFILE_EDITOR_PANE_KIND, MCP_SERVER_PANE_KIND, NOTEBOOK_PANE_KIND,
-    SETTINGS_PANE_KIND, TERMINAL_PANE_KIND, WELCOME_PANE_KIND, WORKFLOW_PANE_KIND,
+    self, ActiveMCPServer, MCPEnvironmentVariables, NewActiveMCPServer, NewApp, NewCommand,
+    NewFolder, NewNotebook, NewTab, NewWindow, NewWorkspaceMetadata, Project, Tab, Window,
+    WorkspaceMetadata as WorkspaceMetadataModel, AI_DOCUMENT_PANE_KIND, AI_FACT_PANE_KIND,
+    CODE_PANE_KIND, ENV_VAR_COLLECTION_PANE_KIND, EXECUTION_PROFILE_EDITOR_PANE_KIND,
+    MCP_SERVER_PANE_KIND, NOTEBOOK_PANE_KIND, SETTINGS_PANE_KIND, TERMINAL_PANE_KIND,
+    WELCOME_PANE_KIND, WORKFLOW_PANE_KIND,
 };
 use super::schema;
 use super::{
@@ -57,6 +57,11 @@ use crate::app_state::{
     AIFactPaneSnapshot, CodeReviewPaneSnapshot, EnvVarCollectionPaneSnapshot, LeftPanelSnapshot,
     RightPanelSnapshot, SettingsPaneSnapshot, WorkflowPaneSnapshot,
 };
+use crate::app_state::{
+    AppState, BranchSnapshot, CodePaneSnapShot, CodePaneTabSnapshot, LeafContents, LeafSnapshot,
+    NotebookPaneSnapshot, PaneFlex, PaneNodeSnapshot, SplitDirection, TabSnapshot,
+    TerminalPaneSnapshot, WindowSnapshot,
+};
 use crate::code::editor_management::CodeSource;
 use crate::persistence::agent::read_agent_conversations;
 use crate::persistence::block_list::{get_all_restored_blocks, read_ai_queries};
@@ -69,13 +74,6 @@ use crate::terminal::ShellLaunchData;
 use crate::themes::theme::AnsiColorIdentifier;
 use crate::workspaces::workspace::Workspace as WorkspaceMetadata;
 use crate::workspaces::workspace::WorkspaceUid;
-use crate::{
-    app_state::{
-        AppState, BranchSnapshot, CodePaneSnapShot, CodePaneTabSnapshot, LeafContents,
-        LeafSnapshot, NotebookPaneSnapshot, PaneFlex, PaneNodeSnapshot, SplitDirection,
-        TabSnapshot, TerminalPaneSnapshot, WindowSnapshot,
-    },
-};
 use crate::{report_error, report_if_error, safe_info};
 use lsp::supported_servers::LSPServerType;
 
@@ -104,7 +102,7 @@ pub fn initialize(_ctx: &mut AppContext) -> (Option<PersistedData>, Option<Write
             let app_state = match read_sqlite_data(&mut conn) {
                 Ok(app_state) => Some(app_state),
                 Err(err) => {
-                                        report_error!(anyhow::Error::new(err).context("Failed to read app state"));
+                    report_error!(anyhow::Error::new(err).context("Failed to read app state"));
                     None
                 }
             };
@@ -112,14 +110,14 @@ pub fn initialize(_ctx: &mut AppContext) -> (Option<PersistedData>, Option<Write
             let writer_handles = match start_writer(conn, database_path) {
                 Ok(writer_handles) => Some(writer_handles),
                 Err(err) => {
-                                        report_db_error("starting writer", err, &database_file_path());
+                    report_db_error("starting writer", err, &database_file_path());
                     None
                 }
             };
             (app_state, writer_handles)
         }
         Err(err) => {
-                        report_db_error("initialization", err, &database_path);
+            report_db_error("initialization", err, &database_path);
             (None, None)
         }
     }
@@ -682,10 +680,7 @@ fn save_app_state(conn: &mut SqliteConnection, app_state: &AppState) -> Result<(
                 left_panel_open: Some(window.left_panel_open),
                 vertical_tabs_panel_open: Some(window.vertical_tabs_panel_open),
                 fullscreen_state: window.fullscreen_state as i32,
-                agent_management_filters: window
-                    .agent_management_filters
-                    .as_ref()
-                    .and_then(|f| serde_json::to_string(f).ok()),
+                agent_management_filters: None,
             };
             diesel::insert_into(schema::windows::dsl::windows)
                 .values(new_window)
@@ -871,18 +866,6 @@ fn save_pane_state(
         LeafContents::GetStarted => GET_STARTED_PANE_KIND,
         LeafContents::Welcome { .. } => WELCOME_PANE_KIND,
         LeafContents::AIDocument(_) => AI_DOCUMENT_PANE_KIND,
-        LeafContents::NetworkLog => {
-            // These pane types are filtered out before this function is
-            // called; see `LeafContents::is_persisted` and the skip in
-            // `save_app_state`. Reaching this arm would mean a `pane_nodes`
-            // row had already been inserted with no corresponding
-            // `pane_leaves` row, which would break restoration.
-            debug_assert!(
-                false,
-                "save_pane_state called for non-persisted LeafContents variant"
-            );
-            return Ok(());
-        }
     };
 
     let leaf = model::NewPane {
@@ -1092,9 +1075,6 @@ fn save_pane_state(
                     .execute(conn)?;
             }
         },
-        LeafContents::NetworkLog => {
-            // Unreachable: filtered by `is_persisted` in `save_app_state`.
-        }
     }
 
     Ok(())
@@ -1998,9 +1978,6 @@ fn read_sqlite_data(conn: &mut SqliteConnection) -> Result<PersistedData, Error>
                 fullscreen_state: fullscreen_state_val,
                 left_panel_width,
                 right_panel_width,
-                agent_management_filters: window
-                    .agent_management_filters
-                    .and_then(|s| serde_json::from_str(&s).ok()),
             }
         })
         .collect();

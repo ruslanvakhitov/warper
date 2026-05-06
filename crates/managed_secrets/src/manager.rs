@@ -5,34 +5,23 @@ use vec1::vec1;
 use warpui::{Entity, SingletonEntity};
 
 use crate::{
+    ManagedSecretValue,
     client::{
         IdentityTokenOptions, ManagedSecret, ManagedSecretsClient, SecretOwner, TaskIdentityToken,
         TaskManagedSecretValue,
     },
     gcp::{self, GcpWorkloadIdentityFederationError, GcpWorkloadIdentityFederationToken},
-    ManagedSecretValue,
 };
 
 /// Singleton model for working with Warp-managed secrets.
 pub struct ManagedSecretManager {
     client: Arc<dyn ManagedSecretsClient>,
-    actor_provider: Arc<dyn ActorProvider>,
-}
-
-pub trait ActorProvider: Send + Sync + 'static {
-    fn actor_uid(&self) -> Option<String>;
 }
 
 impl ManagedSecretManager {
-    pub fn new(
-        client: Arc<dyn ManagedSecretsClient>,
-        actor_provider: Arc<dyn ActorProvider>,
-    ) -> Self {
+    pub fn new(client: Arc<dyn ManagedSecretsClient>) -> Self {
         crate::envelope::init();
-        Self {
-            client,
-            actor_provider,
-        }
+        Self { client }
     }
 
     pub fn create_secret(

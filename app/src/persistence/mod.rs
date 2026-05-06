@@ -35,13 +35,13 @@ use warpui::{AppContext, Entity, SingletonEntity};
 use crate::ai::blocklist::PersistedAIInput;
 use crate::ai::mcp::TemplatableMCPServerInstallation;
 use crate::app_state::AppState;
-use crate::server::ids::SyncId;
 use crate::suggestions::ignored_suggestions_model::SuggestionType;
 use crate::terminal::history::PersistedCommand;
 use crate::terminal::model::block::{SerializedAgentViewVisibility, SerializedBlock};
 use crate::terminal::model::session::SessionId;
 use crate::workspaces::workspace::{Workspace as WorkspaceMetadata, WorkspaceUid};
 use ai::workspace::WorkspaceMetadata as CodeWorkspaceMetadata;
+use warp_server_client::ids::SyncId;
 
 use self::model::{AgentConversation, AgentConversationData, Project};
 
