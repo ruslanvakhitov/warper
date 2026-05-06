@@ -7,7 +7,7 @@ use warpui::geometry::vector::Vector2F;
 use warpui::ModelHandle;
 use warpui::ViewContext;
 #[cfg(not(target_family = "wasm"))]
-use warpui::{SingletonEntity, View, ViewHandle};
+use warpui::{View, ViewHandle};
 
 #[cfg(feature = "local_tty")]
 use crate::pane_group::TerminalViewResources;

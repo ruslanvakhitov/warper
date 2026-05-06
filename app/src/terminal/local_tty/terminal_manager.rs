@@ -18,11 +18,9 @@ use parking_lot::{FairMutex, Mutex};
 use pathfinder_geometry::vector::Vector2F;
 
 use settings::Setting as _;
-use warpui::r#async::executor::Background;
 use warpui::{AppContext, ModelContext, ModelHandle, SingletonEntity, ViewHandle, WindowId};
 
 use crate::ai::active_agent_views_model::ActiveAgentViewsModel;
-use crate::ai::blocklist::agent_view::AgentViewControllerEvent;
 use crate::ai::blocklist::{InputConfig, SerializedBlockListItem};
 use crate::terminal::view::ConversationRestorationInNewPaneType;
 
@@ -317,16 +315,6 @@ impl TerminalManager {
             model.register_agent_view_controller(&agent_view_controller, terminal_view_id, ctx);
         });
 
-        ctx.subscribe_to_model(&agent_view_controller, move |_, event, ctx| match event {
-            AgentViewControllerEvent::ExitedAgentView {
-                origin,
-                final_exchange_count,
-                ..
-            } => {}
-            AgentViewControllerEvent::EnteredAgentView { .. }
-            | AgentViewControllerEvent::ExitConfirmed { .. } => {}
-        });
-
         #[cfg(windows)]
         let event_loop_tx_clone = event_loop_tx.clone();
 
@@ -407,13 +395,11 @@ impl TerminalManager {
         }
 
         log::debug!("Using shell starter source {shell_starter_source:?}");
-        let bg_executor = ctx.background_executor();
         let is_fallback_shell = matches!(
             shell_starter_source,
             Some(ShellStarterSource::Fallback { .. })
         );
-        let shell_starter =
-            shell_starter_source.map(|source| get_shell_starter_internal(source, bg_executor));
+        let shell_starter = shell_starter_source.map(get_shell_starter_internal);
         let shell_starter = match shell_starter {
             Some(shell_starter) => shell_starter,
             None => {
@@ -815,28 +801,16 @@ pub fn get_shell_starter(
         .and_then(|starter| {
             warpui::r#async::block_on(async { starter.to_shell_starter_source().await })
         })
-        .map(|starter_source| {
-            get_shell_starter_internal(starter_source, ctx.background_executor().clone())
-        })
+        .map(get_shell_starter_internal)
 }
 
-fn get_shell_starter_internal(
-    shell_starter_source: ShellStarterSource,
-    background_executor: Arc<Background>,
-) -> ShellStarter {
+fn get_shell_starter_internal(shell_starter_source: ShellStarterSource) -> ShellStarter {
     match shell_starter_source {
         ShellStarterSource::Override(shell_starter) => shell_starter,
         ShellStarterSource::Environment(starter) | ShellStarterSource::UserDefault(starter) => {
             ShellStarter::Direct(starter)
         }
-        ShellStarterSource::Fallback {
-            unsupported_shell,
-            starter,
-        } => {
-            if let Some(unsupported_shell) = unsupported_shell {}
-
-            ShellStarter::Direct(starter)
-        }
+        ShellStarterSource::Fallback { starter } => ShellStarter::Direct(starter),
     }
 }
 

@@ -156,8 +156,6 @@ pub struct ProfileModelSelector {
     model_mouse_state: MouseStateHandle,
     menu_positioning_provider: Arc<dyn MenuPositioningProvider>,
     is_blurred: bool,
-    input_model: ModelHandle<BlocklistAIInputModel>,
-    ambient_agent_view_model: ModelHandle<AmbientAgentViewModel>,
     render_compact: bool,
     hovered_llm_info: Option<LLMInfo>,
     manage_api_key_button: ViewHandle<ActionButton>,
@@ -216,7 +214,7 @@ impl ProfileModelSelector {
         menu_positioning_provider: Arc<dyn crate::terminal::input::MenuPositioningProvider>,
         terminal_view_id: EntityId,
         input_model: ModelHandle<BlocklistAIInputModel>,
-        ambient_agent_view_model: ModelHandle<AmbientAgentViewModel>,
+        _: ModelHandle<AmbientAgentViewModel>,
         terminal_model: Arc<FairMutex<TerminalModel>>,
         controller: Option<ModelHandle<BlocklistAIController>>,
         ctx: &mut ViewContext<Self>,
@@ -371,10 +369,8 @@ impl ProfileModelSelector {
         });
 
         ctx.subscribe_to_model(&input_model, move |_me, _, event, ctx| match event {
-            BlocklistAIInputEvent::InputTypeChanged { config }
-            | BlocklistAIInputEvent::LockChanged { config } => {
-                let _ = terminal_view_id;
-                let _ = config;
+            BlocklistAIInputEvent::InputTypeChanged { .. }
+            | BlocklistAIInputEvent::LockChanged { .. } => {
                 ctx.notify();
             }
         });
@@ -465,8 +461,6 @@ impl ProfileModelSelector {
             model_mouse_state: Default::default(),
             menu_positioning_provider,
             is_blurred: false,
-            input_model,
-            ambient_agent_view_model,
             render_compact: false,
             hovered_llm_info: None,
             manage_api_key_button,
@@ -1288,12 +1282,6 @@ impl ProfileModelSelector {
         let theme = appearance.theme();
         let llm_preferences = LLMPreferences::as_ref(app);
 
-        // Allow editing if composing an ambient agent query, or if the user has edit access
-        // in a shared session (i.e., not a viewer, or is an executor).
-        let is_composing_ambient_agent = self
-            .ambient_agent_view_model
-            .as_ref(app)
-            .is_configuring_ambient_agent();
         let terminal_model = self.terminal_model.lock();
         let has_edit_access = true;
         let is_lrc = FeatureFlag::InlineMenuHeaders.is_enabled()

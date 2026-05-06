@@ -17,7 +17,7 @@ use crate::terminal::model::iterm_image::{ITermImage, ITermImageMetadata};
 use crate::terminal::ssh::util::{InteractiveSshCommand, SshLoginState};
 use crate::terminal::{block_filter::BlockFilterQuery, model::ansi::Handler};
 use crate::terminal::{color, ssh, BlockPadding, ShellHost, SizeUpdate};
-use crate::terminal::{shell::ShellName, ShellLaunchData, ShellLaunchState};
+use crate::terminal::{ShellLaunchData, ShellLaunchState};
 use crate::util::AsciiDebug;
 
 pub use crate::terminal::history::HistoryEntry;
@@ -62,7 +62,6 @@ use warpui::util::save_as_file;
 
 use base64::Engine;
 use hex::FromHexError;
-use instant::Instant;
 use itertools::{Either, Itertools};
 use serde::Serialize;
 use std::cmp::{max, min};
@@ -408,16 +407,12 @@ impl FromStr for TmuxInstallationState {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct WarpInitiatedTmuxControlMode {
-    pub start_time: Instant,
     pub tmux_installation: Option<TmuxInstallationState>,
 }
 
 impl WarpInitiatedTmuxControlMode {
     pub fn new(tmux_installation: Option<TmuxInstallationState>) -> Self {
-        Self {
-            start_time: Instant::now(),
-            tmux_installation,
-        }
+        Self { tmux_installation }
     }
 }
 
@@ -2001,7 +1996,6 @@ pub enum HandlerEvent {
     StartTmuxControlMode,
     TmuxControlModeReady {
         primary_pane: u32,
-        context: Option<TmuxControlModeContext>,
     },
     EndTmuxControlMode,
     RunTmuxCommand(TmuxCommand),
@@ -2773,10 +2767,7 @@ impl ansi::Handler for TerminalModel {
                 self.emit_handler_event(HandlerEvent::EndTmuxControlMode);
             }
             tmux::ControlModeEvent::ControlModeReady { primary_pane, .. } => {
-                self.emit_handler_event(HandlerEvent::TmuxControlModeReady {
-                    primary_pane,
-                    context: self.tmux_control_mode_context,
-                });
+                self.emit_handler_event(HandlerEvent::TmuxControlModeReady { primary_pane });
                 self.event_proxy
                     .send_terminal_event(Event::TmuxControlModeReady { primary_pane });
             }

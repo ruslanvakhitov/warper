@@ -11,7 +11,6 @@ use crate::ai::blocklist::inline_action::inline_action_header::HeaderConfig;
 use crate::ai::blocklist::inline_action::requested_action::RenderableAction;
 use crate::ai::persisted_workspace::PersistedWorkspace;
 use crate::appearance::Appearance;
-use crate::code::lsp_metadata::LspEnablementSource;
 use crate::ui_components::icons::Icon;
 use crate::view_components::DismissibleToast;
 use crate::workspace::ToastStack;
@@ -954,9 +953,6 @@ impl TypedActionView for InitStepBlock {
                     }
                 }
 
-                // Send telemetry for each enabled server
-                for server_type in enabled_servers.iter().chain(servers_to_install.iter()) {}
-
                 // Spawn installation tasks for uninstalled servers
                 let model = self.model.clone();
                 let path_env_var = self.model.as_ref(ctx).path_env_var().cloned();
@@ -1014,12 +1010,6 @@ impl TypedActionView for InitStepBlock {
                 });
             }
             InitProjectBlockAction::LinkFromExisting(path) => {
-                let file_name = path
-                    .file_name()
-                    .and_then(|name| name.to_str())
-                    .unwrap_or("")
-                    .to_string();
-
                 // Create symlink in background
                 #[cfg(feature = "local_fs")]
                 {
