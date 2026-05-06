@@ -18,12 +18,10 @@ fn default_channel_state_has_no_hosted_services() {
 
     assert!(!ChannelState::is_warp_server_available());
     assert!(!ChannelState::is_oz_available());
-    assert!(!ChannelState::is_telemetry_available());
     assert!(!ChannelState::show_autoupdate_menu_items());
     assert!(ChannelState::maybe_server_root_url().is_none());
     assert!(ChannelState::maybe_ws_server_url().is_none());
     assert!(ChannelState::session_sharing_server_url().is_none());
-    assert!(ChannelState::maybe_firebase_api_key().is_none());
     assert!(ChannelState::maybe_oz_root_url().is_none());
     assert!(ChannelState::maybe_workload_audience_url().is_none());
     assert!(ChannelState::maybe_releases_base_url().is_none());
@@ -65,7 +63,6 @@ fn legacy_hosted_accessors_fail_closed_without_placeholders() {
     assert_panics(|| ChannelState::ws_server_url());
     assert_panics(|| ChannelState::rtc_http_url());
     assert_panics(|| ChannelState::session_sharing_server_url().unwrap());
-    assert_panics(|| ChannelState::firebase_api_key());
     assert_panics(|| ChannelState::oz_root_url());
     assert_panics(|| ChannelState::workload_audience_url());
     assert_panics(|| ChannelState::releases_base_url());
@@ -78,8 +75,6 @@ fn offline_local_startup_config_requires_no_network_credentials() {
 
     assert_eq!(ChannelState::app_id().to_string(), "dev.warper.Warper");
     assert_eq!(ChannelState::logfile_name(), "");
-    assert_eq!(ChannelState::telemetry_file_name(), "");
-    assert!(ChannelState::maybe_firebase_api_key().is_none());
     assert!(ChannelState::mcp_oauth_provider_by_client_id("any-client").is_none());
     assert!(ChannelState::mcp_oauth_provider_by_issuer("https://issuer.example").is_none());
 }

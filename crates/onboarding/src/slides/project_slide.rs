@@ -458,7 +458,7 @@ impl View for ProjectSlide {
 
 impl ProjectSlide {
     fn open_local_folder(&mut self, ctx: &mut ViewContext<Self>) {
-                ctx.open_file_picker(
+        ctx.open_file_picker(
             |result, ctx| {
                 if let Some(path_result) = result.map(|paths| paths.into_iter().next()).transpose()
                 {

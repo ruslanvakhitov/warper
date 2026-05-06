@@ -2,9 +2,7 @@
 
 use ai::LLMId;
 use onboarding::slides::OnboardingModelInfo;
-use onboarding::OnboardingAuthState;
 use warp_core::ui::icons::Icon;
-use warpui::AppContext;
 
 use super::llms::{LLMInfo, LLMPreferences};
 
@@ -31,9 +29,4 @@ pub fn build_onboarding_models(prefs: &LLMPreferences) -> (Vec<OnboardingModelIn
         })
         .collect();
     (models, default_id)
-}
-
-pub fn current_onboarding_auth_state(ctx: &AppContext) -> OnboardingAuthState {
-    let _ = ctx;
-    OnboardingAuthState::LoggedOut
 }

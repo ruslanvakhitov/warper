@@ -1,7 +1,4 @@
-use crate::model::{
-    OnboardingAuthState, OnboardingStateEvent, OnboardingStateModel, OnboardingStep,
-    SelectedSettings,
-};
+use crate::model::{OnboardingStateEvent, OnboardingStateModel, OnboardingStep, SelectedSettings};
 use crate::slides::{
     AgentSlide, CustomizeUISlide, IntentionSlide, IntroSlide, OnboardingModelInfo, OnboardingSlide,
     ProjectSlide, ThemePickerSlide, ThemePickerSlideEvent, ThirdPartySlide,
@@ -89,7 +86,6 @@ impl AgentOnboardingView {
         agent_modality_enabled: bool,
         free_user_no_ai_experiment: bool,
         agent_price_cents: Option<i32>,
-        auth_state: OnboardingAuthState,
         ctx: &mut ViewContext<Self>,
     ) -> Self {
         let onboarding_state = ctx.add_model(|_| {
@@ -100,7 +96,6 @@ impl AgentOnboardingView {
                 agent_modality_enabled,
                 free_user_no_ai_experiment,
                 agent_price_cents,
-                auth_state,
             )
         });
         ctx.subscribe_to_model(&onboarding_state, |me, _model, event, ctx| {
@@ -193,13 +188,6 @@ impl AgentOnboardingView {
         ctx.notify();
     }
 
-    pub fn set_auth_state(&mut self, auth_state: OnboardingAuthState, ctx: &mut ViewContext<Self>) {
-        self.onboarding_state.update(ctx, |state, ctx| {
-            state.set_auth_state(auth_state, ctx);
-        });
-        ctx.notify();
-    }
-
     pub fn free_user_no_ai_experiment(&self, ctx: &AppContext) -> bool {
         let _ = ctx;
         false
@@ -243,8 +231,7 @@ impl AgentOnboardingView {
         if FeatureFlag::OpenWarpNewSettingsModes.is_enabled() {
             Self::preload_onboarding_images(ctx);
         }
-
-                    }
+    }
 
     /// Eagerly loads all onboarding slide images into the asset cache
     /// so they display instantly when the user navigates between slides.

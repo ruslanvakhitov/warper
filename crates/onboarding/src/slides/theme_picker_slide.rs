@@ -518,7 +518,7 @@ impl ThemePickerSlide {
         self.sync_with_os = false;
         self.selected_theme_index = index;
         let theme_name = self.theme_display_name(index);
-                ctx.emit(ThemePickerSlideEvent::ThemeSelected { theme_name });
+        ctx.emit(ThemePickerSlideEvent::ThemeSelected { theme_name });
         ctx.notify();
     }
 
@@ -583,7 +583,7 @@ impl TypedActionView for ThemePickerSlide {
             }
             ThemePickerSlideAction::ToggleSyncWithOs => {
                 self.sync_with_os = !self.sync_with_os;
-                                ctx.emit(ThemePickerSlideEvent::SyncWithOsToggled {
+                ctx.emit(ThemePickerSlideEvent::SyncWithOsToggled {
                     enabled: self.sync_with_os,
                 });
                 ctx.notify();

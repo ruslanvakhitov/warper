@@ -149,7 +149,7 @@ impl OnboardingCalloutModel {
     }
 
     pub fn next(&mut self, ctx: &mut ModelContext<Self>) {
-                match &self.state {
+        match &self.state {
             OnboardingCalloutState::UniversalInput(universal_input_state) => {
                 self.next_universal_input(*universal_input_state, ctx);
             }
@@ -345,7 +345,7 @@ impl OnboardingCalloutModel {
             };
 
             if let Some(final_state) = final_state {
-                                ctx.emit(OnboardingCalloutModelEvent::Completed(final_state));
+                ctx.emit(OnboardingCalloutModelEvent::Completed(final_state));
             }
         }
     }

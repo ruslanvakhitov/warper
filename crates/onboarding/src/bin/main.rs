@@ -3,9 +3,7 @@
 use ai::LLMId;
 use anyhow::Result;
 use onboarding::slides::OnboardingModelInfo;
-use onboarding::{
-    AgentOnboardingEvent, AgentOnboardingView, SelectedSettings,
-};
+use onboarding::{AgentOnboardingEvent, AgentOnboardingView, SelectedSettings};
 use pathfinder_color::ColorU;
 use rust_embed::RustEmbed;
 use std::borrow::Cow;
@@ -112,7 +110,6 @@ impl OnboardingMainView {
                 false,
                 false,
                 None,
-                onboarding::OnboardingAuthState::LoggedOut,
                 ctx,
             )
         });

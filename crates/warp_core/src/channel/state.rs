@@ -134,15 +134,6 @@ impl ChannelState {
         CHANNEL_STATE.lock().config.logfile_name.clone()
     }
 
-    pub fn telemetry_file_name() -> Cow<'static, str> {
-        Cow::Borrowed("")
-    }
-
-    /// Returns whether this build can ship telemetry events.
-    pub fn is_telemetry_available() -> bool {
-        false
-    }
-
     pub fn is_warp_server_available() -> bool {
         false
     }
@@ -156,14 +147,6 @@ impl ChannelState {
     }
 
     pub fn maybe_releases_base_url() -> Option<Cow<'static, str>> {
-        None
-    }
-
-    pub fn firebase_api_key() -> Cow<'static, str> {
-        Self::maybe_firebase_api_key().expect("Warp Firebase auth config is unavailable")
-    }
-
-    pub fn maybe_firebase_api_key() -> Option<Cow<'static, str>> {
         None
     }
 

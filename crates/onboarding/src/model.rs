@@ -49,13 +49,6 @@ impl UICustomizationSettings {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum OnboardingAuthState {
-    LoggedOut,
-    FreeUser,
-    PayingUser,
-}
-
 #[derive(Clone, Debug)]
 pub enum SelectedSettings {
     Terminal {
@@ -104,7 +97,6 @@ pub(crate) enum OnboardingStateEvent {
     SelectedSlideChanged,
     IntentionChanged,
     Completed,
-    AuthStateChanged,
 }
 
 #[derive(Clone, Debug)]
@@ -124,8 +116,6 @@ pub(crate) struct OnboardingStateModel {
     free_user_no_ai_experiment: bool,
     /// Hosted plan pricing is removed in Warper.
     agent_price_cents: Option<i32>,
-    /// Hosted auth is removed in Warper.
-    auth_state: OnboardingAuthState,
 }
 
 impl OnboardingStateModel {
@@ -137,7 +127,6 @@ impl OnboardingStateModel {
         agent_modality_enabled: bool,
         _free_user_no_ai_experiment: bool,
         _agent_price_cents: Option<i32>,
-        _auth_state: OnboardingAuthState,
     ) -> Self {
         Self {
             step: OnboardingStep::Intro,
@@ -150,20 +139,7 @@ impl OnboardingStateModel {
             agent_modality_enabled,
             free_user_no_ai_experiment: false,
             agent_price_cents: None,
-            auth_state: OnboardingAuthState::LoggedOut,
         }
-    }
-
-    pub(crate) fn set_auth_state(
-        &mut self,
-        auth_state: OnboardingAuthState,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        if self.auth_state == auth_state {
-            return;
-        }
-        self.auth_state = auth_state;
-        ctx.emit(OnboardingStateEvent::AuthStateChanged);
     }
 
     pub(crate) fn settings(&self) -> SelectedSettings {
@@ -234,12 +210,12 @@ impl OnboardingStateModel {
         if self.ui_customization.use_vertical_tabs == value {
             return;
         }
-                self.ui_customization.use_vertical_tabs = value;
+        self.ui_customization.use_vertical_tabs = value;
         ctx.notify();
     }
 
     pub(crate) fn set_tools_panel_enabled(&mut self, enabled: bool, ctx: &mut ModelContext<Self>) {
-                self.ui_customization.show_conversation_history = enabled;
+        self.ui_customization.show_conversation_history = enabled;
         self.ui_customization.show_project_explorer = enabled;
         self.ui_customization.show_global_search = enabled;
         ctx.notify();
@@ -265,7 +241,7 @@ impl OnboardingStateModel {
         if self.ui_customization.show_conversation_history == value {
             return;
         }
-                self.ui_customization.show_conversation_history = value;
+        self.ui_customization.show_conversation_history = value;
         ctx.notify();
     }
 
@@ -273,7 +249,7 @@ impl OnboardingStateModel {
         if self.ui_customization.show_project_explorer == value {
             return;
         }
-                self.ui_customization.show_project_explorer = value;
+        self.ui_customization.show_project_explorer = value;
         ctx.notify();
     }
 
@@ -281,7 +257,7 @@ impl OnboardingStateModel {
         if self.ui_customization.show_global_search == value {
             return;
         }
-                self.ui_customization.show_global_search = value;
+        self.ui_customization.show_global_search = value;
         ctx.notify();
     }
 
@@ -293,7 +269,7 @@ impl OnboardingStateModel {
         if self.agent_settings.cli_agent_toolbar_enabled == value {
             return;
         }
-                self.agent_settings.cli_agent_toolbar_enabled = value;
+        self.agent_settings.cli_agent_toolbar_enabled = value;
         ctx.notify();
     }
 
@@ -305,7 +281,7 @@ impl OnboardingStateModel {
         if self.agent_settings.show_agent_notifications == value {
             return;
         }
-                self.agent_settings.show_agent_notifications = value;
+        self.agent_settings.show_agent_notifications = value;
         ctx.notify();
     }
 
@@ -317,7 +293,7 @@ impl OnboardingStateModel {
         if self.ui_customization.show_code_review_button == value {
             return;
         }
-                self.ui_customization.show_code_review_button = value;
+        self.ui_customization.show_code_review_button = value;
         ctx.notify();
     }
 
@@ -325,7 +301,7 @@ impl OnboardingStateModel {
         if self.agent_settings.disable_agent == value {
             return;
         }
-                self.agent_settings.disable_agent = value;
+        self.agent_settings.disable_agent = value;
         ctx.notify();
     }
 
@@ -361,7 +337,6 @@ impl OnboardingStateModel {
         if self.intention == intention {
             return;
         }
-
 
         self.intention = intention;
         // Reset UI customization to defaults for the new intention.
@@ -401,7 +376,6 @@ impl OnboardingStateModel {
         if self.is_model_disabled(&model_id) {
             return;
         }
-
 
         self.agent_settings.selected_model_id = model_id;
         ctx.notify();
@@ -447,7 +421,6 @@ impl OnboardingStateModel {
             return;
         }
 
-
         self.agent_settings.autonomy = Some(autonomy);
         ctx.notify();
     }
@@ -457,8 +430,7 @@ impl OnboardingStateModel {
         path: Option<String>,
         ctx: &mut ModelContext<Self>,
     ) {
-        if path.is_some() {
-                    }
+        if path.is_some() {}
         self.project_settings = ProjectOnboardingSettings::from_path(path);
         ctx.notify();
     }
@@ -473,7 +445,7 @@ impl OnboardingStateModel {
         } = &mut self.project_settings
         {
             let new_value = !*initialize_projects_automatically;
-                        *initialize_projects_automatically = new_value;
+            *initialize_projects_automatically = new_value;
             ctx.notify();
         }
     }
@@ -513,7 +485,7 @@ impl OnboardingStateModel {
         };
 
         if let Some(prev) = prev {
-                        self.set_step(prev, ctx);
+            self.set_step(prev, ctx);
         }
     }
 
@@ -526,8 +498,7 @@ impl OnboardingStateModel {
         } else {
             matches!(self.step, OnboardingStep::Project)
         };
-        if !is_last_step {
-                    }
+        if !is_last_step {}
 
         if theme_picker_last {
             match self.step {
@@ -565,20 +536,13 @@ impl OnboardingStateModel {
         self.step = step;
 
         match step {
-            OnboardingStep::Intro => {
-                            }
-            OnboardingStep::ThemePicker => {
-                            }
-            OnboardingStep::Intention => {
-                            }
-            OnboardingStep::Customize => {
-                            }
-            OnboardingStep::Agent => {
-                            }
-            OnboardingStep::ThirdParty => {
-                            }
-            OnboardingStep::Project => {
-                            }
+            OnboardingStep::Intro => {}
+            OnboardingStep::ThemePicker => {}
+            OnboardingStep::Intention => {}
+            OnboardingStep::Customize => {}
+            OnboardingStep::Agent => {}
+            OnboardingStep::ThirdParty => {}
+            OnboardingStep::Project => {}
         }
 
         ctx.emit(OnboardingStateEvent::SelectedSlideChanged);

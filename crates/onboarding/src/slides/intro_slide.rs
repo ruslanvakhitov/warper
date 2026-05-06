@@ -60,7 +60,6 @@ impl View for IntroSlide {
 
 impl IntroSlide {
     fn get_started_clicked(&mut self, ctx: &mut ViewContext<Self>) {
-
         self.onboarding_state.update(ctx, |model, ctx| {
             model.next(ctx);
         });
