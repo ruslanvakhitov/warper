@@ -199,7 +199,6 @@ dependencies = [
  "uuid",
  "virtual-fs",
  "warp_core",
- "warp_graphql",
  "warp_multi_agent_api",
  "warp_terminal",
  "warp_util",
@@ -4487,14 +4486,6 @@ dependencies = [
  "lazy_static",
  "libc",
  "winapi",
-]
-
-[[package]]
-name = "firebase"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "serde",
 ]
 
 [[package]]
@@ -13806,7 +13797,6 @@ dependencies = [
  "warp_core",
  "warp_editor",
  "warp_files",
- "warp_graphql",
  "warp_isolation_platform",
  "warp_js",
  "warp_logging",
@@ -14074,15 +14064,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "warp_graphql"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chrono",
- "serde",
-]
-
-[[package]]
 name = "warp_isolation_platform"
 version = "0.1.0"
 dependencies = [
@@ -14150,7 +14131,6 @@ dependencies = [
  "tink-proto",
  "vec1",
  "warp_core",
- "warp_graphql",
  "warp_isolation_platform",
  "warpui",
  "zeroize",
@@ -14210,7 +14190,6 @@ dependencies = [
  "thiserror 2.0.17",
  "uuid",
  "warp_core",
- "warp_graphql",
  "warpui_core",
 ]
 

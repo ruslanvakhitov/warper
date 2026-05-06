@@ -16,7 +16,6 @@ use crate::ai::mcp::{JsonTemplate, MCPGalleryManager, MCPServerUpdate};
 
 use crate::ai::mcp::parsing::resolve_json;
 use crate::ai::mcp::TemplatableMCPServer;
-use crate::server::event_metadata::{MCPServerModel, MCPServerTransportType};
 use crate::{
     ai::mcp::{
         logs, templatable_installation::VariableValue, MCPServer, StaticEnvVar,
@@ -662,7 +661,6 @@ impl TemplatableMCPServerManager {
                         if is_reconnect {
                             me.notify_reconnect_waiters(installation_uuid, Err(error_message));
                         }
-
                     }
                 };
             },

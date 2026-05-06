@@ -35,22 +35,6 @@ impl FromStr for NodeHash {
     }
 }
 
-impl From<NodeHash> for warp_graphql::full_source_code_embedding::NodeHash {
-    fn from(value: NodeHash) -> Self {
-        warp_graphql::full_source_code_embedding::NodeHash(value.0.to_string())
-    }
-}
-
-impl TryFrom<warp_graphql::full_source_code_embedding::NodeHash> for NodeHash {
-    type Error = Error;
-
-    fn try_from(
-        value: warp_graphql::full_source_code_embedding::NodeHash,
-    ) -> Result<Self, Self::Error> {
-        Ok(Self(MerkleHash::from_str(&value.0)?))
-    }
-}
-
 impl AsRef<MerkleHash> for NodeHash {
     fn as_ref(&self) -> &MerkleHash {
         &self.0
@@ -96,22 +80,6 @@ impl FromStr for ContentHash {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(Self(MerkleHash::from_str(s)?))
-    }
-}
-
-impl From<ContentHash> for warp_graphql::full_source_code_embedding::ContentHash {
-    fn from(value: ContentHash) -> Self {
-        warp_graphql::full_source_code_embedding::ContentHash(value.0.to_string())
-    }
-}
-
-impl TryFrom<warp_graphql::full_source_code_embedding::ContentHash> for ContentHash {
-    type Error = Error;
-
-    fn try_from(
-        value: warp_graphql::full_source_code_embedding::ContentHash,
-    ) -> Result<Self, Self::Error> {
-        Ok(Self(MerkleHash::from_str(&value.0)?))
     }
 }
 

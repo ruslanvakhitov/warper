@@ -7,9 +7,69 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use vec1::Vec1;
 
-use warp_graphql::managed_secrets::{ManagedSecret, ManagedSecretConfig, ManagedSecretType};
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum ManagedSecretType {
+    AnthropicApiKey,
+    AnthropicBedrockAccessKey,
+    AnthropicBedrockApiKey,
+    Dotenvx,
+    RawValue,
+}
 
-pub use warp_graphql::queries::task_secrets::ManagedSecretValue;
+impl ManagedSecretType {
+    /// The identifier for this secret type as used in the client-side upload envelope.
+    pub fn envelope_name(&self) -> &str {
+        match self {
+            ManagedSecretType::AnthropicApiKey => "anthropic_api_key",
+            ManagedSecretType::AnthropicBedrockAccessKey => "anthropic_bedrock_access_key",
+            ManagedSecretType::AnthropicBedrockApiKey => "anthropic_bedrock_api_key",
+            ManagedSecretType::Dotenvx => "dotenvx",
+            ManagedSecretType::RawValue => "raw_value",
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct ManagedSecretConfig {
+    /// The base64-encoded public key.
+    pub public_key: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub enum ManagedSecretOwner {
+    CurrentUser,
+}
+
+#[derive(Debug, Clone)]
+pub struct ManagedSecret {
+    pub name: String,
+    pub description: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub owner: ManagedSecretOwner,
+    pub type_: ManagedSecretType,
+}
+
+#[derive(Debug)]
+pub enum TaskManagedSecretValue {
+    RawValue {
+        value: String,
+    },
+    AnthropicApiKey {
+        api_key: String,
+    },
+    AnthropicBedrockAccessKey {
+        aws_access_key_id: String,
+        aws_secret_access_key: String,
+        aws_session_token: Option<String>,
+        aws_region: String,
+    },
+    AnthropicBedrockApiKey {
+        aws_bearer_token_bedrock: String,
+        aws_region: String,
+    },
+    Unknown,
+}
 
 /// An OIDC identity token issued for a task workload.
 #[derive(Debug, Clone)]
@@ -75,7 +135,7 @@ pub trait ManagedSecretsClient: 'static + Send + Sync {
         &self,
         task_id: String,
         workload_token: String,
-    ) -> Result<HashMap<String, ManagedSecretValue>>;
+    ) -> Result<HashMap<String, TaskManagedSecretValue>>;
 
     /// Issue a short-lived OIDC identity token for the current task.
     ///

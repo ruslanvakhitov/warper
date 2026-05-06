@@ -27,7 +27,6 @@ session-sharing-protocol.workspace = true
 thiserror.workspace = true
 uuid.workspace = true
 warp_core.workspace = true
-warp_graphql.workspace = true
 warpui_core.workspace = true
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]

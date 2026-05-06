@@ -696,10 +696,9 @@ impl CodebaseIndexManager {
                         ctx,
                     ) {
                         Ok(snapshot_index) => {
-                                                        return snapshot_index;
+                            return snapshot_index;
                         }
-                        Err(err) => {
-                                                    }
+                        Err(err) => {}
                     }
                 }
             }

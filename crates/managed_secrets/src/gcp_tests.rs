@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use serde_json::json;
 
-use super::{GcpFederationConfig, PrepareGcpCredentialsError, generate_gcp_credential_config};
+use super::{generate_gcp_credential_config, GcpFederationConfig, PrepareGcpCredentialsError};
 
 #[test]
 fn basic_config_shape() {

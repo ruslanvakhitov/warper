@@ -95,6 +95,28 @@ pub struct MCPGalleryManager {
     templatable_mcp_servers: HashMap<Uuid, TemplatableMCPServer>,
 }
 
+#[derive(Debug, Clone)]
+pub struct MCPTemplateVariable {
+    pub key: String,
+    pub allowed_values: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct MCPJsonTemplate {
+    pub json: String,
+    pub variables: Vec<MCPTemplateVariable>,
+}
+
+#[derive(Debug, Clone)]
+pub struct MCPGalleryTemplate {
+    pub description: String,
+    pub gallery_item_id: String,
+    pub instructions_in_markdown: Option<String>,
+    pub json_template: MCPJsonTemplate,
+    pub title: String,
+    pub version: i32,
+}
+
 impl MCPGalleryManager {
     pub fn new(_ctx: &mut ModelContext<Self>) -> Self {
         Self {
@@ -115,10 +137,10 @@ impl MCPGalleryManager {
         self.templatable_mcp_servers.get(&gallery_uuid)
     }
 
-    /// Update gallery items from the server response
+    /// Replace gallery items from a locally owned template list.
     pub fn update_gallery_items(
         &mut self,
-        templates: Vec<warp_graphql::mcp_gallery_template::MCPGalleryTemplate>,
+        templates: Vec<MCPGalleryTemplate>,
         ctx: &mut ModelContext<Self>,
     ) {
         let mut gallery_items = HashMap::new();

@@ -2,17 +2,16 @@ use std::{collections::HashMap, future::Future, sync::Arc, time::Duration};
 
 use vec1::vec1;
 
-use warp_graphql::managed_secrets::ManagedSecret;
 use warpui::{Entity, SingletonEntity};
 
 use crate::{
-    ManagedSecretValue,
     client::{
-        IdentityTokenOptions, ManagedSecretsClient, SecretOwner, TaskIdentityToken,
+        IdentityTokenOptions, ManagedSecret, ManagedSecretsClient, SecretOwner, TaskIdentityToken,
+        TaskManagedSecretValue,
     },
     gcp::{self, GcpWorkloadIdentityFederationError, GcpWorkloadIdentityFederationToken},
+    ManagedSecretValue,
 };
-use warp_graphql::queries::task_secrets::ManagedSecretValue as GqlManagedSecretValue;
 
 /// Singleton model for working with Warp-managed secrets.
 pub struct ManagedSecretManager {
@@ -100,36 +99,39 @@ impl ManagedSecretManager {
             // We only need the workload token for the duration of the request.
             let workload_token =
                 warp_isolation_platform::issue_workload_token(Some(Duration::from_mins(5))).await?;
-            let gql_secrets = client
+            let task_secrets = client
                 .get_task_secrets(task_id, workload_token.token)
                 .await?;
 
-            // Convert GQL ManagedSecretValue to our ManagedSecretValue
+            // Convert task-scoped secret values into the local secret shape used by harnesses.
             let mut secrets = HashMap::new();
-            for (name, gql_value) in gql_secrets {
-                let value = match gql_value {
-                    GqlManagedSecretValue::ManagedSecretRawValue(raw) => {
-                        ManagedSecretValue::raw_value(raw.value)
+            for (name, task_value) in task_secrets {
+                let value = match task_value {
+                    TaskManagedSecretValue::RawValue { value } => {
+                        ManagedSecretValue::raw_value(value)
                     }
-                    GqlManagedSecretValue::ManagedSecretAnthropicApiKeyValue(v) => {
-                        ManagedSecretValue::anthropic_api_key(v.api_key)
+                    TaskManagedSecretValue::AnthropicApiKey { api_key } => {
+                        ManagedSecretValue::anthropic_api_key(api_key)
                     }
-                    GqlManagedSecretValue::ManagedSecretAnthropicBedrockAccessKeyValue(v) => {
-                        ManagedSecretValue::anthropic_bedrock_access_key(
-                            v.aws_access_key_id,
-                            v.aws_secret_access_key,
-                            // aws_session_token is now optional on the server.
-                            v.aws_session_token,
-                            v.aws_region,
-                        )
-                    }
-                    GqlManagedSecretValue::ManagedSecretAnthropicBedrockApiKeyValue(v) => {
-                        ManagedSecretValue::anthropic_bedrock_api_key(
-                            v.aws_bearer_token_bedrock,
-                            v.aws_region,
-                        )
-                    }
-                    GqlManagedSecretValue::Unknown => {
+                    TaskManagedSecretValue::AnthropicBedrockAccessKey {
+                        aws_access_key_id,
+                        aws_secret_access_key,
+                        aws_session_token,
+                        aws_region,
+                    } => ManagedSecretValue::anthropic_bedrock_access_key(
+                        aws_access_key_id,
+                        aws_secret_access_key,
+                        aws_session_token,
+                        aws_region,
+                    ),
+                    TaskManagedSecretValue::AnthropicBedrockApiKey {
+                        aws_bearer_token_bedrock,
+                        aws_region,
+                    } => ManagedSecretValue::anthropic_bedrock_api_key(
+                        aws_bearer_token_bedrock,
+                        aws_region,
+                    ),
+                    TaskManagedSecretValue::Unknown => {
                         return Err(anyhow::anyhow!(
                             "Unknown secret value type for secret: {}",
                             name

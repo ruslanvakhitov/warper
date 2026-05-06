@@ -501,7 +501,7 @@ impl CodebaseIndex {
                     .await
                 },
                 move |me, incremental_update_sync_result, ctx| {
-                                        me.process_sync_update_result(incremental_update_sync_result, ctx);
+                    me.process_sync_update_result(incremental_update_sync_result, ctx);
                 },
             )
             .abort_handle();
@@ -766,7 +766,7 @@ impl CodebaseIndex {
                         ),
                         Err(e) => {
                             log::error!("Failed to build tree {e}");
-                                                        me.update_tree_sync_state(
+                            me.update_tree_sync_state(
                                 TreeSourceSyncState::InitializeTreeFailure(e),
                                 ctx,
                             );
@@ -1118,7 +1118,6 @@ impl CodebaseIndex {
                     (tree, sync_result)
                 },
                 move |me, (tree, server_sync_result), ctx| {
-
                     // We should only flush pending changes when we know the sync failed because of a read fragment error.
                     let should_flush_pending_changes = if let SyncOperationResult::Error(
                         SyncOperationError::ReadFragmentError(changed_files),
@@ -1174,14 +1173,13 @@ impl CodebaseIndex {
                 time_tracker,
             }) => {
                 // Emit telemetries for the initial sync result.
-                if let Some(sync_time) = time_tracker.compute_duration_for_interval(SYNC_TIME) {
-                                    }
+                if let Some(sync_time) = time_tracker.compute_duration_for_interval(SYNC_TIME) {}
 
                 if let Some((file_traversal_duration, merkle_tree_parse_duration)) = time_tracker
                     .compute_duration_for_interval(FILE_TRAVERSAL_TIME)
                     .zip(time_tracker.compute_duration_for_interval(MERKLE_TREE_BUILD_TIME))
                 {
-                                    }
+                }
 
                 if let SyncOperationResult::Error(SyncOperationError::ReadFragmentError(
                     changed_files,
@@ -1209,7 +1207,7 @@ impl CodebaseIndex {
                     safe: ("Failed to build index: {err:?}"),
                     full: ("Failed to build index at root {}: {err:?}", self.repo_path.display())
                 );
-                                self.update_tree_sync_state(TreeSourceSyncState::InitializeTreeFailure(err), ctx);
+                self.update_tree_sync_state(TreeSourceSyncState::InitializeTreeFailure(err), ctx);
             }
         }
     }
