@@ -17,12 +17,6 @@ pub struct HarnessConfig {
     pub harness_type: Harness,
 }
 
-impl HarnessConfig {
-    pub fn from_harness_type(harness_type: Harness) -> Self {
-        Self { harness_type }
-    }
-}
-
 fn serialize_harness<S: Serializer>(harness: &Harness, serializer: S) -> Result<S::Ok, S::Error> {
     serializer.serialize_str(&harness.to_string())
 }

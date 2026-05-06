@@ -61,10 +61,6 @@ impl UserWorkspaces {
             .and_then(|workspace_uid| self.workspace_from_uid_mut(workspace_uid))
     }
 
-    pub fn workspaces(&self) -> &Vec<Workspace> {
-        &self.workspaces
-    }
-
     pub fn ai_allowed_by_local_policy(&self) -> bool {
         true
     }
