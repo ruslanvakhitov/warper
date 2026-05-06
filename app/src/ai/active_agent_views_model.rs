@@ -1,11 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
-use chrono::{DateTime, Utc};
-
 use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::blocklist::agent_view::{AgentViewController, AgentViewControllerEvent};
 use crate::ai::blocklist::BlocklistAIHistoryModel;
-use crate::terminal::model::session::active_session::ActiveSession;
 use warpui::{
     AppContext, Entity, EntityId, ModelContext, ModelHandle, SingletonEntity, WeakModelHandle,
     WindowId,
@@ -14,13 +11,12 @@ use warpui::{
 /// Contains the handles needed to track an active agent view.
 struct ActiveAgentViewHandles {
     controller: WeakModelHandle<AgentViewController>,
-    active_session: WeakModelHandle<ActiveSession>,
 }
 
 #[derive(Clone)]
 pub enum ActiveAgentViewsEvent {
     /// A conversation was closed (exited from the agent view or its pane was removed).
-    ConversationClosed { conversation_id: AIConversationId },
+    ConversationClosed,
     /// A conversation was entered within a terminal view.
     TerminalViewFocused,
     /// A window was closed and its focused state was removed.
@@ -42,11 +38,8 @@ struct FocusedTerminalState {
 pub struct ActiveAgentViewsModel {
     /// Per-window focused terminal state, keyed by WindowId.
     focused_terminal_states: HashMap<WindowId, FocusedTerminalState>,
-    last_focused_terminal_state: Option<FocusedTerminalState>,
     /// Map from terminal_view_id to agent view handles (for interactive conversations).
     agent_view_handles: HashMap<EntityId, ActiveAgentViewHandles>,
-    /// Tracks when each conversation was last opened/focused for sorting purposes.
-    last_opened_times: HashMap<AIConversationId, DateTime<Utc>>,
 }
 
 impl Entity for ActiveAgentViewsModel {
@@ -59,9 +52,7 @@ impl ActiveAgentViewsModel {
     pub fn new() -> Self {
         Self {
             focused_terminal_states: HashMap::new(),
-            last_focused_terminal_state: None,
             agent_view_handles: HashMap::new(),
-            last_opened_times: HashMap::new(),
         }
     }
 
@@ -70,7 +61,6 @@ impl ActiveAgentViewsModel {
     pub fn register_agent_view_controller(
         &mut self,
         controller: &ModelHandle<AgentViewController>,
-        active_session: &ModelHandle<ActiveSession>,
         terminal_view_id: EntityId,
         ctx: &mut ModelContext<Self>,
     ) {
@@ -89,7 +79,6 @@ impl ActiveAgentViewsModel {
             terminal_view_id,
             ActiveAgentViewHandles {
                 controller: controller.downgrade(),
-                active_session: active_session.downgrade(),
             },
         );
 
@@ -98,7 +87,6 @@ impl ActiveAgentViewsModel {
                 conversation_id, ..
             } => {
                 let conversation_id = *conversation_id;
-                model.last_opened_times.insert(conversation_id, Utc::now());
 
                 // Update the focused conversation in whichever window owns this terminal view.
                 for focused_terminal_state in model.focused_terminal_states.values_mut() {
@@ -109,11 +97,7 @@ impl ActiveAgentViewsModel {
                 // Emit so subscribers can move this conversation to the Active section.
                 ctx.emit(ActiveAgentViewsEvent::TerminalViewFocused);
             }
-            AgentViewControllerEvent::ExitedAgentView {
-                conversation_id, ..
-            } => {
-                model.last_opened_times.remove(conversation_id);
-
+            AgentViewControllerEvent::ExitedAgentView { .. } => {
                 // Clear the focused conversation in whichever window owns this terminal view.
                 for state in model.focused_terminal_states.values_mut() {
                     if state.focused_terminal_id == terminal_view_id {
@@ -121,9 +105,7 @@ impl ActiveAgentViewsModel {
                     }
                 }
                 // Emit so subscribers can move this conversation to the Past section.
-                ctx.emit(ActiveAgentViewsEvent::ConversationClosed {
-                    conversation_id: *conversation_id,
-                });
+                ctx.emit(ActiveAgentViewsEvent::ConversationClosed);
             }
             _ => {}
         });
@@ -146,16 +128,9 @@ impl ActiveAgentViewsModel {
             // If the focused terminal is the one being unregistered, clear the focused state.
             self.focused_terminal_states
                 .retain(|_, state| state.focused_terminal_id != terminal_pane_id);
-            if self
-                .last_focused_terminal_state
-                .as_ref()
-                .is_some_and(|state| state.focused_terminal_id == terminal_pane_id)
-            {
-                self.last_focused_terminal_state = None;
-            }
 
-            if let Some(conversation_id) = closed_conversation_id {
-                ctx.emit(ActiveAgentViewsEvent::ConversationClosed { conversation_id });
+            if closed_conversation_id.is_some() {
+                ctx.emit(ActiveAgentViewsEvent::ConversationClosed);
             }
         }
     }
@@ -184,7 +159,6 @@ impl ActiveAgentViewsModel {
                 focused_terminal_id: terminal_view_id,
                 active_conversation_id,
             };
-            self.last_focused_terminal_state = Some(new_state.clone());
             self.focused_terminal_states.insert(window_id, new_state);
         } else {
             self.focused_terminal_states.remove(&window_id);
@@ -201,38 +175,6 @@ impl ActiveAgentViewsModel {
         self.focused_terminal_states
             .get(&window_id)
             .and_then(|state| state.active_conversation_id)
-    }
-
-    /// Get the last focused terminal view id (persisted across non-terminal focus changes).
-    pub fn get_last_focused_terminal_id(&self) -> Option<EntityId> {
-        self.last_focused_terminal_state
-            .as_ref()
-            .map(|state| state.focused_terminal_id)
-    }
-
-    /// Returns the focused conversation ID if it's a new/empty conversation view.
-    /// Only returns Some if the focused agent view was just created to start a new
-    /// conversation (i.e. has no exchanges yet).
-    pub fn maybe_get_focused_new_conversation(
-        &self,
-        window_id: WindowId,
-        ctx: &AppContext,
-    ) -> Option<AIConversationId> {
-        let state = self.focused_terminal_states.get(&window_id)?;
-        let terminal_id = state.focused_terminal_id;
-
-        let is_new = self
-            .agent_view_handles
-            .get(&terminal_id)
-            .and_then(|handles| handles.controller.upgrade(ctx))
-            .map(|c| c.as_ref(ctx).agent_view_state().is_new())
-            .unwrap_or(false);
-
-        if is_new {
-            state.active_conversation_id
-        } else {
-            None
-        }
     }
 
     /// Remove the focused state for a window
@@ -278,29 +220,6 @@ impl ActiveAgentViewsModel {
             .is_some()
     }
 
-    /// Returns the active session for a conversation if it's currently active
-    /// (i.e., has an expanded agent view).
-    pub fn get_active_session_for_conversation(
-        &self,
-        conversation_id: AIConversationId,
-        ctx: &AppContext,
-    ) -> Option<ModelHandle<ActiveSession>> {
-        for handles in self.agent_view_handles.values() {
-            let Some(controller) = handles.controller.upgrade(ctx) else {
-                continue;
-            };
-            let is_active = controller
-                .as_ref(ctx)
-                .agent_view_state()
-                .active_conversation_id()
-                .is_some_and(|id| id == conversation_id);
-            if is_active {
-                return handles.active_session.upgrade(ctx);
-            }
-        }
-        None
-    }
-
     /// Returns the controller for a conversation if it's currently active
     /// (i.e., has an expanded agent view).
     pub fn get_controller_for_conversation(
@@ -320,34 +239,6 @@ impl ActiveAgentViewsModel {
                 }
             }
         }
-        None
-    }
-
-    /// Returns the last opened time for a conversation, used for sorting active conversations.
-    pub fn get_last_opened_time(&self, id: &AIConversationId) -> Option<DateTime<Utc>> {
-        self.last_opened_times.get(id).copied()
-    }
-
-    /// Returns the terminal view ID that has an active conversation with the given ID.
-    pub fn get_terminal_view_id_for_conversation(
-        &self,
-        conversation_id: AIConversationId,
-        ctx: &AppContext,
-    ) -> Option<EntityId> {
-        for (terminal_view_id, handles) in &self.agent_view_handles {
-            let Some(controller) = handles.controller.upgrade(ctx) else {
-                continue;
-            };
-            let is_active = controller
-                .as_ref(ctx)
-                .agent_view_state()
-                .active_conversation_id()
-                .is_some_and(|id| id == conversation_id);
-            if is_active {
-                return Some(*terminal_view_id);
-            }
-        }
-
         None
     }
 
