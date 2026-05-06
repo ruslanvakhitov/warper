@@ -13,6 +13,7 @@ scope="${1:-startup}"
 endpoint_denylist='(app\.warp\.dev|rtc\.app\.warp\.dev|sessions\.app\.warp\.dev|oz\.warp\.dev|AIza[0-9A-Za-z_-]+|identitytoolkit\.googleapis\.com|securetoken\.googleapis\.com|firebaseapp\.com|rudderstack\.com|rudderlabs|api\.segment\.io|dataplane\.rudderstack|sentry\.io|releases\.warp\.dev|warp-releases|channel_versions\.json|warp\.dev/download|/download/cli)'
 startup_network_denylist='(ServerApiProvider|CloudModel|TeamUpdateManager|UpdateManager::new|ServerExperiments|AIRequestUsageModel|OpenRouter|openrouter|Rudder|Sentry|sentry::|crash_reporting::init|autoupdate::|reqwest::|ureq::|hyper::Client|tokio_tungstenite|connect_async|TcpStream::connect|UdpSocket::connect|UdpSocket::send_to)'
 hosted_restore_startup_denylist='(current_user_information|user_profiles|firebase_uid|OnboardingAuthState|AuthStateChanged|AmbientAgentTaskId|ambient_agent_task_id|ArtifactDownloadResponse|ArtifactDownloadCommonFields|ScreenshotArtifactResponseData|FileArtifactResponseData|SpawnAgentRequest|TaskStatusUpdate|SendTelemetryToFile|FeatureFlag::SendTelemetryToFile|telemetry_file_name)'
+removed_hosted_surface_denylist='(AgentConversationsModel|ConversationDetailsPanel|ConversationDetailsData|AgentManagementFilters|AgentRunDisplayStatus|BonusGrantNotificationModel|bonus_grants_shown|share_templatable_mcp_server|share_templatable_mcp_server_installation|unshare_templatable_mcp_server|unshare_templatable_mcp_server_installation|MCPJsonTemplate|MCPGalleryTemplate|MCPTemplateVariable|LEGACY_MCP_CREDENTIALS_KEY|get_all_cloud_synced_mcp_servers|MCPGalleryManager|MCPGallery|create_gallery_server_cards|refresh_gallery_cards)'
 
 common_excluded_globs=(
     --glob '!specs/**'
@@ -86,10 +87,10 @@ case "$scope" in
 Usage: script/check_warper_static_denylist [startup|startup-network|entrypoints|hosted-restore-startup|telemetry-crash-update|all-runtime]
 
 Checks WARPER-001 local-only guardrails for removed hosted endpoint literals,
-hosted update/download paths, and high-risk UI/action/deeplink entrypoint
-roots. OpenRouter files are not scanned by the entrypoint or hosted
-restore/startup symbol checks because OpenRouter is explicitly out of scope for
-WARPER-001 amputation.
+hosted update/download paths, deleted hosted conversation/MCP sharing symbols,
+and high-risk UI/action/deeplink entrypoint roots. OpenRouter files are not
+scanned by the entrypoint or hosted restore/startup symbol checks because
+OpenRouter is explicitly out of scope for WARPER-001 amputation.
 
 All modes exclude specs, scripts, tests, generated schema, generated files, and
 OpenRouter implementation files from the scanned runtime surface.
@@ -100,7 +101,7 @@ Modes:
   entrypoints             Check removed UI/action/deeplink/restore/menu roots for hosted surfaces.
   hosted-restore-startup  Check stale hosted auth/profile/task/telemetry restore and startup terms.
   telemetry-crash-update  Check telemetry, crash reporting, autoupdate, and Sentry build hooks.
-  all-runtime             Check app/src and crates, excluding explicitly scoped test files.
+  all-runtime             Check app/src and crates for hosted endpoints and deleted hosted surface symbols.
 USAGE
         exit 0
         ;;
@@ -214,5 +215,13 @@ run_denylist \
     "$denylist" \
     ${excluded_globs[@]+"${excluded_globs[@]}"} \
     "${targets[@]}"
+
+if [[ "$scope" == "all-runtime" ]]; then
+    run_denylist \
+        "deleted hosted conversation, bonus, and MCP sharing/legacy symbols" \
+        "$removed_hosted_surface_denylist" \
+        ${excluded_globs[@]+"${excluded_globs[@]}"} \
+        "${targets[@]}"
+fi
 
 echo "WARPER-001 static denylist passed for scope '$scope'."

@@ -18,7 +18,8 @@ Validates:
   - removed auth/billing/team/Drive/shared-session/environment URI roots
   - stale hosted auth/profile/task/telemetry restore and startup vocabulary checks
   - telemetry, crash reporting, autoupdate, and Sentry upload/download denylist checks
-  - app/src and crates runtime endpoint literal checks outside tests/generated schema
+  - app/src and crates runtime endpoint literal and deleted hosted surface checks
+    outside tests/generated schema
   - focused warp_core channel tests for absent hosted service configs
   - Warper OSS runtime build check
   - Warper OSS --help network-intercept smoke for nonlocal DNS/connect attempts
@@ -57,7 +58,8 @@ echo "  - UI/action/deeplink/restore/menu hosted entrypoint denylist"
 echo "  - removed auth/billing/team/Drive/shared-session/environment URI roots"
 echo "  - hosted auth/profile/task/telemetry restore and startup vocabulary denylist"
 echo "  - telemetry/crash/autoupdate/Sentry upload and download denylist"
-echo "  - runtime endpoint literals in app/src and crates outside tests/generated schema"
+echo "  - runtime endpoint literals and deleted hosted surfaces in app/src and crates"
+echo "    outside tests/generated schema"
 echo "  - warp_core absent hosted service config tests"
 echo "  - Warper OSS runtime build check"
 echo "  - Warper OSS --help network-intercept smoke for nonlocal DNS/connect attempts"
