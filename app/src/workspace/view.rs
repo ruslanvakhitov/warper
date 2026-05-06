@@ -121,10 +121,6 @@ use crate::terminal::block_list_viewport::InputMode;
 use crate::terminal::ligature_settings::should_use_ligature_rendering;
 use crate::ui_components::avatar::{Avatar, AvatarContent};
 
-#[cfg(target_family = "wasm")]
-use crate::ai::agent_conversations_model::AgentConversationsModelEvent;
-#[cfg(target_family = "wasm")]
-use crate::ai::conversation_details_panel::ConversationDetailsPanel;
 use crate::workflows::workflow::Workflow;
 #[cfg(feature = "local_fs")]
 use repo_metadata::RemoteRepositoryIdentifier;
@@ -760,10 +756,6 @@ pub struct Workspace {
     wasm_nux_dialog: ViewHandle<WasmNUXDialog>,
     #[cfg(target_family = "wasm")]
     open_in_warp_button: ViewHandle<ActionButton>,
-    #[cfg(target_family = "wasm")]
-    transcript_info_button: ViewHandle<ActionButton>,
-    #[cfg(target_family = "wasm")]
-    transcript_details_panel: ViewHandle<ConversationDetailsPanel>,
 
     file_upload_sessions: FileUploadSessions,
     ai_fact_view: Option<ViewHandle<AIFactView>>,
@@ -2114,12 +2106,6 @@ impl Workspace {
         #[cfg(target_family = "wasm")]
         let open_in_warp_button = Self::build_open_in_warp_button(ctx);
 
-        #[cfg(target_family = "wasm")]
-        let transcript_info_button = Self::build_transcript_info_button(ctx);
-
-        #[cfg(target_family = "wasm")]
-        let transcript_details_panel = Self::build_transcript_details_panel(ctx);
-
         let cached_keybindings = KEYBINDINGS_TO_CACHE
             .iter()
             .map(|name| {
@@ -2238,10 +2224,6 @@ impl Workspace {
             wasm_nux_dialog,
             #[cfg(target_family = "wasm")]
             open_in_warp_button,
-            #[cfg(target_family = "wasm")]
-            transcript_info_button,
-            #[cfg(target_family = "wasm")]
-            transcript_details_panel,
             tab_fixed_width: None,
             codex_modal,
             lightbox_view: None,
@@ -2306,37 +2288,6 @@ impl Workspace {
         event: &BlocklistAIHistoryEvent,
         ctx: &mut ViewContext<Self>,
     ) {
-        #[cfg(target_family = "wasm")]
-        if self
-            .current_workspace_state
-            .is_transcript_details_panel_open
-        {
-            let focused_terminal_view_id = self
-                .active_tab_pane_group()
-                .as_ref(ctx)
-                .focused_session_view(ctx)
-                .map(|view| view.id());
-
-            let is_relevant_update = matches!(
-                event,
-                BlocklistAIHistoryEvent::SetActiveConversation { .. }
-                    | BlocklistAIHistoryEvent::UpdatedConversationMetadata { .. }
-                    | BlocklistAIHistoryEvent::RestoredConversations { .. }
-                    | BlocklistAIHistoryEvent::UpdatedConversationArtifacts { .. }
-                    | BlocklistAIHistoryEvent::UpdatedConversationStatus { .. }
-                    | BlocklistAIHistoryEvent::UpdatedStreamingExchange { .. }
-            );
-
-            if is_relevant_update
-                && event.terminal_view_id().is_some_and(|event_id| {
-                    focused_terminal_view_id.is_some_and(|id| id == event_id)
-                })
-            {
-                self.update_transcript_details_panel_data(ctx);
-                ctx.notify();
-            }
-        }
-
         if matches!(
             event,
             BlocklistAIHistoryEvent::UpdatedConversationStatus { .. }
@@ -12163,25 +12114,10 @@ impl Workspace {
             .finish();
             tab_bar.add_child(warp_logo);
 
-            // Right: Info button + "Open in Warp" button
+            // Right: "Open in Warp" button
             let mut right_row = Flex::row()
                 .with_cross_axis_alignment(CrossAxisAlignment::Center)
                 .with_main_axis_size(MainAxisSize::Min);
-
-            // Show info button for conversation transcripts (if there's content to display)
-            let should_show_info_button = self
-                .active_tab_pane_group()
-                .as_ref(ctx)
-                .focused_session_view(ctx)
-                .is_some_and(|view| Self::should_show_conversation_details_panel(&view, ctx));
-
-            if should_show_info_button {
-                right_row.add_child(
-                    Container::new(ChildView::new(&self.transcript_info_button).finish())
-                        .with_margin_right(8.)
-                        .finish(),
-                );
-            }
 
             // Hide "Open in Warp" button on mobile devices
             if !warpui::platform::wasm::is_mobile_device() {
@@ -13519,17 +13455,6 @@ impl Workspace {
                     self.render_config_panel_maximized(pane_group, &config, app),
                     app,
                 );
-            }
-        }
-
-        #[cfg(target_family = "wasm")]
-        if !warpui::platform::wasm::is_mobile_device()
-            && self
-                .current_workspace_state
-                .is_transcript_details_panel_open
-        {
-            if let Some(panel_content) = self.render_transcript_details_panel(app) {
-                panels_view = panels_view.with_child(panel_content);
             }
         }
 
@@ -15309,24 +15234,6 @@ impl TypedActionView for Workspace {
                     );
                 });
             }
-            #[cfg(target_family = "wasm")]
-            ToggleConversationTranscriptDetailsPanel => {
-                let is_open = !self
-                    .current_workspace_state
-                    .is_transcript_details_panel_open;
-                self.current_workspace_state
-                    .is_transcript_details_panel_open = is_open;
-
-                self.transcript_info_button.update(ctx, |button, ctx| {
-                    button.set_active(is_open, ctx);
-                });
-
-                if is_open {
-                    self.update_transcript_details_panel_data(ctx);
-                }
-
-                ctx.notify();
-            }
             OpenLightbox {
                 images,
                 initial_index,
@@ -15683,55 +15590,6 @@ impl View for Workspace {
                     ),
                 );
             }
-        }
-
-        // Transcript details panel overlay (right side, mobile only)
-        #[cfg(target_family = "wasm")]
-        if warpui::platform::wasm::is_mobile_device()
-            && self
-                .current_workspace_state
-                .is_transcript_details_panel_open
-        {
-            // Dimming scrim on the left (10% width); tapping closes the panel
-            let scrim = Rect::new()
-                .with_background(Fill::Solid(ColorU::new(
-                    0,
-                    0,
-                    0,
-                    MOBILE_OVERLAY_SCRIM_ALPHA,
-                )))
-                .finish();
-            let clickable_scrim = EventHandler::new(scrim)
-                .on_left_mouse_down(|ctx, _, _| {
-                    ctx.dispatch_typed_action(
-                        WorkspaceAction::ToggleConversationTranscriptDetailsPanel,
-                    );
-                    DispatchEventResult::StopPropagation
-                })
-                .finish();
-            stack.add_positioned_overlay_child(
-                Percentage::width(1.0 - MOBILE_OVERLAY_PANEL_WIDTH_RATIO, clickable_scrim).finish(),
-                OffsetPositioning::offset_from_save_position_element(
-                    TAB_BAR_POSITION_ID,
-                    vec2f(0., 0.),
-                    PositionedElementOffsetBounds::WindowBySize,
-                    PositionedElementAnchor::BottomLeft,
-                    ChildAnchor::TopLeft,
-                ),
-            );
-
-            // Details panel overlay (90% width, positioned on the right)
-            let panel_content = ChildView::new(&self.transcript_details_panel).finish();
-            stack.add_positioned_overlay_child(
-                Percentage::width(MOBILE_OVERLAY_PANEL_WIDTH_RATIO, panel_content).finish(),
-                OffsetPositioning::offset_from_save_position_element(
-                    TAB_BAR_POSITION_ID,
-                    vec2f(0., 0.),
-                    PositionedElementOffsetBounds::WindowBySize,
-                    PositionedElementAnchor::BottomRight,
-                    ChildAnchor::TopRight,
-                ),
-            );
         }
 
         // Conditionally render tab bar menus.
