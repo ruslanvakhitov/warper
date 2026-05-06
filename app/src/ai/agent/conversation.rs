@@ -539,20 +539,6 @@ impl AIConversation {
             .max()
     }
 
-    /// Derive an exchange's start time from the latest input's context.
-    fn start_time_from_exchange_messages(exchange: &AIAgentExchange) -> Option<DateTime<Local>> {
-        exchange
-            .input
-            .last()
-            .and_then(|input| input.context())
-            .and_then(|contexts| {
-                contexts.iter().find_map(|context| match context {
-                    AIAgentContext::CurrentTime { current_time } => Some(*current_time),
-                    _ => None,
-                })
-            })
-    }
-
     /// Derive the conversation status from the root task's exchanges.
     /// Used when restoring conversations to determine if they were cancelled or completed successfully.
     fn derive_status_from_root_task(root_task: &Option<&Task>) -> ConversationStatus {
@@ -3377,21 +3363,6 @@ pub enum AIAgentHarness {
     ClaudeCode,
     Gemini,
     Unknown,
-}
-
-/// Describes the format of the conversation transcript data.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AIAgentSerializedBlockFormat {
-    JsonV1,
-}
-
-/// Describes the format capabilities of a conversation.
-#[derive(Debug, Clone)]
-pub struct AIAgentConversationFormat {
-    /// Whether there is a Warp MAA task list available for this conversation.
-    pub has_task_list: bool,
-    /// The format of the TUI serialized block, if available.
-    pub block_snapshot: Option<AIAgentSerializedBlockFormat>,
 }
 
 /// Local metadata retained for restoring a CLI-agent transcript.
