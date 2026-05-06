@@ -1,1 +1,1 @@
-ALTER TABLE teams DROP COLUMN billing_metadata_json;
+-- WARPER-001: hosted billing/team metadata is not part of the local schema.

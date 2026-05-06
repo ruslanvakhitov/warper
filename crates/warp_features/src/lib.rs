@@ -146,7 +146,7 @@ pub enum FeatureFlag {
     /// Adds avatar to the tab bar.
     AvatarInTabBar,
 
-    /// Adds aliases for executing Warp Drive workflows.
+    /// Adds aliases for executing saved workflows.
     WorkflowAliases,
 
     SshDragAndDrop,
@@ -185,11 +185,6 @@ pub enum FeatureFlag {
 
     /// Enables support for Warp Packs.
     WarpPacks,
-
-    /// Enables the revised AI analytics policy banner.
-    ///
-    /// This does not gate actual collection of data under the new policy.
-    GlobalAIAnalyticsBanner,
 
     /// Enables auto-generated AI memories.
     AIMemories,
@@ -292,9 +287,6 @@ pub enum FeatureFlag {
 
     /// Enables code symbols in AI context menu
     AIContextMenuCode,
-
-    /// Enables Warp Drive objects (like workflows) as context in AI context menu
-    DriveObjectsAsContext,
 
     /// Expands code diff edits to replace the current pane instead of opening in a new tab.
     ExpandEditToPane,
@@ -615,8 +607,8 @@ pub enum FeatureFlag {
     /// adopt the configured color when their working directory matches.
     DirectoryTabColors,
 
-    /// Enables the new settings to control visibility of Warp Drive, Code Review Panel,
-    /// and Project Explorer & Global Search features.
+    /// Enables the new settings to control visibility of Code Review Panel,
+    /// Project Explorer, and Global Search features.
     OpenWarpNewSettingsModes,
 
     /// Enables vertical tab layout as an alternative to the horizontal tab bar.

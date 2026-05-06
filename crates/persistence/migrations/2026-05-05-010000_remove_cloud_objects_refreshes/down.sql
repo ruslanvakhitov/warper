@@ -1,2 +1,2 @@
 -- WARPER-001 hard amputation is intentionally irreversible for hosted
--- cloud/team/billing/Drive persistence residue.
+-- persistence residue.

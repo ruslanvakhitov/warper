@@ -1,5 +1,1 @@
-CREATE TABLE cloud_objects_refreshes (
-  id INTEGER PRIMARY KEY NOT NULL,
-  description TEXT,
-  refreshed BOOLEAN NOT NULL
-);
+-- WARPER-001: hosted object refresh state is not part of the local schema.

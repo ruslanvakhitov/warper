@@ -1,2 +1,1 @@
--- Your SQL goes here
-ALTER TABLE workspaces ADD is_selected BOOLEAN NOT NULL DEFAULT FALSE;
+-- WARPER-001: hosted workspace selection state is not part of the local schema.

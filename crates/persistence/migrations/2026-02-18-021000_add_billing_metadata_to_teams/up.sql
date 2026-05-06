@@ -1,1 +1,1 @@
-ALTER TABLE teams ADD COLUMN billing_metadata_json TEXT;
+-- WARPER-001: hosted billing/team metadata is not part of the local schema.

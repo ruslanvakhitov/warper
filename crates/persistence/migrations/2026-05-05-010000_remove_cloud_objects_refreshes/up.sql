@@ -1,1 +1,1 @@
-DROP TABLE IF EXISTS cloud_objects_refreshes;
+-- WARPER-001: hosted object refresh state is not part of the local schema.
