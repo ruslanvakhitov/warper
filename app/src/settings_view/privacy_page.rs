@@ -13,13 +13,11 @@ use regex::Regex;
 use settings::{Setting as _, SyncToCloud};
 use warp_core::ui::theme::WarpTheme;
 use warpui::elements::{
-    Align, ChildAnchor, ChildView, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment,
-    Empty, Expanded, Flex, Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle,
-    OffsetPositioning, ParentAnchor, ParentElement, ParentOffsetBounds, Radius, Rect, Shrinkable,
-    Stack, Text,
+    ChildView, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Expanded, Flex,
+    MainAxisAlignment, MainAxisSize, MouseStateHandle, ParentElement, Radius, Rect, Shrinkable,
+    Text,
 };
 use warpui::keymap::ContextPredicate;
-use warpui::platform::Cursor;
 use warpui::ui_components::button::{ButtonVariant, TextAndIcon, TextAndIconAlignment};
 use warpui::ui_components::{
     components::{Coords, UiComponent, UiComponentStyles},
@@ -32,8 +30,6 @@ use warpui::{
 
 use crate::settings::{CustomSecretRegex, RegexDisplayInfo};
 use crate::settings_view::privacy::AddRegexModalViewState;
-use crate::settings_view::render_body_item_label;
-use crate::settings_view::settings_page::CONTENT_FONT_SIZE;
 use crate::terminal::safe_mode_settings::{
     get_effective_secret_display_mode, SecretDisplayMode, SecretDisplayModeSetting,
 };
@@ -42,7 +38,7 @@ use crate::view_components::{Dropdown, DropdownItem};
 use crate::{
     appearance::Appearance,
     report_if_error,
-    settings::{AISettings, PrivacySettings},
+    settings::PrivacySettings,
     terminal::safe_mode_settings::{SafeModeEnabled, SafeModeSettings},
     ui_components::icons::Icon,
 };
@@ -51,8 +47,8 @@ use super::{
     flags,
     privacy::{AddRegexModal, AddRegexModalEvent},
     settings_page::{
-        render_body_item, render_sub_header, SettingsPageMeta, SettingsPageViewHandle, ToggleState,
-        HEADER_PADDING, TOGGLE_BUTTON_RIGHT_PADDING,
+        render_sub_header, SettingsPageMeta, SettingsPageViewHandle, HEADER_PADDING,
+        TOGGLE_BUTTON_RIGHT_PADDING,
     },
     settings_page::{LocalOnlyIconState, MatchData, PageType, SettingsWidget, PAGE_PADDING},
     SettingsAction, SettingsSection, ToggleSettingActionPair,
@@ -189,7 +185,7 @@ impl PrivacyPageView {
     }
 
     fn build_page() -> PageType<Self> {
-        let mut widgets: Vec<Box<dyn SettingsWidget<View = Self>>> =
+        let widgets: Vec<Box<dyn SettingsWidget<View = Self>>> =
             vec![Box::new(SecretRedactionWidget::default())];
         PageType::new_uncategorized(widgets, Some("Privacy"))
     }

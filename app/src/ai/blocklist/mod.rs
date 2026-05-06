@@ -22,7 +22,6 @@ pub mod summarization_cancel_dialog;
 pub mod usage;
 
 pub(crate) mod codebase_index_speedbump_banner;
-pub(crate) mod ugc_policy_banner;
 pub(super) mod view_util;
 
 #[cfg_attr(target_family = "wasm", allow(unused_imports))]

@@ -1,4 +1,3 @@
-use crate::ai::blocklist::ugc_policy_banner::should_collect_ai_ugc;
 use crate::appearance::Appearance;
 use crate::coding_entrypoints::glowing_editor::{GlowingEditor, GlowingEditorEvent};
 use warp_core::ui::icons::Icon;
@@ -71,12 +70,6 @@ impl CreateProjectView {
     fn handle_editor_event(&mut self, event: &GlowingEditorEvent, ctx: &mut ViewContext<Self>) {
         match event {
             GlowingEditorEvent::Submit(prompt) => {
-                // Always send metadata event for custom prompts
-
-                // Send content event only if UGC collection is enabled
-                let should_collect_ugc = should_collect_ai_ugc(ctx);
-                if should_collect_ugc {}
-
                 ctx.emit(CreateProjectEvent::SubmitPrompt(prompt.clone()));
             }
             GlowingEditorEvent::Cancel => {

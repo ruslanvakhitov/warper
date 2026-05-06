@@ -31,7 +31,6 @@ use crate::view_components::{
     action_button::{ActionButton, ButtonSize, SecondaryTheme},
     FilterableDropdown, SubmittableTextInput, SubmittableTextInputEvent,
 };
-use crate::workspaces::user_workspaces::UserWorkspacesEvent;
 use ::ai::api_keys::{ApiKeyManager, ApiKeys};
 use enum_iterator::all;
 use itertools::Itertools;
@@ -396,40 +395,7 @@ impl AISettingsPageView {
     pub fn new(ctx: &mut ViewContext<Self>) -> Self {
         let is_any_ai_enabled = AISettings::as_ref(ctx).is_any_ai_enabled(ctx);
 
-        let workspace = UserWorkspaces::handle(ctx);
-        let ai_autonomy_settings = workspace.as_ref(ctx).ai_autonomy_settings();
-        ctx.subscribe_to_model(&workspace, |me, workspace, event, ctx| {
-            if let UserWorkspacesEvent::LocalPoliciesChanged = event {
-                me.refresh_all_execution_profile_ui(ctx);
-                me.reset_execution_profile_mouse_state_handles(ctx);
-
-                let is_any_ai_enabled = AISettings::as_ref(ctx).is_any_ai_enabled(ctx);
-                let ai_autonomy_settings = workspace.as_ref(ctx).ai_autonomy_settings();
-
-                Self::update_editor_interaction_state(
-                    me.command_denylist_editor.as_ref(ctx).editor().clone(),
-                    is_any_ai_enabled
-                        && !ai_autonomy_settings.has_override_for_execute_commands_denylist(),
-                    ctx,
-                );
-
-                Self::update_editor_interaction_state(
-                    me.command_allowlist_editor.as_ref(ctx).editor().clone(),
-                    is_any_ai_enabled
-                        && !ai_autonomy_settings.has_override_for_execute_commands_allowlist(),
-                    ctx,
-                );
-
-                Self::update_editor_interaction_state(
-                    me.directory_allowlist_editor.as_ref(ctx).editor().clone(),
-                    is_any_ai_enabled
-                        && !ai_autonomy_settings.has_override_for_read_files_allowlist(),
-                    ctx,
-                );
-
-                ctx.notify();
-            }
-        });
+        let ai_autonomy_settings = UserWorkspaces::as_ref(ctx).ai_autonomy_settings();
 
         let voice_input_toggle_key_dropdown = ctx.add_typed_action_view(|ctx| {
             let mut dropdown = Dropdown::new(ctx);
@@ -669,13 +635,6 @@ impl AISettingsPageView {
                 SubmittableTextInputEvent::Escape => ctx.emit(AISettingsPageEvent::FocusModal),
             },
         );
-
-        ctx.subscribe_to_model(&UserWorkspaces::handle(ctx), |me, _handle, _event, ctx| {
-            // Re-render if local policy data changed and may affect AI/provider controls.
-            Self::refresh_base_model_menu(&me.base_model_dropdown, ctx);
-            Self::refresh_coding_model_menu(&me.coding_model_dropdown, ctx);
-            ctx.notify();
-        });
 
         ctx.subscribe_to_model(
             &AIExecutionProfilesModel::handle(ctx),
@@ -2724,7 +2683,7 @@ impl SettingsWidget for GlobalAIWidget {
 
     fn render(
         &self,
-        view: &Self::View,
+        _view: &Self::View,
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
@@ -4972,32 +4931,6 @@ impl ApiKeysWidget {
                         });
                     }
                 });
-                let editor_clone = $editor.clone();
-                ctx.subscribe_to_model(&workspace_handle, move |_, workspace, event, ctx| {
-                    if let UserWorkspacesEvent::LocalPoliciesChanged = event {
-                        let is_any_ai_enabled =
-                            AISettings::handle(ctx).as_ref(ctx).is_any_ai_enabled(ctx);
-                        let is_byo_enabled = workspace.as_ref(ctx).is_byo_api_key_enabled();
-                        let is_enabled = is_any_ai_enabled && (is_byo_enabled || allow_without_byo);
-                        let has_key = !editor_clone.as_ref(ctx).is_empty(ctx);
-
-                        if !is_byo_enabled && !allow_without_byo && has_key {
-                            editor_clone.update(ctx, |editor, ctx| {
-                                editor.set_buffer_text("", ctx);
-                            });
-                            ApiKeyManager::handle(ctx).update(ctx, |model, ctx| {
-                                model.$set_func(None, ctx);
-                            });
-                        }
-
-                        AISettingsPageView::update_editor_interaction_state(
-                            editor_clone.clone(),
-                            is_enabled,
-                            ctx,
-                        );
-                        ctx.notify();
-                    }
-                })
             };
         }
 
@@ -5167,7 +5100,7 @@ impl SettingsWidget for ApiKeysWidget {
 
     fn render(
         &self,
-        view: &Self::View,
+        _view: &Self::View,
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
@@ -5349,38 +5282,6 @@ impl AwsBedrockWidget {
                 ctx.notify();
             }
         });
-
-        let aws_auth_refresh_command_editor_clone = aws_auth_refresh_command_editor.clone();
-        let aws_auth_refresh_profile_editor_clone = aws_auth_refresh_profile_editor.clone();
-        let refresh_credentials_button_clone = refresh_credentials_button.clone();
-        ctx.subscribe_to_model(
-            &UserWorkspaces::handle(ctx),
-            move |_, workspace, event, ctx| {
-                if let UserWorkspacesEvent::LocalPoliciesChanged = event {
-                    let is_any_ai_enabled = AISettings::as_ref(ctx).is_any_ai_enabled(ctx);
-                    let is_usage_enabled = is_any_ai_enabled
-                        && workspace
-                            .as_ref(ctx)
-                            .is_aws_bedrock_credentials_enabled(ctx);
-
-                    AISettingsPageView::update_editor_interaction_state(
-                        aws_auth_refresh_command_editor_clone.clone(),
-                        is_usage_enabled,
-                        ctx,
-                    );
-                    AISettingsPageView::update_editor_interaction_state(
-                        aws_auth_refresh_profile_editor_clone.clone(),
-                        is_usage_enabled,
-                        ctx,
-                    );
-                    refresh_credentials_button_clone.update(ctx, |button, ctx| {
-                        button.set_disabled(!is_usage_enabled, ctx);
-                    });
-
-                    ctx.notify();
-                }
-            },
-        );
 
         Self {
             aws_auth_refresh_command_editor,

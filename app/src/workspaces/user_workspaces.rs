@@ -8,17 +8,8 @@ use crate::{
     settings::{AISettings, CodeSettings},
 };
 use regex::Regex;
-#[cfg(test)]
-use warp_core::settings::ChangeEventReason;
 use warp_core::{features::FeatureFlag, settings::Setting};
 use warpui::{AppContext, Entity, ModelContext, SingletonEntity, Tracked};
-
-#[derive(Debug)]
-pub enum UserWorkspacesEvent {
-    /// Fired whenever local AI/provider policy data changes.
-    LocalPoliciesChanged,
-    CodebaseContextEnablementChanged,
-}
 
 /// Local capability settings used by retained AI/provider features.
 ///
@@ -173,28 +164,6 @@ impl UserWorkspaces {
         let current_workspace_uid = workspaces.first().map(|workspace| workspace.uid);
         *self.current_workspace_uid = current_workspace_uid;
         *self.workspaces = workspaces;
-        self.notify_and_emit_local_policies_changed(ctx);
-    }
-
-    #[cfg(test)]
-    fn notify_and_emit_local_policies_changed(&self, ctx: &mut ModelContext<Self>) {
-        // PrivacySettings can't observe UserWorkspaces for updates, as it's initialized too early in
-        // the app initialization flow. So, we update it manually whenever local policy data changes.
-        crate::settings::PrivacySettings::handle(ctx).update(ctx, |settings, ctx| {
-            let enterprise_regexes = self
-                .current_workspace()
-                .map(|workspace| workspace.settings.secret_redaction_settings.regexes.clone())
-                .unwrap_or_default();
-            settings.set_enterprise_secret_redaction_settings(
-                self.is_enterprise_secret_redaction_enabled(),
-                enterprise_regexes,
-                ChangeEventReason::LocalChange,
-                ctx,
-            );
-        });
-
-        ctx.emit(UserWorkspacesEvent::LocalPoliciesChanged);
-        ctx.emit(UserWorkspacesEvent::CodebaseContextEnablementChanged);
         ctx.notify();
     }
 
@@ -275,7 +244,7 @@ impl UserWorkspaces {
     {
         if let Some(workspace) = self.current_workspace_mut() {
             f(workspace);
-            self.notify_and_emit_local_policies_changed(ctx);
+            ctx.notify();
         }
     }
 
@@ -301,7 +270,7 @@ impl UserWorkspaces {
 }
 
 impl Entity for UserWorkspaces {
-    type Event = UserWorkspacesEvent;
+    type Event = ();
 }
 
 /// Mark UserWorkspaces as global application state.

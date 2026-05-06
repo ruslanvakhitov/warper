@@ -4,7 +4,6 @@ use regex::Regex;
 use warp_core::user_preferences::GetUserPreferences as _;
 use warpui::{AppContext, Entity, ModelContext, SingletonEntity, UpdateModel};
 
-use crate::ai::blocklist::ugc_policy_banner::should_collect_ai_ugc;
 use crate::terminal::safe_mode_settings::SafeModeSettings;
 
 use settings::{
@@ -128,7 +127,6 @@ pub struct PrivacySettings {
 /// A snapshot of a user's [`PrivacySettings`] settings at some point in time.
 #[derive(Clone, Copy)]
 pub struct PrivacySettingsSnapshot {
-    should_collect_ai_ugc: bool,
     // This is an option so that, if a user has not set this value (and it's set to its default value of true),
     // the default value won't override a value that the user previously set on a different device.
     // This is set to a non-option once the user manually changes this setting.
@@ -140,15 +138,10 @@ impl PrivacySettingsSnapshot {
         self.cloud_conversation_storage_enabled
     }
 
-    pub fn should_collect_ai_ugc(&self) -> bool {
-        self.should_collect_ai_ugc
-    }
-
     #[cfg(test)]
     pub fn mock() -> Self {
         Self {
             cloud_conversation_storage_enabled: None,
-            should_collect_ai_ugc: true,
         }
     }
 }
@@ -295,10 +288,10 @@ impl PrivacySettings {
     /// The returned snapshot is not stateful, thus its values should be used shortly after the
     /// snapshot is returned.
     pub fn get_snapshot(&self, app: &AppContext) -> PrivacySettingsSnapshot {
+        let _ = app;
         PrivacySettingsSnapshot {
             cloud_conversation_storage_enabled: (!self.is_cloud_conversation_storage_enabled)
                 .then_some(false),
-            should_collect_ai_ugc: should_collect_ai_ugc(app),
         }
     }
 

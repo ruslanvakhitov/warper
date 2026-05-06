@@ -5,7 +5,7 @@ use std::{any::Any, path::PathBuf, sync::Arc};
 use warpui::{AppContext, SingletonEntity, ViewHandle};
 
 use crate::{
-    ai::blocklist::{ugc_policy_banner::should_collect_ai_ugc, SerializedBlockListItem},
+    ai::blocklist::SerializedBlockListItem,
     appearance::Appearance,
     settings::{BlockVisibilitySettings, DebugSettings, InputModeSettings},
 };
@@ -100,8 +100,6 @@ pub(super) fn create_terminal_model(
     let sizes = compute_block_size(initial_size, ctx);
 
     let obfuscate_secrets = get_secret_obfuscation_mode(ctx);
-    let should_collect_ai_ugc = should_collect_ai_ugc(ctx);
-
     TerminalModel::new(
         restored_blocks.map(|v| v.as_slice()),
         sizes,
@@ -114,7 +112,7 @@ pub(super) fn create_terminal_model(
         honor_ps1,
         is_inverted,
         obfuscate_secrets,
-        should_collect_ai_ugc,
+        false,
         startup_directory,
         shell_state,
     )

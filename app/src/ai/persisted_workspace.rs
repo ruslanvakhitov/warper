@@ -16,7 +16,7 @@ use crate::persistence::ModelEvent;
 use crate::report_if_error;
 use crate::settings::CodeSettings;
 use crate::terminal::TerminalView;
-use crate::workspaces::user_workspaces::{UserWorkspaces, UserWorkspacesEvent};
+use crate::workspaces::user_workspaces::UserWorkspaces;
 use ai::{
     index::full_source_code_embedding::manager::{CodebaseIndexManager, CodebaseIndexManagerEvent},
     workspace::{WorkspaceMetadata, WorkspaceMetadataEvent},
@@ -261,18 +261,6 @@ impl PersistedWorkspace {
                     me.trigger_incremental_sync_for_conversation(*terminal_view_id, ctx);
                 }
             });
-
-            // Subscribe to changes in workspace settings.
-            ctx.subscribe_to_model(
-                &UserWorkspaces::handle(ctx),
-                |me, user_workspaces_event, ctx| {
-                    if let UserWorkspacesEvent::CodebaseContextEnablementChanged =
-                        user_workspaces_event
-                    {
-                        me.on_settings_changed(ctx);
-                    }
-                },
-            );
 
             // Subscribe to ProjectContextModel events to persist rule changes
             ctx.subscribe_to_model(&ProjectContextModel::handle(ctx), |me, event, _ctx| {

@@ -95,8 +95,9 @@ use crate::terminal::model::blocks::RemovableBlocklistItem;
 use crate::util::file::external_editor::{settings::EditorLayout, EditorSettings};
 use crate::util::truncation::truncate_from_end;
 
+pub use self::link_detection::GridHighlightedLink;
+pub use self::link_detection::{RichContentLink, RichContentLinkTooltipInfo};
 use crate::ai::agent::api::ServerConversationToken;
-use crate::ai::agent::redaction::redact_secrets;
 use crate::ai::agent::todos::popup::{AgentTodosPopupEvent, AgentTodosPopupView};
 use crate::ai::agent::{
     AIAgentPtyWriteMode, AgentReviewCommentBatch, CancellationReason, PassiveSuggestionTrigger,
@@ -107,6 +108,7 @@ use crate::ai::blocklist::codebase_index_speedbump_banner::{
     CodebaseIndexSpeedbumpBannerAction, CodebaseIndexSpeedbumpBannerState, VisibilityState,
 };
 use crate::ai::blocklist::model::AIBlockOutputStatus;
+use crate::ai::llms::{LLMId, LLMModelHost, LLMPreferences};
 #[cfg(feature = "local_fs")]
 use crate::ai::persisted_workspace::PersistedWorkspace;
 use crate::code_review::comments::{
@@ -122,6 +124,7 @@ use crate::code_review::git_status_update::{
 use crate::code_review::metadata::CodeReviewPaneEntrypoint;
 use crate::projects::ProjectManagementModel;
 use crate::settings::ai::FocusedTerminalInfo;
+use crate::settings::CodeSettings;
 use crate::settings_view::mcp_servers_page::MCPServersSettingsPage;
 use crate::terminal::cli_agent_sessions::event::{
     parse_event, CLIAgentEvent, CLIAgentEventPayload, CLIAgentEventType,
@@ -135,12 +138,6 @@ use crate::terminal::cli_agent_sessions::{
     CLIAgentSessionContext, CLIAgentSessionStatus, CLIAgentSessionsModel,
     CLIAgentSessionsModelEvent,
 };
-use crate::workspaces::user_workspaces::UserWorkspacesEvent;
-
-pub use self::link_detection::GridHighlightedLink;
-pub use self::link_detection::{RichContentLink, RichContentLinkTooltipInfo};
-use crate::ai::llms::{LLMId, LLMModelHost, LLMPreferences};
-use crate::settings::CodeSettings;
 pub use action::{AgentOnboardingVersion, OnboardingIntention, OnboardingVersion, TerminalAction};
 use ai::api_keys::{ApiKeyManager, AwsCredentialsState};
 use ai::index::full_source_code_embedding::manager::{BuildSource, CodebaseIndexManager};
@@ -184,7 +181,6 @@ use crate::ai::{
         get_attached_blocks_chip_element_position_id,
         inline_action::code_diff_view::{CodeDiffView, FileDiff},
         summarization_cancel_dialog::SummarizationCancelDialog,
-        ugc_policy_banner::{should_collect_ai_ugc, UgcPolicyBanner},
         AIBlock, AIBlockEvent, BlocklistAIActionEvent, BlocklistAIActionModel,
         BlocklistAIContextEvent, BlocklistAIContextModel, BlocklistAIController,
         BlocklistAIControllerEvent, BlocklistAIHistoryEvent, BlocklistAIHistoryModel,
@@ -281,7 +277,6 @@ use crate::util::clipboard::clipboard_content_with_escaped_paths;
 use crate::util::openable_file_type::{is_markdown_file, resolve_file_target, FileTarget};
 use crate::view_components::{DismissibleToast, ToastFlavor};
 use crate::workflows::workflow::Workflow;
-use crate::workflows::WorkflowSelectionSource;
 use crate::workspace::sync_inputs::SyncedInputState;
 use crate::workspace::{CommandSearchOptions, ToastStack, WorkspaceAction};
 use crate::workspace::{ForkAIConversationParams, ForkFromExchange, ForkedConversationDestination};
@@ -303,7 +298,6 @@ use parking_lot::FairMutex;
 use pathfinder_color::ColorU;
 use regex::Regex;
 use serde::Serialize;
-use serde_json::json;
 use std::any::Any;
 use std::borrow::Cow;
 use std::cell::RefCell;
@@ -333,16 +327,15 @@ use warpui::elements::new_scrollable::{
 };
 use warpui::elements::{
     get_rich_content_position_id, ChildAnchor, ClippedScrollStateHandle, Container,
-    CrossAxisAlignment, DispatchEventResult, DropTarget, DropTargetData, Empty, EventHandler,
-    Expanded, Flex, NewScrollable, OffsetPositioning, ParentAnchor, ParentElement,
-    ParentOffsetBounds, PositionedElementAnchor, PositionedElementOffsetBounds, Radius,
-    ScrollableElement, ScrollbarWidth, Shrinkable, Text,
+    CrossAxisAlignment, DispatchEventResult, DropTarget, DropTargetData, Empty, EventHandler, Flex,
+    NewScrollable, OffsetPositioning, ParentAnchor, ParentElement, ParentOffsetBounds,
+    PositionedElementAnchor, PositionedElementOffsetBounds, Radius, ScrollableElement,
+    ScrollbarWidth, Shrinkable, Text,
 };
 use warpui::event::ModifiersState;
 use warpui::keymap::Keystroke;
 use warpui::notification::{NotificationSendError, RequestPermissionsOutcome, UserNotification};
 use warpui::platform::{Cursor, OperatingSystem};
-use warpui::r#async::executor::Background;
 use warpui::r#async::Timer;
 use warpui::windowing::WindowManager;
 
@@ -370,7 +363,7 @@ use warpui::{
 
 use warpui::{windowing, CursorInfo, EntityId, EventContext, ModelAsRef, SingletonEntity, Tracked};
 
-use crate::ai::blocklist::metadata::{AgentModeEntrypoint, AgentModeRewindEntrypoint};
+use crate::ai::blocklist::metadata::AgentModeRewindEntrypoint;
 use crate::ai::AskAIType;
 use crate::appearance::{Appearance, AppearanceEvent};
 use crate::banner::{
@@ -482,7 +475,6 @@ use super::warpify::success_block::{WarpifySuccessBlock, WarpifySuccessBlockEven
 use super::warpify::trigger_state::{SshBlockState, WarpifyState};
 use super::warpify::WarpificationSource;
 use super::{GridType, HistoryEvent};
-use crate::antivirus::AntivirusInfo;
 use crate::menu::{Event as MenuEvent, Menu, MenuItem, MenuItemFields};
 use crate::terminal::links::should_directly_open_link;
 use crate::terminal::model_events::{AnsiHandlerEvent, ModelEvent, ModelEventDispatcher};
@@ -1230,11 +1222,6 @@ pub enum ContextMenuAction {
     CopyServerRequestId {
         request_id: ServerConversationToken,
     },
-    /// Opens the sharing dialog for a conversation from the AI block context menu
-    OpenConversationShareDialog {
-        conversation_id: AIConversationId,
-    },
-    StopSharing,
     /// Copy the AI block prompt text
     CopyAIBlockQuery {
         ai_block_view_id: EntityId,
@@ -1330,7 +1317,6 @@ impl fmt::Debug for ContextMenuAction {
             AskAI(_) => f.write_str("AskAI"),
             OpenWorkflowModal => f.write_str("OpenWorkflowModal"),
             CopyBlockFilteredOutputs => f.write_str("CopyBlockFilteredOutput"),
-            StopSharing => f.write_str("StopSharing"),
             CopyAIDebuggingLink { .. } => f.write_str("CopyAIDebuggingLink"),
             CopyAIBlockQuery { .. } => f.write_str("CopyAIBlockPrompt"),
             CopyAIBlockOutput { .. } => f.write_str("CopyAIBlockOutput"),
@@ -1341,7 +1327,6 @@ impl fmt::Debug for ContextMenuAction {
             CopyExternalDebuggingId { .. } => f.write_str("CopyExternalDebuggingId"),
             CopyConversationId { .. } => f.write_str("CopyConversationId"),
             CopyServerRequestId { .. } => f.write_str("CopyServerRequestId"),
-            OpenConversationShareDialog { .. } => f.write_str("OpenConversationShareDialog"),
             ForkAIConversationFromBlock { .. } => f.write_str("ForkAIConversationFromBlock"),
             ForkAIConversationFromExactExchange { .. } => {
                 f.write_str("ForkAIConversationFromExactExchange")
@@ -2208,10 +2193,6 @@ pub struct TerminalView {
 
     block_text_selection_start_position: Option<Vector2F>,
 
-    /// Background executor for sending telemetry when a TerminalView is
-    /// dropped.
-    background_executor: Arc<Background>,
-
     inline_banners_state: InlineBannersState,
 
     /// Most recent command correction encountered, if any, used for the keyboard shortcut action.
@@ -3062,12 +3043,6 @@ impl TerminalView {
             },
         );
 
-        ctx.subscribe_to_model(&UserWorkspaces::handle(ctx), |me, _, event, ctx| {
-            if matches!(event, UserWorkspacesEvent::LocalPoliciesChanged) {
-                me.update_focused_terminal_info(ctx);
-            }
-        });
-
         let (resize_tx, resize_rx) = async_channel::unbounded();
         let (find_link_tx, find_link_rx) = async_channel::unbounded();
         ctx.subscribe_to_model(&model_events_handle, |me, _, event, ctx| {
@@ -3592,7 +3567,6 @@ impl TerminalView {
             sessions,
             active_block_metadata: None,
             block_text_selection_start_position: None,
-            background_executor: ctx.background_executor().clone(),
             inline_banners_state: Default::default(),
             bookmarked_blocks: Default::default(),
             file_link_scanning_join_handle: None,
@@ -3941,13 +3915,7 @@ impl TerminalView {
                         should_start_new_conversation: false,
                     });
 
-                    self.on_legacy_prompt_suggestion_generated(
-                        suggestion,
-                        block_id,
-                        "".to_string(),
-                        0,
-                        ctx,
-                    );
+                    self.on_legacy_prompt_suggestion_generated(suggestion, block_id, ctx);
                 }
             }
 
@@ -3966,22 +3934,15 @@ impl TerminalView {
             LegacyPassiveSuggestionsEvent::PromptSuggestionsGenerated {
                 prompt_suggestion,
                 block_id,
-                command,
-                request_duration_ms,
+                ..
             } => {
                 self.on_legacy_prompt_suggestion_generated(
                     prompt_suggestion.clone(),
                     block_id.clone(),
-                    command.clone(),
-                    *request_duration_ms,
                     ctx,
                 );
             }
-            LegacyPassiveSuggestionsEvent::PassiveCodeDiffRequestStarted {
-                prompt_suggestion_id,
-                code_exchange_id,
-                block_id,
-            } => {}
+            LegacyPassiveSuggestionsEvent::PassiveCodeDiffRequestStarted { .. } => {}
         }
     }
 
@@ -4234,14 +4195,6 @@ impl TerminalView {
                 response_stream_id,
                 ..
             } => {
-                // Hide UGC policy banner forever after the first AI input the user sends.
-                if !GeneralSettings::as_ref(ctx)
-                    .ugc_policy_banner_dismissed
-                    .value()
-                {
-                    self.hide_ugc_policy_banner_permanently(ctx);
-                }
-
                 // Close any open usage footer(s) when a new AI block is added
                 if !self.usage_footer_view_ids.is_empty() {
                     let owner_block_ids: Vec<EntityId> =
@@ -5830,57 +5783,6 @@ impl TerminalView {
         true
     }
 
-    /// Give the agent control of the active long running command
-    /// (which was started outside of a conversation).
-    fn tag_agent_in(&mut self, ctx: &mut ViewContext<Self>) {
-        self.model
-            .lock()
-            .block_list_mut()
-            .active_block_mut()
-            .set_is_agent_tagged_in(true);
-
-        if !self.model.lock().is_alt_screen_active() {
-            self.hide_use_agent_footer_in_blocklist(ctx);
-        }
-
-        self.input.update(ctx, |input, ctx| {
-            input.set_input_mode_agent(true, ctx);
-            input.clear_buffer_and_reset_undo_stack(ctx);
-        });
-        ctx.notify();
-    }
-
-    // Take control back from the agent for the active long running command
-    // (which was started outside of a conversation).
-    fn tag_agent_out(&mut self, ctx: &mut ViewContext<Self>) {
-        if !self
-            .model
-            .lock()
-            .block_list()
-            .active_block()
-            .is_agent_tagged_in()
-        {
-            return;
-        }
-
-        self.model
-            .lock()
-            .block_list_mut()
-            .active_block_mut()
-            .set_is_agent_tagged_in(false);
-
-        if !self.model.lock().is_alt_screen_active() {
-            self.maybe_show_use_agent_footer_in_blocklist(ctx);
-        }
-
-        self.input.update(ctx, |input, ctx| {
-            input.set_input_mode_terminal(false, ctx);
-        });
-        self.redetermine_terminal_focus(ctx);
-
-        ctx.notify();
-    }
-
     pub fn has_active_env_var_block(&self, app: &AppContext) -> bool {
         self.active_env_var_collection_block(app).is_some()
     }
@@ -6802,7 +6704,6 @@ impl TerminalView {
     fn trigger_subshell_bootstrap(
         &mut self,
         shell_type: Option<ShellType>,
-        triggered_by_rc_file_snippet: bool,
         ctx: &mut ViewContext<Self>,
     ) {
         self.dismiss_warpify_banner(&RememberForWarpification::DoNotRememberSubshellCommand, ctx);
@@ -6914,7 +6815,7 @@ impl TerminalView {
             } => {
                 if system_details.writable_home != Some(true) {
                     if let Some(shell_type) = ShellType::from_name(&system_details.shell) {
-                        self.trigger_subshell_bootstrap(Some(shell_type), false, ctx);
+                        self.trigger_subshell_bootstrap(Some(shell_type), ctx);
                         return;
                     }
                 }
@@ -6943,7 +6844,7 @@ impl TerminalView {
             WarpificationUnavailableReason::UnsupportedTmuxVersion { system_details } => {
                 if system_details.writable_home != Some(true) {
                     if let Some(shell_type) = ShellType::from_name(&system_details.shell) {
-                        self.trigger_subshell_bootstrap(Some(shell_type), false, ctx);
+                        self.trigger_subshell_bootstrap(Some(shell_type), ctx);
                         return;
                     }
                 }
@@ -7295,7 +7196,7 @@ impl TerminalView {
             SshErrorBlockEvent::WarpifyWithoutTmux => {
                 let shell_type = self.warpify_state.get_shell_type();
                 self.clear_ssh_blocks(ctx);
-                self.trigger_subshell_bootstrap(shell_type, false, ctx);
+                self.trigger_subshell_bootstrap(shell_type, ctx);
             }
             SshErrorBlockEvent::ContinueWithoutWarpification => {
                 self.cancel_bootstrap_workflow(ctx);
@@ -7542,8 +7443,8 @@ impl TerminalView {
         resolution: PromptSuggestionResolution,
         ctx: &mut ViewContext<Self>,
     ) -> bool {
-        let interaction_source = match resolution {
-            PromptSuggestionResolution::Accept { interaction_source } => interaction_source,
+        match resolution {
+            PromptSuggestionResolution::Accept { .. } => {}
             PromptSuggestionResolution::Reject { ctrl_c } => {
                 // ctrl-c shouldn't clear prompt suggestions, but all other rejections should.
                 if !ctrl_c {
@@ -7564,7 +7465,6 @@ impl TerminalView {
 
         let suggestion = &banner_state.prompt_suggestion;
         let prompt = suggestion.prompt.clone();
-        let suggestion_id = suggestion.id.clone();
         let is_static_suggestion = suggestion.static_prompt_suggestion_name.is_some();
         let trigger = banner_state.trigger.clone();
         let should_start_new_conversation = suggestion.should_start_new_conversation;
@@ -8000,35 +7900,6 @@ impl TerminalView {
         }
     }
 
-    fn insert_anonymous_user_ai_sign_up_banner(&mut self, ctx: &mut ViewContext<Self>) {
-        if *GeneralSettings::as_ref(ctx)
-            .anonymous_user_ai_sign_up_banner_shown
-            .value()
-        {
-            return;
-        }
-
-        let banner_id = self.inline_banners_state.next_banner_id();
-        let banner_state = AnonymousUserAISignUpBannerState::new(banner_id);
-
-        self.model
-            .lock()
-            .block_list_mut()
-            .append_inline_banner_with_custom_height(
-                InlineBannerItem::new(banner_id, InlineBannerType::AnonymousUserAISignUp),
-                3.0,
-            );
-
-        self.inline_banners_state.anonymous_user_ai_sign_up_banner = Some(banner_state);
-        GeneralSettings::handle(ctx).update(ctx, |settings, ctx| {
-            let _ = settings
-                .anonymous_user_ai_sign_up_banner_shown
-                .set_value(true, ctx);
-        });
-
-        ctx.notify();
-    }
-
     fn remove_anonymous_user_ai_sign_up_banner(&mut self, ctx: &mut ViewContext<Self>) {
         if let Some(banner_state) = self
             .inline_banners_state
@@ -8288,52 +8159,6 @@ impl TerminalView {
         ctx.notify();
     }
 
-    /// Inserts UGC policy banner into the blocklist.
-    pub fn insert_ugc_policy_banner(&mut self, is_onboarded: bool, ctx: &mut ViewContext<Self>) {
-        if !GeneralSettings::as_ref(ctx)
-            .ugc_policy_banner_dismissed
-            .value()
-            // Do not insert UGC policy banner if one is already showing
-            // (Happens in the case of a new user going from loginless to login
-            // without dismissing banner the first time)
-            && !self.rich_content_views.iter().any(|content| content.is_ugc_policy_banner())
-        {
-            let banner = ctx.add_view(|ctx| UgcPolicyBanner::new(is_onboarded, ctx));
-            self.insert_rich_content(
-                None,
-                banner.clone(),
-                Some(RichContentMetadata::UgcPolicyBanner {
-                    ugc_policy_banner_handle: banner,
-                }),
-                RichContentInsertionPosition::Append {
-                    insert_below_long_running_block: true,
-                },
-                ctx,
-            );
-            ctx.notify();
-        }
-    }
-
-    fn hide_ugc_policy_banner_permanently(&mut self, ctx: &mut ViewContext<Self>) {
-        GeneralSettings::handle(ctx).update(ctx, |general_settings, ctx| {
-            let _ = general_settings
-                .ugc_policy_banner_dismissed
-                .set_value(true, ctx);
-        });
-        for rich_content in self.rich_content_views.iter() {
-            if let Some(RichContentMetadata::UgcPolicyBanner {
-                ugc_policy_banner_handle,
-            }) = rich_content.metadata()
-            {
-                self.model
-                    .lock()
-                    .block_list_mut()
-                    .remove_rich_content(ugc_policy_banner_handle.id());
-            }
-        }
-        ctx.notify();
-    }
-
     /// Redetermine focus in the terminal view -- note that this will not steal focus
     /// from other parts of the app, the find bar, or the block filter editor.
     ///
@@ -8480,14 +8305,6 @@ impl TerminalView {
                     ctx,
                 );
             });
-        }
-
-        // Hide UGC policy banner forever after the first block the user executes.
-        if !GeneralSettings::as_ref(ctx)
-            .ugc_policy_banner_dismissed
-            .value()
-        {
-            self.hide_ugc_policy_banner_permanently(ctx);
         }
     }
 
@@ -8879,7 +8696,6 @@ impl TerminalView {
             ModelEvent::AfterBlockStarted {
                 command,
                 is_for_in_band_command,
-                block_id,
                 ..
             } => {
                 let did_any_session_contains_remote_blocks =
@@ -8952,7 +8768,7 @@ impl TerminalView {
                         let auto_warpify_abort_handle = ctx.spawn_abortable(
                             Timer::after(Duration::from_millis(AUTO_WARPIFY_DELAY)),
                             move |me, _, ctx| {
-                                me.trigger_subshell_bootstrap(Some(shell_type), false, ctx);
+                                me.trigger_subshell_bootstrap(Some(shell_type), ctx);
                             },
                             |_, _| (),
                         );
@@ -9081,13 +8897,7 @@ impl TerminalView {
                     });
                 }
             }
-            ModelEvent::AfterBlockCompleted(AfterBlockCompletedEvent {
-                command_finished_to_precmd_delay,
-                block_type,
-                num_secrets_obfuscated,
-                cloud_workflow_id,
-                cloud_env_var_collection_id,
-            }) => {
+            ModelEvent::AfterBlockCompleted(AfterBlockCompletedEvent { block_type, .. }) => {
                 // To automatically warpify a subshell, we run the relevant command to open the
                 // subshell and create a future to delay bootstrapping the subshell long enough for
                 // the command to complete. We receive AfterBlockCompleted if the subshell command
@@ -9108,30 +8918,6 @@ impl TerminalView {
                     }
                 }
 
-                if let Some(delay) = command_finished_to_precmd_delay {
-                    let delay_ms = delay.as_millis() as u64;
-                    let honor_ps1_enabled = match &block_type {
-                        // If we have access to the value of honor_ps1 that the
-                        // block was holding, use that.
-                        BlockType::User(UserBlockCompleted {
-                            serialized_block, ..
-                        })
-                        | BlockType::BootstrapVisible(serialized_block) => {
-                            serialized_block.honor_ps1
-                        }
-                        // Otherwise, grab the current value.
-                        _ => *SessionSettings::as_ref(ctx).honor_ps1,
-                    };
-                    if let BlockType::User(user_block_completed) = block_type {
-                        let is_universal_developer_input_enabled =
-                            InputSettings::as_ref(ctx).is_universal_developer_input_enabled(ctx);
-                        let is_in_agent_view = self.agent_view_controller.as_ref(ctx).is_active();
-
-                        // On dogfood only, we're interested in the block commands, durations,
-                        // and exit codes to trial Warp Analytics.
-                        if ChannelState::channel().is_dogfood() {}
-                    }
-                }
                 let active_session_id = self.active_block_session_id();
                 if let Some(block_id) = self
                     .warpify_state
@@ -9243,16 +9029,6 @@ impl TerminalView {
                         self.update_agent_view_back_button_state(ctx);
                         self.update_agent_view_pane_header(ctx);
                     }
-
-                    let exit_code_data =
-                        &json!({"exit_code": block_completed.serialized_block.as_ref().exit_code})
-                            .to_string();
-
-                    let _ = (
-                        cloud_workflow_id,
-                        cloud_env_var_collection_id,
-                        exit_code_data,
-                    );
 
                     if let (
                         Some(active_session_id),
@@ -9626,7 +9402,7 @@ impl TerminalView {
                 }
             }
             ModelEvent::TmuxControlModeReady { .. } => {
-                self.trigger_subshell_bootstrap(None, false, ctx);
+                self.trigger_subshell_bootstrap(None, ctx);
             }
             ModelEvent::DetectedEndOfSshLogin(check_type) => {
                 self.handle_detected_end_of_ssh_login(check_type, ctx);
@@ -9665,7 +9441,7 @@ impl TerminalView {
             }
             ModelEvent::InitSubshell(event) => {
                 let shell_type = event.shell_type;
-                self.trigger_subshell_bootstrap(Some(shell_type), false, ctx);
+                self.trigger_subshell_bootstrap(Some(shell_type), ctx);
             }
             ModelEvent::InitSsh(event) => {
                 let shell_type = event.shell_type;
@@ -9708,7 +9484,7 @@ impl TerminalView {
                         if is_ssh && !disable_tmux {
                             me.continue_warpify_ssh_session(&uname, shell_type, ctx);
                         } else {
-                            me.trigger_subshell_bootstrap(Some(shell_type), true, ctx);
+                            me.trigger_subshell_bootstrap(Some(shell_type), ctx);
                         }
                     },
                 );
@@ -9750,7 +9526,7 @@ impl TerminalView {
             ModelEvent::ImageReceived {
                 image_id,
                 image_data,
-                image_protocol,
+                ..
             } => {
                 AssetCache::handle(ctx).update(ctx, |asset_cache, ctx| {
                     asset_cache.insert_raw_asset_bytes::<ImageType>(
@@ -11582,14 +11358,13 @@ impl TerminalView {
             MaaPassiveSuggestionsEvent::NewPromptSuggestion {
                 prompt,
                 label,
-                request_duration_ms,
                 trigger,
                 conversation_id,
+                ..
             } => {
                 self.on_maa_prompt_suggestion_generated(
                     prompt,
                     &label.clone(),
-                    *request_duration_ms,
                     trigger.clone(),
                     *conversation_id,
                     ctx,
@@ -11601,8 +11376,8 @@ impl TerminalView {
                 title,
                 original_edits,
                 conversation_id,
-                request_duration_ms,
                 trigger,
+                ..
             } => {
                 self.on_maa_code_diff_generated(
                     diffs.clone(),
@@ -11610,7 +11385,6 @@ impl TerminalView {
                     title.clone(),
                     original_edits.clone(),
                     *conversation_id,
-                    *request_duration_ms,
                     trigger.clone(),
                     ctx,
                 );
@@ -11623,7 +11397,6 @@ impl TerminalView {
         &mut self,
         prompt: &str,
         label: &Option<String>,
-        request_duration_ms: u64,
         trigger: Option<PassiveSuggestionTrigger>,
         conversation_id: Option<AIConversationId>,
         ctx: &mut ViewContext<Self>,
@@ -11633,7 +11406,6 @@ impl TerminalView {
         }
 
         self.clear_prompt_suggestions(ctx);
-        let block_id = trigger.as_ref().and_then(|t| t.block_id());
         let suggestion_id = Uuid::new_v4().to_string();
         let banner_id = self.inline_banners_state.next_banner_id();
         let banner_state = PromptSuggestionBannerState {
@@ -11671,7 +11443,6 @@ impl TerminalView {
         title: Option<String>,
         original_edits: Vec<PassiveCodeDiffEntry>,
         conversation_id: Option<AIConversationId>,
-        request_duration_ms: u64,
         trigger: PassiveSuggestionTrigger,
         ctx: &mut ViewContext<Self>,
     ) {
@@ -11717,10 +11488,6 @@ impl TerminalView {
             }
             _ => None,
         };
-        // Capture the string form for telemetry before `trigger_block_id` is
-        // moved into the subscribe_to_view closure below.
-        let trigger_block_id_str = trigger_block_id.as_ref().map(|id| id.to_string());
-
         let wrapper_view_id = wrapper_view.id();
         ctx.subscribe_to_view(&diff_view, move |me, view, event, ctx| {
             match event {
@@ -11842,8 +11609,6 @@ impl TerminalView {
             }
         });
 
-        let suggestion_id = Uuid::new_v4().to_string();
-
         self.insert_rich_content(
             None,
             wrapper_view,
@@ -11859,8 +11624,6 @@ impl TerminalView {
         &mut self,
         prompt_suggestion: AgentModePromptSuggestion,
         block_id: BlockId,
-        command: String,
-        request_duration_ms: u64,
         ctx: &mut ViewContext<TerminalView>,
     ) {
         match prompt_suggestion {
@@ -11869,12 +11632,6 @@ impl TerminalView {
                     return;
                 }
 
-                let (query_string, block_command) = if should_collect_ai_ugc(ctx) {
-                    (Some(suggestion.prompt.to_string()), Some(command))
-                } else {
-                    (None, None)
-                };
-
                 let banner_id = self.inline_banners_state.next_banner_id();
 
                 self.clear_prompt_suggestions(ctx);
@@ -11882,9 +11639,6 @@ impl TerminalView {
                 // Don't show banner if is coding query
                 let is_coding_query =
                     suggestion.is_coding_query() && Self::passive_code_diffs_enabled(ctx);
-                let static_prompt_suggestion_name =
-                    suggestion.static_prompt_suggestion_name.clone();
-                let suggestion_id = suggestion.id.clone();
 
                 let trigger = {
                     let model = self.model.lock();
@@ -11916,10 +11670,6 @@ impl TerminalView {
                     input.set_prompt_suggestions_banner_state(Some(banner_state), ctx);
                     input.notify_and_notify_children(ctx);
                 });
-
-                if let Some(static_name) = static_prompt_suggestion_name {
-                } else {
-                }
 
                 ctx.notify();
             }
@@ -12248,7 +11998,7 @@ impl TerminalView {
     /// Will send telemetry if the current session is not bootstrapped and will show a banner to
     /// the user if this is the first bootstrap in the session.
     fn on_bootstrap_failed_timer_complete(&mut self, _: (), ctx: &mut ViewContext<Self>) {
-        let (is_ssh, shell, is_subshell, was_triggered_by_rc_file, is_wsl, is_msys2) = {
+        let (is_ssh, shell) = {
             let model = self.model.lock();
 
             // If we did actually bootstrap, or if the session is no longer usable
@@ -12261,22 +12011,8 @@ impl TerminalView {
             let shell = model
                 .pending_shell_type()
                 .map_or("unknown", |shell| shell.name());
-            let pending_subshell_info = model.pending_subshell_session();
-            let is_subshell = pending_subshell_info.is_some();
-            let was_triggered_by_rc_file = pending_subshell_info
-                .map(|info| info.was_triggered_by_rc_file_snippet)
-                .unwrap_or(false);
-            let is_wsl = model.is_pending_wsl();
-            let is_msys2 = model.is_pending_msys2();
 
-            (
-                is_ssh,
-                shell,
-                is_subshell,
-                was_triggered_by_rc_file,
-                is_wsl,
-                is_msys2,
-            )
+            (is_ssh, shell)
         };
 
         log::warn!("Bootstrapping failed for shell {shell:?} on ssh {is_ssh}");
@@ -12290,11 +12026,6 @@ impl TerminalView {
         // Send the bootstrapping slow event synchronously to ensure that we don't drop
         // the event if the user quits the app before the event queue is flushed and then
         // never reopens the app.
-
-        let bootstrap_block_contents = {
-            let model = self.model.lock();
-            model.block_list().bootstrap_block_contents()
-        };
 
         if !self.is_login_shell_bootstrapped {
             log::warn!("Showing bootstrap slow toast");
@@ -15305,12 +15036,10 @@ impl TerminalView {
     }
 
     fn toggle_input_hint_text(&mut self, ctx: &mut ViewContext<Self>) {
-        let new_val = InputSettings::handle(ctx).update(ctx, |input_settings, ctx| {
+        InputSettings::handle(ctx).update(ctx, |input_settings, ctx| {
             report_if_error!(input_settings.show_hint_text.toggle_and_save_value(ctx));
             *input_settings.show_hint_text
         });
-
-        // Send the same telemetry event that we do from the features page to make data analysis easier.
     }
 
     fn open_workflow_modal_with_command(&mut self, command: String, ctx: &mut ViewContext<Self>) {
@@ -16938,14 +16667,12 @@ impl TerminalView {
     }
 
     fn bookmark_block(&mut self, index: &BlockIndex, ctx: &mut ViewContext<Self>) {
-        let enable_bookmark = match self.bookmarked_blocks.entry(*index) {
+        match self.bookmarked_blocks.entry(*index) {
             Entry::Occupied(occupied) => {
                 occupied.remove();
-                false
             }
             Entry::Vacant(vacant) => {
                 vacant.insert(Default::default());
-                true
             }
         };
 
@@ -17051,23 +16778,11 @@ impl TerminalView {
                 );
             }
             InputEvent::ClearSelectedBlock => self.clear_selected_blocks(ctx),
-            InputEvent::SelectRecentBlocks { count } => {
-                let is_first_selection = self.selected_blocks.is_empty();
-                if is_first_selection && self.ai_input_model.as_ref(ctx).is_ai_input_enabled() {}
-                self.select_most_recent_blocks(*count, ctx)
-            }
+            InputEvent::SelectRecentBlocks { count } => self.select_most_recent_blocks(*count, ctx),
             InputEvent::Copy => self.copy(ctx),
-            InputEvent::UnhandledModifierKeyOnEditor(keystroke) => {}
+            InputEvent::UnhandledModifierKeyOnEditor(_) => {}
             InputEvent::ClearSelectionsWhenShellMode => self.clear_selections_when_shell_mode(ctx),
             InputEvent::AutosuggestionAccepted => {
-                // TODO(suraj): maybe pass down the autosuggestion type and send
-                // the telemetry deeper so we don't have to guesstimate the state
-                if let Some(most_recent_command_correction) =
-                    self.most_recent_command_correction.as_ref()
-                {
-                    let buffer_text = self.input.as_ref(ctx).buffer_text(ctx);
-                    if buffer_text == most_recent_command_correction.command {}
-                }
                 // When an AI query autosuggestion is accepted, there might be attached context
                 // blocks we need to render the border for.
                 ctx.notify()
@@ -19824,7 +19539,6 @@ impl TerminalView {
                 self.ask_ai(ask_source, ctx);
             }
             OpenWorkflowModal => self.open_workflow_modal(ctx),
-            StopSharing => {}
             CopyBlockFilteredOutputs => self.context_menu_copy_filtered_block_outputs(ctx),
             CopyAIDebuggingLink {
                 conversation_token,
@@ -19914,10 +19628,6 @@ impl TerminalView {
                 ctx.clipboard().write(ClipboardContent::plain_text(
                     request_id.as_str().to_string(),
                 ));
-            }
-            OpenConversationShareDialog { conversation_id } => {
-                let _ = conversation_id;
-                log::info!("Skipping hosted conversation sharing dialog in offline Warper build");
             }
             CopyAgentCommand { ai_block_view_id } => {
                 for rich_content in self.rich_content_views.iter() {
@@ -20019,7 +19729,6 @@ impl TerminalView {
         ai_block_view_id: EntityId,
         exchange_id: AIAgentExchangeId,
         conversation_id: AIConversationId,
-        entrypoint: AgentModeRewindEntrypoint,
         ctx: &mut ViewContext<Self>,
     ) {
         ctx.dispatch_typed_action(&WorkspaceAction::ShowRewindConfirmationDialog {
@@ -20067,7 +19776,6 @@ impl TerminalView {
         }
 
         // Iterate from end backwards, reverting all diffs in each AIBlock from this conversation until the block the user clicked on (inclusive)
-        let mut num_blocks_reverted = 0;
         for rich_content in self.rich_content_views.iter().rev() {
             if let Some(ai_metadata) = rich_content.ai_block_metadata() {
                 // Only revert blocks from the same conversation
@@ -20075,7 +19783,6 @@ impl TerminalView {
                     ai_metadata.ai_block_handle.update(ctx, |block, ctx| {
                         block.revert_all_diffs(ctx);
                     });
-                    num_blocks_reverted += 1;
                     if ai_metadata.ai_block_handle.id() == ai_block_view_id {
                         break;
                     }
@@ -20216,7 +19923,7 @@ impl TerminalView {
             Troubleshoot => {
                 ctx.open_url(NOTIFICATIONS_TROUBLESHOOT_URL);
             }
-            TurnOn(trigger) => {
+            TurnOn(_) => {
                 let current_settings = SessionSettings::as_ref(ctx).notifications.value().clone();
                 let new_settings = NotificationsSettings {
                     mode: NotificationsMode::Enabled,
@@ -20343,11 +20050,7 @@ impl TerminalView {
     /// When a filter is toggled off, it is set as inactive but the query remains
     /// saved on the block. It can be reactivated by toggling on. If there is no
     /// inactive query, toggling on a filter will simply open the filter editor.
-    fn toggle_block_filter_on_selected_or_last_block(
-        &mut self,
-        source: ToggleBlockFilterSource,
-        ctx: &mut ViewContext<Self>,
-    ) {
+    fn toggle_block_filter_on_selected_or_last_block(&mut self, ctx: &mut ViewContext<Self>) {
         let model = self.model.lock();
         let Some(selected_or_last_block_index) = self
             .selected_blocks
@@ -20984,7 +20687,6 @@ impl TerminalView {
         }
         drop(model);
 
-        let is_ssh = mode.is_ssh();
         self.use_agent_footer.update(ctx, |footer, ctx| {
             footer.set_warpify_mode(mode, ctx);
         });
@@ -21334,7 +21036,6 @@ impl TypedActionView for TerminalView {
             | StopFileDropTarget
             | RunNativeShellCompletions { .. }
             | SelectAgenticSuggestion(_)
-            | HideUgcPolicyBannerPermanently
             | GenerateCodebaseIndex
             | DeleteAttachment { .. }
             | WriteCodebaseIndex
@@ -21457,13 +21158,12 @@ impl TypedActionView for TerminalView {
                 ai_block_view_id,
                 exchange_id,
                 conversation_id,
-                entrypoint,
+                ..
             } => {
                 self.show_rewind_confirmation_dialog(
                     *ai_block_view_id,
                     *exchange_id,
                     *conversation_id,
-                    *entrypoint,
                     ctx,
                 );
             }
@@ -21496,7 +21196,6 @@ impl TypedActionView for TerminalView {
                         ai_block_view_id,
                         *exchange_id,
                         *conversation_id,
-                        AgentModeRewindEntrypoint::SlashCommand,
                         ctx,
                     );
                 } else {
@@ -21698,7 +21397,7 @@ impl TypedActionView for TerminalView {
 
                 self.ask_ai(&AskAISource::Block(*block_index), ctx)
             }
-            TriggerSubshellBootstrap => self.trigger_subshell_bootstrap(None, false, ctx),
+            TriggerSubshellBootstrap => self.trigger_subshell_bootstrap(None, ctx),
             ShowSubshellBanner(command) => {
                 // Abort handle is no longer needed since we've waited the 1s already.
                 self.warpify_state.take_subshell_banner_abort_handle();
@@ -21766,8 +21465,8 @@ impl TypedActionView for TerminalView {
                     self.add_settings_import_block(ctx);
                 }
             }
-            ToggleBlockFilterOnSelectedOrLastBlock(source) => {
-                self.toggle_block_filter_on_selected_or_last_block(*source, ctx);
+            ToggleBlockFilterOnSelectedOrLastBlock(_) => {
+                self.toggle_block_filter_on_selected_or_last_block(ctx);
             }
             ToggleSnackbarInActivePane => self.toggle_snackbar_in_active_pane(ctx),
             MiddleClickOnGrid { position } => self.middle_click_on_grid(position, ctx),
@@ -21943,7 +21642,6 @@ impl TypedActionView for TerminalView {
                     });
                 }
             }
-            HideUgcPolicyBannerPermanently => self.hide_ugc_policy_banner_permanently(ctx),
             ShowInitializationBlock => self.show_initialization_block(),
             GenerateCodebaseIndex => {
                 self.generate_codebase_index(ctx);

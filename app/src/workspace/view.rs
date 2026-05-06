@@ -4685,12 +4685,6 @@ impl Workspace {
             })
     }
 
-    fn check_and_trigger_ugc_policy_banner_for_existing_users(
-        &mut self,
-        _ctx: &mut ViewContext<Self>,
-    ) {
-    }
-
     fn should_trigger_get_started_onboarding(&self, ctx: &mut ViewContext<Self>) -> bool {
         if !FeatureFlag::GetStartedTab.is_enabled() {
             return false;

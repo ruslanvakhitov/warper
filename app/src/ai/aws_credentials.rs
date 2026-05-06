@@ -3,7 +3,7 @@ use std::time::{Duration, SystemTime};
 use crate::settings::{AISettings, AISettingsChangedEvent};
 use crate::terminal::event::{AfterBlockCompletedEvent, BlockType, UserBlockCompleted};
 use crate::terminal::model_events::{ModelEvent, ModelEventDispatcher};
-use crate::workspaces::user_workspaces::{UserWorkspaces, UserWorkspacesEvent};
+use crate::workspaces::user_workspaces::UserWorkspaces;
 pub use ai::api_keys::AwsCredentials;
 use ai::api_keys::{ApiKeyManager, AwsCredentialsRefreshStrategy, AwsCredentialsState};
 use anyhow::Context;
@@ -170,8 +170,7 @@ pub trait AwsCredentialRefresher {
     ) where
         Self: Sized;
 
-    /// Sets up subscriptions to `UserWorkspaces` and `AISettings` to refresh AWS credentials
-    /// when local policy or AWS Bedrock settings change.
+    /// Sets up subscriptions to `AISettings` to refresh AWS credentials when AWS Bedrock settings change.
     fn subscribe_to_settings_changes(&mut self, ctx: &mut ModelContext<Self>)
     where
         Self: Sized;
@@ -199,13 +198,6 @@ impl AwsCredentialRefresher for ApiKeyManager {
     }
 
     fn subscribe_to_settings_changes(&mut self, ctx: &mut ModelContext<Self>) {
-        // Subscribe to UserWorkspaces events to refresh AWS credentials when local policy changes.
-        ctx.subscribe_to_model(&UserWorkspaces::handle(ctx), |manager, event, ctx| {
-            if matches!(event, UserWorkspacesEvent::LocalPoliciesChanged) {
-                drop(refresh_aws_credentials(manager, ctx));
-            }
-        });
-
         // Subscribe to AISettings changes to refresh AWS credentials when AWS Bedrock settings change
         ctx.subscribe_to_model(&AISettings::handle(ctx), |manager, event, ctx| {
             if matches!(

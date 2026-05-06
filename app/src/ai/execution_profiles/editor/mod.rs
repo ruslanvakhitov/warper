@@ -16,7 +16,6 @@ use crate::view_components::{
     Dropdown, DropdownItem, FilterableDropdown, SubmittableTextInput, SubmittableTextInputEvent,
 };
 use crate::workspace::WorkspaceAction;
-use crate::workspaces::user_workspaces::UserWorkspacesEvent;
 use crate::TemplatableMCPServerManager;
 use crate::UserWorkspaces;
 use crate::{
@@ -747,13 +746,6 @@ impl ExecutionProfileEditorView {
         );
 
         let workspace = UserWorkspaces::handle(ctx);
-        ctx.subscribe_to_model(&workspace, |me, workspace, event, ctx| {
-            if let UserWorkspacesEvent::LocalPoliciesChanged = event {
-                Self::update_all_editor_interaction_states(me, workspace, ctx);
-                ctx.notify();
-            }
-        });
-
         Self::update_all_editor_interaction_states(&view, workspace, ctx);
 
         view.refresh_profile_state(ctx);

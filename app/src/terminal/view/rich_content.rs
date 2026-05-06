@@ -3,9 +3,7 @@ use warpui::{prelude::ChildView, Element, EntityId, View, ViewContext, ViewHandl
 use crate::{
     ai::{
         agent::{conversation::AIConversationId, AIAgentExchangeId},
-        blocklist::{
-            agent_view::AgentViewEntryOrigin, ugc_policy_banner::UgcPolicyBanner, AIBlock,
-        },
+        blocklist::{agent_view::AgentViewEntryOrigin, AIBlock},
     },
     env_vars::env_var_collection_block::EnvVarCollectionBlock,
     terminal::{
@@ -151,13 +149,6 @@ impl RichContent {
         matches!(self.metadata, Some(RichContentMetadata::UsageFooter))
     }
 
-    pub fn is_ugc_policy_banner(&self) -> bool {
-        matches!(
-            self.metadata,
-            Some(RichContentMetadata::UgcPolicyBanner { .. })
-        )
-    }
-
     pub fn is_agent_view_entry(&self) -> bool {
         matches!(self.metadata, Some(RichContentMetadata::AgentViewEntry(_)))
     }
@@ -246,9 +237,6 @@ pub enum RichContentMetadata {
     },
     WarpifySuccessBlock {
         bootstrap_success_block_handle: ViewHandle<WarpifySuccessBlock>,
-    },
-    UgcPolicyBanner {
-        ugc_policy_banner_handle: ViewHandle<UgcPolicyBanner>,
     },
     AgentViewEntry(AgentViewEntryMetadata),
     InlineAgentViewHeader,
