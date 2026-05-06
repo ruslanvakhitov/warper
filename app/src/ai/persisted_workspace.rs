@@ -11,7 +11,6 @@ use repo_metadata::repositories::{DetectedRepositories, DetectedRepositoriesEven
 use serde::{Deserialize, Serialize};
 
 use crate::ai::blocklist::{BlocklistAIHistoryEvent, BlocklistAIHistoryModel};
-use crate::ai::AIRequestUsageModel;
 use crate::persistence::ModelEvent;
 use crate::report_if_error;
 use crate::settings::CodeSettings;
@@ -622,14 +621,7 @@ impl PersistedWorkspace {
         manager: &mut CodebaseIndexManager,
         ctx: &mut ModelContext<CodebaseIndexManager>,
     ) {
-        let request_model = AIRequestUsageModel::handle(ctx);
-        let codebase_limits = request_model.as_ref(ctx).codebase_context_limits();
-        manager.update_max_limits(
-            codebase_limits.max_indices_allowed,
-            codebase_limits.max_files_per_repo,
-            codebase_limits.embedding_generation_batch_size,
-            ctx,
-        );
+        manager.update_max_limits(None, usize::MAX, 100, ctx);
 
         #[cfg(feature = "local_fs")]
         for dir in all_working_directories(ctx) {

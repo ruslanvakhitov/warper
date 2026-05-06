@@ -1,105 +1,14 @@
-use anyhow::{anyhow, Result};
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
 use warpui::{AppContext, Entity, ModelContext, SingletonEntity};
 
-#[derive(Copy, Clone, Debug, Serialize, Deserialize, Eq, PartialEq, Ord, PartialOrd)]
-pub struct ServerTimestamp(DateTime<Utc>);
-
-impl ServerTimestamp {
-    pub fn new(time: DateTime<Utc>) -> Self {
-        Self(time)
-    }
-
-    pub fn from_unix_timestamp_micros(micros_since_epoch: i64) -> Result<Self> {
-        let date_time = DateTime::from_timestamp_micros(micros_since_epoch)
-            .ok_or_else(|| anyhow!("Unable to convert microseconds into DateTime"))?;
-        Ok(Self::new(date_time))
-    }
-
-    pub fn timestamp_micros(&self) -> i64 {
-        self.0.timestamp_micros()
-    }
-
-    pub fn utc(&self) -> DateTime<Utc> {
-        self.0
-    }
-}
-
-impl From<DateTime<Utc>> for ServerTimestamp {
-    fn from(value: DateTime<Utc>) -> Self {
-        Self::new(value)
-    }
-}
-
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
-pub enum RequestLimitRefreshDuration {
-    Weekly,
-    Monthly,
-    EveryTwoWeeks,
-}
-
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
-pub struct RequestLimitInfo {
-    pub limit: usize,
-    pub num_requests_used_since_refresh: usize,
-    pub next_refresh_time: ServerTimestamp,
-    pub is_unlimited: bool,
-    pub request_limit_refresh_duration: RequestLimitRefreshDuration,
-    pub is_unlimited_voice: bool,
-    #[serde(default)]
-    pub voice_request_limit: usize,
-    #[serde(default)]
-    pub voice_requests_used_since_last_refresh: usize,
-    #[serde(default)]
-    pub is_unlimited_codebase_indices: bool,
-    #[serde(default)]
-    pub max_codebase_indices: usize,
-    #[serde(default)]
-    pub max_files_per_repo: usize,
-    #[serde(default)]
-    pub embedding_generation_batch_size: usize,
-}
-
-impl Default for RequestLimitInfo {
-    fn default() -> Self {
-        Self {
-            limit: usize::MAX,
-            num_requests_used_since_refresh: 0,
-            next_refresh_time: ServerTimestamp::new(Utc::now() + chrono::Duration::days(30)),
-            is_unlimited: true,
-            request_limit_refresh_duration: RequestLimitRefreshDuration::Monthly,
-            is_unlimited_voice: true,
-            voice_request_limit: usize::MAX,
-            voice_requests_used_since_last_refresh: 0,
-            is_unlimited_codebase_indices: true,
-            max_codebase_indices: usize::MAX,
-            max_files_per_repo: usize::MAX,
-            embedding_generation_batch_size: 100,
-        }
-    }
-}
-
-impl RequestLimitInfo {
-    pub fn new_for_evals() -> Self {
-        Self::default()
-    }
-}
-
-pub struct CodebaseContextUsageLimit {
-    pub max_files_per_repo: usize,
-    pub max_indices_allowed: Option<usize>,
-    pub embedding_generation_batch_size: usize,
-}
-
 pub struct AIRequestUsageModel {
-    request_limit_info: RequestLimitInfo,
+    next_refresh_time: DateTime<Utc>,
 }
 
 impl AIRequestUsageModel {
     pub fn new(_ctx: &mut ModelContext<Self>) -> Self {
         Self {
-            request_limit_info: RequestLimitInfo::default(),
+            next_refresh_time: Utc::now() + chrono::Duration::days(30),
         }
     }
 
@@ -107,28 +16,8 @@ impl AIRequestUsageModel {
         true
     }
 
-    pub fn can_request_voice(&self) -> bool {
-        true
-    }
-
-    pub fn request_limit_info(&self) -> RequestLimitInfo {
-        self.request_limit_info
-    }
-
     pub fn next_refresh_time(&self) -> chrono::DateTime<Utc> {
-        self.request_limit_info.next_refresh_time.utc()
-    }
-
-    pub fn codebase_context_usage_limit(&self) -> CodebaseContextUsageLimit {
-        CodebaseContextUsageLimit {
-            max_files_per_repo: usize::MAX,
-            max_indices_allowed: None,
-            embedding_generation_batch_size: 100,
-        }
-    }
-
-    pub fn codebase_context_limits(&self) -> CodebaseContextUsageLimit {
-        self.codebase_context_usage_limit()
+        self.next_refresh_time
     }
 }
 
