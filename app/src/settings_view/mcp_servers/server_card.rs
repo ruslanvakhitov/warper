@@ -610,19 +610,12 @@ impl ServerCardView {
                     .get_installed_server(&installation_uuid);
                 if let Some(installation) = installation {
                     let template_uuid = installation.template_uuid();
-                    let gallery_uuid = installation.gallery_uuid();
-                    let gallery_uuid_text = match gallery_uuid {
-                        Some(uuid) => format!("Gallery Id: {uuid}"),
-                        None => "Gallery Id: None".to_string(),
-                    };
                     lines.push(format!(
                         "{}",
                         ServerCardItemId::TemplatableMCP(template_uuid)
                     ));
-                    lines.push(gallery_uuid_text);
                 }
             }
-            ServerCardItemId::GalleryMCP(_) => {}
             ServerCardItemId::FileBasedMCP(_) => {}
         }
 

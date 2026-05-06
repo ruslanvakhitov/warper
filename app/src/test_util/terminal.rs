@@ -6,9 +6,7 @@ use warp_core::ui::appearance::Appearance;
 
 use crate::ai::active_agent_views_model::ActiveAgentViewsModel;
 use crate::ai::document::ai_document_model::AIDocumentModel;
-use crate::ai::mcp::{
-    gallery::MCPGalleryManager, templatable_manager::TemplatableMCPServerManager,
-};
+use crate::ai::mcp::templatable_manager::TemplatableMCPServerManager;
 use crate::ai::persisted_workspace::PersistedWorkspace;
 use crate::ai::skills::SkillManager;
 use crate::code_review::git_status_update::GitStatusUpdateModel;
@@ -56,7 +54,6 @@ pub fn initialize_app_for_terminal_view(app: &mut App) {
     app.add_singleton_model(|_| SystemStats::new());
     app.add_singleton_model(|_| Prompt::mock());
     app.add_singleton_model(UserWorkspaces::default_mock);
-    app.add_singleton_model(MCPGalleryManager::new);
     app.add_singleton_model(|_| Appearance::mock());
     app.add_singleton_model(PrivacySettings::mock);
     app.add_singleton_model(|_ctx| SyncedInputState::mock());

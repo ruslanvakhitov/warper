@@ -330,7 +330,6 @@ impl ParsedTemplatableMCPServerResult {
                 variables,
             },
             version: DateTime::now().timestamp(),
-            gallery_data: None,
         };
 
         // Combine env and headers into a single map for variable lookup

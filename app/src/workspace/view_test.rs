@@ -43,8 +43,7 @@ use crate::terminal::local_tty::spawner::PtySpawner;
 
 use crate::ai::active_agent_views_model::ActiveAgentViewsModel;
 use crate::ai::mcp::{
-    gallery::MCPGalleryManager, templatable_manager::TemplatableMCPServerManager,
-    FileBasedMCPManager, FileMCPWatcher,
+    templatable_manager::TemplatableMCPServerManager, FileBasedMCPManager, FileMCPWatcher,
 };
 use crate::terminal::cli_agent_sessions::CLIAgentSessionsModel;
 use crate::test_util::settings::initialize_settings_for_tests;
@@ -71,7 +70,6 @@ fn initialize_app(app: &mut App) {
     app.add_singleton_model(|_| NetworkStatus::new());
     app.add_singleton_model(|_| SystemStats::new());
     app.add_singleton_model(UserWorkspaces::default_mock);
-    app.add_singleton_model(MCPGalleryManager::new);
     app.add_singleton_model(|_| Appearance::mock());
     app.add_singleton_model(AppearanceManager::new);
     app.add_singleton_model(|_| DisplayCount::mock());

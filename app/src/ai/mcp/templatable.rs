@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use chrono::Utc;
 use handlebars::get_arguments;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default, Hash)]
 pub struct JsonTemplate {
@@ -20,12 +19,6 @@ pub struct TemplateVariable {
     pub allowed_values: Option<Vec<String>>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub struct GalleryData {
-    pub gallery_item_id: Uuid,
-    pub version: i32,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct TemplatableMCPServer {
     pub uuid: uuid::Uuid,
@@ -34,7 +27,6 @@ pub struct TemplatableMCPServer {
     pub template: JsonTemplate,
     #[serde(default)]
     pub version: i64, // This will default to 0 if stored objects have no version
-    pub gallery_data: Option<GalleryData>,
 }
 
 #[derive(Debug)]
@@ -176,7 +168,6 @@ impl TemplatableMCPServer {
                         variables,
                     },
                     version: Utc::now().timestamp(),
-                    gallery_data: None,
                 }
             })
             .collect())

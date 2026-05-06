@@ -5,7 +5,6 @@ use crate::ai::active_agent_views_model::ActiveAgentViewsModel;
 use crate::ai::blocklist::{AIQueryHistory, BlocklistAIPermissions};
 use crate::ai::execution_profiles::profiles::AIExecutionProfilesModel;
 use crate::ai::llms::LLMPreferences;
-use crate::ai::mcp::gallery::MCPGalleryManager;
 use crate::ai::mcp::templatable_manager::TemplatableMCPServerManager;
 use crate::ai::outline::RepoOutlines;
 use crate::ai::persisted_workspace::PersistedWorkspace;
@@ -96,7 +95,6 @@ pub fn initialize_app(app: &mut App) {
     app.add_singleton_model(|_| SystemStats::new());
     app.add_singleton_model(|_| Prompt::mock());
     app.add_singleton_model(UserWorkspaces::default_mock);
-    app.add_singleton_model(MCPGalleryManager::new);
     app.add_singleton_model(|_| Appearance::mock());
     app.add_singleton_model(PrivacySettings::mock);
     app.add_singleton_model(|_ctx| SyncedInputState::mock());

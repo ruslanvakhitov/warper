@@ -1385,20 +1385,15 @@ impl RootView {
         true
     }
 
-    /// Opens the MCP servers settings page in an existing window, optionally triggering auto-install.
-    /// Waits for `initial_load_complete` before opening so gallery data is available for autoinstall.
+    /// Opens the MCP servers settings page in an existing window.
     pub fn open_mcp_settings_in_existing_window(
         &mut self,
         args: &OpenMCPSettingsArgs,
         ctx: &mut ViewContext<Self>,
     ) -> bool {
-        let autoinstall = args.autoinstall.clone();
+        let _ = args;
         self.workspace.update(ctx, |workspace, ctx| {
-            workspace.open_mcp_servers_page(
-                MCPServersSettingsPage::List,
-                autoinstall.as_deref(),
-                ctx,
-            );
+            workspace.open_mcp_servers_page(MCPServersSettingsPage::List, ctx);
         });
         let window_id = ctx.window_id();
         ctx.windows().show_window_and_focus_app(window_id);

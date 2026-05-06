@@ -18,7 +18,6 @@ use crate::settings_view::SettingsSection;
 use crate::user_config::load_launch_configs;
 use crate::{quake_mode_window_id, quake_mode_window_is_open, safe_info, ChannelState, OpenPath};
 use anyhow::{anyhow, ensure, Result};
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::str::FromStr;
 use url::Url;
@@ -31,12 +30,8 @@ use self::docker::open_docker_container;
 
 const DESKTOP_REDIRECT_URI_PATH: &str = "/desktop_redirect";
 
-/// Args for opening the MCP settings page via deeplink, with optional auto-install.
-/// The `autoinstall` value is the raw query param string; it is matched case-insensitively
-/// against gallery titles in `autoinstall_from_gallery`.
-pub struct OpenMCPSettingsArgs {
-    pub autoinstall: Option<String>,
-}
+/// Args for opening the MCP settings page via deeplink.
+pub struct OpenMCPSettingsArgs;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum UriHost {
@@ -117,16 +112,10 @@ impl UriHost {
                     .flatten()
                     .last()
                     .map(|s| s.to_string());
-                let query_string: HashMap<_, _> = url.query_pairs().collect();
-
                 if let Some(settings_sub_page) = settings_sub_page {
                     match settings_sub_page.as_str() {
                         "mcp" => {
-                            // warp://settings/mcp?autoinstall=<name> auto-installs a gallery MCP server.
-                            // The value is matched case-insensitively against gallery titles.
-                            let autoinstall =
-                                query_string.get("autoinstall").map(|v| v.to_string());
-                            let args = OpenMCPSettingsArgs { autoinstall };
+                            let args = OpenMCPSettingsArgs;
                             dispatch_action_in_new_or_existing_window(
                                 primary_window_id,
                                 "root_view:open_mcp_settings_in_existing_window",

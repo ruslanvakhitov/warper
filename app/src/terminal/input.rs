@@ -1018,9 +1018,6 @@ pub enum InputAction {
     /// Clears attached blocks and text selection context.
     ClearAttachedContext,
 
-    /// Fired when the "Get Figma MCP" contextual button is clicked.
-    FigmaAddButtonClicked,
-
     /// Fired when the "Enable Figma MCP" contextual button is clicked.
     FigmaEnableButtonClicked,
 }
@@ -12151,11 +12148,6 @@ impl TypedActionView for Input {
             }
             InputAction::OpenModelSelector => {
                 self.open_model_selector(ctx);
-            }
-            InputAction::FigmaAddButtonClicked => {
-                TemplatableMCPServerManager::handle(ctx).update(ctx, |manager, ctx| {
-                    manager.install_figma_from_gallery(ctx);
-                });
             }
             InputAction::FigmaEnableButtonClicked => {
                 TemplatableMCPServerManager::handle(ctx).update(ctx, |manager, ctx| {

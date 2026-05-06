@@ -10,9 +10,7 @@ use std::sync::Arc;
 use std::{collections::HashMap, future::Future};
 
 use crate::ai::mcp::http_client::build_client_with_headers;
-use crate::ai::mcp::templatable::GalleryData;
 use crate::ai::mcp::templatable_manager::FigmaMcpStatus;
-use crate::ai::mcp::{JsonTemplate, MCPGalleryManager, MCPServerUpdate};
 
 use crate::ai::mcp::parsing::resolve_json;
 use crate::ai::mcp::TemplatableMCPServer;
@@ -761,24 +759,6 @@ impl TemplatableMCPServerManager {
         }
     }
 
-    /// Installs the Figma MCP server from the MCP gallery.
-    pub fn install_figma_from_gallery(&mut self, ctx: &mut ModelContext<Self>) {
-        let figma_gallery_server = MCPGalleryManager::as_ref(ctx)
-            .get_gallery()
-            .into_iter()
-            .find(|item| item.title() == "Figma");
-        let Some(figma_gallery_server) = figma_gallery_server else {
-            log::warn!("Could not find Figma MCP server in gallery");
-            return;
-        };
-        let Ok(templatable_mcp_server) = TemplatableMCPServer::try_from(figma_gallery_server)
-        else {
-            log::warn!("Failed to convert Figma gallery item to TemplatableMCPServer");
-            return;
-        };
-        self.install_from_template(templatable_mcp_server, HashMap::new(), true, ctx);
-    }
-
     pub fn delete_templatable_mcp_server_installation(
         &mut self,
         installation_uuid: Uuid,
@@ -829,144 +809,6 @@ impl TemplatableMCPServerManager {
             ));
         }
         ctx.notify();
-    }
-
-    fn get_update_from_gallery(
-        &self,
-        installation_uuid: Uuid,
-        app: &AppContext,
-    ) -> Option<MCPServerUpdate> {
-        let installation = self.get_installed_server(&installation_uuid)?;
-
-        let GalleryData {
-            gallery_item_id,
-            version: installed_gallery_version,
-        } = installation.templatable_mcp_server().gallery_data?;
-
-        let gallery_item = MCPGalleryManager::as_ref(app).get_gallery_item(gallery_item_id)?;
-
-        // Return early if the gallery version isn't out of date
-        if gallery_item.version() <= installed_gallery_version {
-            return None;
-        }
-
-        let gallery_templatable_mcp_server =
-            MCPGalleryManager::as_ref(app).get_templatable_mcp_server(gallery_item_id)?;
-
-        Some(MCPServerUpdate::Gallery {
-            name: gallery_item.title(),
-            new_version: gallery_item.version(),
-            json_template: gallery_templatable_mcp_server.template.clone(),
-        })
-    }
-
-    fn deduplicate_updates(
-        &self,
-        installation_uuid: Uuid,
-        updates: Vec<MCPServerUpdate>,
-    ) -> Vec<MCPServerUpdate> {
-        let Some(installation) = self.get_installed_server(&installation_uuid) else {
-            log::error!("Could not find installed server {installation_uuid}");
-            return updates.to_vec();
-        };
-
-        let installed_template = &installation.templatable_mcp_server().template;
-
-        let mut templates_to_keep: std::collections::HashMap<JsonTemplate, usize> =
-            std::collections::HashMap::new();
-
-        for (index, update) in updates.iter().enumerate() {
-            let json_template = match update {
-                MCPServerUpdate::Gallery { json_template, .. } => json_template,
-            };
-
-            // De-duplicate those that are the same as the currently installed template
-            if installed_template == json_template {
-                log::info!(
-                    "De-duplicating one update for {installation_uuid} which is the same as the current template."
-                );
-                continue;
-            }
-
-            // De-duplicate those that are identical to each other
-            if let Some(other_template_index) = templates_to_keep.get(json_template).copied() {
-                log::info!("De-duplicating one identical update for {installation_uuid}.");
-
-                // We should prioritize the gallery version & the newest version
-                let other_update = &updates[other_template_index];
-                let should_replace = match (update, other_update) {
-                    (
-                        MCPServerUpdate::Gallery { new_version, .. },
-                        MCPServerUpdate::Gallery {
-                            new_version: other_new_version,
-                            ..
-                        },
-                    ) => new_version > other_new_version,
-                };
-
-                if should_replace {
-                    templates_to_keep.insert(json_template.clone(), index);
-                }
-            } else {
-                // This is a new template, so we can add it
-                templates_to_keep.insert(json_template.clone(), index);
-            }
-        }
-
-        templates_to_keep
-            .values()
-            .map(|&template_index| updates[template_index].clone())
-            .collect()
-    }
-
-    pub fn is_update_available_for_installation(
-        &self,
-        installation_uuid: Uuid,
-        app: &AppContext,
-    ) -> bool {
-        !self
-            .get_updates_available_for_installation(installation_uuid, app)
-            .is_empty()
-    }
-
-    pub fn get_updates_available_for_installation(
-        &self,
-        installation_uuid: Uuid,
-        app: &AppContext,
-    ) -> Vec<MCPServerUpdate> {
-        let options: Vec<MCPServerUpdate> = [self.get_update_from_gallery(installation_uuid, app)]
-            .iter()
-            .filter_map(|option| option.clone())
-            .collect();
-        for option in options.clone() {
-            log::debug!("Updates: {:?}", option);
-        }
-        self.deduplicate_updates(installation_uuid, options)
-    }
-
-    pub fn update_templatable_mcp_server_installation(
-        &mut self,
-        installation_uuid: Uuid,
-        templatable_mcp_server: &TemplatableMCPServer,
-        reuse_variable_values: bool,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        let existing_variable_values = self
-            .get_installed_server(&installation_uuid)
-            .map(|installation| installation.variable_values().clone());
-
-        self.delete_templatable_mcp_server_installation(installation_uuid, ctx);
-
-        if reuse_variable_values {
-            if let Some(existing_variable_values) = existing_variable_values {
-                self.install_from_template(
-                    templatable_mcp_server.clone(),
-                    existing_variable_values,
-                    true,
-                    ctx,
-                );
-            }
-        }
     }
 
     pub fn is_authorized_editor(&self, template_uuid: Uuid, _ctx: &AppContext) -> bool {

@@ -32,7 +32,7 @@ use crate::ai::persisted_workspace::PersistedWorkspace;
 use crate::ai::{
     agent::{conversation::AIConversationId, EntrypointType},
     blocklist::{inline_action::code_diff_view::CodeDiffView, SlashCommandRequest},
-    facts::{view::AIFactPage, AIFactView, AIFactViewEvent},
+    facts::view::AIFactPage,
 };
 use crate::app_state::{
     LeafContents, LeafSnapshot, LeftPanelDisplayedTab, LeftPanelSnapshot, NotebookPaneSnapshot,
@@ -97,7 +97,6 @@ use crate::ai::execution_profiles::profiles::{AIExecutionProfilesModel, ClientPr
 #[cfg(feature = "local_fs")]
 use crate::code::editor_management::CodeManager;
 use crate::code::editor_management::CodeSource;
-use crate::code_review::metadata::CodeReviewPaneEntrypoint;
 use crate::launch_configs::launch_config::WindowTemplate;
 use crate::pane_group::{
     CodeReviewPanelArg, Direction as PaneGroupDirection, ExecutionProfileEditorPane, PaneGroup,
@@ -151,7 +150,6 @@ use crate::terminal::keys_settings::KeysSettings;
 use crate::ai::blocklist::agent_view::editor::{AgentToolbarEditorEvent, AgentToolbarEditorModal};
 use crate::prompt::editor_modal::{
     EditorModal as PromptEditorModal, EditorModalEvent as PromptEditorModalEvent,
-    OpenSource as PromptEditorOpenSource,
 };
 use crate::report_if_error;
 use crate::resource_center::{
@@ -196,7 +194,9 @@ use crate::terminal::view::docker_sandbox::DEFAULT_DOCKER_SANDBOX_BASE_IMAGE;
 use crate::terminal::{self, SizeInfo, TerminalView};
 #[cfg(target_os = "macos")]
 use crate::workspace::cli_install;
-use crate::workspace::metadata::{AddTabWithShellSource, LaunchConfigUiLocation};
+#[cfg(all(target_os = "windows", feature = "local_tty"))]
+use crate::workspace::metadata::AddTabWithShellSource;
+use crate::workspace::metadata::LaunchConfigUiLocation;
 use crate::workspaces::user_workspaces::UserWorkspaces;
 use ::settings::{Setting, ToggleableSetting};
 use warp_core::features::FeatureFlag;
@@ -211,6 +211,7 @@ use crate::themes::theme_chooser::{ThemeChooser, ThemeChooserEvent, ThemeChooser
 use crate::themes::theme_creator_modal::{ThemeCreatorModal, ThemeCreatorModalEvent};
 use crate::themes::theme_deletion_modal::{ThemeDeletionModal, ThemeDeletionModalEvent};
 use crate::tips::{TipsEvent, TipsView};
+#[cfg(target_family = "wasm")]
 use crate::ui_components::blended_colors;
 use crate::ui_components::buttons::{combo_inner_button, icon_button_with_color};
 use crate::undo_close::UndoCloseStack;
@@ -297,9 +298,6 @@ use super::util::{
 };
 use crate::launch_configs::save_modal::{LaunchConfigModalEvent, LaunchConfigSaveModal};
 use crate::tab_configs::action_sidecar::SidecarItemKind;
-use crate::tab_configs::metadata::{ExistingTabConfigOpenMode, GuidedModalSessionType};
-#[cfg(feature = "local_fs")]
-use crate::tab_configs::metadata::{NewWorktreeConfigOpenSource, WorktreeBranchNamingMode};
 use crate::tab_configs::remove_confirmation_dialog::{
     RemoveTabConfigConfirmationDialog, RemoveTabConfigConfirmationEvent,
 };
@@ -312,8 +310,8 @@ use crate::code::editor::{add_color, remove_color};
 use crate::palette::PaletteMode;
 use crate::search::command_palette::view::{Event as CommandPaletteEvent, View as CommandPalette};
 use crate::tab::{
-    tab_position_id, NewSessionMenuItem, PaneNameMenuTarget, SelectedTabColor, TabActionMetadata,
-    TabBarState, TabComponent, TabData, TAB_BAR_BORDER_HEIGHT,
+    tab_position_id, NewSessionMenuItem, PaneNameMenuTarget, SelectedTabColor, TabBarState,
+    TabComponent, TabData, TAB_BAR_BORDER_HEIGHT,
 };
 use crate::terminal::view::ssh_file_upload::FileUploadId;
 use crate::ui_components::icons;
@@ -383,8 +381,6 @@ pub const TOTAL_TAB_BAR_HEIGHT: f32 = TAB_BAR_HEIGHT + TAB_BAR_BORDER_HEIGHT;
 
 const TAB_BAR_ICON_PADDING: f32 = 4.;
 
-const TAB_BAR_PILL_WIDTH: f32 = 100.;
-const PILL_FONT_SIZE: f32 = 12.;
 const TAB_BAR_OVERFLOW_MENU_WIDTH: f32 = 300.;
 
 #[cfg(not(target_family = "wasm"))]
@@ -458,7 +454,6 @@ const MAX_FORK_TOAST_TITLE_LENGTH: usize = 100;
 // The max length of the window title (matching conversation title truncation).
 const MAX_WINDOW_TITLE_LENGTH: usize = 80;
 
-/// The default display name used for the user if they have no associated display name.
 lazy_static! {
     static ref PANEL_CORNER_RADIUS: CornerRadius = CornerRadius::with_all(Radius::Pixels(8.));
     static ref PANEL_HEADER_CORNER_RADIUS: CornerRadius =
@@ -633,19 +628,7 @@ struct CodeReviewPaneContext {
 struct RightPanelUpdateParams<'a> {
     pane_group: &'a ViewHandle<PaneGroup>,
     target_open_state: bool,
-    entrypoint: Option<CodeReviewPaneEntrypoint>,
-    cli_agent: Option<crate::terminal::CLIAgent>,
     review_pane_context: Option<&'a CodeReviewPaneContext>,
-}
-
-/// Groups a modal view handle with the ID of the tab that was created to host
-/// it, so the custom tab title can be cleared on close regardless of which tab
-/// is active at that point.
-struct ModalWithTab<V> {
-    view: ViewHandle<V>,
-    /// Set when the modal opens a new tab; consumed (taken) when the modal
-    /// closes so we can clear the custom tab title.
-    tab_pane_group_id: Option<EntityId>,
 }
 
 /// Context saved when the session config modal triggers `open_tab_config` and
@@ -758,7 +741,6 @@ pub struct Workspace {
     open_in_warp_button: ViewHandle<ActionButton>,
 
     file_upload_sessions: FileUploadSessions,
-    ai_fact_view: Option<ViewHandle<AIFactView>>,
     left_panel_open: bool,
     vertical_tabs_panel_open: bool,
     vertical_tabs_panel: VerticalTabsPanelState,
@@ -1205,10 +1187,10 @@ impl Workspace {
         ctx: &mut ViewContext<Self>,
     ) {
         match event {
-            SuggestedRuleModalEvent::AddNewRule { rule } => {
+            SuggestedRuleModalEvent::AddNewRule { .. } => {
                 self.current_workspace_state.is_suggested_rule_modal_open = false;
             }
-            SuggestedRuleModalEvent::OpenRuleForEditing { rule } => {
+            SuggestedRuleModalEvent::OpenRuleForEditing { .. } => {
                 self.current_workspace_state.is_suggested_rule_modal_open = false;
                 self.open_ai_fact_collection_pane(Some(Direction::Right), None, ctx);
             }
@@ -2209,7 +2191,6 @@ impl Workspace {
             user_menu,
             native_modal,
             file_upload_sessions: Default::default(),
-            ai_fact_view: None,
             left_panel_open: false,
             vertical_tabs_panel_open: false,
             vertical_tabs_panel: Default::default(),
@@ -2261,13 +2242,6 @@ impl Workspace {
     #[cfg(any(test, feature = "integration_tests"))]
     pub fn command_palette_view(&self) -> ViewHandle<crate::search::command_palette::View> {
         self.palette.clone()
-    }
-
-    #[cfg(any(test, feature = "integration_tests"))]
-    pub fn ai_fact_view(&self) -> ViewHandle<AIFactView> {
-        self.ai_fact_view
-            .clone()
-            .expect("AI fact view is not registered in local-only Warper")
     }
 
     fn handle_task_status_reset(&mut self, pane_group_id: EntityId, ctx: &mut ViewContext<Self>) {
@@ -3876,47 +3850,6 @@ impl Workspace {
         ctx.focus(&self.header_toolbar_editor_modal);
     }
 
-    fn handle_ai_fact_view_event(&mut self, event: &AIFactViewEvent, ctx: &mut ViewContext<Self>) {
-        match event {
-            AIFactViewEvent::OpenSettings => {
-                self.show_settings_with_section(Some(SettingsSection::WarpAgent), ctx);
-            }
-            #[allow(unused_variables)]
-            AIFactViewEvent::OpenFile(path) => {
-                #[cfg(feature = "local_fs")]
-                self.open_code(
-                    CodeSource::Link {
-                        path: path.clone(),
-                        range_start: None,
-                        range_end: None,
-                    },
-                    *EditorSettings::as_ref(ctx).open_file_layout.value(),
-                    None,  // no line/column specified
-                    false, // preview
-                    &[],
-                    ctx,
-                );
-            }
-            AIFactViewEvent::InitializeProject(path) => {
-                let active_terminal_view = self
-                    .active_tab_pane_group()
-                    .as_ref(ctx)
-                    .active_session_view(ctx);
-
-                if let Some(terminal_view) = active_terminal_view {
-                    terminal_view.update(ctx, |terminal_view, ctx| {
-                        terminal_view.open_repo_folder(
-                            path.to_string_lossy().to_string(),
-                            true,
-                            ctx,
-                        );
-                    });
-                }
-            }
-            _ => {}
-        }
-    }
-
     #[cfg(feature = "local_fs")]
     fn get_active_session(&self, ctx: &mut ViewContext<Self>) -> Option<Arc<Session>> {
         let pane_group = self.active_tab_pane_group();
@@ -4513,7 +4446,6 @@ impl Workspace {
         ctx: &mut ViewContext<Self>,
     ) {
         if tab_config.params.is_empty() {
-            let is_worktree_config = tab_config.is_worktree();
             let worktree_branch_name = self.maybe_generate_worktree_name(&tab_config);
             let param_values = tab_config.default_param_values();
             self.open_tab_config_with_params(
@@ -5544,13 +5476,7 @@ impl Workspace {
             terminal_view: panel_context.terminal_view.clone(),
         };
 
-        self.open_right_panel(
-            &context,
-            &pane_group,
-            panel_context.entrypoint,
-            panel_context.cli_agent,
-            ctx,
-        );
+        self.open_right_panel(&context, &pane_group, ctx);
 
         let active_conversation_id = panel_context
             .terminal_view
@@ -5656,8 +5582,6 @@ impl Workspace {
             RightPanelUpdateParams {
                 pane_group: pane_group_handle,
                 target_open_state,
-                entrypoint: Some(CodeReviewPaneEntrypoint::RightPanel),
-                cli_agent: None,
                 review_pane_context: context.as_ref(),
             },
             ctx,
@@ -5669,8 +5593,6 @@ impl Workspace {
         &mut self,
         context: &CodeReviewPaneContext,
         pane_group_handle: &ViewHandle<PaneGroup>,
-        entrypoint: CodeReviewPaneEntrypoint,
-        cli_agent: Option<crate::terminal::CLIAgent>,
         ctx: &mut ViewContext<Self>,
     ) {
         if pane_group_handle.as_ref(ctx).right_panel_open {
@@ -5686,8 +5608,6 @@ impl Workspace {
             RightPanelUpdateParams {
                 pane_group: pane_group_handle,
                 target_open_state: true,
-                entrypoint: Some(entrypoint),
-                cli_agent,
                 review_pane_context: Some(context),
             },
             ctx,
@@ -5704,8 +5624,6 @@ impl Workspace {
         &mut self,
         _context: &CodeReviewPaneContext,
         _pane_group_handle: &ViewHandle<PaneGroup>,
-        _entrypoint: CodeReviewPaneEntrypoint,
-        _cli_agent: Option<crate::terminal::CLIAgent>,
         _ctx: &mut ViewContext<Self>,
     ) {
     }
@@ -5719,8 +5637,6 @@ impl Workspace {
             RightPanelUpdateParams {
                 pane_group: pane_group_handle,
                 target_open_state: false,
-                entrypoint: None,
-                cli_agent: None,
                 review_pane_context: None,
             },
             ctx,
@@ -6586,11 +6502,6 @@ impl Workspace {
 
         match toml::from_str::<crate::tab_configs::TabConfig>(&toml_content) {
             Ok(tab_config) => {
-                let naming_mode = if worktree_branch_name.is_some() {
-                    WorktreeBranchNamingMode::Manual
-                } else {
-                    WorktreeBranchNamingMode::Auto
-                };
                 if let Some(name) = worktree_branch_name {
                     // First open with manual name — bypass the params modal.
                     let mut param_values = HashMap::new();
@@ -7643,12 +7554,7 @@ impl Workspace {
     }
 
     // Adds a tab with a specific shell, only meant to be dispatched directly by actions.
-    fn add_tab_with_shell(
-        &mut self,
-        shell: AvailableShell,
-        source: AddTabWithShellSource,
-        ctx: &mut ViewContext<Self>,
-    ) {
+    fn add_tab_with_shell(&mut self, shell: AvailableShell, ctx: &mut ViewContext<Self>) {
         self.add_new_session_tab_with_default_mode(
             NewSessionSource::Tab,
             Some(ctx.window_id()),
@@ -9616,7 +9522,7 @@ impl Workspace {
                 self.open_ai_fact_collection_pane(None, Some(page), ctx);
             }
             pane_group::Event::OpenPromptEditor => {
-                self.open_prompt_editor(PromptEditorOpenSource::InputContextMenu, ctx);
+                self.open_prompt_editor(ctx);
             }
             pane_group::Event::OpenAgentToolbarEditor => {
                 self.open_agent_toolbar_editor(AgentToolbarEditorMode::AgentView, ctx);
@@ -9626,7 +9532,7 @@ impl Workspace {
             }
             pane_group::Event::OpenMCPSettingsPage { page } => {
                 // Open the MCP servers settings page to the list page
-                self.open_mcp_servers_page(page.unwrap_or_default(), None, ctx);
+                self.open_mcp_servers_page(page.unwrap_or_default(), ctx);
             }
             pane_group::Event::OpenAddRulePane => {
                 // Open the AI Fact Collection pane directly with the Rule Editor page for adding a new rule
@@ -11179,17 +11085,16 @@ impl Workspace {
         self.open_settings_pane(section, Some(search_query), ctx);
     }
 
-    /// Opens the MCP servers settings page, optionally triggering auto-install of a gallery MCP.
+    /// Opens the MCP servers settings page.
     pub fn open_mcp_servers_page(
         &mut self,
         page: MCPServersSettingsPage,
-        autoinstall_gallery_title: Option<&str>,
         ctx: &mut ViewContext<Self>,
     ) {
         self.show_settings_with_section(Some(SettingsSection::MCPServers), ctx);
 
         self.settings_pane.update(ctx, |view, ctx| {
-            view.open_mcp_servers_page(page, autoinstall_gallery_title, ctx);
+            view.open_mcp_servers_page(page, ctx);
         });
     }
 
@@ -11622,11 +11527,7 @@ impl Workspace {
         ctx.notify();
     }
 
-    fn open_prompt_editor(
-        &mut self,
-        open_source: PromptEditorOpenSource,
-        ctx: &mut ViewContext<Self>,
-    ) {
+    fn open_prompt_editor(&mut self, ctx: &mut ViewContext<Self>) {
         // Try to get a prompt preview from an active session. Otherwise, read it from the settings
         // view.
         let ps1_grid_info = self.active_session_ps1_grid_info(ctx).or_else(|| {
@@ -14206,9 +14107,7 @@ impl TypedActionView for Workspace {
                 );
                 ctx.notify();
             }
-            AddTabWithShell { shell, source } => {
-                self.add_tab_with_shell(shell.clone(), *source, ctx)
-            }
+            AddTabWithShell { shell, .. } => self.add_tab_with_shell(shell.clone(), ctx),
             AddGetStartedTab => self.add_get_started_tab(ctx),
             AddAgentTab => self.add_terminal_tab_with_new_agent_view(ctx),
             AddDockerSandboxTab => self.add_docker_sandbox_tab(ctx),
@@ -14538,13 +14437,7 @@ impl TypedActionView for Workspace {
                                 diff_state_model,
                                 terminal_view,
                             };
-                            self.open_right_panel(
-                                &context,
-                                &pane_group_handle,
-                                CodeReviewPaneEntrypoint::GitDiffChip,
-                                None,
-                                ctx,
-                            );
+                            self.open_right_panel(&context, &pane_group_handle, ctx);
                         }
                     }
                 }
@@ -14606,32 +14499,29 @@ impl TypedActionView for Workspace {
                 ctx.notify();
             }
             ToggleVerticalTabsShowPrLink => {
-                let new_value = TabSettings::handle(ctx).update(ctx, |settings, ctx| {
+                TabSettings::handle(ctx).update(ctx, |settings, ctx| {
                     let new_value = !*settings.vertical_tabs_show_pr_link.value();
                     let _ = settings
                         .vertical_tabs_show_pr_link
                         .set_value(new_value, ctx);
-                    new_value
                 });
                 ctx.notify();
             }
             ToggleVerticalTabsShowDiffStats => {
-                let new_value = TabSettings::handle(ctx).update(ctx, |settings, ctx| {
+                TabSettings::handle(ctx).update(ctx, |settings, ctx| {
                     let new_value = !*settings.vertical_tabs_show_diff_stats.value();
                     let _ = settings
                         .vertical_tabs_show_diff_stats
                         .set_value(new_value, ctx);
-                    new_value
                 });
                 ctx.notify();
             }
             ToggleVerticalTabsShowDetailsOnHover => {
-                let new_value = TabSettings::handle(ctx).update(ctx, |settings, ctx| {
+                TabSettings::handle(ctx).update(ctx, |settings, ctx| {
                     let new_value = !*settings.vertical_tabs_show_details_on_hover.value();
                     let _ = settings
                         .vertical_tabs_show_details_on_hover
                         .set_value(new_value, ctx);
-                    new_value
                 });
                 ctx.notify();
             }
@@ -14650,13 +14540,13 @@ impl TypedActionView for Workspace {
                 ctx.open_file_path(path);
             }
             NewTabInAgentMode {
-                entrypoint,
+                entrypoint: _,
                 zero_state_prompt_suggestion_type,
             } => {
                 self.add_terminal_tab_in_ai_mode(*zero_state_prompt_suggestion_type, ctx);
             }
             NewPaneInAgentMode {
-                entrypoint,
+                entrypoint: _,
                 zero_state_prompt_suggestion_type,
             } => {
                 self.add_terminal_pane_in_ai_mode(*zero_state_prompt_suggestion_type, ctx);
@@ -14747,8 +14637,8 @@ impl TypedActionView for Workspace {
                 });
             }
             HandleConflictingWorkflow(_) | HandleConflictingEnvVarCollection(_) => {}
-            OpenPromptEditor { open_source } => {
-                self.open_prompt_editor(*open_source, ctx);
+            OpenPromptEditor { .. } => {
+                self.open_prompt_editor(ctx);
             }
             OpenAgentToolbarEditor => {
                 self.open_agent_toolbar_editor(AgentToolbarEditorMode::AgentView, ctx);

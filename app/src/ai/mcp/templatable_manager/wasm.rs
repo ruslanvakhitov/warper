@@ -4,7 +4,6 @@ use warpui::ModelContext;
 use super::TemplatableMCPServerManager;
 use crate::ai::mcp::templatable::TemplatableMCPServer;
 use crate::ai::mcp::templatable_installation::{TemplatableMCPServerInstallation, VariableValue};
-use crate::ai::mcp::MCPServerUpdate;
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
@@ -120,13 +119,6 @@ impl TemplatableMCPServerManager {
         log::warn!("Enabling Figma MCP server is not supported in WASM");
     }
 
-    /// Installs the Figma MCP server from the MCP gallery.
-    ///
-    /// This is a no-op in WASM, as MCP servers are not supported in WASM.
-    pub fn install_figma_from_gallery(&mut self, _ctx: &mut ModelContext<Self>) {
-        log::warn!("Installing Figma from gallery is not supported in WASM");
-    }
-
     /// Delete oauth credentials from secure storage
     ///
     /// No-op in WASM, as MCP servers are not supported in WASM
@@ -144,24 +136,6 @@ impl TemplatableMCPServerManager {
         _app: &AppContext,
     ) -> bool {
         false
-    }
-
-    pub fn get_updates_available_for_installation(
-        &self,
-        _installation_uuid: Uuid,
-        _app: &AppContext,
-    ) -> Vec<MCPServerUpdate> {
-        Default::default()
-    }
-
-    pub fn update_templatable_mcp_server_installation(
-        &mut self,
-        _installation_uuid: Uuid,
-        _templatable_mcp_server: &TemplatableMCPServer,
-        _reuse_variable_values: bool,
-        _ctx: &mut ModelContext<Self>,
-    ) {
-        log::warn!("Updating a templatable MCP server installation is not supported in WASM");
     }
 
     pub fn is_authorized_editor(&self, _template_uuid: Uuid, _ctx: &AppContext) -> bool {

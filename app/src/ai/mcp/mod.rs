@@ -140,8 +140,6 @@ mod tests {
     }
 }
 
-pub mod gallery;
-pub use gallery::MCPGalleryManager;
 pub mod templatable;
 pub use templatable::JsonTemplate;
 pub use templatable::{TemplatableMCPServer, TemplateVariable};
@@ -521,7 +519,6 @@ impl MCPServer {
             description: None,
             template: JsonTemplate { json, variables },
             version: DateTime::now().timestamp(),
-            gallery_data: None,
         };
         let templatable_mcp_server_installation: Option<TemplatableMCPServerInstallation> =
             Some(TemplatableMCPServerInstallation::new(
@@ -572,15 +569,6 @@ impl MCPServer {
             templatable_mcp_server_installation: None,
         }
     }
-}
-
-#[derive(Debug, Clone)]
-pub enum MCPServerUpdate {
-    Gallery {
-        name: String,
-        new_version: i32,
-        json_template: JsonTemplate,
-    },
 }
 
 #[cfg(test)]

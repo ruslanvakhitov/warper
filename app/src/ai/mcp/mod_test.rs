@@ -110,7 +110,6 @@ mod tests {
                 variables: template_variables,
             },
             version: 1234567890,
-            gallery_data: None,
         };
 
         TemplatableMCPServerInstallation::new(

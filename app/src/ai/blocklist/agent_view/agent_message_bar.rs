@@ -335,13 +335,7 @@ impl View for AgentMessageBar {
 
         // Append a Figma MCP chip to the message if applicable.
         match self.figma_button_status(app) {
-            Some(FigmaMcpStatus::NotInstalled) => {
-                message.items.push(figma_chip(
-                    self.mouse_states.figma_install_button.clone(),
-                    "Get Figma MCP",
-                    Some(InputAction::FigmaAddButtonClicked),
-                ));
-            }
+            Some(FigmaMcpStatus::NotInstalled) => {}
             Some(FigmaMcpStatus::Installed) => {
                 message.items.push(figma_chip(
                     self.mouse_states.figma_enable_button.clone(),
