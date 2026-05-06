@@ -7,7 +7,6 @@ use crate::default_terminal::DefaultTerminal;
 use crate::features::{runtime_flags_menu_items, FeatureFlag};
 use crate::report_if_error;
 use crate::root_view::OpenLaunchConfigArg;
-use crate::workspace::metadata::LaunchConfigUiLocation;
 use crate::settings::{
     AISettings, BlockVisibilitySettings, DebugSettings, DefaultSessionMode, SelectionSettings,
 };
@@ -18,6 +17,7 @@ use crate::undo_close::UndoCloseStack;
 use crate::user_config::WarpConfig;
 use crate::util::bindings::{self, trigger_to_keystroke, CustomAction};
 use crate::util::links;
+use crate::workspace::metadata::LaunchConfigUiLocation;
 use crate::workspace::sync_inputs::SyncedInputState;
 use ai::workspace::WorkspaceMetadata;
 use csv::Writer;

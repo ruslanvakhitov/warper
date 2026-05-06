@@ -6,11 +6,11 @@ use crate::search::result_renderer::QueryResultRenderer;
 use crate::search::search_bar::SelectionUpdate;
 use crate::search::search_bar::{SearchBar, SearchBarEvent, SearchBarState, SearchResultOrdering};
 use crate::search::QueryFilter;
-use crate::workspace::metadata::LaunchConfigUiLocation;
 use crate::settings::CtrlTabBehavior;
 use crate::terminal::keys_settings::KeysSettings;
 use crate::themes::theme::WarpTheme;
 use crate::view_components::DismissibleToast;
+use crate::workspace::metadata::LaunchConfigUiLocation;
 use crate::ToastStack;
 use lazy_static::lazy_static;
 use warp_util::path::LineAndColumnArg;
@@ -33,9 +33,9 @@ use std::sync::Arc;
 use crate::palette::PaletteMode;
 use crate::root_view::OpenLaunchConfigArg;
 use crate::search::command_palette::data_sources::DataSourceStore;
-use crate::server::ids::SyncId;
 use crate::session_management::SessionSource;
 use crate::workspace::{active_terminal_in_window, ForkedConversationDestination, WorkspaceAction};
+use warp_server_client::ids::SyncId;
 use warpui::elements::{
     Align, Border, ChildView, Clipped, ClippedScrollStateHandle, ClippedScrollable, ConstrainedBox,
     Container, CornerRadius, Dismiss, Empty, Fill, Flex, ParentElement, Radius, SavePosition,
@@ -768,8 +768,7 @@ impl View {
                         &pane_view_locator,
                     );
                 }
-
-                            }
+            }
             CommandPaletteItemAction::NavigateToConversation {
                 pane_view_locator,
                 window_id,
@@ -812,7 +811,7 @@ impl View {
                     terminal_view_id,
                     restore_layout: None,
                 });
-                            }
+            }
             CommandPaletteItemAction::ForkConversation { conversation_id } => {
                 ctx.dispatch_typed_action(&WorkspaceAction::ForkAIConversation {
                     conversation_id,
@@ -961,7 +960,6 @@ impl View {
         action: &dyn warpui::Action,
         ctx: &mut ViewContext<Self>,
     ) {
-
         let (window_id, view_id) = match self.binding_source.as_ref(ctx) {
             BindingSource::View {
                 window_id, view_id, ..

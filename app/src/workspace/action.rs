@@ -4,14 +4,13 @@ use std::sync::Arc;
 
 use warp_util::path::LineAndColumnArg;
 
-use crate::ai::agent::AIAgentExchangeId;
 use crate::ai::agent::conversation::AIConversationId;
+use crate::ai::agent::AIAgentExchangeId;
 use crate::ai::blocklist::metadata::AgentModeEntrypoint;
 use crate::ai::document::ai_document_model::{AIDocumentId, AIDocumentVersion};
 use crate::palette::PaletteMode;
 use crate::prompt::editor_modal::OpenSource as PromptEditorOpenSource;
 use crate::search;
-use crate::server::ids::SyncId;
 use crate::settings_view::{SettingsAction as SettingsTabAction, SettingsSection};
 use crate::tab::NewSessionMenuItem;
 use crate::tab_configs::TabConfig;
@@ -20,8 +19,9 @@ use crate::terminal::view::inline_banner::ZeroStatePromptSuggestionType;
 use crate::themes::theme::AnsiColorIdentifier;
 use crate::themes::theme_chooser::ThemeChooserMode;
 use crate::workflows::{WorkflowSelectionSource, WorkflowSource, WorkflowType};
-use crate::workspace::PaneViewLocator;
 use crate::workspace::metadata::{AddTabWithShellSource, PaletteSource};
+use crate::workspace::PaneViewLocator;
+use warp_server_client::ids::SyncId;
 
 use ui_components::lightbox;
 use warpui::accessibility::AccessibilityVerbosity;
@@ -357,8 +357,6 @@ pub enum WorkspaceAction {
     StartNewConversation {
         terminal_view_id: EntityId,
     },
-    /// Jump to the terminal pane of the most recent agent toast
-    JumpToLatestToast,
     /// Open a file in a new tab with a code pane
     OpenFileInNewTab {
         full_path: PathBuf,
@@ -464,7 +462,6 @@ pub enum WorkspaceAction {
     ToggleProjectExplorer,
     ToggleGlobalSearch,
     OpenGlobalSearch,
-    ToggleConversationListView,
     /// Reset the AWS Bedrock login banner dismissed state (for debugging).
     #[cfg(debug_assertions)]
     DebugResetAwsBedrockLoginBannerDismissed,
@@ -474,9 +471,6 @@ pub enum WorkspaceAction {
     /// Use a local checkout of the opencode-warp plugin (for testing/development).
     #[cfg(debug_assertions)]
     UseLocalOpenCodeWarpPlugin,
-    ToggleNotificationMailbox {
-        select_first: bool,
-    },
     /// Show the rewind confirmation dialog before rewinding an AI conversation
     ShowRewindConfirmationDialog {
         ai_block_view_id: EntityId,
@@ -511,9 +505,6 @@ pub enum WorkspaceAction {
     StartAgentOnboardingTutorial(OnboardingTutorial),
     ShowSessionConfigModal,
     DismissSessionConfigTabConfigChip,
-    /// Start the HOA onboarding flow (for debugging)
-    #[cfg(debug_assertions)]
-    ShowHoaOnboardingFlow,
     /// Open the "New worktree" modal for creating a reusable worktree tab config.
     OpenNewWorktreeModal,
     /// Open the native folder picker for the repo field in the new-worktree modal.
@@ -554,9 +545,6 @@ pub enum WorkspaceAction {
     FixSettingsWithAgent {
         error_description: String,
     },
-    /// Opens (or focuses) the in-app network log pane as a right-split of the
-    /// active pane group. Gated on `ContextFlag::NetworkLogConsole`.
-    OpenNetworkLogPane,
 }
 
 impl WorkspaceAction {
@@ -729,14 +717,11 @@ impl WorkspaceAction {
             | FocusPane(..)
             | StartNewConversation { .. }
             | UndoRevertInCodeReviewPane { .. }
-            | JumpToLatestToast
             | NavigatePrevPaneOrPanel
             | NavigateNextPaneOrPanel
             | ToggleProjectExplorer
             | ToggleGlobalSearch
             | OpenGlobalSearch
-            | ToggleConversationListView
-            | ToggleNotificationMailbox { .. }
             | ToggleAIDocumentPane { .. }
             | HideAIDocumentPanes
             | OpenAIDocumentPane { .. }
@@ -755,10 +740,7 @@ impl WorkspaceAction {
             | TabConfigSidecarEditConfig { .. }
             | TabConfigSidecarRemoveConfig { .. }
             | OpenSettingsFile
-            | FixSettingsWithAgent { .. }
-            | OpenNetworkLogPane => false,
-            #[cfg(debug_assertions)]
-            ShowHoaOnboardingFlow => false,
+            | FixSettingsWithAgent { .. } => false,
             #[cfg(target_family = "wasm")]
             ToggleConversationTranscriptDetailsPanel => false,
             #[cfg(debug_assertions)]

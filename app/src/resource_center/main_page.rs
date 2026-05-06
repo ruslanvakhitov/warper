@@ -373,7 +373,7 @@ impl TypedActionView for ResourceCenterMainView {
                 ctx.emit(ResourceCenterMainEvent::Close);
             }
             SkipTips => {
-                                self.tips_completed.update(ctx, |tips_completed, ctx| {
+                self.tips_completed.update(ctx, |tips_completed, ctx| {
                     skip_tips_and_write_to_user_defaults(tips_completed, ctx);
                     ctx.notify();
                 });

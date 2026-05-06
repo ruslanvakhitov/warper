@@ -145,7 +145,7 @@ impl FeatureSectionView {
 
     // Turns gamification off without rendering completed modal
     pub fn skip_gamified_section(&mut self, ctx: &mut ViewContext<Self>) {
-                self.tips_completed.update(ctx, |tips_completed, ctx| {
+        self.tips_completed.update(ctx, |tips_completed, ctx| {
             skip_tips_and_write_to_user_defaults(tips_completed, ctx);
             ctx.notify();
         });
@@ -153,7 +153,7 @@ impl FeatureSectionView {
 
     // Turns gamification off and renders completed modal
     pub fn complete_gamified_section(&mut self, ctx: &mut ViewContext<Self>) {
-                self.tips_completed.update(ctx, |tips_completed, ctx| {
+        self.tips_completed.update(ctx, |tips_completed, ctx| {
             complete_tips_and_write_to_user_defaults(tips_completed, ctx);
             ctx.notify();
         });

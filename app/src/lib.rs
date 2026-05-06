@@ -10,7 +10,6 @@ mod app_services;
 mod app_state;
 mod auth;
 mod banner;
-mod changelog_model;
 mod chip_configurator;
 mod code;
 mod code_review;
@@ -57,7 +56,6 @@ mod projects;
 mod prompt;
 mod quit_warning;
 mod resource_limits;
-mod reward_view;
 mod safe_triangle;
 mod search_bar;
 mod server;
@@ -138,8 +136,6 @@ use code::editor_management::CodeManager;
 use code::opened_files::OpenedFilesModel;
 use code_review::GlobalCodeReviewModel;
 use quit_warning::UnsavedStateSummary;
-use server::network_log_pane_manager::NetworkLogPaneManager;
-use server::network_logging::NetworkLogModel;
 #[cfg(feature = "local_fs")]
 use settings::import::model::ImportedConfigModel;
 use warp_cli::GlobalOptions;
@@ -231,6 +227,7 @@ use workspace::sync_inputs::SyncedInputState;
 use warpui::{integration::TestDriver, App, AssetProvider, Event};
 
 use self::features::FeatureFlag;
+pub use crate::ai::blocklist::metadata::{AgentModeEntrypoint, AgentModeEntrypointSelectionType};
 use crate::app_state::AppState;
 use crate::experiments::ImprovedPaletteSearch;
 pub use crate::global_resource_handles::{GlobalResourceHandles, GlobalResourceHandlesProvider};
@@ -238,16 +235,12 @@ use crate::notification::NotificationContext;
 use crate::root_view::{
     quake_mode_window_id, quake_mode_window_is_open, OpenFromRestoredArg, OpenPath,
 };
-pub use crate::ai::blocklist::metadata::{
-    AgentModeEntrypoint, AgentModeEntrypointSelectionType,
-};
-use crate::workspace::metadata::PaletteSource;
 use crate::terminal::CustomSecretRegexUpdater;
 use crate::util::bindings::is_binding_cross_platform;
+use crate::workspace::metadata::PaletteSource;
 use crate::workspace::{PaneViewLocator, Workspace, WorkspaceAction};
 use crate::workspaces::user_workspaces::UserWorkspaces;
 use warp_logging::LogDestination;
-
 
 // Re-export the safe logging macros at the crate root level for backwards compatibility
 pub use warp_core::{safe_debug, safe_error, safe_info, safe_warn};
@@ -855,8 +848,6 @@ fn initialize_app(
     let local_identity = LocalActorIdentity::initialize(ctx);
     timer.mark_interval_end("LOCAL_IDENTITY_INITIALIZED");
 
-    ctx.add_singleton_model(|_ctx| NetworkLogModel::default());
-
     ctx.add_singleton_model(|_ctx| LocalActorIdentityProvider::new(local_identity));
 
     ctx.add_singleton_model(|_ctx| GPUState::new());
@@ -961,7 +952,6 @@ fn initialize_app(
     ctx.add_singleton_model(|_| SettingsPaneManager::new());
     ctx.add_singleton_model(|_| AIFactManager::new());
     ctx.add_singleton_model(|_| ExecutionProfileEditorManager::default());
-    ctx.add_singleton_model(|_| NetworkLogPaneManager::default());
     #[cfg(target_os = "macos")]
     if !launch_mode.is_headless() {
         AppearanceManager::as_ref(ctx).set_app_icon(ctx);
@@ -1108,7 +1098,6 @@ fn initialize_app(
     themes::theme_deletion_modal::init(ctx);
     root_view::init(ctx);
     voltron::init(ctx);
-    reward_view::init(ctx);
     crate::view_components::find::init(ctx);
     prompt::editor_modal::init(ctx);
     ai::blocklist::agent_view::editor::init(ctx);
@@ -1347,7 +1336,6 @@ fn app_callbacks(is_integration_test: bool) -> warpui::platform::AppCallbacks {
                 }
             }
             ctx.dispatch_global_action("root_view:update_quake_mode_state", &update_quake_mode_arg);
-
         })),
         on_will_terminate: Some(Box::new(move |ctx| {
             PersistenceWriter::handle(ctx).update(ctx, |writer, _ctx| {

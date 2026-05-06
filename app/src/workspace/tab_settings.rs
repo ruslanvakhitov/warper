@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use settings::{SupportedPlatforms, SyncToCloud, macros::define_settings_group};
+use settings::{macros::define_settings_group, SupportedPlatforms, SyncToCloud};
 use warp_core::ui::theme::AnsiColorIdentifier;
 
 #[derive(

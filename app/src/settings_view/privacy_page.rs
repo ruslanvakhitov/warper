@@ -91,7 +91,6 @@ pub struct PrivacyPageView {
 
 #[derive(Clone, Copy)]
 pub enum PrivacyPageViewEvent {
-    LaunchNetworkLogging,
     ShowAddRegexModal,
     HideAddRegexModal,
 }
@@ -310,10 +309,6 @@ impl PrivacyPageView {
         ctx.notify();
     }
 
-    fn launch_network_logging(&mut self, ctx: &mut ViewContext<Self>) {
-        ctx.emit(PrivacyPageViewEvent::LaunchNetworkLogging);
-    }
-
     fn show_add_regex_modal(&mut self, ctx: &mut ViewContext<Self>) {
         self.add_regex_modal_state.open(ctx);
         ctx.emit(PrivacyPageViewEvent::ShowAddRegexModal);
@@ -409,7 +404,6 @@ pub enum PrivacyPageAction {
     ToggleSafeMode,
     ToggleHideSecretsInBlockList,
     SetSecretDisplayMode(SecretDisplayMode),
-    LaunchNetworkLogging,
     RemoveCustomRegex(usize),
     AddAllRecommendedRegexes,
     ShowAddRegexModal,
@@ -471,7 +465,6 @@ impl TypedActionView for PrivacyPageView {
             PrivacyPageAction::SetSecretDisplayMode(mode) => {
                 self.set_secret_display_mode(*mode, ctx)
             }
-            PrivacyPageAction::LaunchNetworkLogging => self.launch_network_logging(ctx),
             PrivacyPageAction::RemoveCustomRegex(idx) => {
                 self.queue_regex_removal(*idx, ctx);
             }

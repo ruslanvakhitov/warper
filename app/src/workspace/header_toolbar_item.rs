@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 
 use crate::features::FeatureFlag;
-use crate::settings::AISettings;
 use crate::ui_components::icons::Icon;
 use crate::workspace::tab_settings::TabSettings;
 
@@ -28,9 +27,7 @@ use warpui::{AppContext, SingletonEntity};
 pub enum HeaderToolbarItemKind {
     TabsPanel,
     ToolsPanel,
-    AgentManagement,
     CodeReview,
-    NotificationsMailbox,
 }
 
 impl HeaderToolbarItemKind {
@@ -38,9 +35,7 @@ impl HeaderToolbarItemKind {
         match self {
             Self::TabsPanel => "Tabs Panel",
             Self::ToolsPanel => "Tools Panel",
-            Self::AgentManagement => "Agent Management",
             Self::CodeReview => "Code Review",
-            Self::NotificationsMailbox => "Notifications",
         }
     }
 
@@ -48,9 +43,7 @@ impl HeaderToolbarItemKind {
         match self {
             Self::TabsPanel => Icon::Menu,
             Self::ToolsPanel => Icon::Tool2,
-            Self::AgentManagement => Icon::Grid,
             Self::CodeReview => Icon::Diff,
-            Self::NotificationsMailbox => Icon::Inbox,
         }
     }
 
@@ -64,9 +57,7 @@ impl HeaderToolbarItemKind {
                     && *TabSettings::as_ref(app).use_vertical_tabs
             }
             Self::ToolsPanel => true,
-            Self::AgentManagement => false,
             Self::CodeReview => cfg!(feature = "local_fs"),
-            Self::NotificationsMailbox => FeatureFlag::HOANotifications.is_enabled(),
         }
     }
 
@@ -78,7 +69,6 @@ impl HeaderToolbarItemKind {
         }
         match self {
             Self::CodeReview => *TabSettings::as_ref(app).show_code_review_button.value(),
-            Self::NotificationsMailbox => *AISettings::as_ref(app).show_agent_notifications,
             _ => true,
         }
     }
@@ -90,21 +80,15 @@ impl HeaderToolbarItemKind {
     }
 
     pub fn default_left() -> Vec<Self> {
-        vec![Self::TabsPanel, Self::ToolsPanel, Self::AgentManagement]
+        vec![Self::TabsPanel, Self::ToolsPanel]
     }
 
     pub fn default_right() -> Vec<Self> {
-        vec![Self::CodeReview, Self::NotificationsMailbox]
+        vec![Self::CodeReview]
     }
 
     /// All toolbar item variants (availability filtering is done at the call site).
     pub fn all_items() -> Vec<Self> {
-        vec![
-            Self::TabsPanel,
-            Self::ToolsPanel,
-            Self::AgentManagement,
-            Self::CodeReview,
-            Self::NotificationsMailbox,
-        ]
+        vec![Self::TabsPanel, Self::ToolsPanel, Self::CodeReview]
     }
 }

@@ -776,7 +776,6 @@ impl WelcomePalette {
         action: &dyn warpui::Action,
         ctx: &mut ViewContext<Self>,
     ) {
-
         let (window_id, view_id) = match self.binding_source.as_ref(ctx) {
             BindingSource::View {
                 window_id, view_id, ..
