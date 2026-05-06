@@ -1,12 +1,16 @@
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
-use view::command_dialog::EnvVarSecretCommand;
 use warp_util::path::ShellFamily;
 
 pub mod env_var_collection_block;
-pub mod view;
 
 use crate::{external_secrets::ExternalSecret, terminal::shell::ShellType};
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct EnvVarSecretCommand {
+    pub name: String,
+    pub command: String,
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum EnvVarCollectionType {
