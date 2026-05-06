@@ -16,7 +16,8 @@ Default command:
   target/debug/warp-oss --help
 
 This is a deterministic startup-entrypoint guardrail. It is not an OS-level
-firewall and it does not exercise the live GUI terminal, panes, or settings.
+firewall. For terminal-session coverage, run:
+  script/warper_terminal_session_network_smoke
 USAGE
         exit 0
         ;;

@@ -22,12 +22,13 @@ Validates:
   - focused warp_core channel tests for absent hosted service configs
   - Warper OSS runtime build check
   - Warper OSS --help network-intercept smoke for nonlocal DNS/connect attempts
+  - local terminal-server/PTY session smoke under network interception
 
 Does not validate:
   - launching the macOS .app (run script/warper_app_help_smoke after bundling)
   - enforcing an OS-level outbound network block
-  - credential-free GUI terminal-session network interception; no deterministic
-    command here opens a live terminal session under the interposer
+  - full .app GUI terminal-session network interception; this script uses a
+    deterministic local terminal-server/PTY harness instead
   - manual terminal creation, pane splitting, or settings edits in a live UI
   - app crate `#[cfg(test)]` modules for amputated hosted features
   - private credentials, hosted Warp/Oz service availability, or OpenRouter behavior
@@ -60,14 +61,18 @@ echo "  - runtime endpoint literals in app/src and crates outside tests/generate
 echo "  - warp_core absent hosted service config tests"
 echo "  - Warper OSS runtime build check"
 echo "  - Warper OSS --help network-intercept smoke for nonlocal DNS/connect attempts"
+echo "  - local terminal-server/PTY session smoke under network interception"
 echo
 echo "Does not validate:"
 echo "  - macOS .app launch (run script/warper_app_help_smoke after bundling)"
 echo "  - OS-level outbound network blocking"
-echo "  - credential-free GUI terminal-session network interception"
+echo "  - full .app GUI terminal-session network interception"
 echo "  - live UI terminal creation, pane splitting, or settings edits"
 echo "  - app crate #[cfg(test)] modules for amputated hosted features"
 echo "  - private credentials, hosted Warp/Oz availability, or OpenRouter behavior"
+echo
+echo "Uses a deterministic local terminal-server/PTY harness for terminal-session"
+echo "coverage without private credentials or the integration-test crate."
 echo
 
 echo "Running static denylist: startup"
@@ -100,3 +105,6 @@ cargo build \
 
 echo "Running Warper OSS --help network-intercept smoke"
 ./script/warper_network_intercept_smoke target/debug/warp-oss --help
+
+echo "Running Warper terminal-session network-intercept smoke"
+./script/warper_terminal_session_network_smoke
