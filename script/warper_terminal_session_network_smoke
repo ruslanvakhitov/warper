@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+case "${1:-}" in
+    -h|--help)
+        cat <<'USAGE'
+Usage: script/warper_terminal_session_network_smoke
+
+Runs the deterministic WARPER-001 local terminal-session harness under the
+network interposer.
+
+This builds warp-oss and executes its hidden --warper-local-terminal-smoke
+entrypoint under script/warper_network_intercept_smoke. The entrypoint uses the
+same early terminal-server/PTY spawn path as GUI startup, requests a local
+terminal session, then stops it.
+
+This is credential-free and does not contact hosted Warp/Oz services. It is a
+deterministic substitute for full .app GUI terminal-session interception in
+presubmit-like environments.
+
+Does not validate:
+  - launching the macOS .app bundle
+  - enforcing an OS-level outbound network block
+  - manual live UI terminal creation, pane splitting, or settings edits
+  - OpenRouter behavior
+
+This does not require the integration-test crate or Cocoa GUI services.
+USAGE
+        exit 0
+        ;;
+    "")
+        ;;
+    *)
+        echo "Unknown argument: $1"
+        echo "Run script/warper_terminal_session_network_smoke --help for usage."
+        exit 2
+        ;;
+esac
+
+echo "Building Warper OSS binary for terminal-session network smoke"
+cargo build \
+    -p warp \
+    --bin warp-oss
+
+echo "Running Warper local terminal-session network-intercept smoke"
+./script/warper_network_intercept_smoke target/debug/warp-oss --warper-local-terminal-smoke

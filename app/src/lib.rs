@@ -510,6 +510,14 @@ pub fn run() -> Result<()> {
             warp_cli::Command::DumpDebugInfo => {
                 return debug_dump::run();
             }
+            #[cfg(all(feature = "local_tty", unix))]
+            warp_cli::Command::WarperLocalTerminalSmoke => {
+                return terminal::local_tty::spawner::run_local_terminal_smoke();
+            }
+            #[cfg(not(all(feature = "local_tty", unix)))]
+            warp_cli::Command::WarperLocalTerminalSmoke => {
+                anyhow::bail!("local terminal smoke is only supported on Unix local_tty builds");
+            }
         }
     }
 

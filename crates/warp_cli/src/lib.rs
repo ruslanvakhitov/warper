@@ -315,6 +315,9 @@ pub enum Command {
     #[clap(long_flag = "dump-debug-info")]
     DumpDebugInfo,
 
+    /// Spawn and tear down a local terminal session for WARPER-001 smoke tests.
+    #[clap(long_flag = "warper-local-terminal-smoke", hide = true)]
+    WarperLocalTerminalSmoke,
 }
 
 impl Command {
@@ -322,7 +325,9 @@ impl Command {
     pub fn prints_to_stdout(&self) -> bool {
         match self {
             Command::Worker(_) => false,
-            Command::CommandLine(_) | Command::DumpDebugInfo => true,
+            Command::CommandLine(_)
+            | Command::DumpDebugInfo
+            | Command::WarperLocalTerminalSmoke => true,
             Command::Completions { .. } => true,
         }
     }

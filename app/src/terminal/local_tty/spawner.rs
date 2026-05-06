@@ -1,16 +1,17 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use warpui::{AppContext, Entity, SingletonEntity};
 
-use crate::terminal::local_tty::{self};
+use crate::terminal::local_tty::{
+    self,
+    shell::{ShellStarter, ShellStarterSourceOrWslName},
+};
 
 #[cfg(target_os = "windows")]
 use super::PseudoConsoleChild;
 use super::{PtyOptions, PtySpawnResult};
 #[cfg(unix)]
 use {
-    crate::report_error,
-    crate::terminal::local_tty::server::TerminalServer,
-    anyhow::{bail, Context},
+    crate::report_error, crate::terminal::local_tty::server::TerminalServer, anyhow::bail,
     std::process::Child,
 };
 /// A handle that can be used to interact with a pty process.
@@ -96,6 +97,48 @@ pub struct PtySpawner {
     server: Option<TerminalServer>,
 }
 
+#[cfg(unix)]
+pub fn run_local_terminal_smoke() -> Result<()> {
+    use crate::terminal::{SizeInfo, available_shells::AvailableShell};
+    use std::{collections::HashMap, ffi::OsString};
+
+    let mut spawner = PtySpawner::new().context("failed to create terminal server spawner")?;
+    let shell_starter: ShellStarter = ShellStarter::init(AvailableShell::default())
+        .and_then(|starter| match starter {
+            ShellStarterSourceOrWslName::Source(source) => Some(source.into()),
+            ShellStarterSourceOrWslName::WSLName { .. } => None,
+        })
+        .context("failed to resolve a local Unix shell starter")?;
+    let options = local_tty::PtyOptions {
+        size: SizeInfo::new_without_font_metrics(24, 80),
+        window_id: None,
+        shell_starter,
+        start_dir: Some(std::env::current_dir().context("failed to read current directory")?),
+        env_vars: HashMap::<OsString, OsString>::new(),
+        enable_ssh_wrapper: false,
+        shell_debug_mode: false,
+        honor_ps1: true,
+        close_fds: true,
+    };
+
+    let (spawn_result, mut handle) = spawner
+        .spawn_pty_without_app_context(options)
+        .context("failed to spawn local terminal session")?;
+    unsafe {
+        libc::close(spawn_result.leader_fd);
+    }
+    handle
+        .kill()
+        .context("failed to stop local terminal session")?;
+    spawner.prepare_for_app_termination();
+
+    println!(
+        "WARPER-001 local terminal smoke spawned and stopped pid {}",
+        spawn_result.pid
+    );
+    Ok(())
+}
+
 impl PtySpawner {
     /// Creates a new PtySpawner.
     ///
@@ -169,6 +212,18 @@ impl PtySpawner {
             #[cfg(windows)]
             event_loop_tx,
         )
+    }
+
+    #[cfg(unix)]
+    fn spawn_pty_without_app_context(
+        &self,
+        options: PtyOptions,
+    ) -> Result<(PtySpawnResult, Box<dyn PtyHandle>)> {
+        if let Some(server) = &self.server {
+            return Self::spawn_pty_via_server(server, options);
+        }
+
+        Self::spawn_pty_directly(options)
     }
 
     fn spawn_pty_directly(
