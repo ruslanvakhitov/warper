@@ -21,7 +21,7 @@ Validates:
   - Warper OSS runtime build check
 
 Does not validate:
-  - launching the macOS .app
+  - launching the macOS .app (run script/warper_app_help_smoke after bundling)
   - enforcing an OS-level outbound network block
   - manual terminal creation, pane splitting, or settings edits in a live UI
   - app crate `#[cfg(test)]` modules for amputated hosted features
@@ -54,7 +54,7 @@ echo "  - warp_core absent hosted service config tests"
 echo "  - Warper OSS runtime build check"
 echo
 echo "Does not validate:"
-echo "  - macOS .app launch"
+echo "  - macOS .app launch (run script/warper_app_help_smoke after bundling)"
 echo "  - OS-level outbound network blocking"
 echo "  - live UI terminal creation, pane splitting, or settings edits"
 echo "  - app crate #[cfg(test)] modules for amputated hosted features"

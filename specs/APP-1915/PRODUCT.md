@@ -37,7 +37,7 @@ Figma: none provided. The existing AI block context menu (see screenshots attach
 
 7. Right-clicking anywhere inside an AI response where the cursor is not on a hyperlink shows the existing AI block context menu unchanged — no link-specific items, no reorderings, no omissions.
 
-8. Right-clicking inside an AI response while a text selection is active shows the existing selection-oriented menu (Copy, Insert into input, optionally Ask Warp AI / Attach as agent mode context). No "Copy URL" or "Copy path" item is added in this case, even if the selection overlaps a link — the user's primary intent is the selection.
+8. Right-clicking inside an AI response while a text selection is active shows the existing selection-oriented menu (Copy, Insert into input, optionally Attach as agent mode context). No "Copy URL" or "Copy path" item is added in this case, even if the selection overlaps a link — the user's primary intent is the selection.
 
 9. Right-clicking a link in the terminal grid (outside AI responses) is unchanged: it continues to show the existing grid link context menu (Copy URL / Copy path / Show in Finder / Open in Warp / Open in editor).
 

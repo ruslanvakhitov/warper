@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+case "${1:-}" in
+    -h|--help)
+        cat <<'USAGE'
+Usage: script/warper_app_help_smoke [path/to/Warper.app]
+
+Runs the bundled Warper executable with --help and verifies it exits
+successfully. This is a deterministic bundle-entrypoint smoke; it does not
+open the UI or validate outbound-network blocking.
+
+Default bundle path:
+  target/aarch64-apple-darwin/debug/bundle/osx/Warper.app
+USAGE
+        exit 0
+        ;;
+esac
+
+bundle_path="${1:-target/aarch64-apple-darwin/debug/bundle/osx/Warper.app}"
+executable="$bundle_path/Contents/MacOS/warp-oss"
+
+if [[ ! -x "$executable" ]]; then
+    echo "Warper .app executable not found or not executable: $executable"
+    echo "Build the bundle first, for example: script/macos/bundle --debug --arch aarch64 --nosign"
+    exit 1
+fi
+
+echo "Running Warper .app --help smoke: $executable"
+help_output="$("$executable" --help)"
+
+if [[ "$help_output" != *"Usage:"* && "$help_output" != *"USAGE:"* ]]; then
+    echo "Warper .app --help did not print expected usage text."
+    echo "$help_output"
+    exit 1
+fi
+
+echo "WARPER-001 .app --help smoke passed."
