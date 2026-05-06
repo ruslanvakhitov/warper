@@ -10,7 +10,6 @@ use repo_metadata::RepoMetadataModel;
 
 use crate::{
     appearance::Appearance,
-    auth::AuthStateProvider,
     notebooks::{
         editor::keys::NotebookKeybindings,
         link::{NotebookLinks, SessionSource},
@@ -70,7 +69,6 @@ fn initialize_editor(
     app.add_singleton_model(FileSearchModel::new);
     app.add_singleton_model(NotebookKeybindings::new);
     app.add_singleton_model(TerminalKeybindings::new);
-    app.add_singleton_model(|_| AuthStateProvider::new_for_test());
 
     app.add_singleton_model(|ctx| UserWorkspaces::mock(vec![], ctx));
 

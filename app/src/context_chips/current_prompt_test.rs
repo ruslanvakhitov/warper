@@ -20,7 +20,6 @@ use crate::code_review::git_status_update::{GitRepoStatusModel, GitStatusMetadat
 #[cfg(windows)]
 use crate::system::SystemInfo;
 use crate::{
-    auth::{auth_manager::AuthManager, AuthStateProvider},
     context_chips::{
         context_chip::{ChipFingerprintInput, Environment},
         prompt::Prompt,
@@ -245,8 +244,6 @@ fn test_shell_chip_is_disabled_when_required_executable_is_missing() {
                 Box::<user_preferences::in_memory::InMemoryPreferences>::default(),
             )
         });
-        app.add_singleton_model(|_| AuthStateProvider::new_for_test());
-        app.add_singleton_model(AuthManager::new_for_test);
         app.add_singleton_model(|_| crate::settings::manager::SettingsManager::default());
         crate::settings::InputSettings::register(&mut app);
         app.update(crate::settings::AISettings::register_and_subscribe_to_events);
@@ -417,8 +414,6 @@ fn test_github_pr_chip_is_disabled_when_github_cli_is_missing() {
                 Box::<user_preferences::in_memory::InMemoryPreferences>::default(),
             )
         });
-        app.add_singleton_model(|_| AuthStateProvider::new_for_test());
-        app.add_singleton_model(AuthManager::new_for_test);
         app.add_singleton_model(|_| crate::settings::manager::SettingsManager::default());
         crate::settings::InputSettings::register(&mut app);
         app.update(crate::settings::AISettings::register_and_subscribe_to_events);
@@ -501,8 +496,6 @@ fn test_github_pr_chip_empty_success_does_not_set_failure_suppression() {
                 Box::<user_preferences::in_memory::InMemoryPreferences>::default(),
             )
         });
-        app.add_singleton_model(|_| AuthStateProvider::new_for_test());
-        app.add_singleton_model(AuthManager::new_for_test);
         app.add_singleton_model(|_| crate::settings::manager::SettingsManager::default());
         crate::settings::InputSettings::register(&mut app);
         app.update(crate::settings::AISettings::register_and_subscribe_to_events);
@@ -593,8 +586,6 @@ fn test_github_pr_chip_revisiting_empty_result_directory_reruns_and_clears_previ
                 Box::<user_preferences::in_memory::InMemoryPreferences>::default(),
             )
         });
-        app.add_singleton_model(|_| AuthStateProvider::new_for_test());
-        app.add_singleton_model(AuthManager::new_for_test);
         app.add_singleton_model(|_| crate::settings::manager::SettingsManager::default());
         crate::settings::InputSettings::register(&mut app);
         app.update(crate::settings::AISettings::register_and_subscribe_to_events);
@@ -732,8 +723,6 @@ fn test_github_pr_chip_revisiting_failed_directory_uses_failure_suppression() {
                 Box::<user_preferences::in_memory::InMemoryPreferences>::default(),
             )
         });
-        app.add_singleton_model(|_| AuthStateProvider::new_for_test());
-        app.add_singleton_model(AuthManager::new_for_test);
         app.add_singleton_model(|_| crate::settings::manager::SettingsManager::default());
         crate::settings::InputSettings::register(&mut app);
         app.update(crate::settings::AISettings::register_and_subscribe_to_events);
@@ -873,8 +862,6 @@ fn test_github_pr_chip_transient_failure_retries_with_same_fingerprint() {
                 Box::<user_preferences::in_memory::InMemoryPreferences>::default(),
             )
         });
-        app.add_singleton_model(|_| AuthStateProvider::new_for_test());
-        app.add_singleton_model(AuthManager::new_for_test);
         app.add_singleton_model(|_| crate::settings::manager::SettingsManager::default());
         crate::settings::InputSettings::register(&mut app);
         app.update(crate::settings::AISettings::register_and_subscribe_to_events);
@@ -1034,8 +1021,6 @@ fn test_disabling_chips() {
                 Box::<user_preferences::in_memory::InMemoryPreferences>::default(),
             )
         });
-        app.add_singleton_model(|_| AuthStateProvider::new_for_test());
-        app.add_singleton_model(AuthManager::new_for_test);
 
         // Register required singleton models to fix the singleton model error
         app.add_singleton_model(|_| crate::settings::manager::SettingsManager::default());

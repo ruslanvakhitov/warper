@@ -8,7 +8,6 @@ use virtual_fs::{Stub, VirtualFS};
 use warp_core::ui::appearance::Appearance;
 use warpui::{platform::WindowStyle, App, ModelHandle};
 
-use crate::auth::AuthStateProvider;
 use crate::settings_view::keybindings::KeybindingChangedNotifier;
 use crate::test_util::settings::initialize_settings_for_tests;
 use crate::vim_registers::VimRegisters;
@@ -35,7 +34,6 @@ fn initialize_app(
     app.add_singleton_model(|_| SyncedInputState::mock());
     app.add_singleton_model(|_| VimRegisters::new());
     app.add_singleton_model(|_| KeybindingChangedNotifier::mock());
-    app.add_singleton_model(|_| AuthStateProvider::new_for_test());
 
     app.add_singleton_model(|ctx| UserWorkspaces::mock(vec![], ctx));
 

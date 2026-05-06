@@ -7,9 +7,7 @@ use crate::ai::execution_profiles::{
     profiles::AIExecutionProfilesModel, AskUserQuestionPermission,
 };
 use crate::ai::mcp::templatable_manager::TemplatableMCPServerManager;
-use crate::auth::AuthStateProvider;
 use crate::network::NetworkStatus;
-use crate::server::sync_queue::SyncQueue;
 use crate::test_util::settings::initialize_settings_for_tests;
 use crate::workspaces::user_workspaces::UserWorkspaces;
 use crate::LaunchMode;
@@ -73,8 +71,6 @@ fn initialize_ask_user_question_test(
 ) {
     initialize_settings_for_tests(app);
     let history = app.add_singleton_model(|_| BlocklistAIHistoryModel::new_for_test());
-    app.add_singleton_model(|_| AuthStateProvider::new_for_test());
-    app.add_singleton_model(SyncQueue::mock);
     app.add_singleton_model(|_| NetworkStatus::new());
     app.add_singleton_model(|_| TemplatableMCPServerManager::default());
     app.add_singleton_model(UserWorkspaces::default_mock);

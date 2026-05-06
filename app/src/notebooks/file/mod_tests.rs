@@ -12,7 +12,6 @@ use warpui::{platform::WindowStyle, App, SingletonEntity, View};
 
 use crate::terminal::keys::TerminalKeybindings;
 use crate::{
-    auth::{auth_manager::AuthManager, AuthStateProvider},
     notebooks::{editor::keys::NotebookKeybindings, file::is_markdown_file},
     search::files::model::FileSearchModel,
     server::settings_view::keybindings::KeybindingChangedNotifier,
@@ -43,8 +42,6 @@ fn init_app(app: &mut App) {
     app.add_singleton_model(FileModel::new);
     app.add_singleton_model(NotebookKeybindings::new);
     app.add_singleton_model(TerminalKeybindings::new);
-    app.add_singleton_model(|_| AuthStateProvider::new_for_test());
-    app.add_singleton_model(AuthManager::new_for_test);
     app.add_singleton_model(|ctx| UserWorkspaces::mock(vec![], ctx));
     #[cfg(feature = "voice_input")]
     app.add_singleton_model(voice_input::VoiceInput::new);

@@ -14,7 +14,6 @@ use crate::{
     vim_registers::VimRegisters,
     workspace::{sync_inputs::SyncedInputState, ActiveSession},
     workspaces::user_workspaces::UserWorkspaces,
-    AuthStateProvider,
 };
 
 use super::{CodeEditorRenderOptions, CodeEditorView, CodeEditorViewAction};
@@ -28,7 +27,6 @@ fn initialize_editor(app: &mut App) -> (WindowId, ViewHandle<CodeEditorView>) {
     app.add_singleton_model(|_| SyncedInputState::mock());
     app.add_singleton_model(|_| VimRegisters::new());
     app.add_singleton_model(|_| KeybindingChangedNotifier::mock());
-    app.add_singleton_model(|_| AuthStateProvider::new_for_test());
 
     app.add_singleton_model(|_| ActiveSession::default());
     app.add_singleton_model(NotebookKeybindings::new);

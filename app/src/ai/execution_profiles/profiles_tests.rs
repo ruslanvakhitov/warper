@@ -3,21 +3,15 @@ use warpui::{App, SingletonEntity};
 use crate::ai::execution_profiles::profiles::AIExecutionProfilesModel;
 use crate::ai::execution_profiles::ActionPermission;
 use crate::ai::mcp::TemplatableMCPServerManager;
-use crate::auth::AuthStateProvider;
 use crate::network::NetworkStatus;
-use crate::server::cloud_objects::update_manager::UpdateManager;
-use crate::server::sync_queue::SyncQueue;
 use crate::settings::PrivacySettings;
 use crate::test_util::settings::initialize_settings_for_tests;
 use crate::workspaces::user_workspaces::UserWorkspaces;
 use crate::LaunchMode;
 
-fn install_singletons(app: &mut App, auth_state: AuthStateProvider) {
+fn install_singletons(app: &mut App) {
     initialize_settings_for_tests(app);
-    app.add_singleton_model(|_| auth_state);
-    app.add_singleton_model(SyncQueue::mock);
     app.add_singleton_model(|_| NetworkStatus::new());
-    app.add_singleton_model(UpdateManager::mock);
     app.add_singleton_model(|_| TemplatableMCPServerManager::default());
     app.add_singleton_model(PrivacySettings::mock);
     app.add_singleton_model(UserWorkspaces::default_mock);
@@ -27,7 +21,7 @@ fn install_singletons(app: &mut App, auth_state: AuthStateProvider) {
 #[test]
 fn edits_persist_on_unsynced_default_profile_when_logged_out() {
     App::test((), |mut app| async move {
-        install_singletons(&mut app, AuthStateProvider::new_logged_out_for_test());
+        install_singletons(&mut app);
         let profile_model = app.add_singleton_model(|ctx| {
             AIExecutionProfilesModel::new(&LaunchMode::new_for_unit_test(), ctx)
         });

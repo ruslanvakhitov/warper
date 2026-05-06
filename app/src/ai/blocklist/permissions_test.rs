@@ -26,9 +26,7 @@ use crate::{
         },
         mcp::templatable_manager::TemplatableMCPServerManager,
     },
-    auth::AuthStateProvider,
     network::NetworkStatus,
-    server::sync_queue::SyncQueue,
     settings::{AgentModeCommandExecutionPredicate, PrivacySettings},
     test_util::settings::initialize_settings_for_tests_with_mode,
     workspaces::{user_workspaces::UserWorkspaces, workspace::SandboxedAgentSettings},
@@ -73,8 +71,6 @@ fn initialize_permissions_test_with_mode(
     app.add_singleton_model(AgentNotificationsModel::new);
     let permissions = app.add_singleton_model(BlocklistAIPermissions::new);
     let terminal_view_id = EntityId::new();
-    app.add_singleton_model(|_| AuthStateProvider::new_for_test());
-    app.add_singleton_model(SyncQueue::mock);
     app.add_singleton_model(|_| NetworkStatus::new());
     app.add_singleton_model(|_| TemplatableMCPServerManager::default());
     let profile_model = app.add_singleton_model(|ctx| {

@@ -1,6 +1,6 @@
 use std::io;
 
-use tink_proto::{keyset_info::KeyInfo, KeysetInfo};
+use tink_proto::{KeysetInfo, keyset_info::KeyInfo};
 
 use crate::ManagedSecretValue;
 

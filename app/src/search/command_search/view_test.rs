@@ -1,14 +1,8 @@
 use warpui::{platform::WindowStyle, App};
 
 use crate::{
-    network::NetworkStatus,
-    server::{
-        cloud_objects::{listener::Listener, update_manager::UpdateManager},
-        sync_queue::SyncQueue,
-    },
-    settings_view::keybindings::KeybindingChangedNotifier,
-    system::SystemStats,
-    test_util::settings::initialize_settings_for_tests,
+    network::NetworkStatus, settings_view::keybindings::KeybindingChangedNotifier,
+    system::SystemStats, test_util::settings::initialize_settings_for_tests,
     workspaces::user_workspaces::UserWorkspaces,
 };
 
@@ -16,14 +10,9 @@ use super::*;
 
 fn initialize_app(app: &mut App) {
     initialize_settings_for_tests(app);
-    app.add_singleton_model(|_| AuthStateProvider::new_for_test());
-    app.add_singleton_model(AuthManager::new_for_test);
     app.add_singleton_model(|_| NetworkStatus::new());
     app.add_singleton_model(|_| SystemStats::new());
-    app.add_singleton_model(SyncQueue::mock);
     app.add_singleton_model(UserWorkspaces::default_mock);
-    app.add_singleton_model(Listener::mock);
-    app.add_singleton_model(UpdateManager::mock);
     app.add_singleton_model(|_| Appearance::mock());
     app.add_singleton_model(|_| ResizableData::default());
     app.add_singleton_model(|_| KeybindingChangedNotifier::mock());

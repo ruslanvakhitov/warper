@@ -1,5 +1,5 @@
 use crate::{
-    server::ids::{ClientId, HashableId, ServerId, SyncId},
+    warp_server_client::ids::{ClientId, HashableId, ServerId, SyncId},
     workflows::workflow::{Argument, ArgumentType, Workflow},
 };
 

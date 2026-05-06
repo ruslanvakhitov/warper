@@ -1,4 +1,3 @@
-use crate::auth::AuthStateProvider;
 use crate::code::editor::view::CodeEditorRenderOptions;
 use crate::notebooks::editor::keys::NotebookKeybindings;
 use crate::workspace::ActiveSession;
@@ -40,7 +39,6 @@ fn initialize_code_editor_app(app: &mut App) {
     initialize_settings_for_tests(app);
 
     // Add required singleton models for CodeEditorView
-    app.add_singleton_model(|_| AuthStateProvider::new_for_test());
     app.add_singleton_model(|_| Appearance::mock());
     app.add_singleton_model(|_| SyncedInputState::mock());
     app.add_singleton_model(|_| VimRegisters::new());

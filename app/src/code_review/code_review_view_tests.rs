@@ -1,7 +1,6 @@
 use super::*;
 use crate::ai::persisted_workspace::PersistedWorkspace;
 use crate::ai::request_limits::AIRequestUsageModel;
-use crate::auth::AuthStateProvider;
 use crate::code::editor::view::{CodeEditorRenderOptions, CodeEditorView};
 use crate::code::local_code_editor::LocalCodeEditorView;
 use crate::code_review::comments::{
@@ -61,7 +60,6 @@ impl warpui::TypedActionView for TestView {
 /// Initialize required singletons for testing
 fn initialize_test_app(app: &mut App) {
     initialize_settings_for_tests(app);
-    app.add_singleton_model(|_| AuthStateProvider::new_for_test());
     app.add_singleton_model(|_| Appearance::mock());
     app.add_singleton_model(|_| SyncedInputState::mock());
     app.add_singleton_model(|_| VimRegisters::new());

@@ -622,7 +622,10 @@ fn make_non_terminal_leaf(is_focused: bool) -> PaneNodeSnapshot {
     PaneNodeSnapshot::Leaf(LeafSnapshot {
         is_focused,
         custom_vertical_tabs_title: None,
-        contents: LeafContents::NetworkLog,
+        contents: LeafContents::Settings(SettingsPaneSnapshot::Local {
+            current_page: SettingsSection::General,
+            search_query: None,
+        }),
     })
 }
 

@@ -1,6 +1,4 @@
 use super::*;
-use crate::auth::auth_manager::AuthManager;
-use crate::auth::AuthStateProvider;
 use crate::search::item::SearchItem;
 use ordered_float::OrderedFloat;
 use std::collections::HashSet;
@@ -145,11 +143,6 @@ impl AsyncDataSource for QueryDrivenDelayedAsyncSource {
             })])
         })
     }
-}
-
-fn initialize_app(app: &mut App) {
-    app.add_singleton_model(|_| AuthStateProvider::new_for_test());
-    app.add_singleton_model(AuthManager::new_for_test);
 }
 
 #[test]
@@ -334,7 +327,6 @@ fn test_results_with_mixed_tiers_scores_and_sources_sort_consistently() {
 #[test]
 fn test_initial_results_timeout_and_appends_late_async_results_without_reordering() {
     App::test((), |mut app| async move {
-        initialize_app(&mut app);
         let mixer = app.add_model(|_| SearchMixer::<TestAction>::new());
         mixer.update(&mut app, |mixer, ctx| {
             mixer.add_sync_source(
@@ -429,7 +421,6 @@ fn test_initial_results_timeout_and_appends_late_async_results_without_reorderin
 #[test]
 fn test_initial_results_commit_keeps_sorted_results_when_async_finishes_before_timeout() {
     App::test((), |mut app| async move {
-        initialize_app(&mut app);
         let mixer = app.add_model(|_| SearchMixer::<TestAction>::new());
         mixer.update(&mut app, |mixer, ctx| {
             mixer.add_sync_source(
@@ -491,7 +482,6 @@ fn test_initial_results_commit_keeps_sorted_results_when_async_finishes_before_t
 #[test]
 fn test_stale_async_results_do_not_poison_newer_query() {
     App::test((), |mut app| async move {
-        initialize_app(&mut app);
         let mixer = app.add_model(|_| SearchMixer::<TestAction>::new());
         mixer.update(&mut app, |mixer, ctx| {
             mixer.add_async_source(

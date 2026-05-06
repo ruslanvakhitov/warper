@@ -16,20 +16,14 @@ use crate::{
         skills::SkillManager,
         AIRequestUsageModel,
     },
-    auth::auth_manager::AuthManager,
     context_chips::prompt::Prompt,
     experiments,
     network::NetworkStatus,
     notebooks::{
         editor::keys::NotebookKeybindings, manager::NotebookManager, notebook::NotebookView,
     },
-    pricing::PricingInfoModel,
     resource_center::TipsCompleted,
     search::files::model::FileSearchModel,
-    server::{
-        cloud_objects::{listener::Listener, update_manager::UpdateManager},
-        sync_queue::SyncQueue,
-    },
     settings::PrivacySettings,
     settings_view::keybindings::KeybindingChangedNotifier,
     suggestions::ignored_suggestions_model::IgnoredSuggestionsModel,
@@ -71,15 +65,10 @@ use warpui::{
 
 fn initialize_app(app: &mut App) {
     initialize_settings_for_tests(app);
-    app.add_singleton_model(|_| AuthStateProvider::new_for_test());
-    app.add_singleton_model(AuthManager::new_for_test);
     app.add_singleton_model(|_ctx| PtySpawner::new_for_test());
     app.add_singleton_model(|_| NetworkStatus::new());
     app.add_singleton_model(|_| SystemStats::new());
-    app.add_singleton_model(SyncQueue::mock);
     app.add_singleton_model(UserWorkspaces::default_mock);
-    app.add_singleton_model(Listener::mock);
-    app.add_singleton_model(UpdateManager::mock);
 
     // Initialize file-based MCP dependencies.
     app.add_singleton_model(|_| DetectedRepositories::default());
@@ -138,7 +127,6 @@ fn initialize_app(app: &mut App) {
     app.add_singleton_model(|_| WorkspaceRegistry::new());
     app.add_singleton_model(UndoCloseStack::new);
     app.add_singleton_model(|_| IgnoredSuggestionsModel::new(vec![]));
-    app.add_singleton_model(|_| PricingInfoModel::new());
     app.add_singleton_model(AIDocumentModel::new);
     app.add_singleton_model(|_| History::new(vec![]));
     app.add_singleton_model(AgentConversationsModel::new);
@@ -166,7 +154,7 @@ fn mock_pane_group(app: &mut App, options: MockOptions) -> ViewHandle<PaneGroup>
     let (_, pane_group) =
         app.add_window_with_bounds(WindowStyle::NotStealFocus, options.window_bounds, |ctx| {
             let user_default_shell_changed_banner_dismissal_model_handle =
-                ctx.add_model(|_| BannerState::default());
+                ctx.add_model(|_| Default::default());
             let block_lists = Arc::new(HashMap::new());
             PaneGroup::new_with_panes_layout(
                 tips_model,
@@ -1086,7 +1074,7 @@ fn test_focused_pane_is_synchronized_with_application_focus() {
         let (_, root_view) =
             app.add_window_with_bounds(WindowStyle::NotStealFocus, WindowBounds::Default, |ctx| {
                 let user_default_shell_changed_banner_dismissal_model_handle =
-                    ctx.add_model(|_| BannerState::default());
+                    ctx.add_model(|_| Default::default());
                 let block_lists = Arc::new(HashMap::new());
                 let pane_group = ctx.add_typed_action_view(|ctx| {
                     PaneGroup::new_with_panes_layout(
