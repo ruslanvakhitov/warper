@@ -408,14 +408,14 @@ impl BlocklistAIActionExecutor {
         &self.ask_user_question_executor
     }
 
-    pub fn set_ambient_agent_task_id(
+    pub fn set_local_agent_run_id(
         &self,
-        _id: Option<crate::ai::agent::conversation::AmbientAgentTaskId>,
+        _id: Option<crate::ai::agent::conversation::LocalAgentRunId>,
         ctx: &mut ModelContext<Self>,
     ) {
         self.request_computer_use_executor
             .update(ctx, |executor, _| {
-                executor.set_ambient_agent_task_id(None);
+                executor.set_local_agent_run_id(None);
             });
     }
 

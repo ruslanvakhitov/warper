@@ -70,20 +70,20 @@ use super::{
 };
 
 #[derive(Debug, thiserror::Error)]
-#[error("Invalid task ID: {0}")]
-pub struct ParseAmbientAgentTaskIdError(#[from] uuid::Error);
+#[error("Invalid local agent run ID: {0}")]
+pub struct ParseLocalAgentRunIdError(#[from] uuid::Error);
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct AmbientAgentTaskId(uuid::NonNilUuid);
+pub struct LocalAgentRunId(uuid::NonNilUuid);
 
-impl Display for AmbientAgentTaskId {
+impl Display for LocalAgentRunId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)
     }
 }
 
-impl std::str::FromStr for AmbientAgentTaskId {
-    type Err = ParseAmbientAgentTaskIdError;
+impl std::str::FromStr for LocalAgentRunId {
+    type Err = ParseLocalAgentRunIdError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let uuid = Uuid::try_parse(s)?;
@@ -166,18 +166,15 @@ pub struct AIConversation {
     /// This must be roundtripped to the server when sending follow-ups within a given conversation.
     server_conversation_token: Option<ServerConversationToken>,
 
-    /// The server-assigned task/run identifier (`ai_tasks.id`) for this
-    /// conversation, used for v2 orchestration.
+    /// Local run identifier for this conversation, used for v2 orchestration.
     ///
     /// For local conversations, parsed from `StreamInit.run_id` on the first
-    /// response. For remote child agents spawned via `POST /agent/run`, set
-    /// from `SpawnAgentResponse.task_id`.
+    /// response. For local child harness panes, generated before the hidden
+    /// child pane starts so parent/child events can be correlated immediately.
     ///
-    /// Used for messaging API, events API, poller self-filtering, lifecycle
-    /// reports, parent↔child agent identity, and task status reporting.
-    /// The string form (for APIs that accept a run_id) is obtained via
-    /// `run_id()` which calls `.to_string()` on this field.
-    task_id: Option<AmbientAgentTaskId>,
+    /// Used for parent-child agent identity and local orchestration event
+    /// routing. The string form is obtained via `run_id()`.
+    local_run_id: Option<LocalAgentRunId>,
 
     /// The server conversation ID of the source conversation if this conversation was forked.
     forked_from_server_conversation_token: Option<ServerConversationToken>,
@@ -264,7 +261,7 @@ impl AIConversation {
             has_opened_code_review: false,
             conversation_usage_metadata: ConversationUsageMetadata::default(),
             server_conversation_token: None,
-            task_id: None,
+            local_run_id: None,
             forked_from_server_conversation_token: None,
             transaction: None,
             autoexecute_override: Default::default(),
@@ -442,7 +439,7 @@ impl AIConversation {
             has_opened_code_review: false,
             conversation_usage_metadata,
             server_conversation_token,
-            task_id: run_id.as_deref().and_then(|id| id.parse().ok()),
+            local_run_id: run_id.as_deref().and_then(|id| id.parse().ok()),
             forked_from_server_conversation_token,
             transaction: None,
             autoexecute_override,
@@ -698,24 +695,24 @@ impl AIConversation {
         self.server_conversation_token.as_ref()
     }
 
-    /// Returns the server-assigned run identifier as a string.
+    /// Returns the local run identifier as a string.
     pub fn run_id(&self) -> Option<String> {
-        self.task_id.map(|id| id.to_string())
+        self.local_run_id.map(|id| id.to_string())
     }
 
-    /// Sets the task ID by parsing a run_id string.
+    /// Sets the local run ID by parsing a run_id string.
     pub fn set_run_id(&mut self, id: String) {
-        self.task_id = id.parse().ok();
+        self.local_run_id = id.parse().ok();
     }
 
-    /// Returns the server-assigned task ID, if available.
-    pub fn task_id(&self) -> Option<AmbientAgentTaskId> {
-        self.task_id
+    /// Returns the local run ID, if available.
+    pub fn local_run_id(&self) -> Option<LocalAgentRunId> {
+        self.local_run_id
     }
 
-    /// Sets the task ID directly (used for child agents spawned via `SpawnAgentResponse`).
-    pub fn set_task_id(&mut self, id: AmbientAgentTaskId) {
-        self.task_id = Some(id);
+    /// Sets the local run ID directly.
+    pub fn set_local_run_id(&mut self, id: LocalAgentRunId) {
+        self.local_run_id = Some(id);
     }
 
     /// Returns the server-side agent identifier appropriate for the active
@@ -1490,7 +1487,7 @@ impl AIConversation {
         self.server_conversation_token =
             Some(ServerConversationToken::new(init_event.conversation_id));
         let run_id = Some(init_event.run_id).filter(|s| !s.is_empty());
-        self.task_id = run_id.as_deref().and_then(|id| id.parse().ok());
+        self.local_run_id = run_id.as_deref().and_then(|id| id.parse().ok());
         Ok(())
     }
 
@@ -2694,7 +2691,7 @@ impl AIConversation {
                 parent_agent_id: self.parent_agent_id.clone(),
                 agent_name: self.agent_name.clone(),
                 parent_conversation_id: self.parent_conversation_id.map(|id| id.to_string()),
-                run_id: self.task_id.map(|id| id.to_string()),
+                run_id: self.local_run_id.map(|id| id.to_string()),
                 autoexecute_override: Some(self.autoexecute_override.into()),
                 last_event_sequence: self.last_event_sequence,
             },

@@ -6,7 +6,7 @@ use warp_cli::agent::Harness;
 use warp_managed_secrets::ManagedSecretValue;
 
 use crate::ai::{
-    agent::conversation::AmbientAgentTaskId,
+    agent::conversation::LocalAgentRunId,
     agent_sdk::{
         driver::AgentDriverError, task_env_vars, validate_cli_installed, ClaudeHarness,
         ThirdPartyHarness,
@@ -20,7 +20,7 @@ pub(super) struct PreparedLocalHarnessLaunch {
     pub command: String,
     pub env_vars: HashMap<OsString, OsString>,
     pub run_id: String,
-    pub task_id: AmbientAgentTaskId,
+    pub local_run_id: LocalAgentRunId,
 }
 
 pub(super) fn normalize_local_child_harness(harness_type: &str) -> Option<Harness> {
@@ -113,16 +113,16 @@ pub(super) async fn prepare_local_harness_child_launch(
         Harness::Gemini => unreachable!("normalize_local_child_harness filters out Gemini"),
     };
 
-    let task_id = Uuid::new_v4()
+    let local_run_id = Uuid::new_v4()
         .to_string()
-        .parse::<AmbientAgentTaskId>()
-        .map_err(|error| format!("Failed to create local child task id: {error}"))?;
+        .parse::<LocalAgentRunId>()
+        .map_err(|error| format!("Failed to create local child run id: {error}"))?;
 
     Ok(PreparedLocalHarnessLaunch {
         command,
-        env_vars: task_env_vars(Some(&task_id), parent_run_id.as_deref(), harness),
-        run_id: task_id.to_string(),
-        task_id,
+        env_vars: task_env_vars(Some(&local_run_id), parent_run_id.as_deref(), harness),
+        run_id: local_run_id.to_string(),
+        local_run_id,
     })
 }
 

@@ -22,7 +22,7 @@ use super::{
     BlocklistAIInputModel, InputType,
 };
 use crate::ai::agent::api::{self, ServerConversationToken};
-use crate::ai::agent::conversation::AmbientAgentTaskId;
+use crate::ai::agent::conversation::LocalAgentRunId;
 use crate::ai::agent::conversation::{AIConversation, ConversationStatus};
 use crate::ai::agent::task::TaskId;
 use crate::ai::agent::{
@@ -275,10 +275,10 @@ pub struct BlocklistAIController {
 
     should_refresh_available_llms_on_stream_finish: bool,
 
-    /// Ambient agent task ID attached to this controller. This is a property of the controller, and not an individual
-    /// conversation, because the ambient agent task driver owns the entire Warp window working on a task, and any
-    /// sessions within it. In the future, one task may span several sessions with background processes.
-    ambient_agent_task_id: Option<AmbientAgentTaskId>,
+    /// Local agent run ID attached to this controller. This is a property of the controller, and not an individual
+    /// conversation, because the local agent driver owns the entire Warp window working on a run, and any
+    /// sessions within it. In the future, one run may span several sessions with background processes.
+    local_agent_run_id: Option<LocalAgentRunId>,
 
     /// Per-session directory for downloading file attachments.
     /// Set by the agent driver based on the workspace directory (e.g. `{working_dir}/.warp/attachments`).
@@ -504,7 +504,7 @@ impl BlocklistAIController {
             in_flight_response_streams: PendingResponseStreams::new(),
             terminal_view_id,
             should_refresh_available_llms_on_stream_finish: false,
-            ambient_agent_task_id: None,
+            local_agent_run_id: None,
             attachments_download_dir: None,
             pending_auto_resume_handles: HashMap::new(),
             pending_passive_follow_ups: HashSet::new(),
@@ -1577,7 +1577,7 @@ impl BlocklistAIController {
                 forked_from_conversation_token: conversation
                     .forked_from_server_conversation_token()
                     .cloned(),
-                ambient_agent_task_id: self.ambient_agent_task_id,
+                local_agent_run_id: self.local_agent_run_id,
                 existing_suggestions: None,
             };
             (conversation_id, task_id, conversation_data)
@@ -1593,7 +1593,7 @@ impl BlocklistAIController {
                 tasks: vec![],
                 server_conversation_token: None,
                 forked_from_conversation_token: None,
-                ambient_agent_task_id: self.ambient_agent_task_id,
+                local_agent_run_id: self.local_agent_run_id,
                 existing_suggestions: None,
             };
             (conversation_id, task_id, conversation_data)
@@ -1691,15 +1691,15 @@ impl BlocklistAIController {
         )
     }
 
-    /// Set the ID of the ambient agent task which owns this controller and its backing session.
-    pub fn set_ambient_agent_task_id(
+    /// Set the local run ID which owns this controller and its backing session.
+    pub fn set_local_agent_run_id(
         &mut self,
-        id: Option<AmbientAgentTaskId>,
+        id: Option<LocalAgentRunId>,
         ctx: &mut ModelContext<Self>,
     ) {
-        self.ambient_agent_task_id = id;
+        self.local_agent_run_id = id;
         self.action_model.update(ctx, |action_model, ctx| {
-            action_model.set_ambient_agent_task_id(id, ctx);
+            action_model.set_local_agent_run_id(id, ctx);
         });
     }
 
@@ -1811,7 +1811,7 @@ impl BlocklistAIController {
             tasks: active_tasks,
             server_conversation_token: conversation_server_token,
             forked_from_conversation_token: conversation_forked_from_token,
-            ambient_agent_task_id: self.ambient_agent_task_id,
+            local_agent_run_id: self.local_agent_run_id,
             existing_suggestions: history_model
                 .as_ref(ctx)
                 .existing_suggestions_for_conversation(conversation_id)

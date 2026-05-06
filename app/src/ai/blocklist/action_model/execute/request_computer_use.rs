@@ -23,9 +23,9 @@ impl RequestComputerUseExecutor {
         }
     }
 
-    pub fn set_ambient_agent_task_id(
+    pub fn set_local_agent_run_id(
         &mut self,
-        _id: Option<crate::ai::agent::conversation::AmbientAgentTaskId>,
+        _id: Option<crate::ai::agent::conversation::LocalAgentRunId>,
     ) {
     }
 

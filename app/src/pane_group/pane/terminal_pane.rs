@@ -967,7 +967,7 @@ fn handle_terminal_view_event(
                                         command,
                                         env_vars,
                                         run_id,
-                                        task_id,
+                                        local_run_id,
                                     } = launch;
                                     if let Some(HiddenChildAgentConversation {
                                         terminal_view: new_terminal_view,
@@ -988,7 +988,7 @@ fn handle_terminal_view_event(
                                                 history_model.assign_run_id_for_conversation(
                                                     conversation_id,
                                                     run_id,
-                                                    Some(task_id),
+                                                    Some(local_run_id),
                                                     terminal_view_id,
                                                     ctx,
                                                 );

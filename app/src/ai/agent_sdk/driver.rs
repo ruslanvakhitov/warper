@@ -18,7 +18,7 @@ use crate::ai::llms::{LLMId, LLMPreferences};
 use crate::ai::mcp::MCPServerState;
 use crate::ai::{
     agent::conversation::{
-        AIConversation, AIConversationId, AmbientAgentTaskId, ConversationStatus,
+        AIConversation, AIConversationId, LocalAgentRunId, ConversationStatus,
     },
     agent_sdk::driver::harness::{
         task_env_vars, HarnessKind, HarnessRunner, SavePoint, ThirdPartyHarness,
@@ -64,7 +64,6 @@ use warpui::{
     AppContext, Entity, ModelContext, ModelHandle, ModelSpawner, SingletonEntity,
 };
 
-mod error_classification;
 pub(crate) mod harness;
 pub(super) mod output;
 pub(crate) mod terminal;
@@ -161,8 +160,8 @@ pub struct AgentDriverOptions {
     pub working_dir: PathBuf,
     /// Secrets to inject into the agent's terminal session.
     pub secrets: HashMap<String, ManagedSecretValue>,
-    /// ID of the task being executed.
-    pub task_id: Option<AmbientAgentTaskId>,
+    /// Local run ID for the agent execution.
+    pub local_run_id: Option<LocalAgentRunId>,
     /// Parent run ID for child orchestration flows, if this task was spawned by another run.
     pub parent_run_id: Option<String>,
     /// Whether the agent run should share its session.
@@ -386,7 +385,7 @@ impl AgentDriver {
     ) -> Result<Self, AgentDriverError> {
         let AgentDriverOptions {
             working_dir,
-            task_id,
+            local_run_id,
             parent_run_id,
             should_share,
             idle_on_complete,
@@ -481,7 +480,7 @@ impl AgentDriver {
         }
 
         env_vars.extend(task_env_vars(
-            task_id.as_ref(),
+            local_run_id.as_ref(),
             parent_run_id.as_deref(),
             selected_harness,
         ));

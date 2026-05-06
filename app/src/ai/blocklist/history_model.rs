@@ -173,7 +173,7 @@ pub struct BlocklistAIHistoryModel {
     /// Maintained alongside every mutation of `conversations_by_id` and
     /// `all_conversations_metadata` that involves a token. Used to make
     /// `find_conversation_id_by_server_token` O(1); it is called once per
-    /// ambient-agent task on every conversation-list refresh.
+    /// local agent run on every conversation-list refresh.
     server_token_to_conversation_id: HashMap<ServerConversationToken, AIConversationId>,
 
     /// Index from parent conversation ID to child conversation IDs.
@@ -795,7 +795,7 @@ impl BlocklistAIHistoryModel {
         }
     }
 
-    /// Assigns a `run_id` to a conversation that was spawned as a remote child
+    /// Assigns a `run_id` to a conversation that was spawned as a local child
     /// agent. Updates the `agent_id_to_conversation_id` index and emits
     /// `ConversationServerTokenAssigned` so the `StartAgentExecutor` can
     /// complete the pending `start_agent` tool call.
@@ -803,7 +803,7 @@ impl BlocklistAIHistoryModel {
         &mut self,
         conversation_id: AIConversationId,
         run_id: String,
-        task_id: Option<crate::ai::agent::conversation::AmbientAgentTaskId>,
+        local_run_id: Option<crate::ai::agent::conversation::LocalAgentRunId>,
         terminal_view_id: EntityId,
         ctx: &mut ModelContext<Self>,
     ) {
@@ -814,8 +814,8 @@ impl BlocklistAIHistoryModel {
             return;
         };
         conversation.set_run_id(run_id);
-        if let Some(task_id) = task_id {
-            conversation.set_task_id(task_id);
+        if let Some(local_run_id) = local_run_id {
+            conversation.set_local_run_id(local_run_id);
         }
 
         if let Some(key) = agent_id_key(conversation) {

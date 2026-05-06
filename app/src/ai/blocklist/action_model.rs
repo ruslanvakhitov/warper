@@ -248,8 +248,8 @@ pub struct BlocklistAIActionModel {
     /// This is used for agent session sharing to avoid any tools blocking on the viewer's acceptance.
     is_view_only: bool,
 
-    /// The ID of the ambient agent task which owns this action model, if any.
-    ambient_agent_task_id: Option<crate::ai::agent::conversation::AmbientAgentTaskId>,
+    /// The local run ID which owns this action model, if any.
+    local_agent_run_id: Option<crate::ai::agent::conversation::LocalAgentRunId>,
 }
 
 impl BlocklistAIActionModel {
@@ -313,7 +313,7 @@ impl BlocklistAIActionModel {
             terminal_view_id,
             pending_preprocessed_actions: Default::default(),
             is_view_only: false,
-            ambient_agent_task_id: None,
+            local_agent_run_id: None,
         }
     }
 
@@ -407,14 +407,14 @@ impl BlocklistAIActionModel {
             .clone()
     }
 
-    pub fn set_ambient_agent_task_id(
+    pub fn set_local_agent_run_id(
         &mut self,
-        id: Option<crate::ai::agent::conversation::AmbientAgentTaskId>,
+        id: Option<crate::ai::agent::conversation::LocalAgentRunId>,
         ctx: &mut ModelContext<Self>,
     ) {
-        self.ambient_agent_task_id = id;
+        self.local_agent_run_id = id;
         self.executor.update(ctx, |executor, ctx| {
-            executor.set_ambient_agent_task_id(id, ctx);
+            executor.set_local_agent_run_id(id, ctx);
         });
     }
 

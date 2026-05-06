@@ -354,7 +354,7 @@ impl AgentDriverRunner {
 
                 let driver_options = driver::AgentDriverOptions {
                     working_dir: working_dir.clone(),
-                    task_id: None,
+                    local_run_id: None,
                     parent_run_id: None,
                     should_share: false,
                     idle_on_complete: args.idle_on_complete.map(|d| d.into()),

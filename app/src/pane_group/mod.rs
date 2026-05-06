@@ -2881,15 +2881,6 @@ impl PaneGroup {
         new_pane_id
     }
 
-    /// Creates a local terminal pane for stale child-agent state.
-    fn insert_ambient_agent_pane_hidden_for_child_agent(
-        &mut self,
-        base_pane_id: PaneId,
-        ctx: &mut ViewContext<Self>,
-    ) -> TerminalPaneId {
-        self.insert_terminal_pane_hidden_for_child_agent(base_pane_id, HashMap::new(), ctx)
-    }
-
     /// Get the [`PaneView<TerminalView>`] for the pane at `pane_index`, if that pane is:
     /// 1. In bounds
     /// 2. A terminal pane

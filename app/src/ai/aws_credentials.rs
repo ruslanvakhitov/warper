@@ -303,7 +303,7 @@ fn refresh_aws_credentials_oidc(
     }
 
     let Some(task_id) = task_id else {
-        let message = "AWS Bedrock inference requires an ambient task ID before credentials \
+        let message = "AWS Bedrock inference requires an agent run ID before credentials \
                        can be minted"
             .to_string();
         manager.set_aws_credentials_state(
