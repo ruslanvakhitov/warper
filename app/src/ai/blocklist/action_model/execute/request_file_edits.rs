@@ -30,7 +30,7 @@ use crate::{
             inline_action::code_diff_view::{
                 CodeDiffView, CodeDiffViewEvent, DiffSessionType, FileDiff,
             },
-            BlocklistAIPermissions, RequestedEditResolution,
+            BlocklistAIPermissions,
         },
         paths::host_native_absolute_path,
     },
@@ -159,17 +159,10 @@ impl RequestFileEditsExecutor {
             ));
         }
 
-        let identifiers = self
-            .generate_ai_identifiers(&input.conversation_id, id, ctx)
-            .unwrap_or_else(|| AIIdentifiers {
-                client_conversation_id: Some(input.conversation_id),
-                ..Default::default()
-            });
-
         let (result_tx, result_rx) = oneshot::channel();
         let mut result_tx = Some(result_tx);
 
-        ctx.subscribe_to_view(diff_view, move |_me, event, ctx| match event {
+        ctx.subscribe_to_view(diff_view, move |_me, event, _ctx| match event {
             CodeDiffViewEvent::Rejected => {
                 let Some(result_tx) = result_tx.take() else {
                     return;
@@ -203,9 +196,6 @@ impl RequestFileEditsExecutor {
                     let _ = result_tx.send(RequestFileEditsResult::DiffApplicationFailed { error });
                     return;
                 }
-
-                let passive_diff = BlocklistAIHistoryModel::as_ref(ctx)
-                    .is_entirely_passive_conversation(&input.conversation_id);
 
                 // Build a map of file path → content from the editor buffers.
                 // This avoids re-reading files from disk or the remote session.

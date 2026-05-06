@@ -17,7 +17,6 @@ pub use pending_user_query_block::{PendingUserQueryBlock, PendingUserQueryBlockE
 
 #[cfg(feature = "agent_mode_debug")]
 use self::code_diff_view::FileDiff;
-use crate::ai::agent::redaction::redact_secrets;
 use crate::ai::agent::CancellationReason;
 use crate::ai::agent::PassiveSuggestionTrigger;
 use crate::ai::agent::SuggestPromptRequest;
@@ -35,7 +34,6 @@ use crate::ai::blocklist::SuggestionDismissButtonTheme;
 #[cfg(not(target_family = "wasm"))]
 use repo_metadata::repositories::DetectedRepositories;
 
-use crate::ai::skills::SkillManager;
 #[cfg(feature = "local_fs")]
 use crate::ai::skills::SkillOpenOrigin;
 use crate::code::editor::comment_editor::create_readonly_comment_markdown_editor;
@@ -93,7 +91,6 @@ use crate::ai::blocklist::inline_action::web_fetch::WebFetchView;
 use crate::ai::blocklist::inline_action::web_search::WebSearchView;
 use crate::ai::blocklist::metadata::AgentModeRewindEntrypoint;
 use crate::code_review::metadata::CodeReviewPaneEntrypoint;
-use crate::settings::InputSettings;
 use crate::terminal::view::{CodeDiffAction, TerminalAction};
 use crate::ui_components::icons::Icon;
 #[cfg(feature = "local_fs")]
@@ -217,7 +214,6 @@ use super::{
         CodeDiffState, CodeDiffView, CodeDiffViewAction, CodeDiffViewEvent,
     },
     permissions::is_agent_mode_autonomy_allowed,
-    ugc_policy_banner::should_collect_ai_ugc,
     BlocklistAIActionModel, BlocklistAIController, BlocklistAIHistoryEvent,
     BlocklistAIHistoryModel, BlocklistAIPermissions,
 };
@@ -1633,18 +1629,7 @@ impl AIBlock {
             self.time_to_last_token = Some(latency);
         }
 
-        let was_autodetected_ai_query = self.model.was_autodetected_ai_query(ctx);
-        let client_exchange_id = self.client_ids.client_exchange_id.to_string();
-        let conversation_id = self.client_ids.conversation_id;
-        let time_to_first_token_ms = self
-            .time_to_first_token
-            .get()
-            .map(|duration| duration.num_milliseconds() as u128);
-        let time_to_last_token_ms = self
-            .time_to_last_token
-            .map(|duration| duration.num_milliseconds() as u128);
         let status = self.model.status(ctx);
-        let is_udi_enabled = InputSettings::as_ref(ctx).is_universal_developer_input_enabled(ctx);
 
         match status {
             AIBlockOutputStatus::Pending => {
@@ -1657,7 +1642,6 @@ impl AIBlock {
             }
             AIBlockOutputStatus::Complete { output } => {
                 let output = output.get();
-                let server_output_id = self.model.server_output_id(ctx);
                 self.handle_updated_output(&output, ctx);
                 self.handle_complete_output(&output, ctx);
             }
@@ -1668,11 +1652,8 @@ impl AIBlock {
                 }
                 self.spawn_link_detection(ctx);
                 self.finish(FinishReason::Cancelled, ctx);
-
-                let server_output_id = self.model.server_output_id(ctx);
             }
             AIBlockOutputStatus::Failed { error, .. } => {
-                let server_output_id = self.model.server_output_id(ctx);
                 self.maybe_create_aws_bedrock_credentials_error_view(&error, ctx);
                 // There are no actions to be taken in this block, it is finished.
                 self.finish(FinishReason::Error, ctx);
@@ -3515,10 +3496,11 @@ impl AIBlock {
         interaction_source: InteractionSource,
         ctx: &mut ViewContext<Self>,
     ) -> bool {
+        let _ = interaction_source;
         let Some(suggested_prompt) = self.pending_unit_test_suggestion(ctx) else {
             return false;
         };
-        self.accept_unit_test_suggestion(suggested_prompt.clone(), interaction_source, ctx)
+        self.accept_unit_test_suggestion(suggested_prompt.clone(), ctx)
     }
 
     pub fn dismiss_pending_suggested_prompt(
@@ -3526,10 +3508,10 @@ impl AIBlock {
         interaction_source: InteractionSource,
         ctx: &mut ViewContext<Self>,
     ) -> bool {
+        let _ = interaction_source;
         let Some(suggested_prompt) = self.pending_unit_test_suggestion(ctx) else {
             return false;
         };
-        let identifiers = suggested_prompt.as_ref(ctx).identifiers().clone();
 
         // Complete the suggest prompt executor with Cancelled so the async action
         // finishes cleanly (the action auto-executes and is no longer in pending_actions).
@@ -3553,7 +3535,6 @@ impl AIBlock {
     fn accept_unit_test_suggestion(
         &mut self,
         view: ViewHandle<SuggestedUnitTestsView>,
-        interaction_source: InteractionSource,
         ctx: &mut ViewContext<Self>,
     ) -> bool {
         let Some(query) = view.as_ref(ctx).query() else {
@@ -3589,17 +3570,6 @@ impl AIBlock {
             view.set_is_hidden(true);
         });
 
-        let identifiers = view.as_ref(ctx).identifiers().clone();
-        let query = view.as_ref(ctx).query().unwrap_or_default();
-
-        let should_collect_ugc = should_collect_ai_ugc(ctx);
-        let redacted_query = if should_collect_ugc {
-            let mut redacted_query = query.clone();
-            redact_secrets(&mut redacted_query);
-            Some(redacted_query)
-        } else {
-            None
-        };
         ctx.notify();
         true
     }
@@ -3693,7 +3663,7 @@ impl AIBlock {
 
         match event {
             SuggestedUnitTestsEvent::Accept => {
-                self.accept_unit_test_suggestion(view, InteractionSource::Button, ctx);
+                self.accept_unit_test_suggestion(view, ctx);
             }
             SuggestedUnitTestsEvent::Cancel => {
                 self.dismiss_pending_suggested_prompt(InteractionSource::Button, ctx);
@@ -4153,13 +4123,8 @@ impl AIBlock {
             dunce::canonicalize(repo_path).unwrap_or_else(|_| repo_path.to_path_buf());
         let repo_path = canonical_repo_path.as_path();
 
-        let raw_count = comments.len();
         let pending = convert_insert_review_comments(comments);
-        let converted_count = pending.len();
         let flattened = attach_pending_imported_comments(pending, repo_path);
-        let thread_count = flattened.len();
-
-        if !self.model.is_restored() {}
 
         let cards: Vec<CommentViewCard> = flattened
             .into_iter()
@@ -5862,7 +5827,6 @@ impl TypedActionView for AIBlock {
                 });
             }
             AIBlockAction::Rated { is_positive } => {
-                let output_id = self.model.server_output_id(ctx);
                 let rating = if *is_positive {
                     AIBlockResponseRating::Positive
                 } else {
@@ -5978,12 +5942,6 @@ impl TypedActionView for AIBlock {
                         state.reset_interaction_state();
                     }
                 }
-
-                // Sends a telemetry event when a skill is opened from an 'open skill' button
-                if let CodeSource::Skill {
-                    reference, origin, ..
-                } = source
-                {}
 
                 #[cfg(feature = "local_fs")]
                 {

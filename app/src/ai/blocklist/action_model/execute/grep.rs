@@ -11,14 +11,10 @@ use futures::FutureExt;
 use warpui::r#async::FutureExt as AsyncFutureExt;
 use warpui::{AppContext, Entity, EntityId, ModelContext, ModelHandle, SingletonEntity};
 
-use crate::ai::agent::redaction::redact_secrets;
-use crate::ai::agent::{
-    conversation::AIConversationId, AIAgentAction, AIAgentActionType, GrepResult, ServerOutputId,
-};
-use crate::ai::blocklist::{ugc_policy_banner::should_collect_ai_ugc, BlocklistAIPermissions};
+use crate::ai::agent::{AIAgentAction, AIAgentActionType, GrepResult};
+use crate::ai::blocklist::BlocklistAIPermissions;
 use crate::ai::paths::{host_native_absolute_path, shell_native_absolute_path};
 use crate::terminal::model::session::ExecuteCommandOptions;
-use crate::PrivacySettings;
 use crate::{
     ai::agent::{AIAgentActionResultType, GrepFileMatch, GrepLineMatch},
     terminal::{
@@ -28,8 +24,8 @@ use crate::{
 };
 
 use super::{
-    get_server_output_id, is_file_path, is_git_repository, ActionExecution, AnyActionExecution,
-    ExecuteActionInput, PreprocessActionInput,
+    is_file_path, is_git_repository, ActionExecution, AnyActionExecution, ExecuteActionInput,
+    PreprocessActionInput,
 };
 
 const GREP_TIMEOUT: Duration = Duration::from_secs(10);
@@ -116,26 +112,7 @@ impl GrepError {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn log_grep_error(
-    conversation_id: AIConversationId,
-    queries: Vec<String>,
-    path: String,
-    shell_type: Option<ShellType>,
-    working_directory: Option<String>,
-    absolute_path: String,
-    error: GrepError,
-    ctx: &mut AppContext,
-) {
-    let _ = (
-        conversation_id,
-        queries,
-        path,
-        shell_type,
-        working_directory,
-        absolute_path,
-        ctx,
-    );
+fn log_grep_error(error: &GrepError) {
     log::debug!("grep tool failed: {}", error.error_message());
 }
 
@@ -202,7 +179,6 @@ impl GrepExecutor {
         };
 
         let shell_launch_data = self.active_session.as_ref(ctx).shell_launch_data(ctx);
-        let shell_type = self.active_session.as_ref(ctx).shell_type(ctx);
         let current_working_directory = self
             .active_session
             .as_ref(ctx)
@@ -216,12 +192,7 @@ impl GrepExecutor {
 
         let session = self.active_session.as_ref(ctx).session(ctx);
 
-        let path_clone = path.clone();
         let queries_clone = queries.clone();
-        let other_queries_clone = queries.clone();
-        let absolute_path_clone = absolute_path.clone();
-        let working_directory_clone = current_working_directory.clone();
-        let conversation_id_clone = input.conversation_id;
         ActionExecution::new_async(
             async move {
                 match run_grep(queries_clone, absolute_path, session, shell_launch_data)
@@ -232,21 +203,12 @@ impl GrepExecutor {
                     Err(_) => Err(GrepError::new("Grep operation timed out".to_string())),
                 }
             },
-            move |result, ctx| match result {
+            move |result, _ctx| match result {
                 Ok(grep_result) => {
                     match grep_result {
                         GrepResult::Error(ref e) => {
                             log::warn!("Executing grep resulted in error: {e:?}");
-                            log_grep_error(
-                                conversation_id_clone,
-                                other_queries_clone,
-                                path_clone,
-                                shell_type,
-                                working_directory_clone,
-                                absolute_path_clone,
-                                GrepError::new(e.to_string()),
-                                ctx,
-                            );
+                            log_grep_error(&GrepError::new(e.to_string()));
                         }
                         GrepResult::Success { .. } => {}
                         _ => {}
@@ -256,16 +218,7 @@ impl GrepExecutor {
                 Err(e) => {
                     log::warn!("Failed to execute grep: {:?}", e.error_message());
                     let error_for_conversation = e.error_for_conversation();
-                    log_grep_error(
-                        conversation_id_clone,
-                        other_queries_clone,
-                        path_clone,
-                        shell_type,
-                        working_directory_clone,
-                        absolute_path_clone,
-                        e,
-                        ctx,
-                    );
+                    log_grep_error(&e);
                     AIAgentActionResultType::Grep(GrepResult::Error(error_for_conversation))
                 }
             },

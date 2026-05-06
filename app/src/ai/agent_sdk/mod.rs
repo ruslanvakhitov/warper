@@ -38,10 +38,8 @@ mod model;
 pub mod output;
 mod profiles;
 mod provider;
-pub(crate) mod retry;
 #[cfg(test)]
 mod test_support;
-mod text_layout;
 
 /// Run a Warp CLI command.
 pub fn run(
@@ -69,7 +67,6 @@ fn dispatch_command(
             provider::run(ctx, global_options, provider_cmd)
         }
         CliCommand::Secret(_) => Err(anyhow::anyhow!("invalid value 'secret'")),
-        _ => Err(anyhow::anyhow!("unsupported local-only CLI command")),
     }
 }
 

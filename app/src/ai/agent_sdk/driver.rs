@@ -33,7 +33,6 @@ use crate::ai::{
     },
     execution_profiles::profiles::AIExecutionProfilesModel,
     mcp::{
-        file_based_manager::FileBasedMCPManager,
         parsing::{normalize_mcp_json, ParsedTemplatableMCPServerResult},
         templatable_manager::TemplatableMCPServerManagerEvent,
         TemplatableMCPServerInstallation, TemplatableMCPServerManager,
