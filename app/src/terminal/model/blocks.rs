@@ -350,7 +350,7 @@ pub struct BlockList {
     /// of the blocklist. After any other insertion, this item is automatically
     /// removed and re-appended so it stays last.
     pinned_to_bottom: Option<EntityId>,
-    is_executing_oz_environment_startup_commands: bool,
+    is_executing_agent_environment_startup_commands: bool,
 }
 
 #[cfg(debug_assertions)]
@@ -645,7 +645,7 @@ impl BlockList {
             is_inverted,
             agent_view_state: AgentViewState::Inactive,
             pinned_to_bottom: None,
-            is_executing_oz_environment_startup_commands: false,
+            is_executing_agent_environment_startup_commands: false,
         }
     }
 
@@ -1247,23 +1247,23 @@ impl BlockList {
         }
     }
 
-    pub fn is_executing_oz_environment_startup_commands(&self) -> bool {
-        self.is_executing_oz_environment_startup_commands
+    pub fn is_executing_agent_environment_startup_commands(&self) -> bool {
+        self.is_executing_agent_environment_startup_commands
     }
 
-    pub fn set_is_executing_oz_environment_startup_commands(
+    pub fn set_is_executing_agent_environment_startup_commands(
         &mut self,
         is_executing_startup_commands: bool,
     ) {
-        self.is_executing_oz_environment_startup_commands = is_executing_startup_commands;
+        self.is_executing_agent_environment_startup_commands = is_executing_startup_commands;
         if is_executing_startup_commands {
             self.active_block_mut().hide();
             self.active_block_mut()
-                .set_is_oz_environment_startup_command(true);
+                .set_is_agent_environment_startup_command(true);
         } else {
             self.active_block_mut().unhide();
             self.active_block_mut()
-                .set_is_oz_environment_startup_command(false);
+                .set_is_agent_environment_startup_command(false);
         }
     }
 
@@ -1563,7 +1563,7 @@ impl BlockList {
     /// as agent environment startup commands since those are hidden by their own mechanism.
     pub fn attach_non_startup_blocks_to_conversation(&mut self, conversation_id: AIConversationId) {
         for block in &mut self.blocks {
-            if block.is_oz_environment_startup_command() {
+            if block.is_agent_environment_startup_command() {
                 continue;
             }
             if let AgentViewVisibility::Agent {
@@ -2478,8 +2478,8 @@ impl BlockList {
             }
         }
 
-        if self.is_executing_oz_environment_startup_commands {
-            block.set_is_oz_environment_startup_command(true);
+        if self.is_executing_agent_environment_startup_commands {
+            block.set_is_agent_environment_startup_command(true);
             block.hide();
         }
 

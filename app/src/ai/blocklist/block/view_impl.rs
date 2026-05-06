@@ -660,7 +660,6 @@ pub fn render_citation(
     let theme = appearance.theme();
 
     let (icon, name) = match citation {
-        AIAgentCitation::WarpDriveObject { .. } => return None,
         AIAgentCitation::WarpDocumentation { .. } => {
             let icon = Icon::Warp.to_warpui_icon(theme.foreground()).finish();
             let name = String::from("Warp Docs");

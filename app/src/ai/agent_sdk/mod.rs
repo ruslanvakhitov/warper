@@ -10,10 +10,7 @@ use crate::ai::agent_sdk::mcp_config::build_mcp_servers_from_specs;
 use crate::ai::llms::LLMId;
 use anyhow::Context;
 use warp_cli::{
-    agent::{AgentCommand, AgentProfileCommand, OutputFormat},
-    mcp::MCPCommand,
-    model::ModelCommand,
-    provider::ProviderCommand,
+    agent::{AgentCommand, OutputFormat},
     CliCommand, GlobalOptions,
 };
 use warp_core::features::FeatureFlag;
@@ -30,7 +27,6 @@ pub(crate) use driver::harness::{
     task_env_vars, validate_cli_installed, ClaudeHarness, ThirdPartyHarness,
 };
 pub use driver::AgentDriver;
-use telemetry::CliTelemetryEvent;
 use warp_cli::agent::{Harness, Prompt, RunAgentArgs};
 
 mod common;
@@ -43,7 +39,6 @@ pub mod output;
 mod profiles;
 mod provider;
 pub(crate) mod retry;
-mod telemetry;
 #[cfg(test)]
 mod test_support;
 mod text_layout;
@@ -54,8 +49,6 @@ pub fn run(
     command: CliCommand,
     global_options: GlobalOptions,
 ) -> anyhow::Result<()> {
-    let event = command_to_telemetry_event(&command);
-
     launch_command(ctx, command, global_options)
 }
 
@@ -444,30 +437,3 @@ fn report_fatal_error(err: anyhow::Error, ctx: &mut AppContext) {
     let error = anyhow::anyhow!(message);
     ctx.terminate_app(TerminationMode::ForceTerminate, Some(Err(error)));
 }
-
-/// Map each CLI command into a telemetry event to emit when it's executed.
-fn command_to_telemetry_event(command: &CliCommand) -> CliTelemetryEvent {
-    match command {
-        CliCommand::Agent(AgentCommand::Run(args)) => CliTelemetryEvent::AgentRun {
-            gui: args.gui,
-            requested_mcp_servers: args.mcp_specs.len() + args.mcp_servers.len(),
-            has_environment: false,
-            task_id: None,
-            harness: "local".to_string(),
-        },
-        CliCommand::Agent(AgentCommand::Profile(sub)) => match sub {
-            AgentProfileCommand::List => CliTelemetryEvent::AgentProfileList,
-        },
-        CliCommand::Agent(AgentCommand::List(_)) => CliTelemetryEvent::AgentList,
-        CliCommand::MCP(MCPCommand::List) => CliTelemetryEvent::MCPList,
-        CliCommand::Model(ModelCommand::List) => CliTelemetryEvent::ModelList,
-        CliCommand::Provider(ProviderCommand::Setup(_)) => CliTelemetryEvent::ProviderSetup,
-        CliCommand::Provider(ProviderCommand::List) => CliTelemetryEvent::ProviderList,
-        CliCommand::Secret(_) => CliTelemetryEvent::SecretList,
-        _ => CliTelemetryEvent::Unsupported,
-    }
-}
-
-#[cfg(test)]
-#[path = "mod_tests.rs"]
-mod tests;

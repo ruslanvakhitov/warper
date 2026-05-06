@@ -24,31 +24,28 @@ use crate::ai::{
         task_env_vars, HarnessKind, HarnessRunner, SavePoint, ThirdPartyHarness,
     },
 };
+use crate::ai::{
+    agent::{
+        AIAgentExchange, AIAgentInput, AIAgentOutput, AIAgentOutputStatus, CancellationReason,
+        FinishedAIAgentOutput, RenderableAIError,
+    },
+    blocklist::{
+        agent_view::AgentViewEntryOrigin, BlocklistAIHistoryEvent, BlocklistAIHistoryModel,
+        BlocklistAIPermissions,
+    },
+    execution_profiles::profiles::AIExecutionProfilesModel,
+    mcp::{
+        file_based_manager::FileBasedMCPManager,
+        parsing::{normalize_mcp_json, ParsedTemplatableMCPServerResult},
+        templatable_manager::TemplatableMCPServerManagerEvent,
+        TemplatableMCPServerInstallation, TemplatableMCPServerManager,
+    },
+};
 use crate::terminal::cli_agent_sessions::plugin_manager::{
     plugin_manager_for, CliAgentPluginManager,
 };
 use crate::terminal::cli_agent_sessions::{
     CLIAgentSessionStatus, CLIAgentSessionsModel, CLIAgentSessionsModelEvent,
-};
-use crate::{
-    ai::{
-        agent::{
-            AIAgentExchange, AIAgentInput, AIAgentOutput, AIAgentOutputStatus, CancellationReason,
-            FinishedAIAgentOutput, RenderableAIError,
-        },
-        blocklist::{
-            agent_view::AgentViewEntryOrigin, BlocklistAIHistoryEvent, BlocklistAIHistoryModel,
-            BlocklistAIPermissions,
-        },
-        execution_profiles::profiles::AIExecutionProfilesModel,
-        mcp::{
-            file_based_manager::FileBasedMCPManager,
-            parsing::{normalize_mcp_json, ParsedTemplatableMCPServerResult},
-            templatable_manager::TemplatableMCPServerManagerEvent,
-            TemplatableMCPServerInstallation, TemplatableMCPServerManager,
-        },
-    },
-    server::ids::{ServerId, SyncId},
 };
 use anyhow::Context as _;
 use futures::{
@@ -264,7 +261,7 @@ pub struct Task {
     /// The prompt for the agent.
     pub prompt: AgentRunPrompt,
     pub model: Option<LLMId>,
-    /// ID of the profile to run as (SyncId string). If None, use the default profile.
+    /// Local execution profile ID. If None, use the default profile.
     pub profile: Option<String>,
     /// MCP server specifications to start prior to execution.
     pub mcp_specs: Vec<MCPSpec>,
@@ -1140,11 +1137,12 @@ impl AgentDriver {
         let terminal_id = self.terminal_driver.as_ref(ctx).terminal_view().id();
 
         if let Some(profile) = profile {
-            let server_id = ServerId::try_from(profile.as_str())
+            let profile_id = profile
+                .parse::<usize>()
+                .map(crate::ai::execution_profiles::profiles::ClientProfileId::from_raw)
                 .map_err(|_| AgentDriverError::ProfileError(profile.clone()))?;
-            let sync_id = SyncId::ServerId(server_id);
             AIExecutionProfilesModel::handle(ctx).update(ctx, |model, ctx| {
-                if let Some(profile_id) = model.get_profile_id_by_sync_id(&sync_id) {
+                if model.get_profile_by_id(profile_id, ctx).is_some() {
                     model.set_active_profile(terminal_id, profile_id, ctx);
                 } else {
                     return Err(AgentDriverError::ProfileError(profile.clone()));

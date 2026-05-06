@@ -63,7 +63,7 @@ use crate::{
     notebooks::{
         editor::{find_bar::FindBarAction, model::word_unit},
         link::{LinkTarget, NotebookLinks, ResolveError},
-        telemetry::{ActionEntrypoint, BlockInfo, EmbeddedObjectInfo, SelectionMode},
+        actions::{ActionEntrypoint, BlockInfo, EmbeddedObjectInfo, SelectionMode},
     },
     server::ids::SyncId,
     settings::{AppEditorSettings, FontSettings, SelectionSettings},

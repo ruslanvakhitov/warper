@@ -10,10 +10,9 @@ use warpui::{AppContext, Entity, EntityId, ModelContext, SingletonEntity};
 
 use crate::ai::llms::LLMId;
 use crate::ai::mcp::templatable_manager::TemplatableMCPServerManagerEvent;
-use crate::{LaunchMode};
+use crate::LaunchMode;
 
 use crate::ai::mcp::TemplatableMCPServerManager;
-use crate::server::ids::SyncId;
 use crate::settings::AgentModeCommandExecutionPredicate;
 
 use super::{AIExecutionProfile, ActionPermission, WriteToPtyPermission};
@@ -30,6 +29,10 @@ impl ClientProfileId {
         let raw = NEXT_PROFILE_ID.fetch_add(1, Ordering::Relaxed);
         ClientProfileId(raw)
     }
+
+    pub fn from_raw(raw: usize) -> ClientProfileId {
+        ClientProfileId(raw)
+    }
 }
 
 impl fmt::Display for ClientProfileId {
@@ -41,20 +44,12 @@ impl fmt::Display for ClientProfileId {
 #[derive(Clone, Debug)]
 pub struct AIExecutionProfileInfo {
     id: ClientProfileId,
-    #[cfg_attr(target_family = "wasm", allow(dead_code))]
-    sync_id: Option<SyncId>,
     data: AIExecutionProfile,
 }
 
 impl AIExecutionProfileInfo {
     pub fn id(&self) -> &ClientProfileId {
         &self.id
-    }
-
-    /// The Warp Drive sync ID of this profile, if it has been synced.
-    #[cfg_attr(target_family = "wasm", allow(dead_code))]
-    pub fn sync_id(&self) -> Option<SyncId> {
-        self.sync_id
     }
 
     pub fn data(&self) -> &AIExecutionProfile {
@@ -69,11 +64,8 @@ pub enum DefaultProfileState {
         id: ClientProfileId,
         profile: AIExecutionProfile,
     },
-    Synced {
-        id: ClientProfileId,
-    },
     /// Currently, the behavior of the CLI default is that it
-    /// cannot be updated and will never be synced.
+    /// cannot be updated.
     #[allow(dead_code)]
     Cli {
         id: ClientProfileId,
@@ -85,7 +77,6 @@ impl std::fmt::Display for DefaultProfileState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             DefaultProfileState::Unsynced { .. } => write!(f, "Unsynced"),
-            DefaultProfileState::Synced { .. } => write!(f, "Synced"),
             DefaultProfileState::Cli { .. } => write!(f, "CLI"),
         }
     }
@@ -95,24 +86,14 @@ impl DefaultProfileState {
     pub fn id(&self) -> ClientProfileId {
         match self {
             DefaultProfileState::Unsynced { id, .. } => *id,
-            DefaultProfileState::Synced { id } => *id,
             DefaultProfileState::Cli { id, .. } => *id,
         }
     }
 }
 
 pub struct AIExecutionProfilesModel {
-    /// The default profile can be in one of three states:
-    /// - Unsynced: No cloud object backing the profile. It's purely local read-only data.
-    /// - Synced: A cloud object backs the profile, created either when edited locally or received from cloud.
-    /// - CLI: When running in CLI mode, a more permissive default profile that doesn't sync to cloud.
-    ///
-    /// Note that the default_profile_state becomes synced either (1) when an edit happens on
-    /// this client or (2) when a default profile is received from the cloud model (say, it was
-    /// created for the user on another client). Once the profile is synced, it's never unsynced
-    /// again. CLI profiles are currently never synced.
+    /// The default profile can be a local app profile or a CLI profile.
     default_profile_state: DefaultProfileState,
-    profile_id_to_sync_id: HashMap<ClientProfileId, SyncId>,
     profiles: HashMap<ClientProfileId, AIExecutionProfile>,
     /// Only contains entries for non-default profiles.
     active_profiles_per_session: HashMap<EntityId, ClientProfileId>,
@@ -127,11 +108,9 @@ impl AIExecutionProfilesModel {
                     id: ClientProfileId::new(),
                     profile: AIExecutionProfile::create_agent_mode_eval_profile(),
                 };
-                let profile_id_to_sync_id: HashMap<ClientProfileId, SyncId> = HashMap::new();
                 let profiles: HashMap<ClientProfileId, AIExecutionProfile> = HashMap::new();
                 let active_profiles_per_session: HashMap<EntityId, ClientProfileId> = HashMap::new();
             } else {
-                let profile_id_to_sync_id: HashMap<ClientProfileId, SyncId> = HashMap::new();
                 let profiles: HashMap<ClientProfileId, AIExecutionProfile> = HashMap::new();
                 let active_profiles_per_session: HashMap<EntityId, ClientProfileId> = HashMap::new();
 
@@ -162,7 +141,6 @@ impl AIExecutionProfilesModel {
 
         let mut model = Self {
             default_profile_state,
-            profile_id_to_sync_id,
             profiles,
             active_profiles_per_session,
         };
@@ -177,12 +155,7 @@ impl AIExecutionProfilesModel {
     /// the legacy setting hasn't been migrated and, if it hasn't, do a one-time overwrite on the new profile
     /// field.
     fn maybe_inherit_from_legacy_settings(&mut self, ctx: &mut ModelContext<Self>) {
-        let DefaultProfileState::Synced {
-            id: default_profile_id,
-        } = self.default_profile_state
-        else {
-            return;
-        };
+        let default_profile_id = self.default_profile_state.id();
 
         if let Some(base_llm_id) = ctx
             .private_user_preferences()
@@ -210,10 +183,8 @@ impl AIExecutionProfilesModel {
         let mut new_profile = self.default_profile(ctx).data().clone();
         new_profile.name = "".to_string();
         new_profile.is_default_profile = false;
-        new_profile.autosync_plans_to_warp_drive = true;
 
         self.profiles.insert(profile_id, new_profile);
-
 
         ctx.emit(AIExecutionProfilesModelEvent::ProfileCreated);
 
@@ -234,9 +205,7 @@ impl AIExecutionProfilesModel {
         self.active_profiles_per_session
             .retain(|_, active_profile_id| *active_profile_id != profile_id);
 
-        self.profile_id_to_sync_id.remove(&profile_id);
-
-                ctx.emit(AIExecutionProfilesModelEvent::ProfileDeleted);
+        ctx.emit(AIExecutionProfilesModelEvent::ProfileDeleted);
     }
 
     // On logout, we need to clear any existing profile state.
@@ -248,7 +217,6 @@ impl AIExecutionProfilesModel {
                 ..Default::default()
             },
         };
-        self.profile_id_to_sync_id.clear();
         self.profiles.clear();
         self.active_profiles_per_session.clear();
     }
@@ -276,17 +244,10 @@ impl AIExecutionProfilesModel {
         match &self.default_profile_state {
             DefaultProfileState::Unsynced { id, profile } => AIExecutionProfileInfo {
                 id: *id,
-                sync_id: None,
                 data: profile.clone(),
-            },
-            DefaultProfileState::Synced { id } => AIExecutionProfileInfo {
-                id: *id,
-                sync_id: self.profile_id_to_sync_id.get(id).copied(),
-                data: self.profiles.get(id).cloned().unwrap_or_default(),
             },
             DefaultProfileState::Cli { id, profile } => AIExecutionProfileInfo {
                 id: *id,
-                sync_id: None,
                 data: profile.clone(),
             },
         }
@@ -318,19 +279,16 @@ impl AIExecutionProfilesModel {
                 if profile_id == *id {
                     return Some(AIExecutionProfileInfo {
                         id: *id,
-                        sync_id: None,
                         data: profile.clone(),
                     });
                 }
             }
-            DefaultProfileState::Synced { .. } => {}
         }
 
         let data = self.profiles.get(&profile_id)?.clone();
 
         Some(AIExecutionProfileInfo {
             id: profile_id,
-            sync_id: self.profile_id_to_sync_id.get(&profile_id).copied(),
             data,
         })
     }
@@ -347,20 +305,6 @@ impl AIExecutionProfilesModel {
                     .cloned(),
             )
             .collect()
-    }
-
-    /// Look up a local client profile ID from its cloud sync ID.
-    #[cfg_attr(target_family = "wasm", allow(dead_code))]
-    pub fn get_profile_id_by_sync_id(&self, sync_id: &SyncId) -> Option<ClientProfileId> {
-        self.profile_id_to_sync_id
-            .iter()
-            .find_map(|(client_id, id)| {
-                if id == sync_id {
-                    Some(*client_id)
-                } else {
-                    None
-                }
-            })
     }
 
     pub fn has_multiple_profiles(&self) -> bool {
@@ -387,8 +331,7 @@ impl AIExecutionProfilesModel {
             ctx,
         );
 
-        if let Some(model_id) = &llm_id {
-                    }
+        if let Some(model_id) = &llm_id {}
     }
 
     pub fn set_coding_model(
@@ -409,8 +352,7 @@ impl AIExecutionProfilesModel {
             ctx,
         );
 
-        if let Some(model_id) = &model_id {
-                    }
+        if let Some(model_id) = &model_id {}
     }
 
     pub fn set_cli_agent_model(
@@ -431,8 +373,7 @@ impl AIExecutionProfilesModel {
             ctx,
         );
 
-        if let Some(model_id) = &model_id {
-                    }
+        if let Some(model_id) = &model_id {}
     }
 
     pub fn set_computer_use_model(
@@ -453,8 +394,7 @@ impl AIExecutionProfilesModel {
             ctx,
         );
 
-        if let Some(model_id) = &model_id {
-                    }
+        if let Some(model_id) = &model_id {}
     }
 
     pub fn set_apply_code_diffs(
@@ -474,8 +414,7 @@ impl AIExecutionProfilesModel {
             },
             ctx,
         );
-
-            }
+    }
 
     pub fn set_read_files(
         &mut self,
@@ -494,8 +433,7 @@ impl AIExecutionProfilesModel {
             },
             ctx,
         );
-
-            }
+    }
 
     pub fn set_execute_commands(
         &mut self,
@@ -514,8 +452,7 @@ impl AIExecutionProfilesModel {
             },
             ctx,
         );
-
-            }
+    }
 
     pub fn set_write_to_pty(
         &mut self,
@@ -534,7 +471,7 @@ impl AIExecutionProfilesModel {
             },
             ctx,
         );
-            }
+    }
 
     pub fn set_mcp_permissions(
         &mut self,
@@ -559,8 +496,7 @@ impl AIExecutionProfilesModel {
             },
             ctx,
         );
-
-            }
+    }
 
     pub fn set_computer_use(
         &mut self,
@@ -584,8 +520,7 @@ impl AIExecutionProfilesModel {
             ctx,
         );
 
-        if current_value != Some(*permission) {
-                    }
+        if current_value != Some(*permission) {}
     }
 
     pub fn set_ask_user_question(
@@ -610,8 +545,7 @@ impl AIExecutionProfilesModel {
             ctx,
         );
 
-        if current_value != Some(permission) {
-                    }
+        if current_value != Some(permission) {}
     }
 
     pub fn set_web_search_enabled(
@@ -631,28 +565,7 @@ impl AIExecutionProfilesModel {
             },
             ctx,
         );
-
-            }
-
-    pub fn set_autosync_plans_to_warp_drive(
-        &mut self,
-        profile_id: ClientProfileId,
-        enabled: bool,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        self.edit_profile_internal(
-            profile_id,
-            |profile| {
-                if profile.autosync_plans_to_warp_drive != enabled {
-                    profile.autosync_plans_to_warp_drive = enabled;
-                    return true;
-                }
-                false
-            },
-            ctx,
-        );
-
-            }
+    }
 
     pub fn set_profile_name(
         &mut self,
@@ -671,8 +584,7 @@ impl AIExecutionProfilesModel {
             },
             ctx,
         );
-
-            }
+    }
 
     pub fn add_to_command_allowlist(
         &mut self,
@@ -691,8 +603,7 @@ impl AIExecutionProfilesModel {
             },
             ctx,
         );
-
-            }
+    }
 
     pub fn remove_from_command_allowlist(
         &mut self,
@@ -709,8 +620,7 @@ impl AIExecutionProfilesModel {
             },
             ctx,
         );
-
-            }
+    }
 
     pub fn add_to_directory_allowlist(
         &mut self,
@@ -729,8 +639,7 @@ impl AIExecutionProfilesModel {
             },
             ctx,
         );
-
-            }
+    }
 
     pub fn remove_from_directory_allowlist(
         &mut self,
@@ -747,8 +656,7 @@ impl AIExecutionProfilesModel {
             },
             ctx,
         );
-
-            }
+    }
 
     pub fn add_to_command_denylist(
         &mut self,
@@ -767,8 +675,7 @@ impl AIExecutionProfilesModel {
             },
             ctx,
         );
-
-            }
+    }
 
     pub fn remove_from_command_denylist(
         &mut self,
@@ -785,8 +692,7 @@ impl AIExecutionProfilesModel {
             },
             ctx,
         );
-
-            }
+    }
 
     pub fn add_to_mcp_allowlist(
         &mut self,
@@ -805,8 +711,7 @@ impl AIExecutionProfilesModel {
             },
             ctx,
         );
-
-            }
+    }
 
     pub fn remove_from_mcp_allowlist(
         &mut self,
@@ -823,8 +728,7 @@ impl AIExecutionProfilesModel {
             },
             ctx,
         );
-
-            }
+    }
 
     pub fn add_to_mcp_denylist(
         &mut self,
@@ -843,8 +747,7 @@ impl AIExecutionProfilesModel {
             },
             ctx,
         );
-
-            }
+    }
 
     pub fn remove_from_mcp_denylist(
         &mut self,
@@ -861,13 +764,12 @@ impl AIExecutionProfilesModel {
             },
             ctx,
         );
-
-            }
+    }
 
     /// `edit_profile_internal` edits a local AIExecutionProfile.
     /// Parameters:
     /// * `profile_id`: The id of the profile to edit
-    /// * `edit_fn`: a closure that safely modifies the AIExecutionProfile. It should return `true` if the profile was changed, `false` otherwise. When `true`, it syncs the changes to the cloud, and otherwise exits early to prevent excessive cloud operations if no changes occured.
+    /// * `edit_fn`: a closure that safely modifies the AIExecutionProfile. It should return `true` if the profile was changed, `false` otherwise.
     /// * `ctx`: The model context
     fn edit_profile_internal(
         &mut self,
@@ -909,10 +811,6 @@ impl AIExecutionProfilesModel {
         ctx.emit(AIExecutionProfilesModelEvent::ProfileUpdated(profile_id));
     }
 
-    fn reconcile_with_cloud_state_after_initial_load(&mut self, _ctx: &mut ModelContext<Self>) {
-        // Hosted profile sync was removed by WARPER-001.
-    }
-
     fn handle_templatable_mcp_server_manager_event(
         &mut self,
         event: &TemplatableMCPServerManagerEvent,
@@ -949,17 +847,6 @@ impl AIExecutionProfilesModel {
                 },
                 ctx,
             );
-        }
-    }
-
-    // We don't want stale client ids in our map. We won't be able to find the backing cloud object when
-    // an edit occurs.
-    pub fn replace_client_id_with_server_id(&mut self, server_id: SyncId, client_id: SyncId) {
-        for (_, sync_id) in self.profile_id_to_sync_id.iter_mut() {
-            if *sync_id == client_id {
-                *sync_id = server_id;
-                log::info!("Updated profile id mapping after creating a new execution profile");
-            }
         }
     }
 

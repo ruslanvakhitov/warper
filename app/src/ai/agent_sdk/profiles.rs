@@ -5,7 +5,6 @@ use warpui::{AppContext, ModelContext, SingletonEntity};
 
 use crate::ai::agent_sdk::output::{self, TableFormat};
 use crate::ai::execution_profiles::profiles::AIExecutionProfilesModel;
-use crate::server::ids::SyncId;
 
 /// Handle Agent Profile-related CLI commands.
 pub fn run(
@@ -36,10 +35,7 @@ impl ProfilesCommandRunner {
             .flat_map(|id| profiles_model.get_profile_by_id(*id, ctx))
             .map(|profile| {
                 let name = profile.data().display_name().to_string();
-                let id = match profile.sync_id() {
-                    Some(SyncId::ServerId(server_id)) => server_id.to_string(),
-                    _ => "Local".to_string(),
-                };
+                let id = profile.id().to_string();
                 ProfileInfo { id, name }
             })
             .collect();

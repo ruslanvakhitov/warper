@@ -5,7 +5,6 @@ use crate::settings::{
     AgentModeCommandExecutionPredicate, DEFAULT_COMMAND_EXECUTION_ALLOWLIST,
     DEFAULT_COMMAND_EXECUTION_DENYLIST,
 };
-use crate::workspaces::user_workspaces::UserWorkspaces;
 use serde::{Deserialize, Serialize};
 use warp_core::channel::ChannelState;
 use warp_core::features::FeatureFlag;
@@ -101,13 +100,12 @@ pub enum ComputerUsePermission {
     Unknown,
 }
 
-/// Result of resolving the cloud agent computer use setting.
-/// Contains both the effective value and whether it's forced by organization policy.
-pub struct CloudAgentComputerUseState {
-    /// Whether computer use is enabled for cloud agents.
+/// Result of resolving the local agent computer use setting.
+pub struct AgentComputerUseState {
+    /// Whether computer use is enabled for local agents.
     pub enabled: bool,
-    /// Whether this value is forced by organization settings (true = user cannot change it).
-    pub is_forced_by_org: bool,
+    /// Whether this value is forced by local policy.
+    pub is_forced_by_policy: bool,
 }
 
 impl ComputerUsePermission {
@@ -134,42 +132,19 @@ impl ComputerUsePermission {
         matches!(self, Self::AlwaysAllow)
     }
 
-    /// Resolves the effective cloud agent computer use state by reading the workspace
-    /// autonomy setting and user's local preference from their respective singletons.
-    pub fn resolve_cloud_agent_state(ctx: &AppContext) -> CloudAgentComputerUseState {
+    /// Resolves the effective local agent computer use state from local preferences.
+    pub fn resolve_agent_state(ctx: &AppContext) -> AgentComputerUseState {
         if !FeatureFlag::AgentModeComputerUse.is_enabled() {
-            return CloudAgentComputerUseState {
+            return AgentComputerUseState {
                 enabled: false,
-                is_forced_by_org: false,
+                is_forced_by_policy: false,
             };
         }
 
-        let autonomy_setting = UserWorkspaces::as_ref(ctx)
-            .ai_autonomy_settings()
-            .computer_use_setting;
         let user_preference = *AISettings::as_ref(ctx).cloud_agent_computer_use_enabled;
-
-        match autonomy_setting {
-            Some(ComputerUsePermission::Never) => CloudAgentComputerUseState {
-                enabled: false,
-                is_forced_by_org: true,
-            },
-            Some(ComputerUsePermission::AlwaysAllow) => CloudAgentComputerUseState {
-                enabled: true,
-                is_forced_by_org: true,
-            },
-            // TODO(QUALITY-297): Currently this case should never be hit because the
-            // AlwaysAsk variant isn't accessible in the admin console. We need to figure
-            // out how to handle it when it eventually becomes available. For now, I'm
-            // treating this conservatively and marking computer use as disabled.
-            Some(ComputerUsePermission::AlwaysAsk) => CloudAgentComputerUseState {
-                enabled: false,
-                is_forced_by_org: true,
-            },
-            Some(ComputerUsePermission::Unknown) | None => CloudAgentComputerUseState {
-                enabled: user_preference,
-                is_forced_by_org: false,
-            },
+        AgentComputerUseState {
+            enabled: user_preference,
+            is_forced_by_policy: false,
         }
     }
 }
@@ -244,9 +219,6 @@ pub struct AIExecutionProfile {
     pub cli_agent_model: Option<LLMId>,
     pub computer_use_model: Option<LLMId>,
 
-    /// Whether plans created by the agent should be automatically synced to Warp Drive
-    pub autosync_plans_to_warp_drive: bool,
-
     /// Whether the agent may use web search when helpful for completing tasks
     pub web_search_enabled: bool,
 }
@@ -272,7 +244,6 @@ impl Default for AIExecutionProfile {
             coding_model: None,
             cli_agent_model: None,
             computer_use_model: None,
-            autosync_plans_to_warp_drive: true,
             web_search_enabled: true,
         }
     }
@@ -323,7 +294,6 @@ impl AIExecutionProfile {
             coding_model: None,
             cli_agent_model: None,
             computer_use_model: None,
-            autosync_plans_to_warp_drive: false,
             web_search_enabled: true,
         }
     }
@@ -377,7 +347,6 @@ impl AIExecutionProfile {
             coding_model: None,
             cli_agent_model: None,
             computer_use_model: None,
-            autosync_plans_to_warp_drive: false,
             web_search_enabled: true,
         }
     }

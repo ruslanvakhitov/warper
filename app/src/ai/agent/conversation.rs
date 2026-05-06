@@ -3,7 +3,6 @@ use crate::ai::agent::linearization::compute_task_depths;
 use crate::ai::artifacts::Artifact;
 use crate::ai::blocklist::{RequestInput, ResponseStreamId, SerializedBlockListItem};
 use crate::ai::skills::SkillDescriptor;
-use crate::code_review::CodeReviewTelemetryEvent;
 use crate::notebooks::NotebookId;
 use crate::persistence::model::{ConversationUsageMetadata, ModelTokenUsage, ToolUsageMetadata};
 use crate::server::ids::ServerId;
@@ -91,12 +90,6 @@ impl std::str::FromStr for AmbientAgentTaskId {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let uuid = Uuid::try_parse(s)?;
         Ok(Self(uuid::NonNilUuid::try_from(uuid)?))
-    }
-}
-
-impl From<AmbientAgentTaskId> for cynic::Id {
-    fn from(id: AmbientAgentTaskId) -> Self {
-        Self::new(id.to_string())
     }
 }
 
@@ -3409,7 +3402,6 @@ impl TryFrom<String> for AIConversationId {
 /// The harness that produced an agent conversation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AIAgentHarness {
-    Oz,
     ClaudeCode,
     Gemini,
     Unknown,

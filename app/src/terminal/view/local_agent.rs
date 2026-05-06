@@ -69,19 +69,10 @@ impl LocalAgentViewModel {
     }
 
     pub fn selected_harness(&self) -> Harness {
-        if self.harness == Harness::Oz {
-            Harness::Unknown
-        } else {
-            self.harness
-        }
+        self.harness
     }
 
     pub fn set_harness(&mut self, harness: Harness, ctx: &mut ModelContext<Self>) {
-        let harness = if harness == Harness::Oz {
-            Harness::Unknown
-        } else {
-            harness
-        };
         if self.harness != harness {
             self.harness = harness;
             ctx.emit(LocalAgentViewModelEvent::HarnessSelected);

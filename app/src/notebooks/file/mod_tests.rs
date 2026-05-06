@@ -10,7 +10,6 @@ use warp_core::ui::appearance::Appearance;
 use warp_files::FileModel;
 use warpui::{platform::WindowStyle, App, SingletonEntity, View};
 
-use crate::server::telemetry::context_provider::AppTelemetryContextProvider;
 use crate::terminal::keys::TerminalKeybindings;
 use crate::{
     auth::{auth_manager::AuthManager, AuthStateProvider},
@@ -45,7 +44,6 @@ fn init_app(app: &mut App) {
     app.add_singleton_model(NotebookKeybindings::new);
     app.add_singleton_model(TerminalKeybindings::new);
     app.add_singleton_model(|_| AuthStateProvider::new_for_test());
-    app.add_singleton_model(AppTelemetryContextProvider::new_context_provider);
     app.add_singleton_model(AuthManager::new_for_test);
     app.add_singleton_model(|ctx| UserWorkspaces::mock(vec![], ctx));
     #[cfg(feature = "voice_input")]

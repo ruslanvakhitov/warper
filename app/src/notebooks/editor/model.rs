@@ -15,7 +15,7 @@ use warpui::{
     AppContext, Entity, ModelAsRef, ModelContext, ModelHandle, SingletonEntity, WindowId,
 };
 
-use crate::{debounce::debounce, editor::InteractionState, notebooks::telemetry::BlockInfo};
+use crate::{debounce::debounce, editor::InteractionState, notebooks::actions::BlockInfo};
 use crate::{
     notebooks::editor::interaction_state_model::InteractionStateModelEvent,
     terminal::ShellLaunchData,
@@ -47,7 +47,7 @@ use warp_editor::{
 use warpui::elements::ListIndentLevel;
 
 use super::{
-    super::telemetry::SelectionMode as TelemetrySelectionMode, embedding_model::NotebookEmbed,
+    super::actions::SelectionMode as NotebookSelectionMode, embedding_model::NotebookEmbed,
     interaction_state_model::InteractionStateModel, notebook_command::NotebookCommand,
     NotebookWorkflow,
 };
@@ -1275,7 +1275,7 @@ impl NotebooksEditorModel {
 
         if !had_command_selection {
             ctx.emit(RichTextEditorModelEvent::SwitchedSelectionMode {
-                new_mode: TelemetrySelectionMode::Command,
+                new_mode: NotebookSelectionMode::Command,
             });
         };
 
@@ -1369,7 +1369,7 @@ impl NotebooksEditorModel {
 
         if self.clear_command_selections(ctx) {
             ctx.emit(RichTextEditorModelEvent::SwitchedSelectionMode {
-                new_mode: TelemetrySelectionMode::Text,
+                new_mode: NotebookSelectionMode::Text,
             });
         }
 
@@ -1707,7 +1707,7 @@ pub enum RichTextEditorModelEvent {
     ContentChanged(EditOrigin),
     /// The user switched selection modes.
     SwitchedSelectionMode {
-        new_mode: TelemetrySelectionMode,
+        new_mode: NotebookSelectionMode,
     },
 }
 

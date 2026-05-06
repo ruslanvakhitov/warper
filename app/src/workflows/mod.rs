@@ -24,14 +24,9 @@ pub enum WorkflowSource {
     Global,
     Local,
     Project,
-    Team {
-        team_uid: ServerId,
-    },
-    PersonalCloud,
     AI,
     Notebook {
         notebook_id: Option<NotebookId>,
-        team_uid: Option<ServerId>,
         location: NotebookLocation,
     },
 
@@ -42,7 +37,6 @@ pub enum WorkflowSource {
 
 #[derive(Copy, Clone, Debug, Deserialize, Serialize, Eq, PartialEq, Hash, PartialOrd)]
 pub enum WorkflowSelectionSource {
-    WarpDrive,
     CommandPalette,
     UniversalSearch,
     Voltron,
@@ -107,7 +101,7 @@ pub enum AIWorkflowOrigin {
     AgentMode,
 }
 
-/// Wrapper type for a workflow from local files, local object storage, generated AI output, or a notebook.
+/// Wrapper type for a workflow from local files, generated AI output, or a notebook.
 #[derive(Clone, Debug, PartialEq)]
 pub enum WorkflowType {
     /// Saved workflows sourced from local, global, project, app collections, saved locally.
@@ -117,7 +111,7 @@ pub enum WorkflowType {
         workflow: Workflow,
         origin: AIWorkflowOrigin,
     },
-    /// A workflow that's part of a cloud notebook.
+    /// A workflow that's part of a notebook.
     Notebook(Workflow),
 }
 
@@ -137,10 +131,6 @@ impl WorkflowType {
             WorkflowType::AIGenerated { workflow, .. } => workflow,
             WorkflowType::Notebook(workflow) => workflow,
         }
-    }
-
-    pub fn sync_id(&self) -> Option<crate::server::ids::SyncId> {
-        None
     }
 
     pub fn server_id(&self) -> Option<WorkflowId> {

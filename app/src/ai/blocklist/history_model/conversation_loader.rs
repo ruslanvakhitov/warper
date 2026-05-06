@@ -1,5 +1,4 @@
-//! This module contains functions for loading, fetching, and merging conversation data
-//! from the local database.
+//! This module contains functions for loading and merging conversation data from the local database.
 
 use futures::FutureExt;
 use itertools::Itertools as _;
@@ -24,7 +23,7 @@ use super::{AIConversationMetadata, BlocklistAIHistoryModel, MAX_HISTORICAL_CONV
 /// A conversation transcript from a CLI agent harness (e.g. Claude Code).
 #[derive(Debug, Clone)]
 pub struct CLIAgentConversation {
-    /// Server metadata about this conversation.
+    /// Local harness metadata about this conversation.
     pub metadata: ServerAIConversationMetadata,
     /// A snapshot of the final agent TUI state.
     pub block: SerializedBlock,
@@ -214,9 +213,7 @@ impl BlocklistAIHistoryModel {
         None
     }
 
-    /// Merges cloud conversation metadata with existing local metadata.
-    /// Deduplicates by conversation_id and server_conversation_token.
-    /// Also updates server_metadata on any already-restored conversations that match by token.
+    /// Ignores hosted conversation metadata. Local history is loaded from local persistence only.
     pub fn merge_cloud_conversation_metadata(
         &mut self,
         cloud_metadata_list: Vec<ServerAIConversationMetadata>,
@@ -344,10 +341,6 @@ impl BlocklistAIHistoryModel {
                 // Extract working directory from the first UserQuery message in the tasks
                 // TODO: search tasks in correct order once we've implemented task ordering.
                 let initial_working_directory = agent_conv.tasks.iter().find_map(Task::api_task_initial_working_directory);
-                let credits_spent = conversation_data
-                    .as_ref()
-                    .and_then(|data| data.conversation_usage_metadata.as_ref())
-                    .map(|m| m.credits_spent);
                 let artifacts = conversation_data
                     .as_ref()
                     .and_then(|data| data.artifacts_json.as_ref())
@@ -359,12 +352,9 @@ impl BlocklistAIHistoryModel {
                     initial_query,
                     last_modified_at: agent_conv.conversation.last_modified_at,
                     initial_working_directory,
-                    credits_spent,
-                    has_cloud_data: false,
                     server_conversation_token: None,
                     has_local_data: true,
                     artifacts,
-                    server_conversation_metadata: None,
                 }))
             })
             .collect();

@@ -1,6 +1,6 @@
 use crate::ai::active_agent_views_model::ActiveAgentViewsModel;
 use crate::ai::agent::conversation::{AIConversationId, ConversationStatus};
-use crate::ai::blocklist::{format_credits, BlocklistAIHistoryEvent, BlocklistAIHistoryModel};
+use crate::ai::blocklist::{BlocklistAIHistoryEvent, BlocklistAIHistoryModel};
 use crate::ai::conversation_navigation::ConversationNavigationData;
 use crate::features::FeatureFlag;
 use crate::ui_components::icons::Icon;
@@ -149,20 +149,6 @@ impl ConversationItem<'_> {
 
     pub fn display_status(&self, app: &AppContext) -> AgentRunDisplayStatus {
         AgentRunDisplayStatus::from_conversation_status(&self.status(app))
-    }
-
-    pub fn display_request_usage(&self, app: &AppContext) -> Option<String> {
-        let ConversationItem::Conversation(metadata) = self;
-        let history_model = BlocklistAIHistoryModel::as_ref(app);
-        history_model
-            .conversation(&metadata.nav_data.id)
-            .map(|conv| conv.credits_spent())
-            .or_else(|| {
-                history_model
-                    .get_conversation_metadata(&metadata.nav_data.id)
-                    .and_then(|m| m.credits_spent)
-            })
-            .map(format_credits)
     }
 
     pub fn last_updated(&self) -> DateTime<Utc> {

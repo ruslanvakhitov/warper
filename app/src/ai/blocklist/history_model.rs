@@ -21,7 +21,7 @@ use diesel::SqliteConnection;
 
 use crate::ai::agent::api::ServerConversationToken;
 use crate::ai::agent::conversation::ConversationStatus;
-use crate::ai::agent::conversation::{ServerAIConversationMetadata, UpdateConversationError};
+use crate::ai::agent::conversation::UpdateConversationError;
 use crate::ai::agent::task::helper::{MessageExt, ToolCallExt};
 use crate::ai::agent::task::TaskId;
 use crate::ai::agent::AIAgentExchangeId;
@@ -59,9 +59,7 @@ pub use conversation_loader::{
 
 pub(super) const MAX_HISTORICAL_CONVERSATIONS: usize = 100;
 
-/// Metadata for conversations
-/// When created from local DB, has_local_data=true and server_metadata=None.
-/// When fetched from server, has_local_data=false and server_metadata=Some(...).
+/// Metadata for local conversations.
 #[derive(Debug, Clone)]
 pub struct AIConversationMetadata {
     pub id: AIConversationId,
@@ -74,8 +72,6 @@ pub struct AIConversationMetadata {
 
     pub initial_working_directory: Option<String>,
 
-    pub credits_spent: Option<f32>,
-
     pub server_conversation_token: Option<ServerConversationToken>,
 
     /// Whether the full conversation data exists in the local database.
@@ -83,16 +79,8 @@ pub struct AIConversationMetadata {
     /// true = exists in local DB and can be fetched from there, even if it also exists in server
     pub has_local_data: bool,
 
-    /// Whether this conversation exists in the cloud (has been synced).
-    /// This is used to determine if the conversation can be shared.
-    pub has_cloud_data: bool,
-
     /// Artifacts (plans, PRs) created during this conversation.
     pub artifacts: Vec<Artifact>,
-
-    /// Full server metadata for cloud conversations, including permissions.
-    /// Used by the sharing dialog to display permissions when the full conversation isn't loaded.
-    pub server_conversation_metadata: Option<ServerAIConversationMetadata>,
 }
 
 impl From<&AIConversation> for AIConversationMetadata {
@@ -111,52 +99,9 @@ impl From<&AIConversation> for AIConversationMetadata {
             initial_query,
             last_modified_at,
             initial_working_directory: conversation.initial_working_directory(),
-            credits_spent: Some(conversation.credits_spent()),
             server_conversation_token: conversation.server_conversation_token().cloned(),
             has_local_data: true,
-            has_cloud_data: conversation.server_metadata().is_some(),
             artifacts: conversation.artifacts().to_vec(),
-            server_conversation_metadata: conversation.server_metadata().cloned(),
-        }
-    }
-}
-
-impl AIConversationMetadata {
-    /// Create metadata from server-fetched GraphQL data.
-    /// This is used when loading conversations from the cloud.
-    pub fn from_server_metadata(
-        conversation_id: AIConversationId,
-        server_conversation_metadata: ServerAIConversationMetadata,
-    ) -> Self {
-        let title = server_conversation_metadata.title.clone();
-        let last_modified_at = server_conversation_metadata
-            .metadata
-            .metadata_last_updated_ts
-            .utc()
-            .naive_utc();
-        let credits_spent = Some(server_conversation_metadata.usage.credits_spent);
-        let server_conversation_token = Some(
-            server_conversation_metadata
-                .server_conversation_token
-                .clone(),
-        );
-        let initial_working_directory = server_conversation_metadata.working_directory.clone();
-        let artifacts = server_conversation_metadata.artifacts.clone();
-
-        Self {
-            id: conversation_id,
-            title,
-            // Server doesn't currently provide initial query in metadata
-            // This is used to allow searching by initial query in command palette.
-            initial_query: String::new(),
-            last_modified_at,
-            initial_working_directory,
-            credits_spent,
-            server_conversation_token,
-            has_local_data: false,
-            has_cloud_data: true, // Server metadata implies cloud data exists
-            artifacts,
-            server_conversation_metadata: Some(server_conversation_metadata),
         }
     }
 }
@@ -216,14 +161,14 @@ pub struct BlocklistAIHistoryModel {
     /// Does not include the actual content of the conversations.
     all_conversations_metadata: HashMap<AIConversationId, AIConversationMetadata>,
 
-    /// Reverse index from server-side agent identifier to local conversation ID.
+    /// Reverse index from agent identifier to local conversation ID.
     ///
     /// Keyed by `run_id` when OrchestrationV2 is enabled, otherwise by
     /// `server_conversation_token`. Only the identifier relevant to the
     /// active orchestration version is stored.
     agent_id_to_conversation_id: HashMap<String, AIConversationId>,
 
-    /// Reverse index from [`ServerConversationToken`] to local [`AIConversationId`].
+    /// Reverse index from retained conversation token to local [`AIConversationId`].
     ///
     /// Maintained alongside every mutation of `conversations_by_id` and
     /// `all_conversations_metadata` that involves a token. Used to make
@@ -479,41 +424,6 @@ impl BlocklistAIHistoryModel {
         conversation.set_server_conversation_token(token.clone());
         self.server_token_to_conversation_id
             .insert(ServerConversationToken::new(token), conversation_id);
-    }
-
-    /// Sets server metadata for a conversation and emits the ConversationMetadataUpdated event.
-    /// This helper ensures we don't forget to emit the event when updating metadata.
-    /// Updates in-memory conversations, or historical metadata if the conversation isn't loaded.
-    pub fn set_server_metadata_for_conversation(
-        &mut self,
-        conversation_id: AIConversationId,
-        metadata: ServerAIConversationMetadata,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        let terminal_view_id;
-
-        // Update in-memory conversation if it exists
-        if let Some(conversation) = self.conversations_by_id.get_mut(&conversation_id) {
-            conversation.set_server_metadata(metadata);
-            terminal_view_id = self.terminal_view_id_for_conversation(&conversation_id);
-        } else if let Some(conversation_metadata) =
-            self.all_conversations_metadata.get_mut(&conversation_id)
-        {
-            // Conversation not in memory - update historical metadata instead
-            // This is needed because we might update permissions from share dialog in
-            // conversation list view when we only have metadata.
-            conversation_metadata.server_conversation_metadata = Some(metadata);
-            terminal_view_id = None;
-        } else {
-            // Conversation not found anywhere
-            return;
-        }
-
-        // Emit event so sharing dialog and other listeners can refresh.
-        ctx.emit(BlocklistAIHistoryEvent::UpdatedConversationMetadata {
-            terminal_view_id,
-            conversation_id,
-        });
     }
 
     /// Returns the ID of the conversation that processed or is processing the response stream.
@@ -1803,37 +1713,10 @@ impl BlocklistAIHistoryModel {
         self.all_conversations_metadata.get(conversation_id)
     }
 
-    /// Returns whether a conversation can be shared.
-    ///
-    /// A conversation can be shared if we have server metadata available
-    /// (either from a loaded conversation or from conversation metadata).
+    /// Conversation sharing is removed in Warper.
     pub fn can_conversation_be_shared(&self, conversation_id: &AIConversationId) -> bool {
-        self.get_server_conversation_metadata(conversation_id)
-            .is_some()
-    }
-
-    /// Returns the server conversation metadata, used by the sharing dialog.
-    ///
-    /// This checks:
-    /// 1. If the conversation is loaded in memory, returns from its server metadata
-    /// 2. Otherwise, falls back to data stored in conversation metadata
-    pub fn get_server_conversation_metadata(
-        &self,
-        conversation_id: &AIConversationId,
-    ) -> Option<&ServerAIConversationMetadata> {
-        // Check if conversation exists in memory and has server metadata
-        if let Some(conversation) = self.conversation(conversation_id) {
-            if let Some(m) = conversation.server_metadata() {
-                return Some(m);
-            }
-        }
-
-        // Fall back to conversation metadata
-        if let Some(metadata) = self.get_conversation_metadata(conversation_id) {
-            return metadata.server_conversation_metadata.as_ref();
-        }
-
-        None
+        let _ = conversation_id;
+        false
     }
 
     /// Finds an AIConversationId by its server conversation token.

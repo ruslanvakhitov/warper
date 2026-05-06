@@ -29,7 +29,6 @@ use crate::{
     server::{
         cloud_objects::{listener::Listener, update_manager::UpdateManager},
         sync_queue::SyncQueue,
-        telemetry::context_provider::AppTelemetryContextProvider,
     },
     settings::PrivacySettings,
     settings_view::keybindings::KeybindingChangedNotifier,
@@ -73,7 +72,6 @@ use warpui::{
 fn initialize_app(app: &mut App) {
     initialize_settings_for_tests(app);
     app.add_singleton_model(|_| AuthStateProvider::new_for_test());
-    app.add_singleton_model(AppTelemetryContextProvider::new_context_provider);
     app.add_singleton_model(AuthManager::new_for_test);
     app.add_singleton_model(|_ctx| PtySpawner::new_for_test());
     app.add_singleton_model(|_| NetworkStatus::new());

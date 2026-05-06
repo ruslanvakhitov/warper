@@ -18,7 +18,7 @@ use crate::{
 
 use super::{
     editor::{keys::custom_action_to_display, view::RichTextEditorView},
-    telemetry::ActionEntrypoint,
+    actions::ActionEntrypoint,
 };
 
 const CONTEXT_MENU_WIDTH: f32 = 200.;

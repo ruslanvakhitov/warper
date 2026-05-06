@@ -1,14 +1,5 @@
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
 use warp_graphql::ai::PlatformErrorCode;
-
-pub use crate::ai::agent::conversation::AmbientAgentTaskId;
-use crate::ai::artifacts::Artifact;
-
-pub mod task {
-    pub use super::{AgentConfigSnapshot, TaskCreatorInfo, TaskStatusMessage};
-    pub use crate::ai::agent_sdk::config_file::{HarnessAuthSecretsConfig, HarnessConfig};
-}
 
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize, PartialEq)]
 pub struct AgentConfigSnapshot {
@@ -39,147 +30,6 @@ pub struct AgentConfigSnapshot {
 impl AgentConfigSnapshot {
     pub fn is_empty(&self) -> bool {
         self == &Self::default()
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub enum AgentSource {
-    Linear,
-    AgentWebhook,
-    Slack,
-    Cli,
-    ScheduledAgent,
-    Interactive,
-    RemovedHosted,
-    GitHubAction,
-}
-
-impl AgentSource {
-    pub fn as_str(&self) -> &str {
-        match self {
-            AgentSource::Linear => "LINEAR",
-            AgentSource::AgentWebhook => "API",
-            AgentSource::Slack => "SLACK",
-            AgentSource::Cli => "CLI",
-            AgentSource::ScheduledAgent => "SCHEDULED_AGENT",
-            AgentSource::Interactive => "LOCAL",
-            AgentSource::RemovedHosted => "REMOVED_HOSTED",
-            AgentSource::GitHubAction => "GITHUB_ACTION",
-        }
-    }
-
-    pub fn display_name(&self) -> &str {
-        match self {
-            AgentSource::Linear => "Linear",
-            AgentSource::AgentWebhook => "API",
-            AgentSource::Slack => "Slack",
-            AgentSource::Cli => "CLI",
-            AgentSource::ScheduledAgent => "Scheduled",
-            AgentSource::Interactive => "Local agent",
-            AgentSource::RemovedHosted => "Removed hosted agent",
-            AgentSource::GitHubAction => "GitHub Action",
-        }
-    }
-
-    pub fn is_user_initiated(&self) -> bool {
-        matches!(
-            self,
-            AgentSource::Linear | AgentSource::Slack | AgentSource::Interactive
-        )
-    }
-}
-
-impl AmbientAgentTaskState {
-    pub fn is_failure_like(&self) -> bool {
-        matches!(
-            self,
-            AmbientAgentTaskState::Failed
-                | AmbientAgentTaskState::Error
-                | AmbientAgentTaskState::Blocked
-                | AmbientAgentTaskState::Cancelled
-        )
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub enum AmbientAgentTaskState {
-    Queued,
-    Pending,
-    Claimed,
-    InProgress,
-    Succeeded,
-    Failed,
-    Error,
-    Blocked,
-    Cancelled,
-    Unknown,
-}
-
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq)]
-pub struct TaskStatusMessage {
-    pub message: String,
-    #[serde(default)]
-    pub error_code: Option<String>,
-}
-
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq)]
-pub struct TaskCreatorInfo {
-    pub uid: String,
-    pub email: Option<String>,
-    pub name: Option<String>,
-}
-
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq)]
-pub struct RequestUsage {
-    pub requests_used: i32,
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
-pub struct AmbientAgentTask {
-    pub task_id: AmbientAgentTaskId,
-    #[serde(default)]
-    pub parent_run_id: Option<String>,
-    pub title: String,
-    pub state: AmbientAgentTaskState,
-    pub prompt: String,
-    pub created_at: DateTime<Utc>,
-    pub started_at: Option<DateTime<Utc>>,
-    pub updated_at: DateTime<Utc>,
-    pub status_message: Option<TaskStatusMessage>,
-    #[serde(default)]
-    pub source: Option<AgentSource>,
-    pub session_id: Option<String>,
-    pub session_link: Option<String>,
-    pub creator: Option<TaskCreatorInfo>,
-    pub conversation_id: Option<String>,
-    pub request_usage: Option<RequestUsage>,
-    pub is_sandbox_running: bool,
-    #[serde(default, alias = "agent_config")]
-    pub agent_config_snapshot: Option<AgentConfigSnapshot>,
-    #[serde(default)]
-    pub artifacts: Vec<Artifact>,
-    #[serde(default)]
-    pub last_event_sequence: Option<i64>,
-    #[serde(default)]
-    pub children: Vec<String>,
-}
-
-impl AmbientAgentTask {
-    pub fn creator_display_name(&self) -> Option<String> {
-        self.creator
-            .as_ref()
-            .and_then(|creator| creator.name.clone().or_else(|| creator.email.clone()))
-    }
-
-    pub fn credits_used(&self) -> Option<f32> {
-        self.request_usage
-            .as_ref()
-            .map(|usage| usage.requests_used as f32)
-    }
-
-    pub fn run_time(&self) -> Option<chrono::Duration> {
-        let started_at = self.started_at?;
-        Some(self.updated_at - started_at)
     }
 }
 
@@ -335,7 +185,6 @@ pub struct SpawnAgentRequest {
     pub prompt: String,
     pub config: Option<AgentConfigSnapshot>,
     pub title: Option<String>,
-    pub team: Option<String>,
     pub skill: Option<String>,
     pub attachments: Vec<serde_json::Value>,
     pub interactive: Option<bool>,

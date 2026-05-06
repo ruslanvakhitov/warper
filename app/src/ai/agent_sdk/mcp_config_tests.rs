@@ -274,7 +274,6 @@ fn serializes_mcp_servers_as_object_not_string() {
             ..Default::default()
         }),
         title: None,
-        team: None,
         skill: None,
         attachments: vec![],
         interactive: None,

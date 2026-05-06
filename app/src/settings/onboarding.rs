@@ -123,26 +123,7 @@ fn apply_agent_settings(agent_settings: &AgentDevelopmentSettings, app: &mut App
     });
 
     AIExecutionProfilesModel::handle(app).update(app, |profiles, ctx| {
-        let default_profile_info = profiles.default_profile(ctx);
-        let default_profile_id = *default_profile_info.id();
-
-        // Preserve the existing cloud default profile for users who are
-        // already logged in (or who log in at the end of onboarding). A
-        // `Some` sync_id means the profile is backed by a cloud object that
-        // was either loaded at startup or reconciled during the post-login
-        // initial load, and its values represent what the user has stored
-        // previously. Overwriting those with the onboarding-selected
-        // base_model / autonomy would silently discard their prior
-        // customizations. Fresh `Unsynced` default profiles (brand-new
-        // users, or users without any cloud default yet) still receive the
-        // onboarding values.
-        if default_profile_info.sync_id().is_some() {
-            log::info!(
-                "Preserving existing cloud default execution profile; skipping \
-                 onboarding-driven overrides for profile {default_profile_id:?}"
-            );
-            return;
-        }
+        let default_profile_id = profiles.default_profile_id();
 
         profiles.set_base_model(
             default_profile_id,

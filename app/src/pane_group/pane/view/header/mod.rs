@@ -849,8 +849,7 @@ impl<P: BackingView> TypedActionView for PaneHeader<P> {
                 ctx.emit(Event::PaneHeaderOverflowMenuToggled(true));
                 ctx.notify();
             }
-            PaneHeaderAction::PaneHeaderDragStarted => {
-                            }
+            PaneHeaderAction::PaneHeaderDragStarted => {}
             PaneHeaderAction::PaneHeaderDragged {
                 origin,
                 drag_location,
@@ -902,20 +901,16 @@ impl<P: BackingView> TypedActionView for PaneHeader<P> {
             PaneHeaderAction::PaneHeaderDropped {
                 origin,
                 drop_location,
-            } => {
-                match drop_location {
-                    PaneDragDropLocation::TabBar(_) => {
-                        self.is_visible_in_pane_group = true;
-                        ctx.emit(Event::DroppedOnTabBar { origin: *origin })
-                    }
-                    PaneDragDropLocation::PaneGroup(_) => {
-                        ctx.emit(Event::PaneDroppedWithinPaneGroup)
-                    }
-                    PaneDragDropLocation::Other => {
-                        ctx.emit(Event::PaneDroppedOutsideofTabBarOrPaneGroup)
-                    }
+            } => match drop_location {
+                PaneDragDropLocation::TabBar(_) => {
+                    self.is_visible_in_pane_group = true;
+                    ctx.emit(Event::DroppedOnTabBar { origin: *origin })
                 }
-                            }
+                PaneDragDropLocation::PaneGroup(_) => ctx.emit(Event::PaneDroppedWithinPaneGroup),
+                PaneDragDropLocation::Other => {
+                    ctx.emit(Event::PaneDroppedOutsideofTabBarOrPaneGroup)
+                }
+            },
             PaneHeaderAction::PaneHeaderClicked => ctx.emit(Event::PaneHeaderClicked),
         }
     }

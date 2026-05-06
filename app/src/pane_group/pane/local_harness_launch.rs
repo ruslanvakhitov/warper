@@ -73,7 +73,6 @@ pub(super) async fn prepare_local_harness_child_launch(
     };
     validate_local_harness_shell(shell_type)?;
     let command = match harness {
-        Harness::Oz => unreachable!("normalize_local_child_harness filters out the built-in harness"),
         Harness::Unknown => unreachable!("normalize_local_child_harness filters out Unknown"),
         Harness::Claude => {
             let working_dir = startup_directory

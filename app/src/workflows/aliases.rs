@@ -23,7 +23,7 @@ define_settings_group!(WorkflowAliases, settings: [
 ]);
 
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone, schemars::JsonSchema, SettingsValue)]
-#[schemars(description = "A shortcut alias for a Warp Drive workflow.")]
+#[schemars(description = "A shortcut alias for a local workflow.")]
 pub struct WorkflowAlias {
     #[schemars(description = "The alias text that triggers this workflow.")]
     pub alias: String,
@@ -38,8 +38,7 @@ pub struct WorkflowAlias {
 impl WorkflowAliases {
     /// Call once to subscribe to UpdateManager notifications that a workflow has been deleted.
     pub fn connect(&self, _ctx: &mut ModelContext<Self>) {
-        // Workflow aliases are local-only in Warper. Hosted Warp Drive deletion events do not
-        // exist after WARPER-001.
+        // Workflow aliases are local-only in Warper.
     }
 
     pub fn get_all_aliases(&self) -> &[WorkflowAlias] {

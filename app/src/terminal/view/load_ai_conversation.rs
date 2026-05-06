@@ -1125,7 +1125,6 @@ impl TerminalView {
             );
         });
     }
-
 }
 
 /// Returns block indices where `AIBlock`s created for the given `exchanges` should be inserted.

@@ -91,10 +91,6 @@ impl HiddenComputerUseArgs {
 /// The execution harness for an agent run.
 #[derive(Debug, Copy, Clone, ValueEnum, Eq, PartialEq, Default)]
 pub enum Harness {
-    /// Built-in Warp agent harness.
-    #[default]
-    #[value(name = "warp-agent")]
-    Oz,
     /// Delegate to the `claude` CLI.
     #[value(name = "claude", alias = "claude-code")]
     Claude,
@@ -108,6 +104,7 @@ pub enum Harness {
     /// recognize. Surfaced via deserialization fallbacks (e.g. unknown GraphQL
     /// enum values, unknown `harness_type` strings); never selectable from the
     /// CLI or harness dropdown.
+    #[default]
     #[value(skip)]
     Unknown,
 }
@@ -141,13 +138,12 @@ impl Harness {
     pub fn parse_local_child_harness(value: &str) -> Option<Self> {
         match Self::parse_orchestration_harness(value) {
             Some(harness @ (Self::Claude | Self::OpenCode)) => Some(harness),
-            Some(Self::Oz) | Some(Self::Gemini) | Some(Self::Unknown) | None => None,
+            Some(Self::Gemini) | Some(Self::Unknown) | None => None,
         }
     }
 
     pub fn display_name(self) -> &'static str {
         match self {
-            Self::Oz => "Warp Agent",
             Self::Claude => "Claude Code",
             Self::OpenCode => "OpenCode",
             Self::Gemini => "Gemini CLI",
@@ -159,7 +155,6 @@ impl Harness {
 impl fmt::Display for Harness {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let name = match self {
-            Harness::Oz => "warp-agent",
             Harness::Claude => "claude",
             Harness::OpenCode => "opencode",
             Harness::Gemini => "gemini",

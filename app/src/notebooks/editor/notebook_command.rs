@@ -46,7 +46,7 @@ use crate::{
     editor::InteractionState,
     notebooks::{
         styles::block_footer_action_button,
-        telemetry::{ActionEntrypoint, BlockInfo},
+        actions::{ActionEntrypoint, BlockInfo},
     },
     settings::FontSettings,
     terminal::input::{

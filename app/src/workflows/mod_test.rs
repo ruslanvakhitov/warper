@@ -1,11 +1,9 @@
 use warpui::App;
 
-use crate::server::ids::SyncId;
-
 use super::workflow::{Argument, Workflow};
 
 #[test]
-fn test_serialize_cloud_workflow() {
+fn test_serialize_local_workflow() {
     App::test((), |_app| async move {
         let sample_workflow = Workflow::new("Test name", "Command name");
         assert_eq!(
@@ -56,7 +54,7 @@ fn test_serialize_cloud_workflow() {
             author: Some("author_name".to_string()),
             author_url: None,
             shells: vec![],
-            environment_variables: Some(SyncId::ServerId(123.into())),
+            environment_variables: None,
         };
         assert_eq!(
             serde_json::from_str::<Workflow>(

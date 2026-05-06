@@ -95,7 +95,7 @@ impl GetStartedView {
         match event {
             ProjectButtonsEvent::OpenRepository(path_result) => match path_result {
                 Ok(path) => {
-                                        ctx.dispatch_typed_action(&WorkspaceAction::OpenRepository {
+                    ctx.dispatch_typed_action(&WorkspaceAction::OpenRepository {
                         path: Some(path.clone()),
                     });
                     self.close(ctx);
@@ -311,7 +311,7 @@ impl TypedActionView for GetStartedView {
     fn handle_action(&mut self, action: &Self::Action, ctx: &mut ViewContext<Self>) {
         match action {
             GetStartedAction::TerminalSession => {
-                                ctx.dispatch_typed_action(&WorkspaceAction::AddTerminalTab {
+                ctx.dispatch_typed_action(&WorkspaceAction::AddTerminalTab {
                     hide_homepage: true,
                 });
                 self.close(ctx);

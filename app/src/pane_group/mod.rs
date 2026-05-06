@@ -92,6 +92,7 @@ use crate::app_state::{
 use crate::appearance::Appearance;
 use crate::banner::{Banner, BannerEvent, BannerState, BannerTextContent, DismissalType};
 use crate::channel::{Channel, ChannelState};
+use crate::cmd_or_ctrl_shift;
 use crate::code::view::CodeView;
 use crate::features::FeatureFlag;
 use crate::launch_configs::launch_config::{self, PaneMode, PaneTemplateType};
@@ -100,8 +101,8 @@ use crate::report_if_error;
 use crate::resource_center::{
     mark_feature_used_and_write_to_user_defaults, Tip, TipAction, TipsCompleted,
 };
+use crate::server::event_metadata::PaletteSource;
 use crate::server::ids::SyncId;
-use crate::server::telemetry::{PaletteSource};
 use crate::session_management::SessionNavigationData;
 use crate::settings_view::mcp_servers_page::MCPServersSettingsPage;
 use crate::terminal::general_settings::{GeneralSettings, GeneralSettingsChangedEvent};
@@ -116,7 +117,6 @@ use crate::terminal::view::{
     LeftPanelTargetView, SyncEvent, TerminalViewState,
 };
 use crate::terminal::{MockTerminalManager, ShellLaunchData, ShellLaunchState};
-use crate::{cmd_or_ctrl_shift};
 use settings::Setting as _;
 
 use crate::code::active_file::ActiveFileModel;
@@ -1504,28 +1504,7 @@ impl PaneGroup {
                     }
                 }
 
-                if let Some(active_profile_sync_id) = &terminal_snapshot.active_profile_id {
-                    log::info!(
-                        "Attempting to restore active_profile '{active_profile_sync_id}' for terminal {terminal_view_id:?}"
-                    );
-
-                    let profiles_model = AIExecutionProfilesModel::as_ref(ctx);
-
-                    if let Some(profile_id) =
-                        profiles_model.get_profile_id_by_sync_id(active_profile_sync_id)
-                    {
-                        AIExecutionProfilesModel::handle(ctx).update(ctx, |profiles_model, ctx| {
-                            profiles_model.set_active_profile(terminal_view_id, profile_id, ctx);
-                        });
-                        log::info!(
-                            "Restored active profile {profile_id:?} for terminal {terminal_view_id:?}"
-                        );
-                    } else {
-                        log::warn!(
-                            "Failed to restore active profile for terminal {terminal_view_id:?}"
-                        );
-                    }
-                }
+                let _ = terminal_snapshot.active_profile_id.as_ref();
 
                 let focus = InitialFocus {
                     focused_pane: leaf.is_focused.then_some(pane_id),
@@ -2752,7 +2731,6 @@ impl PaneGroup {
         let harness = match cli_conversation.metadata.harness {
             AIAgentHarness::ClaudeCode => Some(Harness::Claude),
             AIAgentHarness::Gemini => Some(Harness::Gemini),
-            AIAgentHarness::Oz => None,
             AIAgentHarness::Unknown => Some(Harness::Unknown),
         };
         terminal_view.update(ctx, |view, ctx| {
@@ -4794,7 +4772,7 @@ impl PaneGroup {
     ) -> Option<PaneId> {
         if self.pane_count() == 1 {
             // Only sending telemetry event the first time a user enters split pane in a session.
-                    }
+        }
 
         self.tips_completed.update(ctx, |tips_completed, ctx| {
             mark_feature_used_and_write_to_user_defaults(

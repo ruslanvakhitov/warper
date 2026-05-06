@@ -91,7 +91,7 @@ impl GeminiHarnessRunner {
         _working_dir: &Path,
         terminal_driver: ModelHandle<TerminalDriver>,
     ) -> Result<Self, AgentDriverError> {
-        let temp_file = write_temp_file("oz_prompt_", prompt)?;
+        let temp_file = write_temp_file("gemini_prompt_", prompt)?;
         let prompt_path = temp_file.path().display().to_string();
 
         Ok(Self {
