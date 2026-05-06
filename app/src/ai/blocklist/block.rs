@@ -42,7 +42,6 @@ use crate::code_review::comment_rendering::{CommentViewCard, HeaderClickHandler}
 use crate::terminal::model::BlockId;
 use crate::terminal::model_events::ModelEvent;
 use crate::terminal::model_events::ModelEventDispatcher;
-use crate::terminal::view::local_agent::AmbientAgentViewModel;
 use crate::terminal::TerminalModel;
 use crate::view_components::action_button::{
     ActionButtonTheme, NakedTheme, PrimaryTheme, SecondaryTheme,
@@ -290,15 +289,6 @@ pub enum TextLocation {
 pub enum AIBlockResponseRating {
     Positive,
     Negative,
-}
-
-impl AIBlockResponseRating {
-    pub fn name(&self) -> &'static str {
-        match self {
-            AIBlockResponseRating::Positive => "positive",
-            AIBlockResponseRating::Negative => "negative",
-        }
-    }
 }
 
 #[derive(Clone)]
@@ -771,9 +761,7 @@ pub struct AIBlock {
     state_handles: AIBlockStateHandles,
     controller: ModelHandle<BlocklistAIController>,
     active_session: ModelHandle<ActiveSession>,
-    ambient_agent_view_model: ModelHandle<AmbientAgentViewModel>,
     terminal_view_id: EntityId,
-    window_id: warpui::WindowId,
 
     /// The current working directory at the time the AI block was created. Note that this
     /// is different from `directory_context`, which represents the directory-related contexts
@@ -940,7 +928,6 @@ impl AIBlock {
         context_model: ModelHandle<BlocklistAIContextModel>,
         find_model: ModelHandle<TerminalFindModel>,
         active_session: ModelHandle<ActiveSession>,
-        ambient_agent_view_model: ModelHandle<AmbientAgentViewModel>,
         cli_subagent_controller: &ModelHandle<CLISubagentController>,
         model_event_dispatcher: &ModelHandle<ModelEventDispatcher>,
         agent_view_controller: ModelHandle<AgentViewController>,
@@ -1220,7 +1207,6 @@ impl AIBlock {
             requested_action_ids: Default::default(),
             auto_expand_requested_command_timer_handle: None,
             selected_text: Arc::new(RwLock::new(None)),
-            window_id: ctx.window_id(),
             state_handles: Default::default(),
             time_to_first_token: OnceCell::new(),
             time_to_last_token: None,
@@ -1243,7 +1229,6 @@ impl AIBlock {
             find_model,
             is_references_section_open: false,
             active_session,
-            ambient_agent_view_model,
             autonomy_setting_speedbump: Default::default(),
             keyboard_navigable_buttons: None,
             response_rating: OnceCell::new(),
@@ -5266,13 +5251,6 @@ pub enum AIBlockEvent {
 
 impl Entity for AIBlock {
     type Event = AIBlockEvent;
-}
-
-/// User's final response to an AI-suggested code edit.
-#[derive(Clone, Copy, Debug, Serialize)]
-pub enum RequestedEditResolution {
-    Accept,
-    Reject,
 }
 
 #[derive(Debug, Clone)]
