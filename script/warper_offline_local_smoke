@@ -13,12 +13,14 @@ Runs deterministic, credential-free WARPER-001 local-only guardrails.
 Validates:
   - startup/channel denylist checks for hosted Warp/Oz/Firebase endpoints
     and hosted update/download paths, including /download/cli
+  - startup graph denylist checks for hosted clients and direct network primitives
   - hosted UI/action/deeplink/restore/menu entrypoint vocabulary denylist checks
   - removed auth/billing/team/Drive/shared-session/environment URI roots
   - telemetry, crash reporting, autoupdate, and Sentry upload/download denylist checks
   - app/src and crates runtime endpoint literal checks outside tests/generated schema
   - focused warp_core channel tests for absent hosted service configs
   - Warper OSS runtime build check
+  - Warper OSS --help network-intercept smoke for nonlocal DNS/connect attempts
 
 Does not validate:
   - launching the macOS .app (run script/warper_app_help_smoke after bundling)
@@ -46,12 +48,14 @@ echo "WARPER-001 offline local smoke"
 echo
 echo "Validates:"
 echo "  - startup/channel hosted endpoint and update/download denylist"
+echo "  - startup graph hosted-client and direct-network primitive denylist"
 echo "  - UI/action/deeplink/restore/menu hosted entrypoint denylist"
 echo "  - removed auth/billing/team/Drive/shared-session/environment URI roots"
 echo "  - telemetry/crash/autoupdate/Sentry upload and download denylist"
 echo "  - runtime endpoint literals in app/src and crates outside tests/generated schema"
 echo "  - warp_core absent hosted service config tests"
 echo "  - Warper OSS runtime build check"
+echo "  - Warper OSS --help network-intercept smoke for nonlocal DNS/connect attempts"
 echo
 echo "Does not validate:"
 echo "  - macOS .app launch (run script/warper_app_help_smoke after bundling)"
@@ -63,6 +67,8 @@ echo
 
 echo "Running static denylist: startup"
 ./script/check_warper_static_denylist
+echo "Running static denylist: startup-network"
+./script/check_warper_static_denylist startup-network
 echo "Running static denylist: entrypoints"
 ./script/check_warper_static_denylist entrypoints
 echo "Running static denylist: telemetry-crash-update"
@@ -79,3 +85,11 @@ echo "Running Warper OSS runtime build check"
 cargo check \
     -p warp \
     --bin warp-oss
+
+echo "Building Warper OSS binary for network-intercept smoke"
+cargo build \
+    -p warp \
+    --bin warp-oss
+
+echo "Running Warper OSS --help network-intercept smoke"
+./script/warper_network_intercept_smoke target/debug/warp-oss --help

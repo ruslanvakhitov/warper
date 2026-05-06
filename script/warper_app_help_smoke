@@ -8,9 +8,10 @@ case "${1:-}" in
         cat <<'USAGE'
 Usage: script/warper_app_help_smoke [path/to/Warper.app]
 
-Runs the bundled Warper executable with --help and verifies it exits
-successfully. This is a deterministic bundle-entrypoint smoke; it does not
-open the UI or validate outbound-network blocking.
+Runs the bundled Warper executable with --help under the WARPER-001 network
+interposer and verifies it exits successfully. This is a deterministic
+bundle-entrypoint smoke; it does not open the UI or validate OS-level
+outbound-network blocking.
 
 Default bundle path:
   target/aarch64-apple-darwin/debug/bundle/osx/Warper.app
@@ -28,8 +29,8 @@ if [[ ! -x "$executable" ]]; then
     exit 1
 fi
 
-echo "Running Warper .app --help smoke: $executable"
-help_output="$("$executable" --help)"
+echo "Running Warper .app --help smoke with network interception: $executable"
+help_output="$(./script/warper_network_intercept_smoke "$executable" --help)"
 
 if [[ "$help_output" != *"Usage:"* && "$help_output" != *"USAGE:"* ]]; then
     echo "Warper .app --help did not print expected usage text."
