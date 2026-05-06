@@ -29,7 +29,6 @@ use crate::{
     terminal::{general_settings::GeneralSettings, view::Event, TerminalManager, TerminalView},
     view_components::ToastFlavor,
     workspace::{sync_inputs::SyncedInputState, PaneViewLocator},
-    AIExecutionProfilesModel,
 };
 
 #[cfg(feature = "local_fs")]
@@ -942,7 +941,6 @@ fn handle_terminal_view_event(
                         let parent_pane_id = pane_id;
                         let request_name = request.name.clone();
                         let parent_conversation_id = request.parent_conversation_id;
-                        let parent_run_id = request.parent_run_id.clone();
                         let prompt = request.prompt.clone();
                         let shell_type = group
                             .terminal_view_from_pane_id(parent_pane_id, ctx)
@@ -955,7 +953,6 @@ fn handle_terminal_view_event(
                                 prepare_local_harness_child_launch(
                                     prompt,
                                     harness_type,
-                                    parent_run_id,
                                     shell_type,
                                     startup_directory,
                                 )

@@ -1,6 +1,6 @@
 use super::workspace::{
-    AiAutonomySettings, EnterpriseSecretRegex, HostEnablementSetting, LocalPolicySetting,
-    SandboxedAgentSettings, UgcCollectionEnablementSetting, Workspace, WorkspaceUid,
+    AiAutonomySettings, HostEnablementSetting, LocalPolicySetting, SandboxedAgentSettings,
+    Workspace, WorkspaceUid,
 };
 use crate::{
     ai::llms::LLMModelHost,
@@ -181,9 +181,13 @@ impl UserWorkspaces {
         // PrivacySettings can't observe UserWorkspaces for updates, as it's initialized too early in
         // the app initialization flow. So, we update it manually whenever local policy data changes.
         crate::settings::PrivacySettings::handle(ctx).update(ctx, |settings, ctx| {
+            let enterprise_regexes = self
+                .current_workspace()
+                .map(|workspace| workspace.settings.secret_redaction_settings.regexes.clone())
+                .unwrap_or_default();
             settings.set_enterprise_secret_redaction_settings(
                 self.is_enterprise_secret_redaction_enabled(),
-                self.get_enterprise_secret_redaction_regex_list(),
+                enterprise_regexes,
                 ChangeEventReason::LocalChange,
                 ctx,
             );
@@ -198,18 +202,6 @@ impl UserWorkspaces {
         self.current_workspace()
             .map(|workspace| workspace.settings.secret_redaction_settings.enabled)
             .unwrap_or(false)
-    }
-
-    pub fn get_enterprise_secret_redaction_regex_list(&self) -> Vec<EnterpriseSecretRegex> {
-        self.current_workspace()
-            .map(|workspace| workspace.settings.secret_redaction_settings.regexes.clone())
-            .unwrap_or_default()
-    }
-
-    pub fn ugc_collection_policy(&self) -> UgcCollectionEnablementSetting {
-        self.current_workspace()
-            .map(|workspace| workspace.settings.ugc_collection_settings.setting.clone())
-            .unwrap_or_default()
     }
 
     pub fn is_ai_allowed_in_remote_sessions(&self) -> bool {
@@ -253,15 +245,6 @@ impl UserWorkspaces {
                 ai_globally_enabled && *CodeSettings::as_ref(app).codebase_context_enabled.value()
             }
         }
-    }
-
-    /// Returns the local agent attribution policy.
-    /// Use this to decide whether the user's attribution toggle should be locked
-    /// (`Enable`/`Disable`) or editable (`RespectUserSetting`).
-    pub fn agent_attribution_policy(&self) -> LocalPolicySetting {
-        self.current_workspace()
-            .map(|workspace| workspace.settings.agent_attribution_policy.clone())
-            .unwrap_or_default()
     }
 
     /// Returns only the local codebase context policy.

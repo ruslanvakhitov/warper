@@ -8,8 +8,7 @@ use warp_managed_secrets::ManagedSecretValue;
 use crate::ai::{
     agent::conversation::LocalAgentRunId,
     agent_sdk::{
-        driver::AgentDriverError, task_env_vars, validate_cli_installed, ClaudeHarness,
-        ThirdPartyHarness,
+        driver::AgentDriverError, validate_cli_installed, ClaudeHarness, ThirdPartyHarness,
     },
 };
 use crate::terminal::cli_agent_sessions::plugin_manager::plugin_manager_for;
@@ -59,7 +58,6 @@ pub(super) fn build_local_opencode_child_command(prompt: &str) -> String {
 pub(super) async fn prepare_local_harness_child_launch(
     prompt: String,
     harness_type: String,
-    parent_run_id: Option<String>,
     shell_type: Option<ShellType>,
     startup_directory: Option<PathBuf>,
 ) -> Result<PreparedLocalHarnessLaunch, String> {
@@ -120,7 +118,7 @@ pub(super) async fn prepare_local_harness_child_launch(
 
     Ok(PreparedLocalHarnessLaunch {
         command,
-        env_vars: task_env_vars(Some(&local_run_id), parent_run_id.as_deref(), harness),
+        env_vars: HashMap::new(),
         run_id: local_run_id.to_string(),
         local_run_id,
     })
