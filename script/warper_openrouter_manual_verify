@@ -1,0 +1,332 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+log_path="$HOME/Library/Logs/warper.log"
+observed_hosts_path=""
+mode="steps"
+
+if ! command -v rg >/dev/null 2>&1; then
+    echo "ripgrep is required to run the WARPER-001 OpenRouter manual verifier."
+    exit 1
+fi
+
+usage() {
+    cat <<'USAGE'
+Usage:
+  script/warper_openrouter_manual_verify --print-steps
+  script/warper_openrouter_manual_verify --probe-credential
+  script/warper_openrouter_manual_verify --check --observed-hosts /path/to/hosts.txt [--log /path/to/warper.log]
+
+Credentialed manual WARPER-001 OpenRouter verifier.
+
+This helper does not automate the Warper GUI. It documents the manual app flow
+and validates the two artifacts that prove the gap:
+
+  - a Warper app log from the same run with a successful OpenRouter request
+  - a process-scoped observed-host list showing only OpenRouter network hosts
+
+The observed-hosts file must contain one hostname per line, produced from a
+network monitor filtered to the Warper process during the manual prompt. Comments
+starting with # and blank lines are ignored.
+
+Allowed observed hosts:
+  - openrouter.ai and subdomains
+  - localhost / loopback entries
+
+Forbidden observed hosts include Warp/Oz/Firebase/telemetry/update endpoints.
+
+Environment for --probe-credential:
+  OPENROUTER_API_KEY       Required unless already exported by the caller.
+  OPENROUTER_MODEL         Optional; defaults to openrouter/auto.
+USAGE
+}
+
+print_steps() {
+    cat <<'STEPS'
+WARPER-001 OpenRouter credentialed manual verification
+
+Purpose:
+  Prove that the retained OpenRouter-owned AI flow still works after hosted
+  Warp/Oz amputation, and that the Warper process does not contact Warp/Oz
+  hosted endpoints during that flow.
+
+Prerequisites:
+  - A real OpenRouter API key. Do not use placeholder keys or record fake
+    passing results.
+  - A fresh Warper build or bundle from this branch.
+  - A host-aware network monitor that can be filtered to the Warper process,
+    such as Little Snitch, Proxyman, LuLu, or an equivalent local firewall/log.
+    A generic system-wide log is not sufficient unless it is filtered to Warper.
+
+Credential guardrails:
+  - Preferred GUI path: open Warper, go to Settings > OpenRouter, enter the
+    OpenRouter API key, and set OpenRouter Model to openrouter/auto or another
+    real OpenRouter model id.
+  - Environment path for a terminal-launched dev build:
+      export OPENROUTER_API_KEY='real key from OpenRouter'
+      export OPENROUTER_MODEL='openrouter/auto'
+      ./script/run
+    Environment keys are only fallback values when secure storage does not
+    already contain an OpenRouter key/model.
+  - Never commit, paste into docs, or save the API key in the observed-hosts
+    file. The verifier never needs the secret value for --check.
+
+Optional credential probe before opening Warper:
+  OPENROUTER_API_KEY='real key' script/warper_openrouter_manual_verify --probe-credential
+
+Manual app flow:
+  1. Move or truncate the app log so the run has clean evidence:
+       : > "$HOME/Library/Logs/warper.log"
+  2. Start the process-scoped network monitor for Warper. Configure it to record
+     hostnames for Warper only.
+  3. Launch Warper from the built app or with ./script/run.
+  4. In a local terminal pane, invoke the built-in agent/OpenRouter flow with a
+     low-risk prompt, for example:
+       Reply with exactly WARPER_OPENROUTER_MANUAL_OK and do not call tools.
+  5. Confirm the UI receives an answer from the agent.
+  6. Stop the network monitor and export observed Warper hostnames, one per
+     line, to a file such as /tmp/warper-openrouter-hosts.txt. The acceptable
+     host list for this manual run is openrouter.ai or a subdomain only, plus
+     loopback if the monitor records local process traffic.
+  7. Run:
+       script/warper_openrouter_manual_verify --check \
+         --observed-hosts /tmp/warper-openrouter-hosts.txt
+
+Passing evidence:
+  - The app log contains OpenRouter request starting.
+  - The app log contains OpenRouter response received with a 2xx status.
+  - The observed-hosts file contains openrouter.ai or a subdomain.
+  - The observed-hosts file contains no nonlocal host outside OpenRouter.
+  - The observed-hosts file and app log contain no Warp/Oz/Firebase/telemetry/
+    update endpoint.
+
+If credentials are unavailable:
+  - Do not mark the manual verification passed.
+  - Record that the credentialed run is pending.
+  - Keep this helper and specs as the encoded path to run once a real
+    OpenRouter key is available.
+STEPS
+}
+
+forbidden_endpoint_regex='(^|[[:space:]/:])(app\.warp\.dev|rtc\.app\.warp\.dev|sessions\.app\.warp\.dev|oz\.warp\.dev|identitytoolkit\.googleapis\.com|securetoken\.googleapis\.com|firebaseapp\.com|rudderstack\.com|rudderlabs|api\.segment\.io|dataplane\.rudderstack|sentry\.io|releases\.warp\.dev|warp-releases|channel_versions\.json|warp\.dev/download|/download/cli)([[:space:]/:]|$)'
+
+is_allowed_host() {
+    local host="$1"
+    host="${host%.}"
+
+    case "$host" in
+        ""|localhost|localhost.localdomain|::1)
+            return 0
+            ;;
+        127.*)
+            return 0
+            ;;
+        openrouter.ai|*.openrouter.ai)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+normalize_host_line() {
+    local line="$1"
+    line="${line%%#*}"
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+    line="${line#http://}"
+    line="${line#https://}"
+    line="${line%%/*}"
+    line="${line%%:*}"
+    printf '%s\n' "$line" | tr '[:upper:]' '[:lower:]'
+}
+
+probe_credential() {
+    if ! command -v curl >/dev/null 2>&1; then
+        echo "curl is required for --probe-credential."
+        exit 1
+    fi
+
+    if [[ -z "${OPENROUTER_API_KEY:-}" ]]; then
+        echo "OPENROUTER_API_KEY is required for --probe-credential."
+        exit 1
+    fi
+
+    local model="${OPENROUTER_MODEL:-openrouter/auto}"
+    if [[ ! "$model" =~ ^[A-Za-z0-9._:/-]+$ ]]; then
+        echo "OPENROUTER_MODEL contains unsupported characters for this shell helper."
+        exit 1
+    fi
+
+    local response_file
+    response_file="$(mktemp "${TMPDIR:-/tmp}/warper-openrouter-probe.XXXXXX")"
+    cleanup_probe() {
+        rm -f "$response_file"
+    }
+    trap cleanup_probe RETURN
+
+    echo "Probing OpenRouter credentials against model: $model"
+    curl \
+        --silent \
+        --show-error \
+        --fail \
+        --connect-timeout 15 \
+        --max-time 90 \
+        https://openrouter.ai/api/v1/chat/completions \
+        -H "Authorization: Bearer ${OPENROUTER_API_KEY}" \
+        -H "Content-Type: application/json" \
+        -H "HTTP-Referer: https://warper.dev" \
+        -H "X-OpenRouter-Title: Warper manual verification" \
+        --data-binary @- > "$response_file" <<JSON
+{"model":"$model","messages":[{"role":"user","content":"Reply with WARPER_OPENROUTER_PROBE_OK."}],"stream":false}
+JSON
+
+    if [[ ! -s "$response_file" ]]; then
+        echo "OpenRouter credential probe failed: empty response."
+        exit 1
+    fi
+
+    echo "OpenRouter credential probe reached OpenRouter and received an HTTP success response."
+    echo "This only validates the credential; it does not validate the Warper app flow."
+}
+
+check_log() {
+    if [[ ! -f "$log_path" ]]; then
+        echo "Warper log not found: $log_path"
+        exit 1
+    fi
+
+    if rg --quiet --color never "$forbidden_endpoint_regex" "$log_path"; then
+        echo "Warper log contains a forbidden hosted endpoint."
+        rg --line-number --no-heading --color never "$forbidden_endpoint_regex" "$log_path"
+        exit 1
+    fi
+
+    if ! rg --quiet --color never 'OpenRouter request starting:' "$log_path"; then
+        echo "Warper log does not contain OpenRouter request starting evidence."
+        exit 1
+    fi
+
+    if ! rg --quiet --color never 'OpenRouter response received: .*status=2[0-9][0-9]' "$log_path"; then
+        echo "Warper log does not contain a 2xx OpenRouter response."
+        exit 1
+    fi
+
+    if rg --quiet --color never 'OpenRouter request (transport )?failed|OpenRouter response parse failed|OpenRouter returned an empty response' "$log_path"; then
+        echo "Warper log contains OpenRouter failure evidence. Use a clean log from one manual run."
+        rg --line-number --no-heading --color never 'OpenRouter request (transport )?failed|OpenRouter response parse failed|OpenRouter returned an empty response' "$log_path"
+        exit 1
+    fi
+
+    echo "Warper log check passed: OpenRouter request started and received a 2xx response."
+}
+
+check_observed_hosts() {
+    if [[ -z "$observed_hosts_path" ]]; then
+        echo "--observed-hosts is required for --check."
+        exit 1
+    fi
+    if [[ ! -f "$observed_hosts_path" ]]; then
+        echo "Observed-hosts file not found: $observed_hosts_path"
+        exit 1
+    fi
+
+    local saw_openrouter=0
+    local failed=0
+    while IFS= read -r raw_line || [[ -n "$raw_line" ]]; do
+        local host
+        host="$(normalize_host_line "$raw_line")"
+        if [[ -z "$host" ]]; then
+            continue
+        fi
+
+        if [[ "$host" =~ app\.warp\.dev|rtc\.app\.warp\.dev|sessions\.app\.warp\.dev|oz\.warp\.dev|identitytoolkit\.googleapis\.com|securetoken\.googleapis\.com|firebaseapp\.com|rudderstack\.com|rudderlabs|api\.segment\.io|dataplane\.rudderstack|sentry\.io|releases\.warp\.dev|warp-releases|channel_versions\.json ]]; then
+            echo "Forbidden hosted endpoint observed: $host"
+            failed=1
+            continue
+        fi
+
+        if [[ "$host" == "openrouter.ai" || "$host" == *".openrouter.ai" ]]; then
+            saw_openrouter=1
+        fi
+
+        if ! is_allowed_host "$host"; then
+            echo "Non-OpenRouter host observed in Warper process-scoped host list: $host"
+            failed=1
+        fi
+    done < "$observed_hosts_path"
+
+    if [[ "$failed" -ne 0 ]]; then
+        exit 1
+    fi
+
+    if [[ "$saw_openrouter" -ne 1 ]]; then
+        echo "Observed-hosts file did not include openrouter.ai or a subdomain."
+        exit 1
+    fi
+
+    echo "Observed-hosts check passed: only OpenRouter/loopback hosts were present."
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        --print-steps)
+            mode="steps"
+            shift
+            ;;
+        --probe-credential)
+            mode="probe"
+            shift
+            ;;
+        --check)
+            mode="check"
+            shift
+            ;;
+        --observed-hosts)
+            observed_hosts_path="${2:-}"
+            if [[ -z "$observed_hosts_path" ]]; then
+                echo "--observed-hosts requires a path."
+                exit 2
+            fi
+            shift 2
+            ;;
+        --log)
+            log_path="${2:-}"
+            if [[ -z "$log_path" ]]; then
+                echo "--log requires a path."
+                exit 2
+            fi
+            shift 2
+            ;;
+        *)
+            echo "Unknown argument: $1"
+            echo "Run script/warper_openrouter_manual_verify --help for usage."
+            exit 2
+            ;;
+    esac
+done
+
+case "$mode" in
+    steps)
+        print_steps
+        ;;
+    probe)
+        probe_credential
+        ;;
+    check)
+        check_log
+        check_observed_hosts
+        echo "WARPER-001 OpenRouter manual verification artifacts passed."
+        ;;
+    *)
+        echo "Internal error: unknown mode $mode"
+        exit 2
+        ;;
+esac
