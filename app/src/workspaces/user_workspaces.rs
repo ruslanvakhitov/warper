@@ -5,15 +5,12 @@ use super::workspace::{
 use crate::{
     ai::llms::LLMModelHost,
     channel::ChannelState,
-    settings::{
-        AISettings, AISettingsChangedEvent, CodeSettings, CodeSettingsChangedEvent, PrivacySettings,
-    },
+    settings::{AISettings, CodeSettings},
 };
 use regex::Regex;
-use warp_core::{
-    features::FeatureFlag,
-    settings::{ChangeEventReason, Setting},
-};
+#[cfg(test)]
+use warp_core::settings::ChangeEventReason;
+use warp_core::{features::FeatureFlag, settings::Setting};
 use warpui::{AppContext, Entity, ModelContext, SingletonEntity, Tracked};
 
 #[derive(Debug)]
@@ -53,79 +50,28 @@ impl UserWorkspaces {
         Self::mock(vec![], ctx)
     }
 
-    pub fn new(
-        cached_workspaces: Vec<Workspace>,
-        current_workspace_uid: Option<WorkspaceUid>,
-        ctx: &mut ModelContext<Self>,
-    ) -> Self {
-        ctx.subscribe_to_model(&CodeSettings::handle(ctx), |_, code_settings_event, ctx| {
-            match code_settings_event {
-                CodeSettingsChangedEvent::CodebaseContextEnabled { .. }
-                | CodeSettingsChangedEvent::AutoIndexingEnabled { .. } => {
-                    ctx.emit(UserWorkspacesEvent::CodebaseContextEnablementChanged);
-                }
-                _ => {}
-            }
-        });
-
-        ctx.subscribe_to_model(&AISettings::handle(ctx), |_, ai_settings_event, ctx| {
-            if let AISettingsChangedEvent::IsAnyAIEnabled { .. } = ai_settings_event {
-                ctx.emit(UserWorkspacesEvent::CodebaseContextEnablementChanged);
-            }
-        });
-
-        let current_workspace_uid = current_workspace_uid
-            .filter(|uid| {
-                cached_workspaces
-                    .iter()
-                    .any(|workspace| workspace.uid == *uid)
-            })
-            .or_else(|| cached_workspaces.first().map(|workspace| workspace.uid));
-
-        Self {
-            current_workspace_uid: current_workspace_uid.into(),
-            workspaces: cached_workspaces.into(),
-        }
-    }
-
-    pub fn workspace_from_uid(&self, workspace_uid: WorkspaceUid) -> Option<&Workspace> {
+    fn workspace_from_uid(&self, workspace_uid: WorkspaceUid) -> Option<&Workspace> {
         self.workspaces.iter().find(|w| w.uid == workspace_uid)
     }
 
-    pub fn workspace_from_uid_mut(
-        &mut self,
-        workspace_uid: WorkspaceUid,
-    ) -> Option<&mut Workspace> {
+    #[cfg(test)]
+    fn workspace_from_uid_mut(&mut self, workspace_uid: WorkspaceUid) -> Option<&mut Workspace> {
         self.workspaces.iter_mut().find(|w| w.uid == workspace_uid)
     }
 
-    pub fn current_workspace(&self) -> Option<&Workspace> {
+    fn current_workspace(&self) -> Option<&Workspace> {
         self.current_workspace_uid
             .and_then(|workspace_uid| self.workspace_from_uid(workspace_uid))
     }
 
-    pub fn current_workspace_mut(&mut self) -> Option<&mut Workspace> {
+    #[cfg(test)]
+    fn current_workspace_mut(&mut self) -> Option<&mut Workspace> {
         self.current_workspace_uid
             .and_then(|workspace_uid| self.workspace_from_uid_mut(workspace_uid))
     }
 
     pub fn workspaces(&self) -> &Vec<Workspace> {
         &self.workspaces
-    }
-
-    pub fn set_current_workspace_uid(
-        &mut self,
-        workspace_uid: WorkspaceUid,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        *self.current_workspace_uid = self
-            .workspace_from_uid(workspace_uid)
-            .map(|workspace| workspace.uid);
-        self.notify_and_emit_local_policies_changed(ctx);
-    }
-
-    pub fn is_active_ai_allowed(&self) -> bool {
-        true
     }
 
     pub fn ai_allowed_by_local_policy(&self) -> bool {
@@ -222,10 +168,7 @@ impl UserWorkspaces {
         true
     }
 
-    pub fn has_workspaces(&self) -> bool {
-        !self.workspaces.is_empty()
-    }
-
+    #[cfg(test)]
     pub fn update_workspaces(&mut self, workspaces: Vec<Workspace>, ctx: &mut ModelContext<Self>) {
         let current_workspace_uid = workspaces.first().map(|workspace| workspace.uid);
         *self.current_workspace_uid = current_workspace_uid;
@@ -233,10 +176,11 @@ impl UserWorkspaces {
         self.notify_and_emit_local_policies_changed(ctx);
     }
 
+    #[cfg(test)]
     fn notify_and_emit_local_policies_changed(&self, ctx: &mut ModelContext<Self>) {
         // PrivacySettings can't observe UserWorkspaces for updates, as it's initialized too early in
         // the app initialization flow. So, we update it manually whenever local policy data changes.
-        PrivacySettings::handle(ctx).update(ctx, |settings, ctx| {
+        crate::settings::PrivacySettings::handle(ctx).update(ctx, |settings, ctx| {
             settings.set_enterprise_secret_redaction_settings(
                 self.is_enterprise_secret_redaction_enabled(),
                 self.get_enterprise_secret_redaction_regex_list(),

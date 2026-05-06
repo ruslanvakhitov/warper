@@ -15,7 +15,6 @@ mod filterable_dropdown;
 pub mod find;
 mod markdown_toggle_view;
 mod submittable_text_input;
-mod warning_box;
 
 pub use alert::Alert;
 pub use clickable_text_input::*;
@@ -27,4 +26,3 @@ pub use feature_popup::*;
 pub use filterable_dropdown::{FilterableDropdown, FilterableDropdownOrientation};
 pub use markdown_toggle_view::{MarkdownToggleEvent, MarkdownToggleView};
 pub use submittable_text_input::*;
-pub use warning_box::*;
