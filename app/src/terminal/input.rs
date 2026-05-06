@@ -39,13 +39,11 @@ use crate::ai::predict::prompt_suggestions::{
     is_accept_prompt_suggestion_bound_to_ctrl_enter,
 };
 use crate::ai::skills::SkillManager;
-use crate::ai::skills::SkillOpenOrigin;
 use crate::context_chips::spacing;
 use crate::pane_group::focus_state::PaneFocusHandle;
 use crate::prompt::editor_modal::OpenSource as PromptEditorOpenSource;
 use crate::search::slash_command_menu::static_commands::commands::{self, COMMAND_REGISTRY};
 
-use crate::settings::PrivacySettings;
 use crate::suggestions::ignored_suggestions_model::{
     IgnoredSuggestionsModel, IgnoredSuggestionsModelEvent, SuggestionType,
 };
@@ -102,13 +100,11 @@ use crate::{
         agent::{AIAgentContext, EntrypointType},
         blocklist::{
             prompt::prompt_alert::{PromptAlertEvent, PromptAlertView},
-            render_ai_agent_mode_icon, render_ai_follow_up_icon,
-            ugc_policy_banner::should_collect_ai_ugc,
-            BlocklistAIContextEvent, BlocklistAIContextModel, BlocklistAIController,
-            BlocklistAIControllerEvent, BlocklistAIHistoryEvent, BlocklistAIHistoryModel,
-            BlocklistAIInputEvent, BlocklistAIInputModel, InputConfig, InputType,
-            BLOCK_CONTEXT_ATTACHMENT_REGEX, DIFF_HUNK_ATTACHMENT_REGEX,
-            DRIVE_OBJECT_ATTACHMENT_REGEX,
+            render_ai_agent_mode_icon, render_ai_follow_up_icon, BlocklistAIContextEvent,
+            BlocklistAIContextModel, BlocklistAIController, BlocklistAIControllerEvent,
+            BlocklistAIHistoryEvent, BlocklistAIHistoryModel, BlocklistAIInputEvent,
+            BlocklistAIInputModel, InputConfig, InputType, BLOCK_CONTEXT_ATTACHMENT_REGEX,
+            DIFF_HUNK_ATTACHMENT_REGEX, DRIVE_OBJECT_ATTACHMENT_REGEX,
         },
         llms::{LLMPreferences, LLMPreferencesEvent, DEFAULT_OPENROUTER_MODEL_ID},
         predict::next_command_model::{is_command_valid, NextCommandModel},
@@ -190,7 +186,6 @@ use crate::{
         ForkedConversationDestination, InitContent, RestoreConversationLayout, ToastStack,
         WorkspaceAction,
     },
-    AgentModeEntrypoint,
 };
 use ai::api_keys::ApiKeyManager;
 use warp_server_client::ids::SyncId;
@@ -203,7 +198,6 @@ use itertools::Itertools;
 use lazy_static::lazy_static;
 use ordered_float::Float;
 use regex::Regex;
-use serde_json::json;
 use settings::{Setting as _, ToggleableSetting};
 use std::{
     any::Any,
@@ -287,7 +281,6 @@ use super::{
     },
     session_settings::{SessionSettings, SessionSettingsChangedEvent},
     settings::{SpacingMode, TerminalSettings, TerminalSettingsChangedEvent},
-    shell::ShellType,
     universal_developer_input::{
         UniversalDeveloperInputButtonBar, UniversalDeveloperInputButtonBarEvent,
     },
@@ -311,7 +304,6 @@ use futures::stream::AbortHandle;
 use parking_lot::FairMutex;
 #[cfg(feature = "local_fs")]
 use parking_lot::Mutex;
-use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use string_offset::ByteOffset;
@@ -485,26 +477,6 @@ lazy_static! {
             ..Default::default()
         }
     };
-}
-
-#[derive(PartialEq, Eq, Copy, Clone, Serialize)]
-pub enum InputSuggestionsModeMetadata {
-    HistoryFuzzySearch,
-    CompletionSuggestions,
-    HistoryUp,
-    NaturalLanguageCommandSearch,
-    StaticWorkflowEnumSuggestions,
-    DynamicWorkflowEnumSuggestions,
-    AIContextMenu,
-    SlashCommands,
-    ConversationMenu,
-    ModelSelector,
-    ProfileSelector,
-    PromptsMenu,
-    SkillMenu,
-    InlineHistoryMenu,
-    IndexedReposMenu,
-    PlanMenu,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -746,50 +718,6 @@ impl InputSuggestionsMode {
             InputSuggestionsMode::IndexedReposMenu => Some("Search indexed repos"),
             InputSuggestionsMode::PlanMenu { .. } => Some("Search plans"),
             _ => None,
-        }
-    }
-
-    fn to_event_metadata_mode(&self) -> InputSuggestionsModeMetadata {
-        match *self {
-            InputSuggestionsMode::HistoryUp {
-                search_mode: HistorySearchMode::Prefix,
-                ..
-            } => InputSuggestionsModeMetadata::HistoryUp,
-            InputSuggestionsMode::HistoryUp {
-                search_mode: HistorySearchMode::Fuzzy,
-                ..
-            } => InputSuggestionsModeMetadata::HistoryFuzzySearch,
-            InputSuggestionsMode::CompletionSuggestions { .. } => {
-                InputSuggestionsModeMetadata::CompletionSuggestions
-            }
-            InputSuggestionsMode::StaticWorkflowEnumSuggestions { .. } => {
-                InputSuggestionsModeMetadata::StaticWorkflowEnumSuggestions
-            }
-            InputSuggestionsMode::DynamicWorkflowEnumSuggestions { .. } => {
-                InputSuggestionsModeMetadata::DynamicWorkflowEnumSuggestions
-            }
-            InputSuggestionsMode::AIContextMenu { .. } => {
-                InputSuggestionsModeMetadata::AIContextMenu
-            }
-            InputSuggestionsMode::SlashCommands => InputSuggestionsModeMetadata::SlashCommands,
-            InputSuggestionsMode::ConversationMenu => {
-                InputSuggestionsModeMetadata::ConversationMenu
-            }
-            InputSuggestionsMode::ModelSelector => InputSuggestionsModeMetadata::ModelSelector,
-            InputSuggestionsMode::ProfileSelector => InputSuggestionsModeMetadata::ProfileSelector,
-            InputSuggestionsMode::PromptsMenu => InputSuggestionsModeMetadata::PromptsMenu,
-            InputSuggestionsMode::SkillMenu => InputSuggestionsModeMetadata::SkillMenu,
-            InputSuggestionsMode::UserQueryMenu { .. } => {
-                InputSuggestionsModeMetadata::ConversationMenu
-            }
-            InputSuggestionsMode::InlineHistoryMenu { .. } => {
-                InputSuggestionsModeMetadata::InlineHistoryMenu
-            }
-            InputSuggestionsMode::IndexedReposMenu => {
-                InputSuggestionsModeMetadata::IndexedReposMenu
-            }
-            InputSuggestionsMode::PlanMenu { .. } => InputSuggestionsModeMetadata::PlanMenu,
-            InputSuggestionsMode::Closed => unreachable!(),
         }
     }
 }
@@ -3223,11 +3151,6 @@ impl Input {
                     ctx,
                 );
             });
-
-            // Emit telemetry for @ menu opened
-            let is_udi_enabled =
-                InputSettings::as_ref(ctx).is_universal_developer_input_enabled(ctx);
-            let current_input_mode = self.ai_input_model.as_ref(ctx).input_type();
         } else if self.suggestions_mode_model.as_ref(ctx).is_ai_context_menu() {
             self.close_ai_context_menu(ctx);
         }
@@ -3268,8 +3191,6 @@ impl Input {
             self.close_slash_commands_menu(ctx);
         } else {
             self.system_insert("/", ctx);
-            let is_in_agent_view = FeatureFlag::AgentView.is_enabled()
-                && self.agent_view_controller.as_ref(ctx).is_fullscreen();
         }
     }
 
@@ -3282,9 +3203,6 @@ impl Input {
             InlineConversationMenuEvent::NavigateToConversation {
                 conversation_navigation_data,
             } => {
-                let is_in_agent_view = FeatureFlag::AgentView.is_enabled()
-                    && self.agent_view_controller.as_ref(ctx).is_fullscreen();
-
                 let conversation_id = conversation_navigation_data.id;
                 let active_ids =
                     ActiveAgentViewsModel::as_ref(ctx).get_all_active_conversation_ids(ctx);
@@ -3703,8 +3621,6 @@ impl Input {
         self.suggestions_mode_model.update(ctx, |model, ctx| {
             model.set_mode(InputSuggestionsMode::ConversationMenu, ctx);
         });
-        let is_in_agent_view = FeatureFlag::AgentView.is_enabled()
-            && self.agent_view_controller.as_ref(ctx).is_fullscreen();
         ctx.notify();
     }
 
@@ -3760,9 +3676,6 @@ impl Input {
                     initial_prompt: None,
                     destination,
                 });
-
-                let is_in_agent_view = FeatureFlag::AgentView.is_enabled()
-                    && self.agent_view_controller.as_ref(ctx).is_active();
 
                 self.suggestions_mode_model.update(ctx, |model, ctx| {
                     model.set_mode(InputSuggestionsMode::Closed, ctx);
@@ -3909,12 +3822,7 @@ impl Input {
                     ctx.notify();
                 }
             }
-            inline_history::InlineHistoryMenuEvent::NoResults => {
-                // Both the regular inline view and the cloud-mode V2 wrapper
-                // render their own "No results" placeholder UI when the
-                // mixer query produces zero rows. This handler is therefore
-                // a no-op; the user dismisses via Escape.
-            }
+            inline_history::InlineHistoryMenuEvent::NoResults => {}
         }
     }
 
@@ -4041,9 +3949,6 @@ impl Input {
                     conversation_id,
                     exchange_id: *exchange_id,
                 });
-
-                let is_in_agent_view = FeatureFlag::AgentView.is_enabled()
-                    && self.agent_view_controller.as_ref(ctx).is_active();
 
                 self.suggestions_mode_model.update(ctx, |model, ctx| {
                     model.set_mode(InputSuggestionsMode::Closed, ctx);
@@ -4442,6 +4347,8 @@ impl Input {
         triggered_from: ZeroStatePromptSuggestionTriggeredFrom,
         ctx: &mut ViewContext<Self>,
     ) {
+        let _ = triggered_from;
+
         match suggestion_type {
             ZeroStatePromptSuggestionType::Explain | ZeroStatePromptSuggestionType::Fix => {
                 self.auto_attach_last_block_for_query(ctx);
@@ -5764,7 +5671,6 @@ impl Input {
                 command_with_replaced_arguments,
                 replaced_ranges,
                 argument_index_to_highlight_index_map,
-                argument_index_to_object_id_map,
                 ..
             }) => {
                 let text_style_ranges = replaced_ranges
@@ -6123,20 +6029,14 @@ impl Input {
         }
 
         match event {
-            InputSuggestionsEvent::ConfirmSuggestion {
-                suggestion,
-                match_type,
-            } => {
+            InputSuggestionsEvent::ConfirmSuggestion { suggestion, .. } => {
                 if !self.confirm_suggestion(suggestion, ctx) {
                     return;
                 }
 
                 self.close_input_suggestions(/*should_focus_input=*/ true, ctx);
             }
-            InputSuggestionsEvent::ConfirmAndExecuteSuggestion {
-                suggestion,
-                match_type,
-            } => {
+            InputSuggestionsEvent::ConfirmAndExecuteSuggestion { suggestion, .. } => {
                 if !self.confirm_and_execute_suggestion(suggestion, ctx) {
                     return;
                 }
@@ -7356,22 +7256,6 @@ impl Input {
         }
     }
 
-    /// Whether the given event should trigger a request to generate an AI-based natural language
-    /// autosuggestion, due to the buffer content meaningfully changing.
-    fn is_nl_ai_autosuggestion_triggering_event(event: &EditorEvent) -> bool {
-        matches!(
-            event,
-            EditorEvent::Edited(_)
-                | EditorEvent::BufferReplaced
-                | EditorEvent::InsertLastWordPrevCommand
-                | EditorEvent::AutosuggestionAccepted { .. }
-                | EditorEvent::DeleteAllLeft
-                | EditorEvent::BackspaceOnEmptyBuffer
-                | EditorEvent::BackspaceAtBeginningOfBuffer
-                | EditorEvent::MiddleClickPaste
-        )
-    }
-
     fn should_close_ai_context_menu(
         &self,
         event: &EditorEvent,
@@ -7508,8 +7392,6 @@ impl Input {
         }
 
         self.check_slash_menu_disabled_state(ctx);
-
-        let is_ai_input_enabled = self.ai_input_model.as_ref(ctx).is_ai_input_enabled();
 
         match event {
             EditorEvent::Edited(edit_origin) => {
@@ -8215,9 +8097,8 @@ impl Input {
                 }
             }
             EditorEvent::AutosuggestionAccepted {
-                insertion_length,
-                buffer_char_length,
                 autosuggestion_type,
+                ..
             } => {
                 ctx.emit(Event::AutosuggestionAccepted);
 
@@ -8949,11 +8830,9 @@ impl Input {
             });
         } else {
             // Otherwise backspace away the AI icon.
-            let new_input_type = self.ai_input_model.update(ctx, |ai_input_model, ctx| {
+            self.ai_input_model.update(ctx, |ai_input_model, ctx| {
                 let new_input_config = ai_input_model.input_config().with_toggled_type().locked();
-                let new_input_type = new_input_config.input_type;
                 ai_input_model.set_input_config_for_classic_mode(new_input_config, ctx);
-                new_input_type
             });
         }
     }
@@ -10561,24 +10440,8 @@ impl Input {
             && AISettings::as_ref(ctx).is_any_ai_enabled(ctx)
             && self.ai_input_model.as_ref(ctx).is_ai_input_enabled()
         {
-            // If we're submitting an AI query, we want to send telemetry for the input type.
-            if FeatureFlag::NldImprovements.is_enabled() {
-                let input_model = self.ai_input_model.as_ref(ctx);
-                let input_type = input_model.input_type();
-                let is_locked = input_model.is_input_type_locked();
-                let was_lock_set_with_empty_buffer = input_model.was_lock_set_with_empty_buffer();
-            }
-
             self.submit_ai_query(None, ctx);
         } else {
-            // If we're submitting a shell command, we want to send telemetry for the input type.
-            if FeatureFlag::NldImprovements.is_enabled() {
-                let input_model = self.ai_input_model.as_ref(ctx);
-                let input_type = input_model.input_type();
-                let is_locked = input_model.is_input_type_locked();
-                let was_lock_set_with_empty_buffer = input_model.was_lock_set_with_empty_buffer();
-            }
-
             if FeatureFlag::WorkflowAliases.is_enabled() {
                 let mut command_string = self.editor.as_ref(ctx).buffer_text(ctx);
                 // If the alias was inserted from the completions menu, it will have trailing
@@ -10963,8 +10826,6 @@ impl Input {
         }
 
         ctx.emit(Event::ExecuteAIQuery);
-
-        let _ = self.workflows_state.selected_workflow_state.as_ref();
     }
 
     /// Returns true if toggling the input mode is disabled.
@@ -12035,13 +11896,13 @@ impl TypedActionView for Input {
                 }
             }
             InputAction::ToggleInputAutoDetection => {
-                if let Ok(new_value) =
+                report_if_error!(
                     AISettings::handle(ctx).update(ctx, |ai_settings, model_ctx| {
                         ai_settings
                             .ai_autodetection_enabled_internal
                             .toggle_and_save_value(model_ctx)
                     })
-                {}
+                );
             }
             InputAction::InsertZeroStatePromptSuggestion(suggestion_type) => {
                 self.insert_zero_state_prompt_suggestion(

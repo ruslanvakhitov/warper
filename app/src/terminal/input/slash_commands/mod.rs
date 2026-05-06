@@ -31,17 +31,12 @@ use crate::terminal::input::{
 };
 use crate::terminal::view::TerminalAction;
 use crate::view_components::DismissibleToast;
-use crate::workflows::{WorkflowSelectionSource, WorkflowSource, WorkflowType};
 use crate::workspace::{ForkedConversationDestination, ToastStack, WorkspaceAction};
-use warp_server_client::ids::SyncId;
 
 #[derive(Debug, Clone)]
-pub enum AcceptSlashCommandOrSavedPrompt {
+pub enum AcceptSlashCommand {
     SlashCommand {
         id: SlashCommandId,
-    },
-    SavedPrompt {
-        id: SyncId,
     },
     /// A skill selected from browse or search. Contains name (for display/insertion) and path/bundled_skill_id (for execution).
     Skill {
@@ -49,7 +44,7 @@ pub enum AcceptSlashCommandOrSavedPrompt {
         name: String,
     },
 }
-impl InlineMenuAction for AcceptSlashCommandOrSavedPrompt {
+impl InlineMenuAction for AcceptSlashCommand {
     const MENU_TYPE: InlineMenuType = InlineMenuType::SlashCommands;
 }
 
@@ -231,9 +226,6 @@ impl Input {
                     model.set_mode(InputSuggestionsMode::Closed, ctx);
                 });
                 ctx.notify();
-            }
-            SlashCommandsEvent::SelectedSavedPrompt { id } => {
-                log::warn!("Ignoring amputated saved prompt selection for id {id:?}");
             }
             SlashCommandsEvent::SelectedStaticCommand {
                 id,
@@ -772,8 +764,6 @@ impl Input {
             });
         }
 
-        let is_in_agent_view = FeatureFlag::AgentView.is_enabled()
-            && self.agent_view_controller.as_ref(ctx).is_active();
         true
     }
 
