@@ -38,14 +38,11 @@ pub struct IdentityTokenOptions {
 pub struct ManagedSecretConfigs {
     /// Configuration for the user's personal secrets.
     pub user_secrets: Option<ManagedSecretConfig>,
-    /// Configuration for all team secret stores that the user can access.
-    pub team_secrets: HashMap<String, ManagedSecretConfig>,
 }
 
 #[derive(Debug, Clone)]
 pub enum SecretOwner {
     CurrentUser,
-    Team { team_uid: String },
 }
 
 #[cfg_attr(not(target_family = "wasm"), async_trait)]

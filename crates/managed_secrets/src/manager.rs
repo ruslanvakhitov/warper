@@ -8,10 +8,8 @@ use warpui::{Entity, SingletonEntity};
 use crate::{
     ManagedSecretValue,
     client::{
-        IdentityTokenOptions, ManagedSecretConfigs, ManagedSecretsClient, SecretOwner,
-        TaskIdentityToken,
+        IdentityTokenOptions, ManagedSecretsClient, SecretOwner, TaskIdentityToken,
     },
-    envelope::UploadKey,
     gcp::{self, GcpWorkloadIdentityFederationError, GcpWorkloadIdentityFederationToken},
 };
 use warp_graphql::queries::task_secrets::ManagedSecretValue as GqlManagedSecretValue;
@@ -186,26 +184,6 @@ impl ManagedSecretManager {
                 Err(err) => Err(GcpWorkloadIdentityFederationError::new(err.to_string())),
             }
         }
-    }
-}
-
-/// Find the public upload key corresponding to `owner`.
-/// Returns an error if there's no such key in `configs`.
-fn owner_public_key<'a>(
-    configs: &'a ManagedSecretConfigs,
-    owner: &SecretOwner,
-) -> Result<&'a str, anyhow::Error> {
-    match owner {
-        SecretOwner::CurrentUser => configs
-            .user_secrets
-            .as_ref()
-            .and_then(|config| config.public_key.as_deref())
-            .ok_or_else(|| anyhow::anyhow!("No public key for user")),
-        SecretOwner::Team { team_uid } => configs
-            .team_secrets
-            .get(team_uid)
-            .and_then(|config| config.public_key.as_deref())
-            .ok_or_else(|| anyhow::anyhow!("No public key for team {team_uid}")),
     }
 }
 

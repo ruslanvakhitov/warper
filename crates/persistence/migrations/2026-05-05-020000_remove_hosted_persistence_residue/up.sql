@@ -1,0 +1,10 @@
+DROP TABLE IF EXISTS cloud_objects_refreshes;
+DROP TABLE IF EXISTS object_actions;
+DROP TABLE IF EXISTS object_permissions;
+DROP TABLE IF EXISTS object_metadata;
+DROP TABLE IF EXISTS generic_string_objects;
+DROP TABLE IF EXISTS team_members;
+DROP TABLE IF EXISTS team_settings;
+DROP TABLE IF EXISTS workspace_teams;
+DROP TABLE IF EXISTS teams;
+ALTER TABLE windows DROP COLUMN warp_drive_index_width;

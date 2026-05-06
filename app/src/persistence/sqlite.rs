@@ -38,12 +38,11 @@ use super::block_list::{
 };
 use super::model::{
     self, ActiveMCPServer, CurrentUserInformation, MCPEnvironmentVariables, NewActiveMCPServer,
-    NewApp, NewCommand, NewFolder, NewNotebook, NewServerExperiment, NewTab, NewTeam, NewWindow,
-    NewWorkspace, NewWorkspaceMetadata, NewWorkspaceTeam, Project, Tab, Window,
-    WorkspaceMetadata as WorkspaceMetadataModel, AI_DOCUMENT_PANE_KIND, AI_FACT_PANE_KIND,
-    CODE_PANE_KIND, ENV_VAR_COLLECTION_PANE_KIND, EXECUTION_PROFILE_EDITOR_PANE_KIND,
-    MCP_SERVER_PANE_KIND, NOTEBOOK_PANE_KIND, SETTINGS_PANE_KIND, TERMINAL_PANE_KIND,
-    WELCOME_PANE_KIND, WORKFLOW_PANE_KIND,
+    NewApp, NewCommand, NewFolder, NewNotebook, NewTab, NewWindow, NewWorkspaceMetadata, Project,
+    Tab, Window, WorkspaceMetadata as WorkspaceMetadataModel, AI_DOCUMENT_PANE_KIND,
+    AI_FACT_PANE_KIND, CODE_PANE_KIND, ENV_VAR_COLLECTION_PANE_KIND,
+    EXECUTION_PROFILE_EDITOR_PANE_KIND, MCP_SERVER_PANE_KIND, NOTEBOOK_PANE_KIND,
+    SETTINGS_PANE_KIND, TERMINAL_PANE_KIND, WELCOME_PANE_KIND, WORKFLOW_PANE_KIND,
 };
 use super::schema;
 use super::{
@@ -64,7 +63,7 @@ use crate::code::editor_management::CodeSource;
 use crate::persistence::agent::read_agent_conversations;
 use crate::persistence::block_list::{get_all_restored_blocks, read_ai_queries};
 use crate::persistence::model::{
-    NewTeamSettings, ProjectRules, UserProfile, CODE_REVIEW_PANE_KIND, GET_STARTED_PANE_KIND,
+    ProjectRules, UserProfile, CODE_REVIEW_PANE_KIND, GET_STARTED_PANE_KIND,
 };
 use crate::persistence::PersistedCurrentUserInformation;
 use crate::settings_view::SettingsSection;
@@ -697,7 +696,6 @@ fn save_app_state(conn: &mut SqliteConnection, app_state: &AppState) -> Result<(
                 universal_search_width: window.universal_search_width,
                 warp_ai_width: None,
                 voltron_width: window.voltron_width,
-                warp_drive_index_width: None,
                 left_panel_open: Some(window.left_panel_open),
                 vertical_tabs_panel_open: Some(window.vertical_tabs_panel_open),
                 fullscreen_state: window.fullscreen_state as i32,
@@ -1593,12 +1591,7 @@ fn set_current_workspace(conn: &mut SqliteConnection, _workspace_uid: WorkspaceU
     clear_hosted_workspace_cache(conn)
 }
 
-fn clear_hosted_workspace_cache(conn: &mut SqliteConnection) -> Result<()> {
-    diesel::delete(schema::team_members::dsl::team_members).execute(conn)?;
-    diesel::delete(schema::team_settings::dsl::team_settings).execute(conn)?;
-    diesel::delete(schema::workspace_teams::dsl::workspace_teams).execute(conn)?;
-    diesel::delete(schema::teams::dsl::teams).execute(conn)?;
-    diesel::delete(schema::workspaces::dsl::workspaces).execute(conn)?;
+fn clear_hosted_workspace_cache(_conn: &mut SqliteConnection) -> Result<()> {
     Ok(())
 }
 
