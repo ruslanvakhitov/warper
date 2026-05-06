@@ -23,9 +23,3 @@ pub struct AgentConfigSnapshot {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub harness_auth_secrets: Option<crate::ai::agent_sdk::config_file::HarnessAuthSecretsConfig>,
 }
-
-impl AgentConfigSnapshot {
-    pub fn is_empty(&self) -> bool {
-        self == &Self::default()
-    }
-}

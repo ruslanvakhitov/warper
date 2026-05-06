@@ -17,7 +17,6 @@ use ai::skills::{
     home_skills_path, parse_skill, ParsedSkill, SkillProvider, SKILL_PROVIDER_DEFINITIONS,
 };
 use command::blocking::Command;
-use command::r#async::Command as AsyncCommand;
 use warp_cli::skill::SkillSpec;
 use warpui::AppContext;
 use warpui::SingletonEntity as _;
@@ -32,8 +31,6 @@ pub struct ResolvedSkill {
     pub skill_path: PathBuf,
     pub name: String,
     pub instructions: String,
-    /// The full parsed skill, used for proto conversion when sending to server.
-    pub parsed_skill: ParsedSkill,
 }
 
 fn resolve_from_skill_dirs_by_directory_scan(
@@ -99,12 +96,6 @@ pub enum ResolveSkillError {
     },
     #[error("Failed to parse skill file {path}: {message}")]
     ParseFailed { path: PathBuf, message: String },
-    #[error("Failed to clone repository '{org}/{repo}': {message}")]
-    CloneFailed {
-        org: String,
-        repo: String,
-        message: String,
-    },
 }
 
 /// Resolve a `SkillSpec` (from the `--skill` CLI arg) into a concrete SKILL.md file.
@@ -134,73 +125,6 @@ pub fn resolve_skill_spec(
         Some(repo) => resolve_repo_qualified(spec, repo, working_dir, skill_manager, ctx),
         None => resolve_unqualified(spec, working_dir, ctx, skill_manager),
     }
-}
-
-/// Clone a repository from GitHub into the working directory for skill resolution.
-///
-/// Uses HTTPS format: `https://github.com/org/repo.git`
-///
-/// This is used in sandboxed environments to auto-clone repos when a fully-qualified
-/// skill spec references a repo that doesn't exist locally.
-pub async fn clone_repo_for_skill(
-    org: &str,
-    repo: &str,
-    working_dir: &Path,
-) -> Result<(), ResolveSkillError> {
-    let repo_url = format!("https://github.com/{org}/{repo}.git");
-    let target_dir = working_dir.join(repo);
-
-    // Check if target already exists.
-    if target_dir.exists() {
-        if target_dir.join(".git").is_dir() {
-            log::info!(
-                "Target directory {} already exists and appears to be a git repo, skipping clone",
-                target_dir.display()
-            );
-            return Ok(());
-        }
-
-        return Err(ResolveSkillError::CloneFailed {
-            org: org.to_string(),
-            repo: repo.to_string(),
-            message: format!(
-                "Target directory {} already exists but is not a git repository",
-                target_dir.display()
-            ),
-        });
-    }
-
-    log::info!("Cloning {} into {}", repo_url, target_dir.display());
-    log::debug!(
-        "[GIT OPERATION] resolve_skill_spec.rs clone_repo_for_skill git clone {} {}",
-        repo_url,
-        target_dir.display()
-    );
-
-    let output = AsyncCommand::new("git")
-        .arg("clone")
-        .arg(&repo_url)
-        .arg(&target_dir)
-        .current_dir(working_dir)
-        .output()
-        .await
-        .map_err(|e| ResolveSkillError::CloneFailed {
-            org: org.to_string(),
-            repo: repo.to_string(),
-            message: format!("Failed to execute git clone: {e}"),
-        })?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(ResolveSkillError::CloneFailed {
-            org: org.to_string(),
-            repo: repo.to_string(),
-            message: stderr.trim().to_string(),
-        });
-    }
-
-    log::info!("Successfully cloned {org}/{repo}");
-    Ok(())
 }
 
 fn resolve_repo_qualified(
@@ -469,7 +393,6 @@ fn to_resolved_skill(skill_path: PathBuf, parsed: ParsedSkill) -> ResolvedSkill 
         name: parsed.name.clone(),
         instructions,
         skill_path,
-        parsed_skill: parsed,
     }
 }
 

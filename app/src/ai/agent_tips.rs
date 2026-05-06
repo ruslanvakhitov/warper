@@ -28,9 +28,6 @@ pub trait AITip: Clone {
     /// Returns the keystroke for this tip, if applicable.
     fn keystroke(&self, app: &AppContext) -> Option<Keystroke>;
 
-    /// Returns the documentation link for this tip, if available.
-    fn link(&self) -> Option<String>;
-
     /// Returns the raw description text for this tip.
     fn description(&self) -> &str;
 
@@ -304,10 +301,6 @@ impl AITip for AgentTip {
             return trigger_to_keystroke(binding.trigger);
         }
         None
-    }
-
-    fn link(&self) -> Option<String> {
-        self.link.clone()
     }
 
     fn description(&self) -> &str {

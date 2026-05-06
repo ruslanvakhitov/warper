@@ -7,13 +7,7 @@ mod oauth;
 #[cfg(target_family = "wasm")]
 mod wasm;
 
-#[cfg(not(target_family = "wasm"))]
-use diesel::SqliteConnection;
-#[cfg(not(target_family = "wasm"))]
-use parking_lot::Mutex;
-use std::collections::{HashMap, HashSet};
-#[cfg(not(target_family = "wasm"))]
-use std::sync::Arc;
+use std::collections::HashMap;
 
 use crate::ai::mcp::FileBasedMCPManager;
 use crate::ai::mcp::{
@@ -56,8 +50,6 @@ pub struct TemplatableMCPServerManager {
     /// Cached credentials for file-based servers, keyed by installation hash.
     #[cfg(not(target_family = "wasm"))]
     file_based_server_credentials: oauth::FileBasedPersistedCredentialsMap,
-    #[cfg(not(target_family = "wasm"))]
-    database_connection: Option<Arc<Mutex<SqliteConnection>>>,
     /// Error messages for failed servers, keyed by installation UUID.
     server_error_messages: HashMap<Uuid, String>,
     /// Spawner for running tasks in the context of this manager.
@@ -79,9 +71,6 @@ pub struct TemplatableMCPServerManager {
     /// is received or the spawn task terminates.
     #[cfg(not(target_family = "wasm"))]
     pending_oauth_csrf: HashMap<String, Uuid>,
-    /// UUIDs of MCP servers started via the Warp CLI. We track these so they can be distinguished from
-    /// file-based ephemeral MCP servers, which are directory-scoped.
-    cli_spawned_server_uuids: HashSet<Uuid>,
 }
 
 /// Information about a spawned server task.
@@ -330,23 +319,12 @@ impl TemplatableMCPServerManager {
             })
             .collect()
     }
-
-    /// Returns CLI-spawned ephemeral servers that are currently active.
-    pub fn get_active_cli_spawned_servers(&self) -> HashMap<Uuid, &TemplatableMCPServerInfo> {
-        self.cli_spawned_server_uuids
-            .iter()
-            .filter_map(|uuid| self.active_servers.get(uuid).map(|info| (*uuid, info)))
-            .collect()
-    }
 }
 
 #[derive(Debug)]
 #[cfg_attr(target_family = "wasm", allow(dead_code))]
 pub enum TemplatableMCPServerManagerEvent {
-    StateChanged {
-        uuid: Uuid,
-        state: MCPServerState,
-    },
+    StateChanged,
     // TODO(aeybel) Right now most of the app doesn't use these events to communicate
     // We should change them so this manager is source of truth and all communication goes through here
     #[allow(dead_code)]
@@ -354,7 +332,6 @@ pub enum TemplatableMCPServerManagerEvent {
     #[allow(dead_code)]
     ServerInstallationDeleted(Uuid),
     TemplatableMCPServersUpdated,
-    LegacyServerConverted,
 }
 
 impl Entity for TemplatableMCPServerManager {

@@ -208,19 +208,6 @@ impl AIExecutionProfilesModel {
         ctx.emit(AIExecutionProfilesModelEvent::ProfileDeleted);
     }
 
-    // On logout, we need to clear any existing profile state.
-    pub fn reset(&mut self) {
-        self.default_profile_state = DefaultProfileState::Unsynced {
-            id: ClientProfileId::new(),
-            profile: AIExecutionProfile {
-                is_default_profile: true,
-                ..Default::default()
-            },
-        };
-        self.profiles.clear();
-        self.active_profiles_per_session.clear();
-    }
-
     /// Returns the active permissions profile for a specific terminal view.
     /// If no terminal_view is provided, returns the default profile.
     ///
@@ -240,7 +227,7 @@ impl AIExecutionProfilesModel {
         self.default_profile_state.id()
     }
 
-    pub fn default_profile(&self, ctx: &AppContext) -> AIExecutionProfileInfo {
+    pub fn default_profile(&self, _ctx: &AppContext) -> AIExecutionProfileInfo {
         match &self.default_profile_state {
             DefaultProfileState::Unsynced { id, profile } => AIExecutionProfileInfo {
                 id: *id,
@@ -270,7 +257,7 @@ impl AIExecutionProfilesModel {
     pub fn get_profile_by_id(
         &self,
         profile_id: ClientProfileId,
-        ctx: &AppContext,
+        _ctx: &AppContext,
     ) -> Option<AIExecutionProfileInfo> {
         // Handle an unsynced default profile (including CLI)
         match &self.default_profile_state {
@@ -330,8 +317,6 @@ impl AIExecutionProfilesModel {
             },
             ctx,
         );
-
-        if let Some(model_id) = &llm_id {}
     }
 
     pub fn set_coding_model(
@@ -351,8 +336,6 @@ impl AIExecutionProfilesModel {
             },
             ctx,
         );
-
-        if let Some(model_id) = &model_id {}
     }
 
     pub fn set_cli_agent_model(
@@ -372,8 +355,6 @@ impl AIExecutionProfilesModel {
             },
             ctx,
         );
-
-        if let Some(model_id) = &model_id {}
     }
 
     pub fn set_computer_use_model(
@@ -393,8 +374,6 @@ impl AIExecutionProfilesModel {
             },
             ctx,
         );
-
-        if let Some(model_id) = &model_id {}
     }
 
     pub fn set_apply_code_diffs(
@@ -504,10 +483,6 @@ impl AIExecutionProfilesModel {
         permission: &super::ComputerUsePermission,
         ctx: &mut ModelContext<Self>,
     ) {
-        let current_value = self
-            .get_profile_by_id(profile_id, ctx)
-            .map(|p| p.data().computer_use);
-
         self.edit_profile_internal(
             profile_id,
             |profile| {
@@ -519,8 +494,6 @@ impl AIExecutionProfilesModel {
             },
             ctx,
         );
-
-        if current_value != Some(*permission) {}
     }
 
     pub fn set_ask_user_question(
@@ -529,10 +502,6 @@ impl AIExecutionProfilesModel {
         permission: super::AskUserQuestionPermission,
         ctx: &mut ModelContext<Self>,
     ) {
-        let current_value = self
-            .get_profile_by_id(profile_id, ctx)
-            .map(|p| p.data().ask_user_question);
-
         self.edit_profile_internal(
             profile_id,
             |profile| {
@@ -544,8 +513,6 @@ impl AIExecutionProfilesModel {
             },
             ctx,
         );
-
-        if current_value != Some(permission) {}
     }
 
     pub fn set_web_search_enabled(
@@ -820,8 +787,7 @@ impl AIExecutionProfilesModel {
             TemplatableMCPServerManagerEvent::TemplatableMCPServersUpdated => {
                 self.remove_deleted_mcp_servers(ctx);
             }
-            TemplatableMCPServerManagerEvent::LegacyServerConverted
-            | TemplatableMCPServerManagerEvent::StateChanged { uuid: _, state: _ }
+            TemplatableMCPServerManagerEvent::StateChanged
             | TemplatableMCPServerManagerEvent::ServerInstallationAdded(_)
             | TemplatableMCPServerManagerEvent::ServerInstallationDeleted(_) => {}
         }

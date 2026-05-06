@@ -32,7 +32,7 @@ use warp_multi_agent_api::{self as api, response_event::stream_finished::TokenUs
 use warpui::color::ColorU;
 use warpui::{EntityId, ModelContext, SingletonEntity};
 
-use crate::ai::agent::{AIIdentifiers, CancellationReason};
+use crate::ai::agent::CancellationReason;
 use crate::{
     ai::{
         agent::{
@@ -1763,26 +1763,6 @@ impl AIConversation {
         if self.transaction.is_some() {
             self.commit_transaction()
         }
-
-        let AddedExchange {
-            exchange_id: initial_exchange_id,
-            ..
-        } = added_exchanges.first();
-        let identifiers = AIIdentifiers {
-            server_output_id: None,
-            server_conversation_id: self.server_conversation_token.clone().map(Into::into),
-            client_conversation_id: Some(self.id),
-            client_exchange_id: Some(*initial_exchange_id),
-            model_id: None,
-        };
-
-        let will_attempt_to_resume = matches!(
-            &error,
-            RenderableAIError::Other {
-                will_attempt_resume: true,
-                ..
-            }
-        );
 
         for AddedExchange {
             exchange_id,

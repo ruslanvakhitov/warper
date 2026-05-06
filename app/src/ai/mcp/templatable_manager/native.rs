@@ -5,8 +5,6 @@ use crate::ai::mcp::templatable_manager::oauth::{
 };
 use crate::ai::mcp::FileBasedMCPManager;
 use itertools::Itertools;
-use std::collections::HashSet;
-use std::sync::Arc;
 use std::{collections::HashMap, future::Future};
 
 use crate::ai::mcp::http_client::build_client_with_headers;
@@ -28,7 +26,6 @@ use crate::{
 use async_compat::CompatExt as _;
 use cfg_if::cfg_if;
 use futures::FutureExt as _;
-use parking_lot::Mutex;
 use rmcp::{transport::ConfigureCommandExt as _, ServiceExt as _};
 use simple_logger::manager::LogManager;
 use simple_logger::SimpleLogger;
@@ -153,15 +150,6 @@ impl TemplatableMCPServerManager {
             }
         });
 
-        let database_connection =
-            crate::persistence::database_file_path()
-                .to_str()
-                .and_then(|db_url| {
-                    crate::persistence::establish_ro_connection(db_url)
-                        .ok()
-                        .map(|conn| Arc::new(Mutex::new(conn)))
-                });
-
         let templatable_mcp_servers = locally_installed_servers
             .values()
             .map(|installation| {
@@ -180,12 +168,10 @@ impl TemplatableMCPServerManager {
             server_credentials: Default::default(),
             file_based_server_credentials: Default::default(),
             locally_installed_servers,
-            database_connection,
             server_error_messages: Default::default(),
             spawner: Some(ctx.spawner()),
             pending_reconnections: Default::default(),
             pending_oauth_csrf: Default::default(),
-            cli_spawned_server_uuids: Default::default(),
         };
 
         // If we're not in a test, try to load credentials from secure storage.
@@ -228,10 +214,7 @@ impl TemplatableMCPServerManager {
             return;
         }
         self.server_states.insert(installation_uuid, new_state);
-        ctx.emit(TemplatableMCPServerManagerEvent::StateChanged {
-            uuid: installation_uuid,
-            state: new_state,
-        });
+        ctx.emit(TemplatableMCPServerManagerEvent::StateChanged);
     }
 
     /// Gets a TemplatableMCPServer by its UUID.
@@ -299,28 +282,6 @@ impl TemplatableMCPServerManager {
             .or_else(|| TemplatableMCPServerManager::as_ref(app).get_template_server_name(uuid))
     }
 
-    /// Extracts some piece of server info for all servers (template & installation) and returns it in a HashSet.
-    pub fn extract_server_info<T: std::cmp::Eq + std::hash::Hash>(
-        &self,
-        template_fn: fn(&TemplatableMCPServer) -> Option<T>,
-        installation_fn: fn(&TemplatableMCPServerInstallation) -> Option<T>,
-        _app: &AppContext,
-    ) -> HashSet<T> {
-        let template_results = self
-            .get_all_templatable_mcp_servers()
-            .into_iter()
-            .filter_map(template_fn);
-
-        let installation_results = self
-            .get_installed_templatable_servers()
-            .values()
-            .filter_map(installation_fn);
-
-        template_results
-            .chain(installation_results)
-            .collect::<HashSet<T>>()
-    }
-
     fn get_installed_server_name(&self, installation_uuid: &Uuid) -> Option<String> {
         self.get_installed_server(installation_uuid)
             .map(|server| server.templatable_mcp_server().name.clone())
@@ -372,16 +333,6 @@ impl TemplatableMCPServerManager {
             },
             ctx,
         );
-    }
-
-    /// Spawns an ephemeral MCP server started via the CLI.
-    pub fn spawn_cli_ephemeral_server(
-        &mut self,
-        installation: TemplatableMCPServerInstallation,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        self.cli_spawned_server_uuids.insert(installation.uuid());
-        self.spawn_ephemeral_server(installation, ctx);
     }
 
     /// Spawns a new MCP server from a given installation UUID.
@@ -809,10 +760,6 @@ impl TemplatableMCPServerManager {
             ));
         }
         ctx.notify();
-    }
-
-    pub fn is_authorized_editor(&self, template_uuid: Uuid, _ctx: &AppContext) -> bool {
-        self.get_templatable_mcp_server(template_uuid).is_some()
     }
 
     pub fn has_oauth_credentials_for_server(&self, template_uuid: Uuid) -> bool {

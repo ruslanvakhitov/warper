@@ -4,7 +4,7 @@ use warpui::ModelContext;
 use super::TemplatableMCPServerManager;
 use crate::ai::mcp::templatable::TemplatableMCPServer;
 use crate::ai::mcp::templatable_installation::{TemplatableMCPServerInstallation, VariableValue};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use uuid::Uuid;
 
 impl TemplatableMCPServerManager {
@@ -71,18 +71,6 @@ impl TemplatableMCPServerManager {
         log::warn!("MCP server spawning not supported in WASM");
     }
 
-    /// Spawns a CLI-spawned ephemeral MCP server.
-    ///
-    /// This is a no-op in WASM, as MCP servers are not supported in WASM.
-    #[allow(dead_code)]
-    pub fn spawn_cli_ephemeral_server(
-        &mut self,
-        _installation: TemplatableMCPServerInstallation,
-        _ctx: &mut ModelContext<Self>,
-    ) {
-        log::warn!("Ephemeral MCP server spawning not supported in WASM");
-    }
-
     /// Shuts down a running MCP server.
     ///
     /// This is a no-op in WASM, as MCP servers are not supported in WASM.
@@ -138,13 +126,6 @@ impl TemplatableMCPServerManager {
         false
     }
 
-    pub fn is_authorized_editor(&self, _template_uuid: Uuid, _ctx: &AppContext) -> bool {
-        log::warn!(
-            "Checking if a user is authorized to edit a templatable MCP server is not supported in WASM"
-        );
-        false
-    }
-
     pub fn get_installation_by_template_uuid(
         &self,
         _template_uuid: Uuid,
@@ -182,14 +163,5 @@ impl TemplatableMCPServerManager {
 
     pub fn has_oauth_credentials_for_file_based_server(&self, _hash: u64) -> bool {
         false
-    }
-
-    pub fn extract_server_info<T: std::cmp::Eq + std::hash::Hash>(
-        &self,
-        _template_fn: fn(&TemplatableMCPServer) -> Option<T>,
-        _installation_fn: fn(&TemplatableMCPServerInstallation) -> Option<T>,
-        _app: &AppContext,
-    ) -> HashSet<T> {
-        Default::default()
     }
 }

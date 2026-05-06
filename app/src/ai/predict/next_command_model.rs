@@ -33,7 +33,6 @@ const ARG_GENERATOR_VALIDATION_TIMEOUT: Duration = Duration::from_millis(150);
 
 #[derive(Clone)]
 pub struct HistoryContext {
-    pub previous_commands: Vec<crate::persistence::model::Command>,
     pub next_command: crate::persistence::model::Command,
 }
 
@@ -41,8 +40,8 @@ pub struct NextCommandModel;
 
 impl NextCommandModel {
     /// Returns snippets of command history (HistoryContext) that are similar to the completed_block.
-    /// Each HistoryContext contains some sequential commands run in the same session,
-    /// where the last element of HistoryContext.previous_commands is the same as completed_block.
+    /// Each HistoryContext contains the command that followed a matching historical command run in
+    /// the same session.
     /// Returns None if there was a connection issue, and Some(empty vec)
     /// if there is no similar historical context.
     #[cfg(feature = "local_fs")]
@@ -68,25 +67,15 @@ impl NextCommandModel {
             .filter_map(|command| {
                 let next_command =
                     crate::persistence::commands::get_next_command(conn, &command).ok()?;
-                if num_additional_preceding_commands == 0 {
-                    return Some(HistoryContext {
-                        previous_commands: vec![command],
-                        next_command,
-                    });
+                if num_additional_preceding_commands > 0 {
+                    crate::persistence::commands::get_previous_commands(
+                        conn,
+                        &command,
+                        num_additional_preceding_commands,
+                    )
+                    .ok()?;
                 }
-                // We know next_command comes after command.
-                // Get some more commands that came before command so there's additional context before next_command.
-                let mut previous_commands = crate::persistence::commands::get_previous_commands(
-                    conn,
-                    &command,
-                    num_additional_preceding_commands,
-                )
-                .ok()?;
-                previous_commands.push(command);
-                Some(HistoryContext {
-                    previous_commands,
-                    next_command,
-                })
+                Some(HistoryContext { next_command })
             })
             .collect()
     }

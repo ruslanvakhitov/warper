@@ -7,7 +7,6 @@ use std::{
 use ai::index::build_outline;
 use async_channel::Sender;
 use futures::stream::AbortHandle;
-use instant::Instant;
 use repo_metadata::CanonicalizedPath;
 use repo_metadata::{
     repositories::{DetectedRepositories, DetectedRepositoriesEvent},
@@ -205,7 +204,6 @@ impl RepoOutlines {
     fn compute_outline_for_repo(&mut self, repo_root: PathBuf, ctx: &mut ModelContext<Self>) {
         let root_path_clone = repo_root.clone();
 
-        let scan_start = Instant::now();
         let scan_abort_handle = ctx
             .spawn(
                 async move {
@@ -216,14 +214,14 @@ impl RepoOutlines {
                     let canonicalized_path = CanonicalizedPath::try_from(&repo_root)?;
                     build_outline(canonicalized_path.as_path(), Some(MAX_REPO_FILE_SIZE_LIMIT))
                         .await
-                        .map(|outline| (canonicalized_path, outline, scan_start.elapsed()))
+                        .map(|outline| (canonicalized_path, outline))
                 },
                 move |me, res, ctx| {
                     // Don't process this result if the setting has been disabled.
                     // The abort handle doesn't always abort.
                     if Self::should_build_outlines(ctx) {
                         match res {
-                            Ok((canonicalized_path, outline, parse_duration)) => {
+                            Ok((canonicalized_path, outline)) => {
                                 safe_info!(
                                     safe: ("Successfully constructed symbols outline for repo."),
                                     full: (
