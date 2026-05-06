@@ -8,7 +8,7 @@ pub mod browser_url_handler;
 use crate::launch_configs::launch_config::LaunchConfig;
 use crate::linear::{LinearAction, LinearIssueWork};
 use crate::root_view::{open_new_window_get_handles, OpenLaunchConfigArg};
-use crate::server::event_metadata::{LaunchConfigUiLocation};
+use crate::workspace::metadata::LaunchConfigUiLocation;
 use crate::util::openable_file_type::{is_file_openable_in_warp, is_markdown_file};
 use crate::workspace::active_terminal_in_window;
 use crate::workspace::{Workspace, WorkspaceAction, WorkspaceRegistry};

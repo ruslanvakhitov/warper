@@ -1062,7 +1062,7 @@ impl TerminalModel {
         honor_ps1: bool,
         is_inverted: bool,
         obfuscate_secrets: ObfuscateSecrets,
-        is_ai_ugc_telemetry_enabled: bool,
+        should_collect_ai_ugc: bool,
         session_startup_path: Option<PathBuf>,
         shell_state: ShellLaunchState,
         _is_dummy_cloud_mode_session: bool,
@@ -1084,7 +1084,7 @@ impl TerminalModel {
             honor_ps1,
             is_inverted,
             obfuscate_secrets,
-            is_ai_ugc_telemetry_enabled,
+            should_collect_ai_ugc,
         );
 
         Self {
@@ -1143,7 +1143,7 @@ impl TerminalModel {
         honor_ps1: bool,
         is_inverted: bool,
         obfuscate_secrets: ObfuscateSecrets,
-        is_ai_ugc_telemetry_enabled: bool,
+        should_collect_ai_ugc: bool,
         session_startup_path: Option<PathBuf>,
         shell_state: ShellLaunchState,
     ) -> Self {
@@ -1159,7 +1159,7 @@ impl TerminalModel {
             honor_ps1,
             is_inverted,
             obfuscate_secrets,
-            is_ai_ugc_telemetry_enabled,
+            should_collect_ai_ugc,
             session_startup_path,
             shell_state,
             false,

@@ -11,7 +11,6 @@ use crate::ai::mcp::{
 use crate::modal::Modal;
 use crate::modal::ModalEvent;
 use crate::modal::ModalViewState;
-use crate::server::event_metadata::MCPTemplateInstallationSource;
 use crate::settings::{AISettings, AISettingsChangedEvent};
 use crate::settings_view::mcp_servers_page::InstallOrigin;
 use crate::settings_view::settings_page::{

@@ -1,12 +1,10 @@
 use std::ffi::OsStr;
 
 use byte_unit::Byte;
-use chrono::{DateTime, Local};
-use serde::Serialize;
 use sysinfo::ProcessesToUpdate;
 use warpui::{Entity, ModelContext, SingletonEntity};
 
-use crate::{server::event_metadata, system::memory_footprint};
+use crate::system::memory_footprint;
 
 /// The threshold at which we emit a memory usage warning.
 const MEMORY_USAGE_WARNING_THRESHOLD: Option<Byte> = byte_unit::Byte::GIGABYTE.multiply(10);
@@ -118,9 +116,8 @@ impl SystemInfo {
         );
         ctx.emit(SystemInfoEvent::Refreshed);
 
-        let rss = self.used_memory();
         let footprint = self.memory_footprint();
-        self.check_for_excessive_memory_usage(rss, footprint, ctx);
+        self.check_for_excessive_memory_usage(footprint, ctx);
     }
 
     /// Checks for excessive memory usage. This may emit a local warning event
@@ -130,7 +127,6 @@ impl SystemInfo {
     /// and compressed pages) so we actually detect high memory situations.
     fn check_for_excessive_memory_usage(
         &mut self,
-        rss: Byte,
         memory_footprint: Byte,
         ctx: &mut ModelContext<Self>,
     ) {
@@ -146,21 +142,16 @@ impl SystemInfo {
             return;
         }
 
-        // Collect a detailed memory breakdown for diagnostics.
-        let memory_breakdown = memory_footprint::memory_breakdown();
-
         // If we're tracking heap usage and detect excessive memory usage,
         // dump the current heap profiling data locally.
         #[cfg(feature = "heap_usage_tracking")]
         {
-            let breakdown_for_heap_profile = memory_breakdown.clone();
+            let breakdown_for_heap_profile = crate::system::memory_footprint::memory_breakdown();
             ctx.spawn(
                 crate::profiling::dump_jemalloc_heap_profile(breakdown_for_heap_profile),
                 |_, _, _| {},
             );
         }
-
-        let total_application_usage_bytes = rss.as_u64();
 
         ctx.emit(SystemInfoEvent::MemoryUsageHigh);
         self.has_emitted_memory_warning_event = true;
@@ -202,115 +193,3 @@ impl Entity for SystemInfo {
 }
 
 impl SingletonEntity for SystemInfo {}
-
-#[derive(Copy, Clone)]
-struct MemoryUsageStats {
-    total_application_usage_bytes: usize,
-    total_blocks: usize,
-    total_lines: usize,
-
-    /// Statistics about blocks that have been seen in the past 5 minutes.
-    active_block_stats: BlockMemoryStats,
-    /// Statistics about blocks that haven't been seen since [5m, 1h).
-    inactive_5m_stats: BlockMemoryStats,
-    /// Statistics about blocks that haven't been seen since [1h, 24h).
-    inactive_1h_stats: BlockMemoryStats,
-    /// Statistics about blocks that haven't been seen since [24h, ..).
-    inactive_24h_stats: BlockMemoryStats,
-}
-
-impl MemoryUsageStats {
-    fn new(total_application_usage: Byte) -> Self {
-        Self {
-            total_application_usage_bytes: total_application_usage.as_u64() as usize,
-            total_blocks: 0,
-            total_lines: 0,
-            active_block_stats: Default::default(),
-            inactive_5m_stats: Default::default(),
-            inactive_1h_stats: Default::default(),
-            inactive_24h_stats: Default::default(),
-        }
-    }
-
-    fn add_blocks<'a>(
-        &mut self,
-        now: DateTime<Local>,
-        blocks: impl Iterator<Item = &'a crate::terminal::model::block::Block>,
-    ) {
-        // We compute block-related memory stats across various intervals.
-        // "Activity" refers to how recently the block was painted.
-        const DURATION_5M: chrono::Duration = chrono::Duration::minutes(5);
-        const DURATION_1H: chrono::Duration = chrono::Duration::hours(1);
-        const DURATION_24H: chrono::Duration = chrono::Duration::hours(24);
-
-        for block in blocks {
-            let num_lines: usize = block.all_grids_iter().map(|grid| grid.len()).sum();
-
-            self.total_blocks += 1;
-            self.total_lines += num_lines;
-
-            let last_painted_at = block
-                .last_painted_at()
-                .unwrap_or(DateTime::UNIX_EPOCH.into());
-            let stats = match now - last_painted_at {
-                duration if duration < DURATION_5M => &mut self.active_block_stats,
-                duration if duration < DURATION_1H => &mut self.inactive_5m_stats,
-                duration if duration < DURATION_24H => &mut self.inactive_1h_stats,
-                _ => &mut self.inactive_24h_stats,
-            };
-
-            stats.num_blocks += 1;
-            stats.num_lines += num_lines;
-            stats.estimated_memory_usage_bytes += block.estimated_memory_usage_bytes();
-        }
-    }
-}
-
-impl From<MemoryUsageStats> for event_metadata::MemoryUsageStats {
-    fn from(value: MemoryUsageStats) -> Self {
-        Self {
-            total_application_usage_bytes: value.total_application_usage_bytes,
-            total_blocks: value.total_blocks,
-            total_lines: value.total_lines,
-            active_block_stats: value.active_block_stats.into(),
-            inactive_5m_stats: value.inactive_5m_stats.into(),
-            inactive_1h_stats: value.inactive_1h_stats.into(),
-            inactive_24h_stats: value.inactive_24h_stats.into(),
-        }
-    }
-}
-
-#[derive(Copy, Clone, Default, Serialize, PartialEq)]
-struct BlockMemoryStats {
-    num_blocks: usize,
-    num_lines: usize,
-    estimated_memory_usage_bytes: usize,
-}
-
-impl std::fmt::Debug for BlockMemoryStats {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("BlockMemoryStats")
-            .field("num_blocks", &self.num_blocks)
-            .field("num_lines", &self.num_lines)
-            .field(
-                "estimated_memory_usage_bytes",
-                &byte_unit::Byte::from(self.estimated_memory_usage_bytes)
-                    .get_adjusted_unit(byte_unit::Unit::MB),
-            )
-            .finish()
-    }
-}
-
-impl From<BlockMemoryStats> for event_metadata::BlockMemoryUsageStats {
-    fn from(value: BlockMemoryStats) -> Self {
-        Self {
-            num_blocks: value.num_blocks,
-            num_lines: value.num_lines,
-            estimated_memory_usage_bytes: value.estimated_memory_usage_bytes,
-        }
-    }
-}
-
-#[cfg(test)]
-#[path = "info_tests.rs"]
-mod tests;

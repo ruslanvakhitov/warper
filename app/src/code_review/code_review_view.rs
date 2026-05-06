@@ -86,7 +86,6 @@ use crate::{
 
 use crate::code_review::find_model::CodeReviewFindModel;
 #[cfg(feature = "local_fs")]
-use crate::server::event_metadata::CodePanelsFileOpenEntrypoint;
 use crate::terminal::cli_agent::{
     build_selection_line_range_prompt, build_selection_substring_prompt,
 };
@@ -1721,7 +1720,6 @@ impl CodeReviewView {
             return;
         }
 
-
         self.diff_state_model.update(ctx, |model, ctx| {
             model.set_diff_mode(mode, false, ctx);
         });
@@ -2373,7 +2371,7 @@ impl CodeReviewView {
             });
         }
 
-                ctx.focus(&self.find_bar);
+        ctx.focus(&self.find_bar);
         self.update_search_decorations(ctx);
         ctx.notify();
     }
@@ -2383,7 +2381,6 @@ impl CodeReviewView {
             model.set_is_find_bar_open(false);
             model.clear_results();
         });
-
 
         // Clear finder match decorations
         #[cfg(not(target_family = "wasm"))]
@@ -2703,7 +2700,6 @@ impl CodeReviewView {
                 if ChannelState::enable_debug_features() {
                     log::error!("Failed to retrieve diff state for single file: {e}. Retrying...");
                 }
-
 
                 self.load_diffs_for_active_repo(false, ctx);
             }
@@ -3053,8 +3049,8 @@ impl CodeReviewView {
 
         // Telemetry: record whether this was a new comment or an edit.
         if is_existing {
-                    } else {
-                    }
+        } else {
+        }
     }
 
     /// Clears all review comments.
@@ -3079,8 +3075,7 @@ impl CodeReviewView {
             model.update(ctx, |batch, ctx| {
                 batch.delete_comment(id, ctx);
             });
-
-                    }
+        }
     }
 
     pub fn editor_lens_for_location(
@@ -3456,7 +3451,6 @@ impl CodeReviewView {
     ) {
         match event {
             LocalCodeEditorEvent::FileSaved => {
-
                 ctx.emit(CodeReviewViewEvent::FileSaved {
                     path: full_file_path.to_path_buf(),
                 });
@@ -3864,8 +3858,7 @@ impl CodeReviewView {
             fallback_count,
         } = Self::relocate_comments(comments, state, repo_path, ctx);
 
-        if fallback_count > 0 {
-                    }
+        if fallback_count > 0 {}
 
         if !newly_imported_ids.is_empty() {
             let (active_count, outdated_count) = relocated_comments
@@ -3878,7 +3871,7 @@ impl CodeReviewView {
                         (active + 1, outdated)
                     }
                 });
-                    }
+        }
 
         model.update(ctx, |batch, ctx| {
             batch.upsert_comments(relocated_comments, ctx);
@@ -4601,7 +4594,6 @@ impl CodeReviewView {
                 destination,
             } => {
                 log::info!("Successfully submitted review comments to terminal");
-
 
                 self.clear_review_comments(ctx);
                 ToastStack::handle(ctx).update(ctx, |stack, ctx| {
@@ -6015,7 +6007,7 @@ impl CodeReviewView {
                     CliAgentRouting::RichInput => CodeReviewContextDestination::RichInput,
                     CliAgentRouting::Pty => CodeReviewContextDestination::Pty,
                 };
-                                return;
+                return;
             }
 
             let is_long_running =
@@ -6035,7 +6027,7 @@ impl CodeReviewView {
 
             // Otherwise insert the location snippet into the input buffer (original behavior).
             let location = format!("{file_path}:{start_line}-{end_line} ");
-                        terminal_view.update(ctx, |terminal_view, ctx| {
+            terminal_view.update(ctx, |terminal_view, ctx| {
                 terminal_view.input().update(ctx, |input, ctx| {
                     input.append_to_buffer(&location, ctx);
                     // Ensure agent mode for AI features
@@ -6110,7 +6102,7 @@ impl CodeReviewView {
                         Some(CliAgentRouting::RichInput) => CodeReviewContextDestination::RichInput,
                         _ => CodeReviewContextDestination::Pty,
                     };
-                                    }
+                }
                 return;
             }
 
@@ -6182,7 +6174,6 @@ impl CodeReviewView {
                         input.ensure_agent_mode_for_ai_features(true, ctx);
                     });
                 });
-
 
                 // Register the DiffSet attachment in the terminal view's AI context model.
                 let current = self.get_current_head(ctx);
@@ -6307,7 +6298,7 @@ impl CodeReviewView {
                         Some(CliAgentRouting::RichInput) => CodeReviewContextDestination::RichInput,
                         _ => CodeReviewContextDestination::Pty,
                     };
-                                    }
+                }
                 return;
             }
 
@@ -6322,7 +6313,7 @@ impl CodeReviewView {
                 terminal_view.update(ctx, |terminal_view, ctx| {
                     terminal_view.handle_file_tree_drop_on_active_command(&path_with_range, ctx);
                 });
-                                return;
+                return;
             }
             if let Some((hunk, lines_added, lines_removed)) =
                 self.extract_diff_hunk_data(&relative_path, &line_range)
@@ -6371,7 +6362,7 @@ impl CodeReviewView {
                     DiffMode::OtherBranch(branch_name) => DiffBase::BranchName(branch_name),
                 };
 
-                                // Create the DiffHunk attachment
+                // Create the DiffHunk attachment
                 let attachment = AIAgentAttachment::DiffHunk {
                     file_path: filename.clone(),
                     line_range: line_range.clone(),
@@ -7036,7 +7027,6 @@ impl CodeReviewView {
             None,
         );
 
-
         ctx.emit(CodeReviewViewEvent::OpenFileWithTarget {
             path: full_path,
             target,
@@ -7350,7 +7340,6 @@ impl TypedActionView for CodeReviewView {
                 } else {
                     PaneStateChange::Maximized
                 };
-
 
                 ctx.emit(CodeReviewViewEvent::Pane(PaneEvent::ToggleMaximized));
             }

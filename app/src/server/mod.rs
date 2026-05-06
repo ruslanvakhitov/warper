@@ -1,6 +1,5 @@
 pub mod block;
 pub mod datetime_ext;
-pub mod event_metadata;
 pub mod ids;
 pub mod network_log_pane_manager;
 pub mod network_log_view;

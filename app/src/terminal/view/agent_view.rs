@@ -16,7 +16,6 @@ use crate::{
     },
     global_resource_handles::GlobalResourceHandlesProvider,
     persistence::ModelEvent,
-    server::event_metadata::AgentViewEntryMetadataOrigin,
     terminal::{
         input::message_bar::{Message, MessageItem},
         model::rich_content::RichContentType,

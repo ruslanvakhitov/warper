@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use warpui::{keymap::EditableBinding, AppContext, Entity, EntityId, SingletonEntity, WindowId};
+use warpui::{AppContext, Entity, EntityId, SingletonEntity, WindowId, keymap::EditableBinding};
 
 use crate::util::bindings::{BindingGroup, CustomAction};
 

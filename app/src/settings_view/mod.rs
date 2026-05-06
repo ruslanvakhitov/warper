@@ -1,5 +1,4 @@
 use crate::pane_group::focus_state::PaneFocusHandle;
-use crate::server::event_metadata::MCPServerCollectionPaneEntrypoint;
 use crate::settings_view::mcp_servers_page::MCPServersSettingsPage;
 use crate::{
     ai::execution_profiles::profiles::ClientProfileId,
@@ -348,7 +347,6 @@ pub mod flags {
     pub const ERROR_UNDERLINING_FLAG: &str = "error_underlining";
     pub const SYNTAX_HIGHLIGHTING_FLAG: &str = "syntax_highlighting";
     pub const SAME_LINE_PROMPT: &str = "Same_Line_Prompt_Enabled";
-    pub const TELEMETRY_FLAG: &str = "telemetry";
     pub const SETTINGS_SYNC_FLAG: &str = "settings_sync";
     pub const SAFE_MODE_FLAG: &str = "safe_mode";
     pub const DIM_INACTIVE_PANES_FLAG: &str = "Dim_Inactive_Panes";
@@ -992,7 +990,6 @@ impl SettingsView {
             me.handle_warpify_page_event(event, ctx);
         });
 
-        // Render the privacy page only if telemetry opt-out is enabled.
         let privacy_page_handle = ctx.add_typed_action_view(PrivacyPageView::new);
         ctx.subscribe_to_view(&privacy_page_handle, |me, _, event, ctx| {
             me.handle_privacy_page_event(event, ctx);

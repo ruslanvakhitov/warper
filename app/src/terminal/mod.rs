@@ -53,6 +53,7 @@ pub mod local_shell;
 #[cfg(feature = "local_tty")]
 pub mod local_tty;
 mod meta_shortcuts;
+pub mod metadata;
 pub mod mock_terminal_manager;
 pub mod model;
 pub mod model_events;

@@ -9,6 +9,7 @@ pub mod header_toolbar_item;
 pub mod hoa_onboarding;
 mod home;
 mod lightbox_view;
+pub mod metadata;
 mod native_modal;
 mod one_time_modal_model;
 mod registry;
@@ -20,6 +21,7 @@ pub mod util;
 pub mod view;
 
 use crate::ai::blocklist::NEW_AGENT_PANE_LABEL;
+use crate::ai::blocklist::metadata::AgentModeEntrypoint;
 use crate::ai::skills::SkillManager;
 use crate::channel::{Channel, ChannelState};
 use crate::code;
@@ -27,24 +29,23 @@ use crate::features::FeatureFlag;
 use crate::modal;
 use crate::notebooks;
 use crate::pane_group::TabBarHoverIndex;
-use crate::server::event_metadata::AgentModeEntrypoint;
-use crate::server::event_metadata::PaletteSource;
 use crate::settings::AISettings;
-use crate::settings_view::{self, flags, SettingsSection};
+use crate::settings_view::{self, SettingsSection, flags};
 use crate::tab::uses_vertical_tabs;
 use crate::tab_configs;
+use crate::workspace::metadata::PaletteSource;
 use warpui::SingletonEntity;
 
-use crate::util::bindings::{self, cmd_or_ctrl_shift, is_binding_pty_compliant, CustomAction};
+use crate::util::bindings::{self, CustomAction, cmd_or_ctrl_shift, is_binding_pty_compliant};
 
 use crate::palette::PaletteMode;
 use serde::{Deserialize, Serialize};
 use warp_core::context_flag::ContextFlag;
+use warpui::AppContext;
 use warpui::accessibility::AccessibilityVerbosity;
 use warpui::elements::DropTargetData;
 use warpui::keymap::FixedBinding;
 use warpui::keymap::{BindingDescription, EditableBinding};
-use warpui::AppContext;
 
 pub use action::{
     CommandSearchOptions, InitContent, RestoreConversationLayout, TabContextMenuAnchor,
@@ -54,10 +55,10 @@ pub use active_session::ActiveSession;
 pub use global_actions::{
     ForkAIConversationParams, ForkFromExchange, ForkedConversationDestination,
 };
-pub use util::{active_terminal_in_window, PaneViewLocator, TabMovement};
+pub use util::{PaneViewLocator, TabMovement, active_terminal_in_window};
 pub use view::{
-    Workspace, NEW_SESSION_MENU_BUTTON_POSITION_ID, NEW_TAB_BUTTON_POSITION_ID,
-    PANEL_HEADER_HEIGHT, TAB_BAR_HEIGHT, TOTAL_TAB_BAR_HEIGHT, WORKSPACE_PADDING,
+    NEW_SESSION_MENU_BUTTON_POSITION_ID, NEW_TAB_BUTTON_POSITION_ID, PANEL_HEADER_HEIGHT,
+    TAB_BAR_HEIGHT, TOTAL_TAB_BAR_HEIGHT, WORKSPACE_PADDING, Workspace,
 };
 
 // Helper function to access panel header corner radius from other modules

@@ -52,7 +52,6 @@ use warpui::{
 use crate::{
     ai::blocklist::{agent_view::agent_view_bg_fill, block::cli_controller::CLISubagentEvent},
     cmd_or_ctrl_shift,
-    server::event_metadata::{CLIAgentType, CLISubagentControlState},
     settings::{
         AISettings, AISettingsChangedEvent, CompiledCommandsForCodingAgentToolbar,
         InputModeSettings,
@@ -225,8 +224,8 @@ impl TerminalView {
                     ctx,
                 );
             }
-            UseAgentToolbarEvent::ToggleFileExplorer(cli_agent) => {
-                self.toggle_file_tree(Some((*cli_agent).into()), ctx);
+            UseAgentToolbarEvent::ToggleFileExplorer(_) => {
+                self.toggle_file_tree(ctx);
             }
             UseAgentToolbarEvent::StopRemoteControl => {
                 self.close_cli_agent_rich_input_and_disable_auto_toggle(ctx);
@@ -475,11 +474,6 @@ impl TerminalView {
 
         let should_insert_after_block = !InputModeSettings::as_ref(ctx).is_pinned_to_top();
 
-        // Send telemetry when showing CLI agent footer
-        if let Some(session) = CLIAgentSessionsModel::as_ref(ctx).session(self.view_id) {
-            let cli_agent_type: CLIAgentType = session.agent.into();
-        }
-
         self.insert_rich_content(
             None,
             self.use_agent_footer.clone(),
@@ -535,11 +529,6 @@ impl TerminalView {
             sessions_model.close_input(view_id, should_auto_toggle_input, ctx);
         });
 
-        let cli_agent_type: Option<CLIAgentType> = CLIAgentSessionsModel::as_ref(ctx)
-            .session(self.view_id)
-            .map(|s| s.agent.into());
-        if let Some(cli_agent) = cli_agent_type {}
-
         self.redetermine_terminal_focus(ctx);
         ctx.notify();
     }
@@ -581,12 +570,6 @@ impl TerminalView {
         if text.trim().is_empty() {
             return;
         }
-
-        let prompt_length = text.chars().count();
-        let cli_agent: Option<CLIAgentType> = CLIAgentSessionsModel::as_ref(ctx)
-            .session(self.view_id)
-            .map(|s| s.agent.into());
-        if let Some(cli_agent) = cli_agent {}
 
         // Clear any saved draft so submitted text isn't restored on the next open.
         let view_id = self.view_id;

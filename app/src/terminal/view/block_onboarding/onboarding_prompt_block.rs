@@ -1,7 +1,6 @@
 use crate::appearance::Appearance;
 use crate::context_chips::prompt::Prompt;
 use crate::report_if_error;
-use crate::server::event_metadata::PromptChoice;
 use crate::settings::EnforceMinimumContrast;
 use crate::terminal::blockgrid_element::BlockGridElement;
 use crate::terminal::model::blockgrid::BlockGrid;

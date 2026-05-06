@@ -20,7 +20,6 @@ use crate::search::slash_command_menu::static_commands::commands::{self, COMMAND
 use crate::search::slash_command_menu::static_commands::Availability;
 use crate::search::slash_command_menu::{SlashCommandId, StaticCommand};
 use crate::server::ids::SyncId;
-use crate::server::event_metadata::SlashCommandAcceptedDetails;
 use crate::settings::AISettings;
 use crate::terminal::input::decorations::InputBackgroundJobOptions;
 use crate::terminal::input::inline_menu::{InlineMenuAction, InlineMenuType};
@@ -473,7 +472,7 @@ impl Input {
                         }
                     }
                     _ => {
-                        use crate::server::event_metadata::PaletteSource;
+                        use crate::workspace::metadata::PaletteSource;
 
                         ctx.emit(Event::OpenFilesPalette {
                             source: PaletteSource::Keybinding,
@@ -775,7 +774,7 @@ impl Input {
 
         let is_in_agent_view = FeatureFlag::AgentView.is_enabled()
             && self.agent_view_controller.as_ref(ctx).is_active();
-                true
+        true
     }
 
     /// Handles cmd+enter (Mac) / ctrl+enter (Linux/Windows) for slash commands.

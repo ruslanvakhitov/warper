@@ -329,8 +329,8 @@ pub struct BlockList {
 
     obfuscate_secrets: ObfuscateSecrets,
 
-    /// `true` if client-side telemetry for user-generated AI data is enabled.
-    is_ai_ugc_telemetry_enabled: bool,
+    /// `true` if local AI UGC collection is enabled.
+    should_collect_ai_ugc: bool,
 
     /// Persisted info about the scroll position before a filter is applied. This
     /// data is used return users to their original scroll position after a
@@ -558,7 +558,7 @@ impl BlockList {
         honor_ps1: bool,
         is_inverted: bool,
         obfuscate_secrets: ObfuscateSecrets,
-        is_ai_ugc_telemetry_enabled: bool,
+        should_collect_ai_ugc: bool,
     ) -> Self {
         let mut block_list = Self::new_internal(
             sizes,
@@ -570,7 +570,7 @@ impl BlockList {
             honor_ps1,
             is_inverted,
             obfuscate_secrets,
-            is_ai_ugc_telemetry_enabled,
+            should_collect_ai_ugc,
         );
         block_list.initialize(restored_blocks);
         block_list
@@ -607,7 +607,7 @@ impl BlockList {
         honor_ps1: bool,
         is_inverted: bool,
         obfuscate_secrets: ObfuscateSecrets,
-        is_ai_ugc_telemetry_enabled: bool,
+        should_collect_ai_ugc: bool,
     ) -> Self {
         let bootstrap_stage = BootstrapStage::RestoreBlocks;
         let block_heights = SumTree::new();
@@ -640,7 +640,7 @@ impl BlockList {
             last_populated_precmd_payload: None,
             cached_prompt_data: None,
             obfuscate_secrets,
-            is_ai_ugc_telemetry_enabled,
+            should_collect_ai_ugc,
             scroll_position_before_filter: None,
             is_inverted,
             agent_view_state: AgentViewState::Inactive,
@@ -2458,7 +2458,7 @@ impl BlockList {
             self.blocks.len().into(),
             honor_ps1,
             self.obfuscate_secrets,
-            self.is_ai_ugc_telemetry_enabled,
+            self.should_collect_ai_ugc,
             self.agent_view_state.active_conversation_id(),
         );
         if let Some(is_local) = restored_block_was_local {
@@ -2512,7 +2512,7 @@ impl BlockList {
             BlockIndex::zero(),
             false,
             self.obfuscate_secrets,
-            self.is_ai_ugc_telemetry_enabled,
+            self.should_collect_ai_ugc,
             None,
         )
     }

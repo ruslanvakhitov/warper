@@ -4,17 +4,14 @@ use serde::{Serialize, Serializer};
 
 use warpui::{platform::Cursor, ViewContext};
 
-use crate::{
-    server::event_metadata::LinkOpenMethod,
-    terminal::{
-        model::{
-            grid::grid_handler::Link,
-            index::Point,
-            terminal_model::{WithinBlock, WithinModel},
-            RespectObfuscatedSecrets,
-        },
-        TerminalModel,
+use crate::terminal::{
+    model::{
+        grid::grid_handler::Link,
+        index::Point,
+        terminal_model::{WithinBlock, WithinModel},
+        RespectObfuscatedSecrets,
     },
+    TerminalModel,
 };
 
 cfg_if::cfg_if! {

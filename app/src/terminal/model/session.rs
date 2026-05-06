@@ -28,7 +28,6 @@ use warp_completer::completer::{
 };
 use warpui::{platform::OperatingSystem, Entity, ModelContext, SingletonEntity};
 
-use crate::server::event_metadata::{BootstrappingInfo};
 use crate::terminal::event::ExecutedExecutorCommandEvent;
 use crate::terminal::ShellHost;
 use crate::terminal::ShellLaunchData;
@@ -212,12 +211,11 @@ impl Sessions {
         session_info: SessionInfo,
         spawning_command: String,
         restored_block_commands: Vec<HistoryEntry>,
-        rcfiles_duration_seconds: Option<f64>,
+        _rcfiles_duration_seconds: Option<f64>,
         ctx: &mut ModelContext<Self>,
     ) {
         // Remove the session from the list of pending sessions.
-        let pending_session_start_time = self
-            .pending_session_start_times
+        self.pending_session_start_times
             .remove(&session_info.session_id);
 
         let session_id = session_info.session_id;
@@ -257,20 +255,6 @@ impl Sessions {
 
         let session = Arc::new(session);
         self.sessions.insert(session.id(), session.clone());
-
-        let bootstrap_duration_seconds =
-            pending_session_start_time.map(|start| start.elapsed().as_secs_f64());
-        let warp_attributed_bootstrap_duration_seconds =
-            match (bootstrap_duration_seconds, rcfiles_duration_seconds) {
-                (Some(total), Some(rcfiles)) => Some(total - rcfiles),
-                _ => None,
-            };
-        let was_triggered_by_rc_file = session
-            .subshell_info()
-            .clone()
-            .map(|info| info.was_triggered_by_rc_file_snippet)
-            .unwrap_or(false);
-
 
         History::handle(ctx).update(ctx, |history, ctx| {
             let session_id = session.id();

@@ -39,13 +39,12 @@ use crate::ai::predict::prompt_suggestions::{
     is_accept_prompt_suggestion_bound_to_ctrl_enter,
 };
 use crate::ai::skills::SkillManager;
-use crate::ai::skills::{SkillOpenOrigin};
+use crate::ai::skills::SkillOpenOrigin;
 use crate::context_chips::spacing;
 use crate::pane_group::focus_state::PaneFocusHandle;
 use crate::prompt::editor_modal::OpenSource as PromptEditorOpenSource;
 use crate::search::slash_command_menu::static_commands::commands::{self, COMMAND_REGISTRY};
 
-use crate::server::event_metadata::{PaletteSource, SlashCommandAcceptedDetails, SlashMenuSource};
 use crate::settings::PrivacySettings;
 use crate::suggestions::ignored_suggestions_model::{
     IgnoredSuggestionsModel, IgnoredSuggestionsModelEvent, SuggestionType,
@@ -89,6 +88,7 @@ use crate::util::bindings::keybinding_name_to_normalized_string;
 #[cfg(feature = "local_fs")]
 use crate::util::file::external_editor;
 use crate::util::truncation::truncate_from_end;
+use crate::workspace::metadata::PaletteSource;
 #[allow(unused_imports)]
 use crate::ASSETS;
 
@@ -152,13 +152,7 @@ use crate::{
         },
         QueryFilter,
     },
-    server::{
-        ids::SyncId,
-        event_metadata::{
-            AICommandSearchEntrypoint, AgentModeAutoDetectionFalsePositivePayload,
-            AgentModeAutoDetectionSettingOrigin, CommandXRayTrigger,
-        },
-    },
+    server::ids::SyncId,
     session_management::SessionNavigationPromptElements,
     settings::{
         AISettings, AISettingsChangedEvent, AliasExpansionSettings, AppEditorSettings,
@@ -166,6 +160,7 @@ use crate::{
         MAX_TIMES_TO_SHOW_AUTOSUGGESTION_HINT,
     },
     settings_view::{flags, SettingsSection},
+    terminal::metadata::CommandXRayTrigger,
     terminal::view::inline_banner::{PromptSuggestionsEvent, PromptSuggestionsView},
     ui_components::{blended_colors, icons::Icon},
     user_config::WarpConfig,
@@ -3246,8 +3241,7 @@ impl Input {
             let is_udi_enabled =
                 InputSettings::as_ref(ctx).is_universal_developer_input_enabled(ctx);
             let current_input_mode = self.ai_input_model.as_ref(ctx).input_type();
-
-                    } else if self.suggestions_mode_model.as_ref(ctx).is_ai_context_menu() {
+        } else if self.suggestions_mode_model.as_ref(ctx).is_ai_context_menu() {
             self.close_ai_context_menu(ctx);
         }
         ctx.notify();
@@ -3289,7 +3283,7 @@ impl Input {
             self.system_insert("/", ctx);
             let is_in_agent_view = FeatureFlag::AgentView.is_enabled()
                 && self.agent_view_controller.as_ref(ctx).is_fullscreen();
-                    }
+        }
     }
 
     fn handle_conversation_menu_event(
@@ -3724,7 +3718,7 @@ impl Input {
         });
         let is_in_agent_view = FeatureFlag::AgentView.is_enabled()
             && self.agent_view_controller.as_ref(ctx).is_fullscreen();
-                ctx.notify();
+        ctx.notify();
     }
 
     fn open_repos_menu(&mut self, ctx: &mut ViewContext<Self>) {
@@ -4097,7 +4091,7 @@ impl Input {
             );
         });
 
-                ctx.notify();
+        ctx.notify();
     }
 
     /// Executes a skill command.
@@ -4471,7 +4465,6 @@ impl Input {
         self.focus_input_box(ctx);
         // TODO(advait): Avoid using user-simulated codepaths here. Revisit function to use here.
         self.submit_ai_query(Some(suggestion_type), ctx);
-
 
         ctx.notify()
     }
@@ -4990,7 +4983,7 @@ impl Input {
                 if switch_to_auto {
                     self.set_input_mode_natural_language_detection(ctx);
                 } else if *input_type == InputType::AI {
-                                    }
+                }
             }
             UniversalDeveloperInputButtonBarEvent::EnableAutoDetection => {
                 self.enable_auto_detection(ctx);
@@ -5461,7 +5454,7 @@ impl Input {
             // We don't want to submit the command if precmd has not
             // been received. Instead, we want the user to be aware
             // that the prompt might not be up to date.
-                        did_execute = false;
+            did_execute = false;
         }
 
         // Close the workflows info box if it was open.
@@ -6151,7 +6144,7 @@ impl Input {
                     return;
                 }
 
-                                self.close_input_suggestions(/*should_focus_input=*/ true, ctx);
+                self.close_input_suggestions(/*should_focus_input=*/ true, ctx);
             }
             InputSuggestionsEvent::ConfirmAndExecuteSuggestion {
                 suggestion,
@@ -6160,7 +6153,6 @@ impl Input {
                 if !self.confirm_and_execute_suggestion(suggestion, ctx) {
                     return;
                 }
-
 
                 self.close_input_suggestions(/*should_focus_input=*/ true, ctx);
 
@@ -6778,7 +6770,7 @@ impl Input {
                 );
             });
 
-                        ctx.notify();
+            ctx.notify();
             return;
         }
         // Finally, if we're neither scrolling through an existing suggestion
@@ -7567,7 +7559,7 @@ impl Input {
                         .active_block()
                         .has_received_precmd()
                     {
-                                                ctx.notify();
+                        ctx.notify();
                     }
                 }
 
@@ -8240,7 +8232,7 @@ impl Input {
                 buffer_char_length,
                 autosuggestion_type,
             } => {
-                                ctx.emit(Event::AutosuggestionAccepted);
+                ctx.emit(Event::AutosuggestionAccepted);
 
                 self.input_suggestions
                     .update(ctx, |input_suggestions, ctx| {
@@ -8391,13 +8383,13 @@ impl Input {
 
                 match token_at {
                     CommandXRayAnchor::Cursor => {
-                                                let pos = self.start_byte_index_of_first_selection(ctx);
+                        let pos = self.start_byte_index_of_first_selection(ctx);
                         self.start_xray_at_offset(pos, CommandXRayTrigger::Keystroke, ctx);
                     }
                     CommandXRayAnchor::Hover(mouse_position) => {
                         if let Some(offset) = self.start_byte_index_at_point(mouse_position, ctx) {
                             if !self.suggestions_mode_model.as_ref(ctx).is_visible() {
-                                                                self.start_xray_at_offset(offset, CommandXRayTrigger::Hover, ctx);
+                                self.start_xray_at_offset(offset, CommandXRayTrigger::Hover, ctx);
                             }
                         }
                     }
@@ -9794,7 +9786,6 @@ impl Input {
                             );
                         });
 
-
                         let preselect_option = if self.is_classic_completions_enabled(ctx) {
                             TabCompletionsPreselectOption::Unselected
                         } else {
@@ -9871,7 +9862,7 @@ impl Input {
                 ctx,
             );
         });
-            }
+    }
 
     /// Whether the editor is in a state where we should tab complete instead of indenting text
     /// within the editor.
@@ -10589,7 +10580,7 @@ impl Input {
                 let input_type = input_model.input_type();
                 let is_locked = input_model.is_input_type_locked();
                 let was_lock_set_with_empty_buffer = input_model.was_lock_set_with_empty_buffer();
-                            }
+            }
 
             self.submit_ai_query(None, ctx);
         } else {
@@ -10599,7 +10590,7 @@ impl Input {
                 let input_type = input_model.input_type();
                 let is_locked = input_model.is_input_type_locked();
                 let was_lock_set_with_empty_buffer = input_model.was_lock_set_with_empty_buffer();
-                            }
+            }
 
             if FeatureFlag::WorkflowAliases.is_enabled() {
                 let mut command_string = self.editor.as_ref(ctx).buffer_text(ctx);
@@ -11419,7 +11410,6 @@ impl Input {
         let (workflow_id, workflow_command) = {
             match self.workflows_state.selected_workflow_state.as_ref() {
                 Some(selected_workflow_state) => {
-
                     let workflow_type = &selected_workflow_state.workflow_type;
                     let workflow_id = None;
 
@@ -11932,12 +11922,7 @@ impl Input {
 
         ctx.emit(Event::ShowCommandSearch(Default::default()));
 
-        let entrypoint = if buffer_starts_with_trigger {
-            AICommandSearchEntrypoint::ShortHandTrigger
-        } else {
-            AICommandSearchEntrypoint::Keybinding
-        };
-                ctx.notify();
+        ctx.notify();
     }
 
     /// Returns the SavePosition ID for the input.
@@ -12069,8 +12054,7 @@ impl TypedActionView for Input {
                             .ai_autodetection_enabled_internal
                             .toggle_and_save_value(model_ctx)
                     })
-                {
-                                    }
+                {}
             }
             InputAction::InsertZeroStatePromptSuggestion(suggestion_type) => {
                 self.insert_zero_state_prompt_suggestion(

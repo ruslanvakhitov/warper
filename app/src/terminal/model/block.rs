@@ -403,8 +403,8 @@ pub struct Block {
     /// track the count of discarded newlines here in order to correct the row number.
     leading_linefeeds_ignored: usize,
 
-    /// `true` if client-side telemetry for user-generated AI data is enabled.
-    pub(super) is_ai_ugc_telemetry_enabled: bool,
+    /// `true` if local AI UGC collection is enabled.
+    pub(super) should_collect_ai_ugc: bool,
 
     /// Only set on restored blocks. Indicates whether the block was local or from a remote session.
     restored_block_was_local: Option<bool>,
@@ -542,9 +542,9 @@ impl From<&Block> for BlockType {
                         block.command_with_secrets_obfuscated(false);
 
                     let (output_truncated, mut output_truncated_with_obfuscated_secrets) =
-                        if block.is_ai_ugc_telemetry_enabled {
-                            // If telemetry is enabled, we collect the full output but are limiting it to
-                            // the first and last 2500 lines in case the block is very large.
+                        if block.should_collect_ai_ugc {
+                            // Collect the full output with first/last line limits for very large
+                            // blocks.
                             (
                                 block.output_grid().content_summary(2500, 2500, false),
                                 block.output_grid().content_summary(2500, 2500, true),
@@ -929,7 +929,7 @@ impl Block {
         block_index: BlockIndex,
         honor_ps1: bool,
         should_scan_for_secrets: ObfuscateSecrets,
-        is_ai_ugc_telemetry_enabled: bool,
+        should_collect_ai_ugc: bool,
         conversation_id: Option<AIConversationId>,
     ) -> Self {
         let perform_reset_grid_checks = if cfg!(windows) && bootstrap_stage.is_done() {
@@ -1007,7 +1007,7 @@ impl Block {
             hidden: false,
             should_hide_output_grid: false,
             leading_linefeeds_ignored: 0,
-            is_ai_ugc_telemetry_enabled,
+            should_collect_ai_ugc,
             restored_block_was_local: None,
             agent_view_visibility: match conversation_id {
                 Some(id) => AgentViewVisibility::new_from_conversation(id),

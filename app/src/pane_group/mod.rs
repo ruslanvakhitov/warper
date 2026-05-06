@@ -101,7 +101,7 @@ use crate::report_if_error;
 use crate::resource_center::{
     mark_feature_used_and_write_to_user_defaults, Tip, TipAction, TipsCompleted,
 };
-use crate::server::event_metadata::PaletteSource;
+use crate::workspace::metadata::PaletteSource;
 use crate::server::ids::SyncId;
 use crate::session_management::SessionNavigationData;
 use crate::settings_view::mcp_servers_page::MCPServersSettingsPage;
@@ -4440,10 +4440,10 @@ impl PaneGroup {
     pub fn replace_loading_pane_with_terminal(
         &mut self,
         loading_pane_id: PaneId,
-        cloud_conversation: LocalConversationData,
+        local_conversation: LocalConversationData,
         ctx: &mut ViewContext<Self>,
     ) -> bool {
-        let LocalConversationData::CLIAgent(cli_conversation) = cloud_conversation else {
+        let LocalConversationData::CLIAgent(cli_conversation) = local_conversation else {
             return false;
         };
         if !FeatureFlag::AgentHarness.is_enabled() {

@@ -12,11 +12,9 @@ use warp_util::standardized_path::StandardizedPath;
 use warpui::{elements::MouseStateHandle, ViewContext};
 
 use super::{FileTreeIdentifier, FileTreeItem, FileTreeView};
-use crate::{
-    code::file_tree::{
-        view::{PendingEdit, PendingEditKind},
-        FileTreeEvent,
-    },
+use crate::code::file_tree::{
+    view::{PendingEdit, PendingEditKind},
+    FileTreeEvent,
 };
 
 /// Custom ordering function for items in the file tree.
@@ -184,7 +182,6 @@ impl FileTreeView {
                             log::warn!("Failed to create file: {e}");
                             return;
                         }
-
 
                         FileTreeEntryState::File(metadata.clone())
                     } else {

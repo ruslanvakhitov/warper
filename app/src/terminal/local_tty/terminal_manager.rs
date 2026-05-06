@@ -1,6 +1,4 @@
 use crate::ai::aws_credentials::AwsCredentialRefresher as _;
-use crate::auth::auth_state::AuthState;
-use crate::auth::AuthStateProvider;
 use crate::terminal::model::terminal_model::ExitReason;
 use crate::terminal::shell::ShellName;
 use crate::terminal::TerminalManager as _;
@@ -34,7 +32,6 @@ use crate::context_chips::prompt_type::PromptType;
 use crate::features::FeatureFlag;
 use crate::pane_group::TerminalViewResources;
 use crate::persistence::ModelEvent;
-use crate::server::event_metadata::{AgentViewEntryMetadataOrigin};
 use crate::settings::DebugSettings;
 
 use crate::terminal::model::session::Sessions;
@@ -331,8 +328,7 @@ impl TerminalManager {
                 origin,
                 final_exchange_count,
                 ..
-            } => {
-                            }
+            } => {}
             AgentViewControllerEvent::EnteredAgentView { .. }
             | AgentViewControllerEvent::ExitConfirmed { .. } => {}
         });
@@ -418,14 +414,12 @@ impl TerminalManager {
 
         log::debug!("Using shell starter source {shell_starter_source:?}");
         let bg_executor = ctx.background_executor();
-        let auth_state = AuthStateProvider::as_ref(ctx).get();
-
         let is_fallback_shell = matches!(
             shell_starter_source,
             Some(ShellStarterSource::Fallback { .. })
         );
-        let shell_starter = shell_starter_source
-            .map(|source| get_shell_starter_internal(source, bg_executor, auth_state));
+        let shell_starter =
+            shell_starter_source.map(|source| get_shell_starter_internal(source, bg_executor));
         let shell_starter = match shell_starter {
             Some(shell_starter) => shell_starter,
             None => {
@@ -581,11 +575,9 @@ impl TerminalManager {
         ctx: &mut AppContext,
     ) {
         if FeatureFlag::RecordPtyThroughput.is_enabled() {
-            let auth_state = AuthStateProvider::as_ref(ctx).get();
             recorder::record_pty_throughput(
                 pty_reads_rx.activate(),
                 model,
-                auth_state.clone(),
                 ctx.background_executor().to_owned(),
             );
         }
@@ -817,7 +809,6 @@ fn show_password_notifications(
 
 pub fn get_shell_starter(
     chosen_shell: Option<AvailableShell>,
-    auth_state: &AuthState,
     ctx: &mut AppContext,
 ) -> Option<ShellStarter> {
     let preferred_shell = chosen_shell.unwrap_or_else(|| {
@@ -831,18 +822,13 @@ pub fn get_shell_starter(
             warpui::r#async::block_on(async { starter.to_shell_starter_source().await })
         })
         .map(|starter_source| {
-            get_shell_starter_internal(
-                starter_source,
-                ctx.background_executor().clone(),
-                auth_state,
-            )
+            get_shell_starter_internal(starter_source, ctx.background_executor().clone())
         })
 }
 
 fn get_shell_starter_internal(
     shell_starter_source: ShellStarterSource,
     background_executor: Arc<Background>,
-    auth_state: &AuthState,
 ) -> ShellStarter {
     match shell_starter_source {
         ShellStarterSource::Override(shell_starter) => shell_starter,
@@ -853,8 +839,7 @@ fn get_shell_starter_internal(
             unsupported_shell,
             starter,
         } => {
-            if let Some(unsupported_shell) = unsupported_shell {
-                            }
+            if let Some(unsupported_shell) = unsupported_shell {}
 
             ShellStarter::Direct(starter)
         }

@@ -19,18 +19,17 @@ use crate::context_chips::{
     available_chips, ChipAvailability, ChipRuntimeCapabilities, ContextChipKind,
 };
 
-use crate::server::event_metadata::{PromptChoice};
 use crate::settings::{FontSettings, WarpPromptSeparator};
 use crate::terminal::blockgrid_element::BlockGridElement;
 use crate::terminal::SizeInfo;
 use settings::Setting as _;
 
+use crate::report_if_error;
 use crate::terminal::model::blockgrid::BlockGrid;
 use crate::terminal::model::ObfuscateSecrets;
 use crate::terminal::session_settings::SessionSettings;
 use crate::view_components::{Dropdown, DropdownItem};
 use crate::Appearance;
-use crate::{report_if_error};
 use warpui::elements::{
     Align, Border, ChildAnchor, ChildView, Clipped, ConstrainedBox, Container, CornerRadius,
     CrossAxisAlignment, Empty, Flex, Hoverable, MainAxisAlignment, MainAxisSize, MouseStateHandle,
@@ -332,8 +331,7 @@ impl EditorModal {
                     let session_settings = SessionSettings::as_ref(ctx);
                     let current_same_line_prompt_enabled =
                         session_settings.saved_prompt.same_line_prompt_enabled();
-                    if self.same_line_prompt_enabled != current_same_line_prompt_enabled {
-                                            }
+                    if self.same_line_prompt_enabled != current_same_line_prompt_enabled {}
 
                     // Updating the `Prompt` handles turning off PS1.
                     Prompt::handle(ctx).update(ctx, |prompt, ctx| {
@@ -346,20 +344,7 @@ impl EditorModal {
                     });
                 }
             }
-
-            let prompt_info = match self.prompt_type {
-                PromptType::PS1 => PromptChoice::PS1,
-                PromptType::WarpDefault => PromptChoice::Default,
-                PromptType::Warp => PromptChoice::Custom {
-                    builtin_chips: self
-                        .chip_configurator
-                        .used_chips
-                        .iter()
-                        .filter_map(|r| r.chip_kind().and_then(|k| k.telemetry_name()))
-                        .collect_vec(),
-                },
-            };
-                    }
+        }
     }
 
     fn reset(&mut self) {

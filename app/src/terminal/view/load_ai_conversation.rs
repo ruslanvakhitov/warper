@@ -204,13 +204,7 @@ impl TerminalView {
         conversation_data: &LocalConversationData,
     ) -> RestorationDirState {
         let target_dir = match conversation_data {
-            LocalConversationData::AI(conversation) => {
-                conversation.initial_working_directory().or_else(|| {
-                    conversation
-                        .server_metadata()
-                        .and_then(|metadata| metadata.working_directory.clone())
-                })
-            }
+            LocalConversationData::AI(conversation) => conversation.initial_working_directory(),
             LocalConversationData::CLIAgent(cli_conversation) => {
                 cli_conversation.metadata.working_directory.clone()
             }

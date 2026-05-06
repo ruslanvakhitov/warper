@@ -15,17 +15,17 @@ use warpui::EntityId;
 use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::agent::AIAgentExchangeId;
 use crate::ai::blocklist::codebase_index_speedbump_banner::CodebaseIndexSpeedbumpBannerAction;
+use crate::ai::blocklist::metadata::AgentModeRewindEntrypoint;
 use crate::code_review::metadata::CodeReviewPaneEntrypoint;
-use crate::server::event_metadata::{
-    AgentModeRewindEntrypoint, PaletteSource, ToggleBlockFilterSource,
-};
 use crate::terminal::available_shells::AvailableShell;
+use crate::terminal::metadata::ToggleBlockFilterSource;
 use crate::terminal::model::completions::ShellCompletion;
 use crate::terminal::ssh::error::SshErrorBlockAction;
 use crate::terminal::view::inline_banner::AgentModeSetupSpeedbumpBannerAction;
 use crate::terminal::view::passive_suggestions::PromptSuggestionResolution;
 use crate::terminal::view::RichContentSecretTooltipInfo;
 use crate::workflows::workflow::Workflow;
+use crate::workspace::metadata::PaletteSource;
 use crate::{
     server::ids::SyncId,
     terminal::{

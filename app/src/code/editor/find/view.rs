@@ -6,7 +6,6 @@ use crate::editor::{
     EditorView, Event as EditorEvent, InteractionState, PropagateAndNoOpNavigationKeys,
     SingleLineEditorOptions, TextOptions,
 };
-use crate::server::event_metadata::{FindOption};
 use crate::themes::theme::Fill;
 use crate::ui_components::{blended_colors, icons::Icon};
 use crate::view_components::action_button::{ActionButton, DisabledSecondaryTheme, SecondaryTheme};
@@ -415,14 +414,14 @@ impl CodeEditorFind {
         self.searcher.update(ctx, |searcher, ctx| {
             searcher.set_case_sensitive(new_case_sensitive, ctx);
         });
-            }
+    }
 
     fn toggle_regex_search(&mut self, ctx: &mut ViewContext<Self>) {
         let new_regex_enabled = !self.searcher.as_ref(ctx).is_regex();
         self.searcher.update(ctx, |searcher, ctx| {
             searcher.set_regex(new_regex_enabled, ctx);
         });
-            }
+    }
 
     fn render_match_index(&self, appearance: &Appearance, app: &AppContext) -> Box<dyn Element> {
         // If there is some match index, we add 1 to it since the UI is 1-indexed

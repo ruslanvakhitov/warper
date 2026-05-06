@@ -4,8 +4,8 @@ use std::path::Path;
 use warp_core::ui::theme::Image as ThemeImage;
 use warpui::assets::asset_cache::AssetSource;
 use warpui::{
-    elements::MouseStateHandle, AppContext, EntityId, SingletonEntity, ViewContext, ViewHandle,
-    WindowId,
+    AppContext, EntityId, SingletonEntity, ViewContext, ViewHandle, WindowId,
+    elements::MouseStateHandle,
 };
 
 use crate::window_settings::WindowSettings;

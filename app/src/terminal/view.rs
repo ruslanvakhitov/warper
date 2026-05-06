@@ -135,7 +135,6 @@ use crate::terminal::cli_agent_sessions::{
     CLIAgentSessionContext, CLIAgentSessionStatus, CLIAgentSessionsModel,
     CLIAgentSessionsModelEvent,
 };
-use crate::server::event_metadata::PromptSuggestionFallbackReason;
 use crate::workspaces::user_workspaces::UserWorkspacesEvent;
 
 pub use self::link_detection::GridHighlightedLink;
@@ -199,8 +198,6 @@ use crate::ai::{
     execution_profiles::profiles::{AIExecutionProfilesModel, ClientProfileId},
     get_relevant_files::controller::GetRelevantFilesController,
 };
-use crate::auth::auth_state::AuthState;
-use crate::auth::AuthStateProvider;
 #[cfg(feature = "local_fs")]
 use crate::code::editor_management::CodeSource;
 use crate::context_chips::prompt::Prompt;
@@ -373,6 +370,7 @@ use warpui::{
 
 use warpui::{windowing, CursorInfo, EntityId, EventContext, ModelAsRef, SingletonEntity, Tracked};
 
+use crate::ai::blocklist::metadata::{AgentModeEntrypoint, AgentModeRewindEntrypoint};
 use crate::ai::AskAIType;
 use crate::appearance::{Appearance, AppearanceEvent};
 use crate::banner::{
@@ -390,15 +388,6 @@ use crate::pane_group::{
 use crate::resource_center::{
     mark_feature_used_and_write_to_user_defaults, Tip, TipHint, TipsCompleted,
 };
-use crate::server::event_metadata::{
-    self, AgentModeAttachContextMethod, AgentModeEntrypoint, AgentModeRewindEntrypoint,
-    InteractionSource, LinkOpenMethod, NotificationAgentVariant, PaletteSource,
-    PromptSuggestionViewType, SecretInteraction, SlowBootstrapInfo, ToggleBlockFilterSource,
-};
-use crate::server::event_metadata::{
-    CommandCorrectionAcceptedType, CommandCorrectionEvent, NotificationsTurnedOnSource,
-    SaveAsWorkflowModalSource,
-};
 use crate::session_management::{CommandContext, SessionNavigationPromptElements};
 use crate::settings::{PrivacySettings, PrivacySettingsChangedEvent, PrivacySettingsSnapshot};
 use crate::terminal::alt_screen::alt_screen_element::AltScreenElement;
@@ -414,6 +403,7 @@ use crate::terminal::event::UserBlockCompleted;
 use crate::terminal::find::{BlockGridMatch, BlockListMatch, TerminalFindModel};
 use crate::terminal::input::{InputState, MenuPositioning, MenuPositioningProvider};
 use crate::terminal::keys::TerminalKeybindings;
+use crate::terminal::metadata::{InteractionSource, ToggleBlockFilterSource};
 use crate::terminal::model::block::{AgentInteractionMetadata, BlockMetadata};
 use crate::terminal::model::block::{Block, BlockId};
 use crate::terminal::model::blocks::{BlockFilter, BlockList};
@@ -451,6 +441,7 @@ use crate::terminal::{
     TerminalModel,
 };
 use crate::view_components::find::{Event as FindEvent, Find, FindDirection, FindWithinBlockState};
+use crate::workspace::metadata::PaletteSource;
 use settings::{Setting, ToggleableSetting};
 use warp_core::semantic_selection::SemanticSelection;
 use warpui::text::SelectionType;
@@ -493,7 +484,6 @@ use super::warpify::WarpificationSource;
 use super::{GridType, HistoryEvent};
 use crate::antivirus::AntivirusInfo;
 use crate::menu::{Event as MenuEvent, Menu, MenuItem, MenuItemFields};
-use crate::server::event_metadata::{BlockLatencyInfo, BootstrappingInfo};
 use crate::terminal::links::should_directly_open_link;
 use crate::terminal::model_events::{AnsiHandlerEvent, ModelEvent, ModelEventDispatcher};
 use crate::terminal::{block_list_element::BlockListMenuSource, prompt};
@@ -2161,8 +2151,6 @@ pub struct TerminalView {
 
     mouse_states: TerminalViewMouseStates,
 
-    auth_state: Arc<AuthState>,
-
     /// A sender used to handle messages for whenever the entire terminal view
     /// changes size.  Note that this size contains not just the content element
     /// but also the input.
@@ -3357,7 +3345,10 @@ impl TerminalView {
         ctx.subscribe_to_model(
             &privacy_settings_handle,
             |me, privacy_settings_handle, event, ctx| {
-                if let PrivacySettingsChangedEvent::UpdateIsTelemetryEnabled { .. } = event {
+                if let PrivacySettingsChangedEvent::UpdateIsCloudConversationStorageEnabled {
+                    ..
+                } = event
+                {
                     me.privacy_settings_snapshot =
                         privacy_settings_handle.as_ref(ctx).get_snapshot(ctx)
                 }
@@ -3579,7 +3570,6 @@ impl TerminalView {
             mouse_states: Default::default(),
             open_grid_link_tool_tip: None,
             open_rich_content_link_tool_tip: None,
-            auth_state: AuthStateProvider::as_ref(ctx).get().clone(),
             find_bar,
             resize_tx,
             find_link_tx,
@@ -3992,9 +3982,6 @@ impl TerminalView {
                 code_exchange_id,
                 block_id,
             } => {}
-            LegacyPassiveSuggestionsEvent::PassiveCodeDiffFailed { reason } => {
-                self.try_clear_prompt_suggestions_banner_code_state(*reason, ctx);
-            }
         }
     }
 
@@ -4247,11 +4234,10 @@ impl TerminalView {
                 response_stream_id,
                 ..
             } => {
-                // Hide telemetry banner forever after first AI input user sends.
-                if FeatureFlag::GlobalAIAnalyticsBanner.is_enabled()
-                    && !GeneralSettings::as_ref(ctx)
-                        .ugc_policy_banner_dismissed
-                        .value()
+                // Hide UGC policy banner forever after the first AI input the user sends.
+                if !GeneralSettings::as_ref(ctx)
+                    .ugc_policy_banner_dismissed
+                    .value()
                 {
                     self.hide_ugc_policy_banner_permanently(ctx);
                 }
@@ -7551,16 +7537,6 @@ impl TerminalView {
         });
     }
 
-    /// Returns the view type for prompt suggestion telemetry based on whether agent view is active.
-    fn prompt_suggestion_view_type(&self, ctx: &ViewContext<Self>) -> PromptSuggestionViewType {
-        if FeatureFlag::AgentView.is_enabled() && self.agent_view_controller.as_ref(ctx).is_active()
-        {
-            PromptSuggestionViewType::AgentView
-        } else {
-            PromptSuggestionViewType::TerminalView
-        }
-    }
-
     fn resolve_prompt_suggestion(
         &mut self,
         resolution: PromptSuggestionResolution,
@@ -7586,7 +7562,6 @@ impl TerminalView {
             return false;
         }
 
-        let view = self.prompt_suggestion_view_type(ctx);
         let suggestion = &banner_state.prompt_suggestion;
         let prompt = suggestion.prompt.clone();
         let suggestion_id = suggestion.id.clone();
@@ -7672,23 +7647,6 @@ impl TerminalView {
         }
 
         true
-    }
-
-    /// Try clearing agent mode query banner's passive code generation state.
-    /// Called when a suggested code diff fails and we need to fall back to prompt suggestions.
-    fn try_clear_prompt_suggestions_banner_code_state(
-        &mut self,
-        fallback_reason: PromptSuggestionFallbackReason,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        if let Some(banner) = &mut self.inline_banners_state.prompt_suggestions_banner {
-            banner.should_hide = false;
-            banner.prompt_suggestion.coding_query_context = None;
-            self.input.update(ctx, |input, ctx| {
-                input.maybe_set_prompt_suggestions_banner_state_should_hide(false);
-                input.notify_and_notify_children(ctx);
-            });
-        }
     }
 
     fn associate_and_promote_block_for_conversation(
@@ -8330,13 +8288,12 @@ impl TerminalView {
         ctx.notify();
     }
 
-    /// Inserts telemetry policy banner into the blocklist.
+    /// Inserts UGC policy banner into the blocklist.
     pub fn insert_ugc_policy_banner(&mut self, is_onboarded: bool, ctx: &mut ViewContext<Self>) {
-        if FeatureFlag::GlobalAIAnalyticsBanner.is_enabled()
-            && !GeneralSettings::as_ref(ctx)
-                .ugc_policy_banner_dismissed
-                .value()
-            // Do not insert telemetry banner if one is already showing
+        if !GeneralSettings::as_ref(ctx)
+            .ugc_policy_banner_dismissed
+            .value()
+            // Do not insert UGC policy banner if one is already showing
             // (Happens in the case of a new user going from loginless to login
             // without dismissing banner the first time)
             && !self.rich_content_views.iter().any(|content| content.is_ugc_policy_banner())
@@ -8525,11 +8482,10 @@ impl TerminalView {
             });
         }
 
-        // Hide telemetry banner forever after first block user executes.
-        if FeatureFlag::GlobalAIAnalyticsBanner.is_enabled()
-            && !GeneralSettings::as_ref(ctx)
-                .ugc_policy_banner_dismissed
-                .value()
+        // Hide UGC policy banner forever after the first block the user executes.
+        if !GeneralSettings::as_ref(ctx)
+            .ugc_policy_banner_dismissed
+            .value()
         {
             self.hide_ugc_policy_banner_permanently(ctx);
         }
@@ -10108,13 +10064,7 @@ impl TerminalView {
         } else {
             NotificationsTrigger::AgentTaskCompleted(true)
         };
-        self.send_agent_desktop_notification_or_show_banner(
-            trigger,
-            title,
-            description,
-            Some(NotificationAgentVariant::CLIAgent((*agent).into())),
-            ctx,
-        );
+        self.send_agent_desktop_notification_or_show_banner(trigger, title, description, ctx);
     }
 
     /// Handles the initialization of a session within this terminal pane.
@@ -10158,13 +10108,6 @@ impl TerminalView {
 
         self.is_login_shell_bootstrapped = true;
         self.hide_slow_bootstrap_banner(ctx);
-
-        if self.auth_state.is_anonymous_or_logged_out()
-            && ChannelState::channel() != Channel::Oss
-            && !FeatureFlag::OpenWarpNewSettingsModes.is_enabled()
-        {
-            self.insert_anonymous_user_ai_sign_up_banner(ctx);
-        }
 
         if self.should_display_vim_banner(&session, ctx) {
             self.insert_vim_mode_banner(ctx);
@@ -10232,13 +10175,7 @@ impl TerminalView {
 
         self.ignore_next_set_title_event = true;
 
-        let auth_state = AuthStateProvider::as_ref(ctx).get();
-        let is_onboarded = auth_state.is_onboarded().unwrap_or(true);
-        let is_anonymous_or_logged_out = auth_state.is_anonymous_or_logged_out();
-        let should_show_onboarding = FeatureFlag::AgentOnboarding.is_enabled()
-            && ChannelState::channel() != Channel::Oss
-            && !is_onboarded
-            && !is_anonymous_or_logged_out;
+        let should_show_onboarding = false;
         let is_launch_modal_open = false;
 
         let has_plugin_instructions_block = self.rich_content_views.iter().any(|rc| {
@@ -11932,10 +11869,7 @@ impl TerminalView {
                     return;
                 }
 
-                let (query_string, block_command) = if should_collect_ai_ugc(
-                    ctx,
-                    PrivacySettings::as_ref(ctx).is_telemetry_enabled,
-                ) {
+                let (query_string, block_command) = if should_collect_ai_ugc(ctx) {
                     (Some(suggestion.prompt.to_string()), Some(command))
                 } else {
                     (None, None)
@@ -12185,7 +12119,6 @@ impl TerminalView {
             trigger,
             block_summary.title,
             block_summary.description,
-            None,
             ctx,
         );
     }
@@ -12197,7 +12130,6 @@ impl TerminalView {
         trigger: NotificationsTrigger,
         title: String,
         description: String,
-        agent_variant: Option<NotificationAgentVariant>,
         ctx: &mut ViewContext<Self>,
     ) {
         let notification_settings = SessionSettings::as_ref(ctx).notifications.value().clone();
@@ -13598,11 +13530,7 @@ impl TerminalView {
         let selected_block_contents =
             self.selected_block_contents_as_string(BlockEntity::Command, " &&\n", ctx);
 
-        self.open_workflow_modal_with_command(
-            selected_block_contents,
-            SaveAsWorkflowModalSource::Block,
-            ctx,
-        );
+        self.open_workflow_modal_with_command(selected_block_contents, ctx);
     }
 
     fn open_block_filter_editor(
@@ -14619,7 +14547,7 @@ impl TerminalView {
         }
 
         if should_directly_open_link {
-            self.maybe_open_link(LinkOpenMethod::CmdClick, position, ctx);
+            self.maybe_open_link(position, ctx);
         }
     }
 
@@ -14658,12 +14586,7 @@ impl TerminalView {
         });
     }
 
-    fn maybe_open_link(
-        &mut self,
-        link_open_method: LinkOpenMethod,
-        position: &WithinModel<Point>,
-        ctx: &mut ViewContext<Self>,
-    ) {
+    fn maybe_open_link(&mut self, position: &WithinModel<Point>, ctx: &mut ViewContext<Self>) {
         let Some(link) = self.highlighted_link.as_ref() else {
             return;
         };
@@ -14698,7 +14621,7 @@ impl TerminalView {
         if self.highlighted_link.is_some() {
             // Middle click should open a highlighted link if there is one.
             if let Some(position) = position {
-                self.maybe_open_link(LinkOpenMethod::MiddleClick, position, ctx);
+                self.maybe_open_link(position, ctx);
             }
         } else {
             // Otherwise, assume that the user wants to middle-click paste.
@@ -15378,7 +15301,7 @@ impl TerminalView {
             selected_input_text
         };
 
-        self.open_workflow_modal_with_command(command, SaveAsWorkflowModalSource::Input, ctx);
+        self.open_workflow_modal_with_command(command, ctx);
     }
 
     fn toggle_input_hint_text(&mut self, ctx: &mut ViewContext<Self>) {
@@ -15390,12 +15313,7 @@ impl TerminalView {
         // Send the same telemetry event that we do from the features page to make data analysis easier.
     }
 
-    fn open_workflow_modal_with_command(
-        &mut self,
-        command: String,
-        source: SaveAsWorkflowModalSource,
-        ctx: &mut ViewContext<Self>,
-    ) {
+    fn open_workflow_modal_with_command(&mut self, command: String, ctx: &mut ViewContext<Self>) {
         ctx.emit(Event::OpenWorkflowModalWithCommand(command));
     }
 
@@ -20602,7 +20520,7 @@ impl TerminalView {
             // TODO(CORE-2300): This appears to be used for invoking env vars.
             // Before we close out CORE-2300, we should evaluate if we need to add
             // shell info here.
-            let shell_starter = get_shell_starter(None, &self.auth_state, ctx)?;
+            let shell_starter = get_shell_starter(None, ctx)?;
             let shell_path = match &shell_starter {
                 ShellStarter::Direct(direct_shell_starter)
                 | ShellStarter::MSYS2(direct_shell_starter) => direct_shell_starter
@@ -21126,13 +21044,7 @@ impl TerminalView {
         });
     }
 
-    pub(super) fn toggle_file_tree(
-        &mut self,
-        cli_agent: Option<crate::server::event_metadata::CLIAgentType>,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        use crate::server::event_metadata::FileTreeSource;
-
+    pub(super) fn toggle_file_tree(&mut self, ctx: &mut ViewContext<Self>) {
         self.toggle_left_panel_file_tree(false, ctx);
     }
 }
@@ -21826,10 +21738,6 @@ impl TypedActionView for TerminalView {
                 if ChannelState::channel() == Channel::Oss {
                     return;
                 }
-
-                if self.auth_state.is_anonymous_or_logged_out() {
-                    return;
-                };
 
                 match version {
                     OnboardingVersion::Legacy => {

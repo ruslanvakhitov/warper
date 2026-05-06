@@ -1,12 +1,11 @@
 use warp_core::features::FeatureFlag;
-use warpui::{SingletonEntity, ViewContext};
+use warpui::ViewContext;
 
 use crate::{
     ai::{
         agent::{conversation::AIConversationId, CancellationReason},
         blocklist::block::{FinishReason, PendingUserQueryBlock, PendingUserQueryBlockEvent},
     },
-    auth::AuthStateProvider,
     terminal::TerminalView,
 };
 
@@ -34,18 +33,13 @@ impl TerminalView {
         ctx: &mut ViewContext<Self>,
     ) {
         self.remove_pending_user_query_block(ctx);
-        let auth_state = AuthStateProvider::as_ref(ctx).get().clone();
-        let user_display_name = auth_state
-            .username_for_display()
-            .unwrap_or_else(|| "User".to_owned());
-        let profile_image_path = auth_state.user_photo_url();
 
         let prompt_for_send_now = prompt.clone();
         let handle = ctx.add_typed_action_view(|ctx| {
             PendingUserQueryBlock::new(
                 prompt,
-                user_display_name,
-                profile_image_path,
+                "User".to_owned(),
+                None,
                 show_close_button,
                 show_send_now_button,
                 ctx,

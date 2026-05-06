@@ -1,6 +1,7 @@
 use pathfinder_geometry::vector::vec2f;
 use warp_core::ui::{color::coloru_with_opacity, theme::Fill};
 use warpui::{
+    AppContext, Element, Entity, EntityId, SingletonEntity, TypedActionView, View, ViewContext,
     elements::{
         Align, ChildAnchor, ConstrainedBox, Container, CrossAxisAlignment, Flex, Hoverable,
         MouseStateHandle, OffsetPositioning, ParentAnchor, ParentElement, ParentOffsetBounds,
@@ -13,13 +14,12 @@ use warpui::{
         button::ButtonVariant,
         components::{Coords, UiComponent, UiComponentStyles},
     },
-    AppContext, Element, Entity, EntityId, SingletonEntity, TypedActionView, View, ViewContext,
 };
 
 use crate::{
-    ai::agent::{conversation::AIConversationId, AIAgentExchangeId},
+    ai::agent::{AIAgentExchangeId, conversation::AIConversationId},
     appearance::Appearance,
-    ui_components::dialog::{dialog_styles, Dialog},
+    ui_components::dialog::{Dialog, dialog_styles},
     ui_components::icons::Icon,
 };
 

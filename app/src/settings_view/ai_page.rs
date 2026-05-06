@@ -104,10 +104,6 @@ impl AISubpage {
     }
 }
 use crate::menu::{MenuItem, MenuItemFields};
-use crate::server::event_metadata::{
-    AgentModeAutoDetectionSettingOrigin, AutonomySettingToggleSource,
-    ToggleCodeSuggestionsSettingSource,
-};
 use crate::ui_components::icons::Icon;
 use crate::view_components::dropdown::DropdownAction;
 use crate::UserWorkspaces;

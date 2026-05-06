@@ -4,13 +4,13 @@ use super::{
 };
 
 use crate::ai::predict::prompt_suggestions::ACCEPT_PROMPT_SUGGESTION_KEYBINDING;
-use crate::server::event_metadata::ToggleBlockFilterSource;
+use crate::terminal::metadata::ToggleBlockFilterSource;
 
-use crate::server::event_metadata::InteractionSource;
 use crate::settings_view::flags;
 use crate::terminal::input::{
     SET_INPUT_MODE_AGENT_ACTION_NAME, SET_INPUT_MODE_TERMINAL_ACTION_NAME,
 };
+use crate::terminal::metadata::InteractionSource;
 use crate::terminal::ssh::error::{SshErrorBlockAction, SSH_ERROR_BLOCK_VISIBLE_KEY};
 use crate::terminal::view::passive_suggestions::PromptSuggestionResolution;
 use crate::terminal::view::{

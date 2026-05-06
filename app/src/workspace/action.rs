@@ -4,14 +4,14 @@ use std::sync::Arc;
 
 use warp_util::path::LineAndColumnArg;
 
-use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::agent::AIAgentExchangeId;
+use crate::ai::agent::conversation::AIConversationId;
+use crate::ai::blocklist::metadata::AgentModeEntrypoint;
 use crate::ai::document::ai_document_model::{AIDocumentId, AIDocumentVersion};
 use crate::palette::PaletteMode;
 use crate::prompt::editor_modal::OpenSource as PromptEditorOpenSource;
 use crate::search;
 use crate::server::ids::SyncId;
-use crate::server::event_metadata::{AddTabWithShellSource, AgentModeEntrypoint, PaletteSource};
 use crate::settings_view::{SettingsAction as SettingsTabAction, SettingsSection};
 use crate::tab::NewSessionMenuItem;
 use crate::tab_configs::TabConfig;
@@ -21,6 +21,7 @@ use crate::themes::theme::AnsiColorIdentifier;
 use crate::themes::theme_chooser::ThemeChooserMode;
 use crate::workflows::{WorkflowSelectionSource, WorkflowSource, WorkflowType};
 use crate::workspace::PaneViewLocator;
+use crate::workspace::metadata::{AddTabWithShellSource, PaletteSource};
 
 use ui_components::lightbox;
 use warpui::accessibility::AccessibilityVerbosity;

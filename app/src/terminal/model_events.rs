@@ -1,4 +1,4 @@
-use crate::server::event_metadata::ImageProtocol;
+use crate::terminal::metadata::ImageProtocol;
 use crate::terminal::model::session::Sessions;
 
 use crate::terminal::event::{
