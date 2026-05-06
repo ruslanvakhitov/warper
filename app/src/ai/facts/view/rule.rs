@@ -3,7 +3,6 @@ use crate::editor::{
     TextOptions,
 };
 use crate::search_bar::SearchBar;
-use crate::server::ids::SyncId;
 use crate::settings::{AISettings, AISettingsChangedEvent};
 use crate::ui_components::icons::Icon;
 use crate::view_components::{
@@ -21,6 +20,7 @@ use warp_core::ui::{
     appearance::{Appearance, AppearanceEvent},
     theme::color::internal_colors,
 };
+use warp_server_client::ids::SyncId;
 use warpui::elements::Shrinkable;
 use warpui::platform::FilePickerConfiguration;
 use warpui::ui_components::button::ButtonVariant;

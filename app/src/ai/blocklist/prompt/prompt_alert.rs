@@ -1,5 +1,6 @@
 use markdown_parser::{FormattedText, FormattedTextFragment, FormattedTextLine};
 use warp_core::ui::appearance::Appearance;
+use warp_server_client::ids::ServerId;
 use warpui::{
     elements::{
         ConstrainedBox, Container, CrossAxisAlignment, Flex, FormattedTextElement,
@@ -8,10 +9,7 @@ use warpui::{
     AppContext, Element, Entity, SingletonEntity, TypedActionView, View, ViewContext,
 };
 
-use crate::{
-    ai::blocklist::error_color, network::NetworkStatus, server::ids::ServerId,
-    ui_components::icons::Icon,
-};
+use crate::{ai::blocklist::error_color, network::NetworkStatus, ui_components::icons::Icon};
 
 const NO_CONNECTION_PRIMARY_TEXT: &str = "No internet connection";
 

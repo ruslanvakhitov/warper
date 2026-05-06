@@ -177,8 +177,7 @@ where
 
     for error in result.errors.iter() {
         match error {
-            DiffApplicationError::UnmatchedDiffs { match_failures, .. } => {
-                            }
+            DiffApplicationError::UnmatchedDiffs { match_failures, .. } => {}
             DiffApplicationError::MissingFile { .. }
             | DiffApplicationError::ReadFailed { .. }
             | DiffApplicationError::AlreadyExists { .. }
@@ -192,8 +191,7 @@ where
         }
     }
 
-    if invalid_file_count > 0 {
-            }
+    if invalid_file_count > 0 {}
 
     // Send telemetry for any warnings, which don't necessarily prevent diff application.
 
@@ -205,8 +203,7 @@ where
         })
         .sum();
 
-    if total_missing_line_numbers > 0 {
-            }
+    if total_missing_line_numbers > 0 {}
 
     match Vec1::try_from_vec(result.errors) {
         Ok(errors) => Err(errors),

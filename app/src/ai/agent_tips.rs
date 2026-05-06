@@ -1,6 +1,5 @@
 use crate::ai::persisted_workspace::PersistedWorkspace;
 use crate::palette::PaletteMode;
-use crate::workspace::metadata::PaletteSource;
 use crate::settings::AISettings;
 use crate::terminal::input::SET_INPUT_MODE_AGENT_ACTION_NAME;
 use crate::terminal::view::init::{
@@ -8,6 +7,7 @@ use crate::terminal::view::init::{
     TOGGLE_AUTOEXECUTE_MODE_KEYBINDING,
 };
 use crate::util::bindings::trigger_to_keystroke;
+use crate::workspace::metadata::PaletteSource;
 use crate::workspace::view::{
     TOGGLE_COMMAND_PALETTE_KEYBINDING_NAME, TOGGLE_RIGHT_PANEL_BINDING_NAME,
 };

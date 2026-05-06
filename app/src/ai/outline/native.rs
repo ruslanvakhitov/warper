@@ -19,7 +19,8 @@ use warpui::{Entity, ModelContext, ModelHandle, SingletonEntity};
 
 use crate::{
     ai::persisted_workspace::all_working_directories,
-    safe_info, safe_warn, settings::{
+    safe_info, safe_warn,
+    settings::{
         AISettings, AISettingsChangedEvent, CodeSettings, CodeSettingsChangedEvent, InputSettings,
         InputSettingsChangedEvent,
     },
@@ -223,7 +224,6 @@ impl RepoOutlines {
                     if Self::should_build_outlines(ctx) {
                         match res {
                             Ok((canonicalized_path, outline, parse_duration)) => {
-
                                 safe_info!(
                                     safe: ("Successfully constructed symbols outline for repo."),
                                     full: (
@@ -272,7 +272,7 @@ impl RepoOutlines {
                                     )
                                 );
 
-                                                                if let Some(outline_state) = me.outlines.get_mut(&root_path_clone) {
+                                if let Some(outline_state) = me.outlines.get_mut(&root_path_clone) {
                                     outline_state.status = OutlineStatus::Failed;
                                 }
                             }

@@ -1,9 +1,9 @@
 use crate::{
     ai::agent::SuggestedAgentModeWorkflow,
-    server::ids::SyncId,
     workflows::{WorkflowSelectionSource, WorkflowSource, WorkflowType},
 };
 use std::{collections::HashMap, default::Default, sync::Arc};
+use warp_server_client::ids::SyncId;
 use warpui::{
     elements::Empty, keymap::FixedBinding, AppContext, Element, Entity, TypedActionView, View,
     ViewContext,

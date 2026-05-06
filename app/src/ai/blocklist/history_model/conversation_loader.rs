@@ -8,7 +8,9 @@ use std::future::Future;
 use warpui::AppContext;
 
 use crate::ai::agent::api::ServerConversationToken;
-use crate::ai::agent::conversation::{AIConversation, AIConversationId, LocalAIConversationMetadata};
+use crate::ai::agent::conversation::{
+    AIConversation, AIConversationId, LocalAIConversationMetadata,
+};
 use crate::ai::agent::task::Task;
 use crate::persistence::model::{AgentConversation, AgentConversationData};
 use crate::terminal::model::block::SerializedBlock;

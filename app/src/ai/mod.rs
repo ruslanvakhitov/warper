@@ -3,20 +3,17 @@
 //!
 pub(crate) mod active_agent_views_model;
 pub(crate) mod agent;
-pub(crate) mod agent_conversations_model;
 pub(crate) mod agent_tips;
 pub(crate) mod ai_document_view;
 pub(crate) mod ambient_agents;
 pub(crate) mod api_errors;
 pub mod artifacts;
 pub(crate) mod ask;
-pub(crate) mod attachment_utils;
 #[cfg(not(target_family = "wasm"))]
 pub mod aws_credentials;
 pub(crate) mod block_context;
 pub(crate) mod blocklist;
 pub mod control_code_parser;
-pub(crate) mod conversation_details_panel;
 pub(crate) mod conversation_navigation;
 pub(crate) mod conversation_status_ui;
 pub(crate) mod conversation_utils;
@@ -55,5 +52,4 @@ pub fn init(app: &mut AppContext) {
     blocklist::suggested_agent_mode_workflow_modal::init(app);
     blocklist::suggested_rule_modal::init(app);
     ai_document_view::init(app);
-    conversation_details_panel::init(app);
 }

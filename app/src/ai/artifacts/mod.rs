@@ -1,18 +1,8 @@
 use std::path::Path;
 
-use anyhow::anyhow;
-use ui_components::lightbox::{LightboxImage, LightboxImageSource};
-use warp_core::report_error;
 use warp_multi_agent_api as api;
-use warpui::SingletonEntity;
 
 use crate::notebooks::NotebookId;
-use crate::view_components::DismissibleToast;
-use crate::workspace::ToastStack;
-use crate::workspace::WorkspaceAction;
-
-pub mod buttons;
-pub use buttons::{ArtifactButtonsRow, ArtifactButtonsRowEvent};
 
 pub(crate) fn sanitized_basename(path_or_filename: &str) -> Option<String> {
     let file_name = Path::new(path_or_filename).file_name()?.to_str()?;
@@ -217,92 +207,6 @@ pub fn parse_github_pr_url(url: &str) -> Option<(String, u32)> {
         }
         Some((w[0].to_string(), w[2].parse().ok()?))
     })
-}
-
-/// Deserialize artifacts, skipping any that fail to parse.
-/// This ensures task loading doesn't fail entirely if an artifact has an unknown format.
-pub fn deserialize_artifacts<'de, D>(deserializer: D) -> Result<Vec<Artifact>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let values: Vec<serde_json::Value> = serde::Deserialize::deserialize(deserializer)?;
-    Ok(values
-        .into_iter()
-        .filter_map(|value| match serde_json::from_value::<Artifact>(value) {
-            Ok(artifact) => Some(artifact),
-            Err(e) => {
-                report_error!(anyhow!("Failed to deserialize artifact, skipping: {}", e));
-                None
-            }
-        })
-        .collect())
-}
-
-pub fn file_button_label(filename: &str, filepath: &str) -> String {
-    if let Some(filename) = non_empty_trimmed(filename) {
-        return filename.to_string();
-    }
-    if let Some(filepath_basename) = sanitized_basename(filepath)
-        .as_deref()
-        .and_then(non_empty_trimmed)
-    {
-        return filepath_basename.to_string();
-    }
-    "File".to_string()
-}
-
-pub fn open_screenshot_lightbox<V: warpui::View>(
-    artifact_uids: &[String],
-    ctx: &mut warpui::ViewContext<V>,
-) {
-    let loading_images: Vec<LightboxImage> = artifact_uids
-        .iter()
-        .map(|_| LightboxImage {
-            source: LightboxImageSource::Loading,
-            description: None,
-        })
-        .collect();
-    ctx.dispatch_typed_action(&WorkspaceAction::OpenLightbox {
-        images: loading_images,
-        initial_index: 0,
-    });
-    show_file_download_toast(
-        "hosted-artifact",
-        DismissibleToast::error(
-            "Hosted artifact downloads are unavailable in local-only Warper.".to_string(),
-        ),
-        ctx,
-    );
-}
-
-pub fn download_file_artifact<V: warpui::View>(
-    artifact_uid: &str,
-    ctx: &mut warpui::ViewContext<V>,
-) {
-    show_file_download_toast(
-        artifact_uid,
-        DismissibleToast::error(
-            "Hosted artifact downloads are unavailable in local-only Warper.".to_string(),
-        ),
-        ctx,
-    );
-}
-
-fn show_file_download_toast<V: warpui::View>(
-    artifact_uid: &str,
-    toast: DismissibleToast<WorkspaceAction>,
-    ctx: &mut warpui::ViewContext<V>,
-) {
-    let toast_id = format!("artifact_download:{artifact_uid}");
-    let window_id = ctx.window_id();
-    ToastStack::handle(ctx).update(ctx, move |toast_stack, ctx| {
-        toast_stack.add_ephemeral_toast(toast.with_object_id(toast_id), window_id, ctx);
-    });
-}
-
-fn non_empty_trimmed(value: &str) -> Option<&str> {
-    let trimmed = value.trim();
-    (!trimmed.is_empty()).then_some(trimmed)
 }
 
 #[cfg(test)]

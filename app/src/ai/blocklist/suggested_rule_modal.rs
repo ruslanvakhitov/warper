@@ -4,12 +4,12 @@ use crate::editor::{
     PropagateAndNoOpNavigationKeys, SingleLineEditorOptions, TextOptions,
 };
 use crate::modal::{Modal, ModalEvent};
-use crate::server::ids::SyncId;
 use crate::view_components::action_button::{ActionButton, PrimaryTheme};
 use crate::{ai::facts::AIMemory, ui_components::blended_colors};
 use pathfinder_geometry::vector::vec2f;
 use warp_core::ui::appearance::Appearance;
 use warp_editor::editor::NavigationKey;
+use warp_server_client::ids::SyncId;
 use warpui::elements::{
     ChildAnchor, OffsetPositioning, PositionedElementAnchor, PositionedElementOffsetBounds,
 };
@@ -329,8 +329,7 @@ impl SuggestedRuleView {
             }
             EditorEvent::Edited(_) => {
                 // todo this seems noisy?
-                if let Some(SuggestedRuleAndId { rule, .. }) = &self.rule_and_id {
-                                    }
+                if let Some(SuggestedRuleAndId { rule, .. }) = &self.rule_and_id {}
             }
             EditorEvent::Navigate(NavigationKey::Tab)
             | EditorEvent::Navigate(NavigationKey::ShiftTab) => {

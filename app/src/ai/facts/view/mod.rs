@@ -1,8 +1,8 @@
 use crate::pane_group::focus_state::PaneFocusHandle;
 use crate::pane_group::{pane::view, BackingView, PaneConfiguration, PaneEvent};
-use crate::server::ids::SyncId;
 use std::path::PathBuf;
 use warp_core::ui::appearance::Appearance;
+use warp_server_client::ids::SyncId;
 use warpui::{
     elements::{
         Align, ClippedScrollStateHandle, ClippedScrollable, ConstrainedBox, Container, Flex,

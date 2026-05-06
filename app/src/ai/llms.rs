@@ -1,21 +1,16 @@
-use parking_lot::FairMutex;
 use serde::{de, Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
-    sync::{Arc, OnceLock},
+    sync::OnceLock,
     time::Duration,
 };
-use warp_core::user_preferences::GetUserPreferences;
 use warp_core::{
     channel::{Channel, ChannelState},
     ui::icons::Icon,
 };
 use warpui::{AppContext, Entity, EntityId, ModelContext, SingletonEntity};
 
-use crate::{
-    network::{NetworkStatus, NetworkStatusEvent, NetworkStatusKind},
-    workspaces::user_workspaces::{UserWorkspaces, UserWorkspacesEvent},
-};
+use crate::workspaces::user_workspaces::UserWorkspaces;
 
 use super::execution_profiles::profiles::AIExecutionProfilesModel;
 
@@ -26,6 +21,14 @@ pub use ai::LLMId;
 /// Returns `true` if BYO API key is enabled and a key exists for the provider.
 pub fn is_using_api_key_for_provider(provider: &LLMProvider, app: &AppContext) -> bool {
     use ai::api_keys::ApiKeyManager;
+
+    if ChannelState::channel() == Channel::Oss && matches!(provider, LLMProvider::OpenRouter) {
+        return ApiKeyManager::as_ref(app)
+            .keys()
+            .open_router
+            .as_ref()
+            .is_some_and(|key| !key.trim().is_empty());
+    }
 
     let api_keys = UserWorkspaces::as_ref(app)
         .is_byo_api_key_enabled()
@@ -39,12 +42,6 @@ pub fn is_using_api_key_for_provider(provider: &LLMProvider, app: &AppContext) -
         _ => false,
     }
 }
-
-/// Key for cached LLM metadata in user preferences.
-///
-/// Note: this key used to store a single [`AvailableLLMs`]
-/// but was migrated to store a full [`ModelsByFeature`].
-pub const MODELS_BY_FEATURE_CACHE_KEY: &str = "AvailableLLMs";
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct LLMUsageMetadata {
@@ -729,22 +726,10 @@ impl Default for ModelsByFeature {
     }
 }
 
-enum UpdatePopupVisibilityState {
-    WaitingToBeShown,
-    Visible(EntityId),
-    Hidden,
-}
-
-struct AvailableLLMsUpdate {
-    new_choices: Vec<LLMInfo>,
-    popup_visibility_state: Arc<FairMutex<UpdatePopupVisibilityState>>,
-}
-
 /// Singleton model holding user/workspace LLM preferences, including the set of LLMs available for
 /// use as well as the user's preferred LLM for Agent Mode.
 pub struct LLMPreferences {
     models_by_feature: ModelsByFeature,
-    last_update: Option<AvailableLLMsUpdate>,
     // Stores temporary model overrides for a given terminal view.
     // NOTE: We only store an override if the model selected by the user is different
     // from the base LLM for the active profile. This means that if the user selects the
@@ -757,28 +742,13 @@ impl LLMPreferences {
         let mut models_by_feature = if ChannelState::channel() == Channel::Oss {
             openrouter_models_by_feature()
         } else {
-            get_cached_models(ctx).unwrap_or_default()
+            ModelsByFeature::default()
         };
 
         if ChannelState::channel() == Channel::Oss {
             let configured_model = ApiKeyManager::as_ref(ctx).keys().open_router_model.clone();
             models_by_feature.ensure_openrouter_custom_model(configured_model.as_deref());
         }
-
-        ctx.subscribe_to_model(&NetworkStatus::handle(ctx), |me, event, ctx| {
-            if let NetworkStatusEvent::NetworkStatusChanged {
-                new_status: NetworkStatusKind::Online,
-            } = event
-            {
-                me.refresh_authed_models(ctx);
-            }
-        });
-
-        ctx.subscribe_to_model(&UserWorkspaces::handle(ctx), |me, event, ctx| {
-            if let UserWorkspacesEvent::LocalPoliciesChanged = event {
-                me.refresh_authed_models(ctx);
-            }
-        });
 
         ctx.subscribe_to_model(&ApiKeyManager::handle(ctx), |me, event, ctx| {
             if ChannelState::channel() != Channel::Oss
@@ -803,20 +773,12 @@ impl LLMPreferences {
 
         let me = Self {
             models_by_feature,
-            last_update: None,
             base_llm_for_terminal_view,
         };
 
         if ChannelState::channel() == Channel::Oss {
             me.refresh_openrouter_models(ctx);
         }
-
-        // In agent mode eval builds, eagerly kick off a fetch of the model list from the server
-        // so that it's available by the time test steps like `set_preferred_agent_mode_llm` run.
-        // In production, this is handled reactively (on auth complete, network online, etc.)
-        // to avoid duplicate requests at startup.
-        #[cfg(feature = "agent_mode_evals")]
-        me.refresh_available_models(ctx);
 
         me
     }
@@ -1095,71 +1057,6 @@ impl LLMPreferences {
         }
     }
 
-    pub fn new_choices_since_last_update(&self) -> Option<Vec<LLMInfo>> {
-        self.last_update.as_ref().map(|update| {
-            // We don't want to display new choices if they are warp branded.
-            let filter_choices: Vec<LLMInfo> = update
-                .new_choices
-                .clone()
-                .into_iter()
-                .filter(|choice| !choice.display_name.starts_with("lite"))
-                .collect();
-
-            filter_choices
-        })
-    }
-
-    pub fn should_show_new_choices_popup(&self, view_id: EntityId) -> bool {
-        self.last_update.as_ref().is_some_and(|update| {
-            let popup_state = &*update.popup_visibility_state.lock();
-            matches!(popup_state, UpdatePopupVisibilityState::WaitingToBeShown)
-                || matches!(
-                popup_state,
-                UpdatePopupVisibilityState::Visible(id) if *id == view_id)
-        })
-    }
-
-    pub fn mark_new_choices_popup_as_shown(&self, view_id: EntityId) {
-        if let Some(update) = self.last_update.as_ref() {
-            if matches!(
-                &*update.popup_visibility_state.lock(),
-                UpdatePopupVisibilityState::WaitingToBeShown
-            ) {
-                *update.popup_visibility_state.lock() =
-                    UpdatePopupVisibilityState::Visible(view_id);
-            }
-        }
-    }
-
-    pub fn hide_llm_popup(&self, view_id: EntityId) {
-        if !self.should_show_new_choices_popup(view_id) {
-            return;
-        }
-        let Some(last_update) = self.last_update.as_ref() else {
-            return;
-        };
-        *last_update.popup_visibility_state.lock() = UpdatePopupVisibilityState::Hidden;
-    }
-
-    /// Fetches the latest set of models from the server for the currently logged in user, and updates the model.
-    pub fn refresh_authed_models(&self, _ctx: &mut ModelContext<Self>) {
-        // Hosted Warp model metadata is amputated in local-only Warper. BYOK/OpenRouter
-        // model selection remains local and is handled by the API-key settings path.
-    }
-
-    /// No auth required (i.e. to populate the pre-login onboarding picker).
-    fn refresh_public_models(&self, _ctx: &mut ModelContext<Self>) {
-        // Public hosted model metadata is unavailable in local-only Warper.
-    }
-
-    pub fn refresh_available_models(&self, ctx: &mut ModelContext<Self>) {
-        if ChannelState::channel() == Channel::Oss {
-            return;
-        }
-
-        let _ = ctx;
-    }
-
     fn refresh_openrouter_models(&self, ctx: &mut ModelContext<Self>) {
         if ChannelState::channel() != Channel::Oss {
             return;
@@ -1178,101 +1075,6 @@ impl LLMPreferences {
                 }
             },
         );
-    }
-
-    pub fn update_feature_model_choices(
-        &mut self,
-        choices_result: Result<ModelsByFeature, anyhow::Error>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        if let Ok(choices) = choices_result {
-            self.on_server_update(choices, ctx);
-        }
-    }
-
-    fn on_server_update(&mut self, update: ModelsByFeature, ctx: &mut ModelContext<Self>) {
-        let has_existing_persisted_config = get_cached_models(ctx).is_some();
-
-        let old = std::mem::replace(&mut self.models_by_feature, update);
-
-        match serde_json::to_string(&self.models_by_feature) {
-            Ok(serialized_update) => {
-                if let Err(e) = ctx
-                    .private_user_preferences()
-                    .write_value(MODELS_BY_FEATURE_CACHE_KEY, serialized_update)
-                {
-                    log::error!("Failed to cache LLMs: {e}");
-                }
-            }
-            Err(e) => {
-                log::error!("Failed to serialize LLMs for cache: {e}");
-            }
-        }
-
-        // Clear any model selections where the model is no longer supported.
-        let profiles_model = AIExecutionProfilesModel::handle(ctx);
-        profiles_model.update(ctx, |profiles, ctx| {
-            for profile_id in profiles.get_all_profile_ids() {
-                if let Some(profile) = profiles.get_profile_by_id(profile_id, ctx) {
-                    if let Some(preferred_llm_id) = &profile.data().base_model {
-                        if self
-                            .models_by_feature
-                            .agent_mode
-                            .info_for_id(preferred_llm_id)
-                            .is_none()
-                        {
-                            profiles.set_base_model(profile_id, None, ctx);
-                        }
-                    }
-                    if let Some(preferred_llm_id) = &profile.data().coding_model {
-                        if self
-                            .models_by_feature
-                            .coding
-                            .info_for_id(preferred_llm_id)
-                            .is_none()
-                        {
-                            profiles.set_coding_model(profile_id, None, ctx);
-                        }
-                    }
-                    if let Some(preferred_llm_id) = &profile.data().cli_agent_model {
-                        if self
-                            .get_cli_agent_available()
-                            .info_for_id(preferred_llm_id)
-                            .is_none()
-                        {
-                            profiles.set_cli_agent_model(profile_id, None, ctx);
-                        }
-                    }
-                    if let Some(preferred_llm_id) = &profile.data().computer_use_model {
-                        if self
-                            .get_computer_use_available()
-                            .info_for_id(preferred_llm_id)
-                            .is_none()
-                        {
-                            profiles.set_computer_use_model(profile_id, None, ctx);
-                        }
-                    }
-                }
-            }
-        });
-
-        let new_choices =
-            get_new_agent_mode_choices(&old.agent_mode, &self.models_by_feature.agent_mode);
-        if !new_choices.is_empty() {
-            self.last_update = Some(AvailableLLMsUpdate {
-                new_choices,
-                // We shouldn't show the update for the initial LLM config creation.
-                popup_visibility_state: Arc::new(FairMutex::new(
-                    if has_existing_persisted_config {
-                        UpdatePopupVisibilityState::WaitingToBeShown
-                    } else {
-                        UpdatePopupVisibilityState::Hidden
-                    },
-                )),
-            });
-        }
-
-        ctx.emit(LLMPreferencesEvent::UpdatedAvailableLLMs);
     }
 
     pub fn vision_supported(&self, app: &AppContext, terminal_view_id: Option<EntityId>) -> bool {
@@ -1320,48 +1122,6 @@ impl Entity for LLMPreferences {
 }
 
 impl SingletonEntity for LLMPreferences {}
-
-fn get_new_agent_mode_choices(
-    old_config: &AvailableLLMs,
-    new_config: &AvailableLLMs,
-) -> Vec<LLMInfo> {
-    let old_ids: HashSet<_> = old_config.choices.iter().map(|info| &info.id).collect();
-    new_config
-        .choices
-        .iter()
-        .filter(|info| !old_ids.contains(&info.id))
-        .cloned()
-        .collect()
-}
-
-/// Gets the last cached LLM metadata.
-fn get_cached_models(app: &mut AppContext) -> Option<ModelsByFeature> {
-    let value = app
-        .private_user_preferences()
-        .read_value(MODELS_BY_FEATURE_CACHE_KEY)
-        .ok()
-        .flatten()?;
-
-    // Try to deserialize to the [`ModelsByFeature`] type.
-    match serde_json::from_str::<ModelsByFeature>(value.as_str()) {
-        Ok(config) => Some(config),
-        Err(e1) => {
-            // If that fails, try to deserialize directly to [`AvailableLLMs`].
-            // Before we had model choice by feature, all available LLMs were solely
-            // for Agent Mode.
-            match serde_json::from_str::<AvailableLLMs>(value.as_str()) {
-                Ok(config) => Some(ModelsByFeature {
-                    agent_mode: config,
-                    ..Default::default()
-                }),
-                Err(e2) => {
-                    log::warn!("Failed to deserialize cached LLMs: {e1}\n{e2}");
-                    None
-                }
-            }
-        }
-    }
-}
 
 #[cfg(test)]
 #[path = "llms_tests.rs"]

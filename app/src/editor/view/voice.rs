@@ -418,7 +418,6 @@ impl EditorView {
                 wav_base64,
                 session_duration_ms,
             } => {
-
                 // Start transcription
                 let voice_transcriber = VoiceTranscriber::handle(ctx).as_ref(ctx);
                 if let Some(transcriber) = voice_transcriber.transcriber() {
@@ -445,7 +444,6 @@ impl EditorView {
                 session_duration_ms,
             } => {
                 log::info!("Aborted listening for voice input");
-
 
                 self.set_voice_input_state(VoiceInputState::Stopped, ctx);
             }

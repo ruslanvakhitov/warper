@@ -18,7 +18,7 @@ use warp_core::features::FeatureFlag;
 use warp_logging::log_file_path;
 use warpui::{platform::TerminationMode, AppContext, ModelSpawner};
 
-use crate::{ai::ambient_agents::AgentConfigSnapshot};
+use crate::ai::ambient_agents::AgentConfigSnapshot;
 use driver::AgentDriverError;
 
 use crate::ai::skills::{resolve_skill_spec, ResolveSkillError, ResolvedSkill};

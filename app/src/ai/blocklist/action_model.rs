@@ -31,8 +31,8 @@ pub(crate) use execute::FileReadResult;
 pub use execute::{
     read_local_file_context, NewConversationDecision, PromptSuggestionExecutor,
     ReadFileContextResult, RequestFileEditsExecutor, RequestFileEditsFormatKind,
-    ShellCommandExecutor, ShellCommandExecutorEvent,
-    StartAgentExecutor, StartAgentExecutorEvent, StartAgentRequest,
+    ShellCommandExecutor, ShellCommandExecutorEvent, StartAgentExecutor, StartAgentExecutorEvent,
+    StartAgentRequest,
 };
 
 use futures::future::{join_all, BoxFuture};
@@ -1043,8 +1043,7 @@ impl BlocklistAIActionModel {
         if matches!(
             pending_action.action,
             AIAgentActionType::RequestComputerUse(_)
-        ) {
-                    }
+        ) {}
 
         let result = Arc::new(AIAgentActionResult {
             id: pending_action.id,

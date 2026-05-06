@@ -21,7 +21,7 @@ use crate::settings::{
     AwsBedrockCredentialsEnabled, CodeSettings, CodebaseContextEnabled, FileBasedMcpEnabled,
     GitOperationsAutogenEnabled, IncludeAgentCommandsInHistory, IntelligentAutosuggestionsEnabled,
     MemoryEnabled, NLDInTerminalEnabled, NaturalLanguageAutosuggestionsEnabled,
-    OrchestrationEnabled, RuleSuggestionsEnabled, ShouldRenderCLIAgentToolbar,
+    RuleSuggestionsEnabled, ShouldRenderCLIAgentToolbar,
     ShouldRenderUseAgentToolbarForUserCommands, ShowAgentTips, ShowConversationHistory,
     ShowHintText, ThinkingDisplayMode, VoiceInputEnabled,
 };
@@ -1994,7 +1994,6 @@ pub enum AISettingsPageAction {
     ToggleIncludeAgentCommandsInHistory,
     #[cfg(feature = "local_fs")]
     SetConversationLayout(crate::util::file::external_editor::settings::OpenConversationPreference),
-    ToggleOrchestration,
     ToggleShowConversationHistory,
     ToggleAutoToggleRichInput,
     ToggleAutoOpenRichInputOnCLIAgentStart,
@@ -2492,12 +2491,6 @@ impl TypedActionView for AISettingsPageView {
                             .set_value(*layout, ctx));
                     },
                 );
-                ctx.notify();
-            }
-            AISettingsPageAction::ToggleOrchestration => {
-                AISettings::handle(ctx).update(ctx, |settings, ctx| {
-                    report_if_error!(settings.orchestration_enabled.toggle_and_save_value(ctx));
-                });
                 ctx.notify();
             }
             AISettingsPageAction::ToggleShowConversationHistory => {
@@ -4942,7 +4935,7 @@ impl ApiKeysWidget {
         // A helper macro to create and configure local provider setting editors. This avoids a lot
         // of code duplication and ensures consistency between the editors.
         macro_rules! create_provider_setting_editor {
-            ($editor:ident, $value:ident, $set_func:ident, $placeholder:literal, $is_password:literal) => {
+            ($editor:ident, $value:ident, $set_func:ident, $placeholder:literal, $is_password:literal, $allow_without_byo:expr) => {
                 let $editor = ctx.add_typed_action_view(move |ctx| {
                     let appearance = Appearance::handle(ctx).as_ref(ctx);
                     let options = SingleLineEditorOptions {
@@ -4966,9 +4959,10 @@ impl ApiKeysWidget {
                     }
                     editor
                 });
+                let allow_without_byo = $allow_without_byo;
                 AISettingsPageView::update_editor_interaction_state(
                     $editor.clone(),
-                    is_any_ai_enabled && is_byo_enabled,
+                    is_any_ai_enabled && (is_byo_enabled || allow_without_byo),
                     ctx,
                 );
                 ctx.subscribe_to_view(&$editor, |_, $editor, event, ctx| {
@@ -4986,11 +4980,10 @@ impl ApiKeysWidget {
                         let is_any_ai_enabled =
                             AISettings::handle(ctx).as_ref(ctx).is_any_ai_enabled(ctx);
                         let is_byo_enabled = workspace.as_ref(ctx).is_byo_api_key_enabled();
-                        let is_enabled = is_any_ai_enabled && is_byo_enabled;
+                        let is_enabled = is_any_ai_enabled && (is_byo_enabled || allow_without_byo);
                         let has_key = !editor_clone.as_ref(ctx).is_empty(ctx);
 
-                        // If BYO is disabled, clear the API key from the editor and storage
-                        if !is_byo_enabled && has_key {
+                        if !is_byo_enabled && !allow_without_byo && has_key {
                             editor_clone.update(ctx, |editor, ctx| {
                                 editor.set_buffer_text("", ctx);
                             });
@@ -5015,35 +5008,40 @@ impl ApiKeysWidget {
             openai_key,
             set_openai_key,
             "sk-...",
-            true
+            true,
+            false
         );
         create_provider_setting_editor!(
             open_router_api_key_editor,
             open_router_key,
             set_open_router_key,
             "sk-or-v1-...",
-            true
+            true,
+            ChannelState::channel() == Channel::Oss
         );
         create_provider_setting_editor!(
             open_router_model_editor,
             open_router_model,
             set_open_router_model,
             "openrouter/auto",
-            false
+            false,
+            ChannelState::channel() == Channel::Oss
         );
         create_provider_setting_editor!(
             anthropic_api_key_editor,
             anthropic_key,
             set_anthropic_key,
             "sk-ant-...",
-            true
+            true,
+            false
         );
         create_provider_setting_editor!(
             google_api_key_editor,
             google_key,
             set_google_key,
             "google-api-key",
-            true
+            true,
+            false
         );
 
         Self {

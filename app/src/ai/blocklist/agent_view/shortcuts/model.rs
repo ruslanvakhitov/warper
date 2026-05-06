@@ -52,7 +52,7 @@ impl AgentShortcutViewModel {
         ctx.emit(AgentShortcutEvent::ToggledViewVisibility {
             is_visible: is_open,
         });
-            }
+    }
 }
 
 impl Entity for AgentShortcutViewModel {

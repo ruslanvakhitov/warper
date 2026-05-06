@@ -133,7 +133,7 @@ impl ShellCommandExecutor {
                     ctx,
                 );
                 if let CommandExecutionPermission::Allowed(reason) = autoexecution_permission {
-                                    } else if let CommandExecutionPermission::Denied(reason) = autoexecution_permission
+                } else if let CommandExecutionPermission::Denied(reason) = autoexecution_permission
                 {
                     if AppExecutionMode::as_ref(ctx).is_autonomous() {
                         log::warn!(
@@ -165,8 +165,7 @@ impl ShellCommandExecutor {
                         _ => false,
                     };
 
-                    if should_autoexecute {
-                                            }
+                    if should_autoexecute {}
 
                     should_autoexecute
                 }

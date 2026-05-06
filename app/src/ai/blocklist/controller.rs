@@ -65,7 +65,6 @@ use pending_response_streams::PendingResponseStreams;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use warp_core::assertions::safe_assert;
-use warp_core::channel::{Channel, ChannelState};
 use warp_multi_agent_api::{message, Task, ToolType};
 use warpui::r#async::SpawnedFutureHandle;
 
@@ -150,11 +149,7 @@ pub enum BlocklistAIControllerEvent {
     },
 
     /// Emitted when the export-to-file slash command is executed.
-    ExportConversationToFile {
-        filename: Option<String>,
-    },
-
-    FreeTierLimitCheckTriggered,
+    ExportConversationToFile { filename: Option<String> },
 }
 
 #[derive(Debug)]
@@ -272,8 +267,6 @@ pub struct BlocklistAIController {
 
     /// The ID of the terminal view this controller is associated with.
     terminal_view_id: EntityId,
-
-    should_refresh_available_llms_on_stream_finish: bool,
 
     /// Local agent run ID attached to this controller. This is a property of the controller, and not an individual
     /// conversation, because the local agent driver owns the entire Warp window working on a run, and any
@@ -503,7 +496,6 @@ impl BlocklistAIController {
             terminal_model,
             in_flight_response_streams: PendingResponseStreams::new(),
             terminal_view_id,
-            should_refresh_available_llms_on_stream_finish: false,
             local_agent_run_id: None,
             attachments_download_dir: None,
             pending_auto_resume_handles: HashMap::new(),
@@ -1800,7 +1792,7 @@ impl BlocklistAIController {
             .in_flight_response_streams
             .has_active_stream_for_conversation(conversation_id, ctx)
         {
-                        const AI_INPUT_NOT_SENT_ERROR_STR: &str =
+            const AI_INPUT_NOT_SENT_ERROR_STR: &str =
                 "Not sending AI input because there is an in-flight request";
             safe_assert!(false, "{}", AI_INPUT_NOT_SENT_ERROR_STR);
             return Err(anyhow::anyhow!(AI_INPUT_NOT_SENT_ERROR_STR));
@@ -1837,11 +1829,7 @@ impl BlocklistAIController {
         request_params.agent_name = agent_name;
 
         let response_stream = ctx.add_model(|ctx| {
-            ResponseStream::new(
-                request_params.clone(),
-                can_attempt_resume_on_error,
-                ctx,
-            )
+            ResponseStream::new(request_params.clone(), can_attempt_resume_on_error, ctx)
         });
         let response_stream_id = response_stream.as_ref(ctx).id().clone();
         let response_stream_clone = response_stream.clone();
@@ -2280,12 +2268,6 @@ impl BlocklistAIController {
                 });
                 ctx.unsubscribe_from_model(response_stream);
 
-                if self.should_refresh_available_llms_on_stream_finish {
-                    self.should_refresh_available_llms_on_stream_finish = false;
-                    LLMPreferences::handle(ctx).update(ctx, |llm_preferences, ctx| {
-                        llm_preferences.refresh_authed_models(ctx);
-                    });
-                }
                 ctx.emit(BlocklistAIControllerEvent::FinishedReceivingOutput {
                     stream_id,
                     conversation_id,
@@ -2472,14 +2454,7 @@ impl BlocklistAIController {
             }
         }
 
-        if finished_event.should_refresh_model_config {
-            LLMPreferences::handle(ctx).update(ctx, |llm_preferences, ctx| {
-                llm_preferences.refresh_authed_models(ctx);
-            });
-            if ChannelState::channel() != Channel::Oss {
-                ctx.emit(BlocklistAIControllerEvent::FreeTierLimitCheckTriggered);
-            }
-        }
+        let _ = finished_event.should_refresh_model_config;
     }
 }
 

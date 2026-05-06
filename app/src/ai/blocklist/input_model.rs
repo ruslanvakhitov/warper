@@ -27,7 +27,8 @@ use warp_completer::completer::CompletionContext;
 
 use crate::{
     input_classifier::InputClassifierModel,
-    report_if_error, settings::{AISettings, AISettingsChangedEvent, InputBoxType, InputSettings},
+    report_if_error,
+    settings::{AISettings, AISettingsChangedEvent, InputBoxType, InputSettings},
     terminal::{
         input::decorations::ParsedTokensSnapshot,
         model::{rich_content::RichContentType, session::SessionId},
@@ -733,7 +734,7 @@ impl BlocklistAIInputModel {
                         let buffer_length = other_buffer_cloned.len();
                         let input_buffer_text_for_event_metadata =
                             should_collect_ai_ugc(ctx).then_some(other_buffer_cloned);
-                                            }
+                    }
                 },
             )
             .abort_handle();

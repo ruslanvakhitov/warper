@@ -1,5 +1,5 @@
 use super::{ActionExecution, AnyActionExecution, ExecuteActionInput, PreprocessActionInput};
-use crate::ai::skills::{SkillManager};
+use crate::ai::skills::SkillManager;
 use ai::agent::action_result::AnyFileContent;
 use warpui::{ModelContext, SingletonEntity};
 
@@ -39,7 +39,7 @@ impl ReadSkillExecutor {
 
         match SkillManager::as_ref(ctx).skill_by_reference(skill_ref) {
             Some(skill) => {
-                                let content = FileContext::new(
+                let content = FileContext::new(
                     skill.path.to_string_lossy().into_owned(),
                     AnyFileContent::StringContent(skill.content.clone()),
                     skill.line_range.clone(),
@@ -47,11 +47,9 @@ impl ReadSkillExecutor {
                 );
                 ActionExecution::Sync(ReadSkillResult::Success { content }.into())
             }
-            None => {
-                                ActionExecution::Sync(
-                    ReadSkillResult::Error(format!("Skill not found: {:?}", skill_ref)).into(),
-                )
-            }
+            None => ActionExecution::Sync(
+                ReadSkillResult::Error(format!("Skill not found: {:?}", skill_ref)).into(),
+            ),
         }
     }
 

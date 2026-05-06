@@ -11,4 +11,3 @@ pub enum SkillOpenOrigin {
     // /open-skill command
     OpenSkillCommand,
 }
-

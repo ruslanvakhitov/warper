@@ -3,8 +3,6 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use warpui::{AppContext, Entity, ModelContext, SingletonEntity};
 
-use crate::workspaces::workspace::WorkspaceUid;
-
 #[derive(Copy, Clone, Debug, Serialize, Deserialize, Eq, PartialEq, Ord, PartialOrd)]
 pub struct ServerTimestamp(DateTime<Utc>);
 
@@ -32,31 +30,6 @@ impl From<DateTime<Utc>> for ServerTimestamp {
     fn from(value: DateTime<Utc>) -> Self {
         Self::new(value)
     }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum BonusGrantType {
-    AmbientOnly,
-    Any,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum BonusGrantScope {
-    User,
-    Workspace(WorkspaceUid),
-}
-
-#[derive(Clone, Debug)]
-pub struct BonusGrant {
-    pub created_at: chrono::DateTime<chrono::Utc>,
-    pub cost_cents: i32,
-    pub expiration: Option<chrono::DateTime<chrono::Utc>>,
-    pub grant_type: BonusGrantType,
-    pub reason: String,
-    pub user_facing_message: Option<String>,
-    pub request_credits_granted: i32,
-    pub request_credits_remaining: i32,
-    pub scope: BonusGrantScope,
 }
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
@@ -119,11 +92,6 @@ pub struct CodebaseContextUsageLimit {
     pub embedding_generation_batch_size: usize,
 }
 
-pub struct RequestUsageInfo {
-    pub request_limit_info: RequestLimitInfo,
-    pub bonus_grants: Vec<BonusGrant>,
-}
-
 pub struct AIRequestUsageModel {
     request_limit_info: RequestLimitInfo,
 }
@@ -135,13 +103,7 @@ impl AIRequestUsageModel {
         }
     }
 
-    pub fn refresh_request_usage_async(&mut self, _ctx: &mut ModelContext<Self>) {}
-
     pub fn has_any_ai_remaining(&self, _app: &AppContext) -> bool {
-        true
-    }
-
-    pub fn has_voice_remaining(&self, _app: &AppContext) -> bool {
         true
     }
 
@@ -167,10 +129,6 @@ impl AIRequestUsageModel {
 
     pub fn codebase_context_limits(&self) -> CodebaseContextUsageLimit {
         self.codebase_context_usage_limit()
-    }
-
-    pub fn hit_codebase_index_limit(&self, _total: usize) -> bool {
-        false
     }
 }
 

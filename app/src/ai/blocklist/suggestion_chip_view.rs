@@ -1,13 +1,10 @@
 use crate::ai::agent::{SuggestedAgentModeWorkflow, SuggestedLoggingId, SuggestedRule};
-use crate::server::ids::SyncId;
+use crate::ui_components::{blended_colors, icons::Icon};
 use crate::view_components::action_button::{ActionButton, ActionButtonTheme, SecondaryTheme};
-use crate::{
-    server::ids::ClientId,
-    ui_components::{blended_colors, icons::Icon},
-};
 use pathfinder_color::ColorU;
 use warp_core::ui::appearance::Appearance;
 use warp_core::ui::theme::Fill;
+use warp_server_client::ids::{ClientId, SyncId};
 use warpui::{
     elements::{Align, ChildView, Container, ParentElement, SavePosition, Stack},
     AppContext, Element, Entity, TypedActionView, View, ViewContext, ViewHandle,
@@ -207,7 +204,6 @@ impl SuggestionChipView {
         workflow: SuggestedAgentModeWorkflow,
         ctx: &mut ViewContext<Self>,
     ) -> Self {
-
         let sync_id = SyncId::ClientId(ClientId::default());
 
         let chip = ctx.add_typed_action_view(|_| {

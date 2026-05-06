@@ -1183,7 +1183,7 @@ impl TypedActionView for CommentListView {
                     }
 
                     // Telemetry: comment list view expanded.
-                                    }
+                }
                 ctx.notify();
             }
             CommentListAction::ToggleOutdatedCollapsed => {
@@ -1267,7 +1267,7 @@ impl TypedActionView for CommentListView {
                 self.close_overflow_menu(ctx);
             }
             CommentListAction::JumpToCommentLocation(comment_id) => {
-                                ctx.emit(CommentListEvent::JumpToCommentLocation(*comment_id));
+                ctx.emit(CommentListEvent::JumpToCommentLocation(*comment_id));
             }
         }
     }

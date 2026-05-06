@@ -6,12 +6,10 @@ use warpui::{Entity, EntityId, ModelContext, ModelHandle};
 #[cfg(not(target_family = "wasm"))]
 use super::get_server_output_id;
 #[cfg(not(target_family = "wasm"))]
-use crate::{
-    ai::{
-        agent::{AIAgentAction, AIAgentActionResultType, CallMCPToolResult},
-        blocklist::{action_model::AIAgentActionType, BlocklistAIPermissions},
-        mcp::TemplatableMCPServerManager,
-    },
+use crate::ai::{
+    agent::{AIAgentAction, AIAgentActionResultType, CallMCPToolResult},
+    blocklist::{action_model::AIAgentActionType, BlocklistAIPermissions},
+    mcp::TemplatableMCPServerManager,
 };
 #[cfg(not(target_family = "wasm"))]
 use itertools::Itertools;
@@ -237,15 +235,15 @@ fn handle_call_tool_result(
                             content_str
                         }
                     });
-                                CallMCPToolResult::Error(error_message)
+                CallMCPToolResult::Error(error_message)
             } else {
-                                CallMCPToolResult::Success { result }
+                CallMCPToolResult::Success { result }
             }
         }
         Err(e) => {
             let error_message = e.to_string();
             log::warn!("Executing MCP tool resulted in error: {e:?}");
-                        CallMCPToolResult::Error(error_message)
+            CallMCPToolResult::Error(error_message)
         }
     };
     AIAgentActionResultType::CallMCPTool(action_result)

@@ -229,7 +229,7 @@ impl SearchCodebaseExecutor {
                 } else {
                     "The codebase doesn't exist".to_string()
                 };
-                            });
+            });
             return ActionExecution::Sync(AIAgentActionResultType::SearchCodebase(SearchCodebaseResult::Failed {
                 message: "The search failed because the codebase is not available. Try another way to locate the relevant files.".to_owned(),
                 reason: SearchCodebaseFailureReason::CodebaseNotIndexed

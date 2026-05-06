@@ -11,46 +11,6 @@ use warp_core::features::FeatureFlag;
 use warp_multi_agent_api as api;
 use warpui::{Entity, ModelContext, SingletonEntity};
 
-#[derive(Clone, Copy, Debug)]
-pub(crate) enum TeamAgentCommunicationKind {
-    Message,
-    LifecycleEvent,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub(crate) enum TeamAgentCommunicationTransport {
-    Local,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub(crate) enum TeamAgentOrchestrationVersion {
-    V1,
-    V2,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub(crate) enum TeamAgentCommunicationFailureReason {
-    InvalidLifecycleEventType,
-    MissingSourceConversation,
-    MissingSourceIdentifier,
-    UnknownAgent,
-    NoTargets,
-    RequestFailed,
-}
-
-#[derive(Debug)]
-pub(crate) struct TeamAgentCommunicationFailedEvent {
-    pub communication_kind: TeamAgentCommunicationKind,
-    pub transport: TeamAgentCommunicationTransport,
-    pub orchestration_version: TeamAgentOrchestrationVersion,
-    pub failure_reason: TeamAgentCommunicationFailureReason,
-    pub source_conversation_id: AIConversationId,
-    pub source_run_id: Option<String>,
-    pub target_count: Option<usize>,
-    pub lifecycle_event_type: Option<String>,
-    pub error_message: Option<String>,
-}
-
 const MAX_RETRY_ATTEMPTS: i32 = 3;
 const MAX_PENDING_LIFECYCLE_EVENTS_PER_TARGET: usize = 200;
 
@@ -229,7 +189,7 @@ impl OrchestrationEventService {
         ctx: &mut ModelContext<Self>,
     ) -> SendEventResult {
         if event_type == LifecycleEventType::Unspecified {
-                        return SendEventResult::Error(
+            return SendEventResult::Error(
                 "Cannot send lifecycle event with unspecified type".to_string(),
             );
         }
@@ -238,13 +198,13 @@ impl OrchestrationEventService {
             let history_model = BlocklistAIHistoryModel::as_ref(ctx);
             let Some(source_conversation) = history_model.conversation(&source_conversation_id)
             else {
-                                return SendEventResult::Error("Source conversation not found".to_string());
+                return SendEventResult::Error("Source conversation not found".to_string());
             };
             let Some(sender_agent_id) = source_conversation
                 .server_conversation_token()
                 .map(|token| token.as_str().to_string())
             else {
-                                return SendEventResult::Error(
+                return SendEventResult::Error(
                     "Source conversation has no server token — cannot send events".to_string(),
                 );
             };
@@ -268,7 +228,7 @@ impl OrchestrationEventService {
                 let Some(conversation_id) =
                     history_model.conversation_id_for_agent_id(&route.target_agent_id)
                 else {
-                                        log::warn!(
+                    log::warn!(
                         "OrchestrationEventService: could not resolve lifecycle target {}",
                         route.target_agent_id
                     );
@@ -565,7 +525,7 @@ impl OrchestrationEventService {
             let history_model = BlocklistAIHistoryModel::as_ref(ctx);
             let Some(source_conversation) = history_model.conversation(&source_conversation_id)
             else {
-                                let error = "Source conversation not found".to_string();
+                let error = "Source conversation not found".to_string();
                 self.log_send_message_error(
                     source_conversation_id,
                     target_agent_ids,
@@ -578,7 +538,7 @@ impl OrchestrationEventService {
                 .server_conversation_token()
                 .map(|token| token.as_str().to_string())
             else {
-                                let error =
+                let error =
                     "Source conversation has no server token — cannot send events".to_string();
                 self.log_send_message_error(
                     source_conversation_id,
@@ -596,7 +556,7 @@ impl OrchestrationEventService {
                         resolved_targets.push((agent_id.clone(), conversation_id));
                     }
                     None => {
-                                                let error = format!("Unknown agent address: {agent_id}");
+                        let error = format!("Unknown agent address: {agent_id}");
                         self.log_send_message_error(
                             source_conversation_id,
                             target_agent_ids,
@@ -611,7 +571,7 @@ impl OrchestrationEventService {
         };
 
         if resolved_targets.is_empty() {
-                        let error = "No target agents provided".to_string();
+            let error = "No target agents provided".to_string();
             self.log_send_message_error(source_conversation_id, target_agent_ids, &subject, &error);
             return SendMessageResult::Error(error);
         }

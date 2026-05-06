@@ -15,9 +15,7 @@ use crate::ai::agent::redaction::redact_secrets;
 use crate::ai::agent::{
     conversation::AIConversationId, AIAgentAction, AIAgentActionType, GrepResult, ServerOutputId,
 };
-use crate::ai::blocklist::{
-    ugc_policy_banner::should_collect_ai_ugc, BlocklistAIPermissions,
-};
+use crate::ai::blocklist::{ugc_policy_banner::should_collect_ai_ugc, BlocklistAIPermissions};
 use crate::ai::paths::{host_native_absolute_path, shell_native_absolute_path};
 use crate::terminal::model::session::ExecuteCommandOptions;
 use crate::PrivacySettings;
@@ -250,8 +248,7 @@ impl GrepExecutor {
                                 ctx,
                             );
                         }
-                        GrepResult::Success { .. } => {
-                                                    }
+                        GrepResult::Success { .. } => {}
                         _ => {}
                     }
                     AIAgentActionResultType::Grep(grep_result)

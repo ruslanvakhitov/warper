@@ -283,7 +283,6 @@ impl RequestFileEditsExecutor {
         let passive_diff = BlocklistAIHistoryModel::as_ref(ctx)
             .is_entirely_passive_conversation(&input.conversation_id);
 
-
         let (tx, rx) = oneshot::channel();
         let files = file_edits.clone();
         let id = id.clone();

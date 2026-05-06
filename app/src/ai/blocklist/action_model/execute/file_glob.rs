@@ -38,7 +38,7 @@ pub struct FileGlobExecutor {
 
 fn log_file_glob_error(conversation_id: AIConversationId, ctx: &mut AppContext) {
     let server_output_id = get_server_output_id(conversation_id, ctx);
-    }
+}
 
 impl FileGlobExecutor {
     pub fn new(active_session: ModelHandle<ActiveSession>, terminal_view_id: EntityId) -> Self {
@@ -146,8 +146,7 @@ impl FileGlobExecutor {
                             log::warn!("Executing file_glob resulted in error: {e:?}");
                             log_file_glob_error(conversation_id_clone, ctx);
                         }
-                        FileGlobV2Result::Success { .. } => {
-                                                    }
+                        FileGlobV2Result::Success { .. } => {}
                         _ => {}
                     }
                     // Convert FileGlobV2Result to FileGlobResult if the request was not V2.

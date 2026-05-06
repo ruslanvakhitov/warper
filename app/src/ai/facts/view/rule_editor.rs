@@ -2,11 +2,11 @@ use crate::editor::{
     EditorOptions, EditorView, EnterAction, EnterSettings, Event as EditorEvent,
     PropagateAndNoOpNavigationKeys, SingleLineEditorOptions, TextOptions,
 };
-use crate::server::ids::SyncId;
 use crate::ui_components::buttons::icon_button;
 use crate::view_components::action_button::{ActionButton, DangerSecondaryTheme, PrimaryTheme};
 use warp_core::ui::{appearance::Appearance, theme::color::internal_colors};
 use warp_editor::editor::NavigationKey;
+use warp_server_client::ids::SyncId;
 use warpui::elements::{Clipped, ConstrainedBox};
 use warpui::{
     elements::{
