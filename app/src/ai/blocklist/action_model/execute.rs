@@ -119,7 +119,6 @@ struct ExecuteActionInput<'a> {
 #[derive(Debug, Clone, Copy)]
 struct PreprocessActionInput<'a> {
     action: &'a AIAgentAction,
-    conversation_id: AIConversationId,
 }
 
 type AsyncExecuteActionFn<T> = Pin<Box<dyn Spawnable<Output = T>>>;
@@ -257,9 +256,6 @@ pub struct BlocklistAIActionExecutor {
     /// We track them per action rather than as a single slot so multiple actions from the same
     /// parallel phase can complete independently.
     async_executing_actions: std::collections::HashMap<AIAgentActionId, AsyncExecutingAction>,
-
-    /// Reference to the terminal model for checking session sharing state.
-    terminal_model: Arc<FairMutex<TerminalModel>>,
 }
 
 impl BlocklistAIActionExecutor {
@@ -337,7 +333,6 @@ impl BlocklistAIActionExecutor {
             use_computer_executor,
             request_computer_use_executor,
             async_executing_actions: Default::default(),
-            terminal_model,
             read_skill_executor,
             fetch_conversation_executor,
             start_agent_executor,
@@ -409,13 +404,10 @@ impl BlocklistAIActionExecutor {
     pub fn preprocess_action(
         &self,
         action: &AIAgentAction,
-        conversation_id: AIConversationId,
+        _conversation_id: AIConversationId,
         ctx: &mut ModelContext<Self>,
     ) -> BoxFuture<'static, ()> {
-        let input = PreprocessActionInput {
-            action,
-            conversation_id,
-        };
+        let input = PreprocessActionInput { action };
 
         match &action.action {
             AIAgentActionType::RequestCommandOutput { .. }

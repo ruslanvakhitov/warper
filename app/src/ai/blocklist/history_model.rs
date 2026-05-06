@@ -1815,21 +1815,6 @@ impl BlocklistAIHistoryModel {
 
         Ok(conversation)
     }
-
-    /// Clears all stored conversation-related data in memory.
-    /// This is used when logging out to ensure no AI history persists across users.
-    pub(crate) fn reset(&mut self) {
-        self.live_conversation_ids_for_terminal_view.clear();
-        self.cleared_conversation_ids_for_terminal_view.clear();
-        self.conversations_by_id.clear();
-        self.active_conversation_for_terminal_view.clear();
-        self.conversation_transcript_viewer_terminal_view_ids
-            .clear();
-        self.persisted_queries.clear();
-        self.all_conversations_metadata.clear();
-        self.agent_id_to_conversation_id.clear();
-        self.server_token_to_conversation_id.clear();
-    }
 }
 
 /// Returns the key to use in `agent_id_to_conversation_id` for the given

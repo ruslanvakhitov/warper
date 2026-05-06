@@ -62,7 +62,6 @@ struct StateHandles {
 /// Zero state view shown when agent view is active but the conversation has no exchanges yet.
 pub struct AgentViewZeroStateBlock {
     conversation_id: AIConversationId,
-    origin: AgentViewEntryOrigin,
     agent_view_controller: ModelHandle<AgentViewController>,
     sessions: ModelHandle<Sessions>,
     terminal_model: Arc<FairMutex<TerminalModel>>,
@@ -158,7 +157,6 @@ impl AgentViewZeroStateBlock {
 
         Self {
             conversation_id,
-            origin,
             agent_view_controller,
             sessions: sessions.clone(),
             terminal_model,
@@ -321,7 +319,6 @@ impl View for AgentViewZeroStateBlock {
         let active_session = self.active_session(app);
         let body = render_body(
             ZeroStateBodyProps {
-                origin: self.origin,
                 should_show_init_callout: self.should_show_init_callout,
                 recent_conversations: &self.cached_recent_conversations,
                 active_session: active_session.as_deref(),
@@ -506,7 +503,6 @@ fn render_title_and_description(props: HeaderProps, app: &AppContext) -> Vec<Box
 }
 
 struct ZeroStateBodyProps<'a> {
-    origin: AgentViewEntryOrigin,
     should_show_init_callout: bool,
     recent_conversations: &'a [ConversationNavigationData],
     active_session: Option<&'a Session>,
@@ -516,7 +512,6 @@ struct ZeroStateBodyProps<'a> {
 
 fn render_body(props: ZeroStateBodyProps<'_>, app: &AppContext) -> Vec<Box<dyn Element>> {
     let ZeroStateBodyProps {
-        origin: _,
         should_show_init_callout,
         recent_conversations,
         active_session,
@@ -781,7 +776,6 @@ mod styles {
     pub const CONTAINER_VERTICAL_PADDING: f32 = 16.;
     pub const TITLE_MARGIN_BOTTOM: f32 = 8.;
     pub const SECTION_HEADER_MARGIN_BOTTOM: f32 = 8.;
-    pub const DESCRIPTION_LINE_MARGIN_BOTTOM: f32 = 6.;
     pub fn title_font_size(appearance: &Appearance) -> f32 {
         appearance.monospace_font_size() + 6.
     }

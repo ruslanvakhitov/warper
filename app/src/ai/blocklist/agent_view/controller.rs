@@ -394,7 +394,7 @@ impl AgentViewController {
     /// and whether the escape keybinding should be displayed.
     pub fn can_exit_agent_view(
         &self,
-        ctx: &impl warpui::ModelAsRef,
+        _ctx: &impl warpui::ModelAsRef,
     ) -> Result<(), ExitAgentViewError> {
         let model = self.terminal_model.lock();
 
@@ -787,18 +787,6 @@ impl AgentViewController {
                 should_confirm: ExitConfirmationRequirement::Required,
             },
             trigger,
-            false,
-            ctx,
-        );
-    }
-
-    /// Exits the active agent view without any confirmation.
-    pub(crate) fn exit_agent_view_without_confirmation(&mut self, ctx: &mut ModelContext<Self>) {
-        self.exit_agent_view_internal(
-            ExitAgentViewOptions {
-                should_confirm: ExitConfirmationRequirement::None,
-            },
-            ExitConfirmationTrigger::Escape,
             false,
             ctx,
         );

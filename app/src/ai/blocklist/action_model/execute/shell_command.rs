@@ -132,9 +132,7 @@ impl ShellCommandExecutor {
                     Some(self.terminal_view_id),
                     ctx,
                 );
-                if let CommandExecutionPermission::Allowed(reason) = autoexecution_permission {
-                } else if let CommandExecutionPermission::Denied(reason) = autoexecution_permission
-                {
+                if let CommandExecutionPermission::Denied(reason) = &autoexecution_permission {
                     if AppExecutionMode::as_ref(ctx).is_autonomous() {
                         log::warn!(
                             "Command denied during autonomous execution, reason: {reason:?}"
@@ -164,8 +162,6 @@ impl ShellCommandExecutor {
                             .has_agent_written_to_block(),
                         _ => false,
                     };
-
-                    if should_autoexecute {}
 
                     should_autoexecute
                 }

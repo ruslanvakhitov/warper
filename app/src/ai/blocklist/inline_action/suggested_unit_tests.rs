@@ -404,14 +404,14 @@ impl TypedActionView for SuggestedUnitTestsView {
             SuggestedUnitTestsAction::Accept => ctx.emit(SuggestedUnitTestsEvent::Accept),
             SuggestedUnitTestsAction::Cancel => ctx.emit(SuggestedUnitTestsEvent::Cancel),
             SuggestedUnitTestsAction::ToggleSetting => {
-                let checked = AISettings::handle(ctx).update(ctx, |settings, ctx| {
+                if let Err(error) = AISettings::handle(ctx).update(ctx, |settings, ctx| {
                     settings
                         .code_suggestions_enabled_internal
                         .toggle_and_save_value(ctx)
-                });
+                }) {
+                    log::error!("Failed to toggle code suggestions setting: {error:?}");
+                }
                 ctx.notify();
-
-                if let Ok(checked) = checked {}
             }
             SuggestedUnitTestsAction::OpenSettings => {
                 ctx.emit(SuggestedUnitTestsEvent::OpenSettings)

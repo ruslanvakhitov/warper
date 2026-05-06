@@ -1,5 +1,4 @@
 use super::static_prompt_suggestions::static_suggested_query;
-use crate::ai::agent::AIAgentExchangeId;
 use crate::ai::blocklist::controller::{
     response_stream::ResponseStreamId, BlocklistAIController, BlocklistAIControllerEvent,
 };
@@ -20,13 +19,6 @@ use warpui::{Entity, EntityId, ModelContext, ModelHandle, SingletonEntity};
 pub enum PassiveSuggestionsEvent {
     PromptSuggestionsGenerated {
         prompt_suggestion: AgentModePromptSuggestion,
-        block_id: BlockId,
-        command: String,
-        request_duration_ms: u64,
-    },
-    PassiveCodeDiffRequestStarted {
-        prompt_suggestion_id: String,
-        code_exchange_id: Option<AIAgentExchangeId>,
         block_id: BlockId,
     },
 }
@@ -126,14 +118,10 @@ impl PassiveSuggestionsModel {
         ctx: &mut ModelContext<Self>,
     ) {
         let block_id = block_completed.serialized_block.id.clone();
-        let command = block_completed.command.clone();
-
         if let Some(suggestion) = fetch_static_prompt_suggestion(&block_completed) {
             ctx.emit(PassiveSuggestionsEvent::PromptSuggestionsGenerated {
                 prompt_suggestion: suggestion.clone(),
                 block_id: block_id.clone(),
-                command,
-                request_duration_ms: 0,
             });
             return;
         }

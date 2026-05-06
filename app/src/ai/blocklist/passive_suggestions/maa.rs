@@ -21,7 +21,6 @@ use crate::terminal::model_events::{ModelEvent, ModelEventDispatcher};
 use crate::workspaces::user_workspaces::UserWorkspaces;
 use ai::agent::action::{AIAgentActionType, FileEdit};
 use ai::diff_validation::ParsedDiff;
-use chrono::{DateTime, Utc};
 use parking_lot::FairMutex;
 use warp_core::features::FeatureFlag;
 use warpui::r#async::SpawnedFutureHandle;
@@ -45,7 +44,6 @@ pub enum PassiveSuggestionsEvent {
     NewPromptSuggestion {
         prompt: String,
         label: Option<String>,
-        request_duration_ms: u64,
         /// The trigger for the suggestion. `None` when the server indicated the
         /// trigger is not relevant to the suggestion.
         trigger: Option<PassiveSuggestionTrigger>,
@@ -61,7 +59,6 @@ pub enum PassiveSuggestionsEvent {
         /// with agent" or "accept and continue". `None` for ephemeral triggers
         /// (shell command with no prior conversation).
         conversation_id: Option<AIConversationId>,
-        request_duration_ms: u64,
         trigger: PassiveSuggestionTrigger,
     },
 }
@@ -71,7 +68,6 @@ struct Request {
     /// Conversation ID for the passive suggestion request.
     conversation_id: AIConversationId,
     trigger: PassiveSuggestionTrigger,
-    start_ts: DateTime<Utc>,
 
     /// Handle to the spawned future processing the response stream.
     _stream_handle: SpawnedFutureHandle,
@@ -176,10 +172,6 @@ impl PassiveSuggestionsModel {
                     return;
                 };
 
-                let request_duration_ms = Utc::now()
-                    .signed_duration_since(latest_request.start_ts)
-                    .num_milliseconds()
-                    .max(0) as u64;
                 let trigger = latest_request.trigger.clone();
 
                 let StreamExtractionResult { suggestion: extracted } = extracted;
@@ -201,7 +193,6 @@ impl PassiveSuggestionsModel {
                         ctx.emit(PassiveSuggestionsEvent::NewPromptSuggestion {
                             prompt,
                             label,
-                            request_duration_ms,
                             trigger,
                             conversation_id: continuable_conversation_id,
                         });
@@ -264,7 +255,6 @@ impl PassiveSuggestionsModel {
                                     title,
                                     original_edits: original_edits.clone(),
                                     conversation_id: continuable_conversation_id,
-                                    request_duration_ms,
                                     trigger,
                                 });
                             },
@@ -279,7 +269,6 @@ impl PassiveSuggestionsModel {
             _cancellation_tx: cancellation_tx,
             conversation_id,
             trigger,
-            start_ts: Utc::now(),
         });
     }
 

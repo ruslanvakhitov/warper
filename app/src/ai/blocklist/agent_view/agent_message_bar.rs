@@ -8,28 +8,20 @@ use warpui::assets::asset_cache::AssetSource;
 use warpui::elements::{Container, Element, Empty, MouseStateHandle};
 use warpui::keymap::Keystroke;
 use warpui::platform::OperatingSystem;
-use warpui::{AppContext, Entity, ModelHandle, SingletonEntity, View, ViewContext};
+use warpui::{AppContext, Entity, ModelHandle, SingletonEntity, View};
 
-use super::{AgentViewState, EphemeralMessageModel, EphemeralMessageModelEvent};
+use super::{AgentViewState, EphemeralMessageModel};
 use crate::ai::agent::conversation::AIConversation;
 use crate::ai::agent::{
     AIAgentExchangeId, AIAgentOutputStatus, FinishedAIAgentOutput, RenderableAIError,
 };
 use crate::ai::blocklist::agent_view::shortcuts::AgentShortcutViewModel;
-use crate::ai::blocklist::agent_view::{
-    agent_view_bg_fill, AgentViewController, AgentViewControllerEvent,
-};
-use crate::ai::blocklist::{
-    BlocklistAIContextEvent, BlocklistAIContextModel, BlocklistAIHistoryEvent,
-    BlocklistAIInputEvent, BlocklistAIInputModel,
-};
-use crate::ai::document::ai_document_model::{AIDocumentModel, AIDocumentModelEvent};
-use crate::ai::mcp::{
-    templatable_manager::{FigmaMcpStatus, TemplatableMCPServerManagerEvent},
-    TemplatableMCPServerManager,
-};
+use crate::ai::blocklist::agent_view::{agent_view_bg_fill, AgentViewController};
+use crate::ai::blocklist::{BlocklistAIContextModel, BlocklistAIInputModel};
+use crate::ai::document::ai_document_model::AIDocumentModel;
+use crate::ai::mcp::{templatable_manager::FigmaMcpStatus, TemplatableMCPServerManager};
 use crate::search::slash_command_menu::static_commands::commands;
-use crate::terminal::input::buffer_model::{InputBufferModel, InputBufferUpdateEvent};
+use crate::terminal::input::buffer_model::InputBufferModel;
 use crate::terminal::input::message_bar::attached_context::{
     AttachedBlocksMessageProducer, AttachedContextArgs, AttachedTextSelectionMessageProducer,
 };
@@ -40,15 +32,13 @@ use crate::terminal::input::message_bar::{
     ChipHorizontalAlignment, EmptyMessageProducer, Message, MessageItem, MessageProvider,
 };
 use crate::terminal::input::slash_command_model::{SlashCommandEntryState, SlashCommandModel};
-use crate::terminal::input::suggestions_mode_model::{
-    InputSuggestionsModeEvent, InputSuggestionsModeModel,
-};
+use crate::terminal::input::suggestions_mode_model::InputSuggestionsModeModel;
 use crate::terminal::input::{InputAction, SET_INPUT_MODE_AGENT_ACTION_NAME};
 use crate::terminal::model::TerminalModel;
 use crate::terminal::view::TerminalAction;
 use crate::ui_components::blended_colors;
 use crate::util::bindings::keybinding_name_to_keystroke;
-use crate::workspace::tab_settings::{TabSettings, TabSettingsChangedEvent};
+use crate::workspace::tab_settings::TabSettings;
 #[cfg(not(target_family = "wasm"))]
 use crate::workspace::WorkspaceAction;
 use crate::BlocklistAIHistoryModel;
@@ -93,168 +83,6 @@ impl Entity for AgentMessageBar {
 }
 
 impl AgentMessageBar {
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        agent_view_controller: ModelHandle<AgentViewController>,
-        ephemeral_message_model: ModelHandle<EphemeralMessageModel>,
-        shortcut_view_model: ModelHandle<AgentShortcutViewModel>,
-        input_buffer_model: ModelHandle<InputBufferModel>,
-        input_model: ModelHandle<BlocklistAIInputModel>,
-        input_suggestions_model: ModelHandle<InputSuggestionsModeModel>,
-        slash_command_model: ModelHandle<SlashCommandModel>,
-        context_model: ModelHandle<BlocklistAIContextModel>,
-        terminal_model: Arc<FairMutex<TerminalModel>>,
-        ctx: &mut ViewContext<Self>,
-    ) -> Self {
-        ctx.subscribe_to_model(&agent_view_controller, |_, _, event, ctx| {
-            if matches!(
-                event,
-                AgentViewControllerEvent::EnteredAgentView { .. }
-                    | AgentViewControllerEvent::ExitedAgentView { .. }
-            ) {
-                ctx.notify();
-            }
-        });
-        ctx.subscribe_to_model(&ephemeral_message_model, |_, _, event, ctx| {
-            if matches!(event, EphemeralMessageModelEvent::MessageChanged) {
-                ctx.notify();
-            }
-        });
-        ctx.subscribe_to_model(&input_model, |_, _, event, ctx| {
-            if matches!(
-                event,
-                BlocklistAIInputEvent::InputTypeChanged { .. }
-                    | BlocklistAIInputEvent::LockChanged { .. }
-            ) {
-                ctx.notify();
-            }
-        });
-        ctx.subscribe_to_model(&input_buffer_model, |me, _, event, ctx| {
-            let InputBufferUpdateEvent {
-                old_content: old,
-                new_content: new,
-                ..
-            } = event;
-            // If the user inputs into the buffer, dismiss any explicit message if we have one.
-            me.ephemeral_message_model
-                .update(ctx, |m, ctx| m.try_dismiss_explicit_message(ctx));
-            let empty_state_changed = old.is_empty() != new.is_empty();
-            let in_shell_mode = !me.input_model.as_ref(ctx).is_ai_input_enabled();
-            if empty_state_changed || in_shell_mode {
-                ctx.notify();
-            }
-            me.update_figma_detected(ctx);
-        });
-        ctx.subscribe_to_model(&shortcut_view_model, |_, _, _, ctx| {
-            ctx.notify();
-        });
-        ctx.subscribe_to_model(&input_suggestions_model, |me, _, event, ctx| match event {
-            InputSuggestionsModeEvent::ModeChanged {
-                buffer_to_restore: _,
-                input_config_to_restore: _,
-            } => {
-                if me.input_suggestions_model.as_ref(ctx).is_inline_menu_open() {
-                    // When opening an inline menu, dismiss any explicit message if we have one.
-                    me.ephemeral_message_model
-                        .update(ctx, |m, ctx| m.try_dismiss_explicit_message(ctx));
-                }
-                ctx.notify();
-            }
-        });
-        ctx.subscribe_to_model(&slash_command_model, |_, _, _, ctx| {
-            ctx.notify();
-        });
-
-        let history_model = BlocklistAIHistoryModel::handle(ctx);
-        ctx.subscribe_to_model(&history_model, |_, _, event, ctx| {
-            if matches!(
-                event,
-                BlocklistAIHistoryEvent::UpdatedConversationStatus { .. }
-            ) {
-                ctx.notify();
-            }
-        });
-
-        ctx.subscribe_to_model(&AIDocumentModel::handle(ctx), |_, _, event, ctx| {
-            if matches!(event, AIDocumentModelEvent::DocumentVisibilityChanged(_)) {
-                ctx.notify();
-            }
-        });
-
-        ctx.subscribe_to_model(&context_model, |me, _, event, ctx| {
-            if let BlocklistAIContextEvent::UpdatedPendingContext { .. } = event {
-                me.update_figma_detected(ctx);
-                ctx.notify();
-            }
-        });
-
-        ctx.subscribe_to_model(&TabSettings::handle(ctx), |_, _, event, ctx| {
-            if matches!(event, TabSettingsChangedEvent::ShowCodeReviewButton { .. }) {
-                ctx.notify();
-            }
-        });
-
-        if FeatureFlag::FigmaDetection.is_enabled() {
-            // When the state of the Figma MCP changes, re-render to update the Figma CTA button.
-            ctx.subscribe_to_model(
-                &TemplatableMCPServerManager::handle(ctx),
-                |_, model, event, ctx| {
-                    if let TemplatableMCPServerManagerEvent::StateChanged { uuid, .. } = event {
-                        if let Some(figma_mcp_uuid) =
-                            model.as_ref(ctx).get_figma_installation_uuid()
-                        {
-                            if uuid == &figma_mcp_uuid {
-                                ctx.notify();
-                            }
-                        }
-                    }
-                },
-            );
-        }
-
-        Self {
-            agent_view_controller,
-            ephemeral_message_model,
-            shortcut_view_model,
-            input_buffer_model,
-            input_model,
-            input_suggestions_model,
-            slash_command_model,
-            context_model,
-            terminal_model,
-            mouse_states: AgentMessageBarMouseStates::default(),
-            figma_detected: false,
-        }
-    }
-}
-
-impl AgentMessageBar {
-    /// Sets `figma_detected` by checking both the current input text and attached images.
-    /// `figma_detected` is `true` when either the text contains "figma" (case-insensitive)
-    /// or any attached image was exported from Figma.
-    fn update_figma_detected(&mut self, ctx: &mut ViewContext<Self>) {
-        if !FeatureFlag::FigmaDetection.is_enabled() {
-            return;
-        }
-        let text_has_figma = self
-            .input_buffer_model
-            .as_ref(ctx)
-            .current_value()
-            .to_lowercase()
-            .contains("figma");
-        let image_has_figma = self
-            .context_model
-            .as_ref(ctx)
-            .pending_images()
-            .iter()
-            .any(|image| image.is_figma);
-        let detected = text_has_figma || image_has_figma;
-        if self.figma_detected != detected {
-            self.figma_detected = detected;
-            ctx.notify();
-        }
-    }
-
     /// Returns the Figma MCP status if the contextual button area should be rendered
     /// (i.e. when `FeatureFlag::FigmaDetection` is enabled and "figma" is detected in the input).
     fn figma_button_status(&self, app: &AppContext) -> Option<FigmaMcpStatus> {
