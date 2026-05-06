@@ -1,5 +1,4 @@
 use crate::model::OnboardingStateModel;
-use crate::OnboardingEvent;
 
 use super::OnboardingSlide;
 use pathfinder_color::ColorU;

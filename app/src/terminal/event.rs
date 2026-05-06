@@ -8,7 +8,7 @@ use std::time::Duration;
 use instant::Instant;
 
 use crate::server::ids::SyncId;
-use crate::server::telemetry::ImageProtocol;
+use crate::server::event_metadata::ImageProtocol;
 use crate::terminal::model::block::BlockMetadata;
 use crate::terminal::model::block::SerializedBlock;
 use crate::terminal::model::completions::ShellCompletion;

@@ -38,11 +38,7 @@ use read_skill::ReadSkillExecutor;
 use request_computer_use::RequestComputerUseExecutor;
 pub(crate) use request_file_edits::apply_edits;
 pub(crate) use request_file_edits::FileReadResult;
-pub(crate) use request_file_edits::MalformedFinalLineProxyEvent;
-pub use request_file_edits::{
-    EditAcceptAndContinueClickedEvent, EditAcceptClickedEvent, EditResolvedEvent, EditStats,
-    RequestFileEditsExecutor, RequestFileEditsFormatKind, RequestFileEditsTelemetryEvent,
-};
+pub use request_file_edits::{RequestFileEditsExecutor, RequestFileEditsFormatKind};
 pub use send_message::SendMessageToAgentExecutor;
 use serde::{Deserialize, Serialize};
 pub use shell_command::{ShellCommandExecutor, ShellCommandExecutorEvent};

@@ -20,7 +20,6 @@ use super::{
 };
 use crate::{
     index::locations::{CodeContextLocation, FileFragmentLocation},
-    telemetry::{AITelemetryEvent, CodebaseContextSyncType},
     workspace::{WorkspaceMetadata, WorkspaceMetadataEvent},
 };
 use instant::Instant;
@@ -242,32 +241,6 @@ enum SyncOperationResult {
 }
 
 impl SyncOperationResult {
-    fn telemetry_event(
-        &self,
-        sync_duration: Duration,
-        sync_type: CodebaseContextSyncType,
-    ) -> AITelemetryEvent {
-        match self {
-            SyncOperationResult::Success {
-                flushed_node_count,
-                flushed_fragment_result,
-                cache_population_error,
-                ..
-            } => AITelemetryEvent::SyncCodebaseContextSuccess {
-                total_sync_duration: sync_duration,
-                sync_type,
-                flushed_node_count: *flushed_node_count,
-                flushed_fragment_count: flushed_fragment_result.fragment_count,
-                total_fragment_size_bytes: flushed_fragment_result.total_fragment_size_bytes,
-                cache_population_error: cache_population_error.as_ref().map(|e| e.to_string()),
-            },
-            SyncOperationResult::Error(err) => AITelemetryEvent::SyncCodebaseContextFailed {
-                error: err.to_string(),
-                sync_type,
-            },
-        }
-    }
-
     fn server_sync_result(
         self,
         last_server_synced_root_node: Option<NodeHash>,
@@ -339,24 +312,6 @@ pub enum CodebaseIndexEvent {
 struct IncrementalUpdateResult {
     tree: MerkleTree,
     build_result: IncrementalUpdateBuildResult,
-}
-
-impl IncrementalUpdateResult {
-    fn telemetry_event(&self, sync_start_time: Instant) -> AITelemetryEvent {
-        match &self.build_result {
-            IncrementalUpdateBuildResult::Success {
-                operation_result, ..
-            } => operation_result.telemetry_event(
-                sync_start_time.elapsed(),
-                CodebaseContextSyncType::Incremental,
-            ),
-            IncrementalUpdateBuildResult::Error { error, .. } => {
-                AITelemetryEvent::BuildTreeFailed {
-                    error: error.to_string(),
-                }
-            }
-        }
-    }
 }
 
 enum IncrementalUpdateBuildResult {

@@ -39,13 +39,13 @@ use crate::ai::predict::prompt_suggestions::{
     is_accept_prompt_suggestion_bound_to_ctrl_enter,
 };
 use crate::ai::skills::SkillManager;
-use crate::ai::skills::{SkillOpenOrigin, SkillTelemetryEvent};
+use crate::ai::skills::{SkillOpenOrigin};
 use crate::context_chips::spacing;
 use crate::pane_group::focus_state::PaneFocusHandle;
 use crate::prompt::editor_modal::OpenSource as PromptEditorOpenSource;
 use crate::search::slash_command_menu::static_commands::commands::{self, COMMAND_REGISTRY};
 
-use crate::server::telemetry::{PaletteSource, SlashCommandAcceptedDetails, SlashMenuSource};
+use crate::server::event_metadata::{PaletteSource, SlashCommandAcceptedDetails, SlashMenuSource};
 use crate::settings::PrivacySettings;
 use crate::suggestions::ignored_suggestions_model::{
     IgnoredSuggestionsModel, IgnoredSuggestionsModelEvent, SuggestionType,
@@ -103,7 +103,7 @@ use crate::{
         blocklist::{
             prompt::prompt_alert::{PromptAlertEvent, PromptAlertView},
             render_ai_agent_mode_icon, render_ai_follow_up_icon,
-            telemetry_banner::should_collect_ai_ugc_telemetry,
+            ugc_policy_banner::should_collect_ai_ugc,
             BlocklistAIContextEvent, BlocklistAIContextModel, BlocklistAIController,
             BlocklistAIControllerEvent, BlocklistAIHistoryEvent, BlocklistAIHistoryModel,
             BlocklistAIInputEvent, BlocklistAIInputModel, InputConfig, InputType,
@@ -154,10 +154,9 @@ use crate::{
     },
     server::{
         ids::SyncId,
-        telemetry::{
+        event_metadata::{
             AICommandSearchEntrypoint, AgentModeAutoDetectionFalsePositivePayload,
-            AgentModeAutoDetectionSettingOrigin, CommandXRayTrigger, EnvVarTelemetryMetadata,
-            WorkflowTelemetryMetadata,
+            AgentModeAutoDetectionSettingOrigin, CommandXRayTrigger,
         },
     },
     session_management::SessionNavigationPromptElements,
@@ -497,7 +496,7 @@ lazy_static! {
 }
 
 #[derive(PartialEq, Eq, Copy, Clone, Serialize)]
-pub enum TelemetryInputSuggestionsMode {
+pub enum InputSuggestionsModeMetadata {
     HistoryFuzzySearch,
     CompletionSuggestions,
     HistoryUp,
@@ -758,46 +757,46 @@ impl InputSuggestionsMode {
         }
     }
 
-    fn to_telemetry_mode(&self) -> TelemetryInputSuggestionsMode {
+    fn to_event_metadata_mode(&self) -> InputSuggestionsModeMetadata {
         match *self {
             InputSuggestionsMode::HistoryUp {
                 search_mode: HistorySearchMode::Prefix,
                 ..
-            } => TelemetryInputSuggestionsMode::HistoryUp,
+            } => InputSuggestionsModeMetadata::HistoryUp,
             InputSuggestionsMode::HistoryUp {
                 search_mode: HistorySearchMode::Fuzzy,
                 ..
-            } => TelemetryInputSuggestionsMode::HistoryFuzzySearch,
+            } => InputSuggestionsModeMetadata::HistoryFuzzySearch,
             InputSuggestionsMode::CompletionSuggestions { .. } => {
-                TelemetryInputSuggestionsMode::CompletionSuggestions
+                InputSuggestionsModeMetadata::CompletionSuggestions
             }
             InputSuggestionsMode::StaticWorkflowEnumSuggestions { .. } => {
-                TelemetryInputSuggestionsMode::StaticWorkflowEnumSuggestions
+                InputSuggestionsModeMetadata::StaticWorkflowEnumSuggestions
             }
             InputSuggestionsMode::DynamicWorkflowEnumSuggestions { .. } => {
-                TelemetryInputSuggestionsMode::DynamicWorkflowEnumSuggestions
+                InputSuggestionsModeMetadata::DynamicWorkflowEnumSuggestions
             }
             InputSuggestionsMode::AIContextMenu { .. } => {
-                TelemetryInputSuggestionsMode::AIContextMenu
+                InputSuggestionsModeMetadata::AIContextMenu
             }
-            InputSuggestionsMode::SlashCommands => TelemetryInputSuggestionsMode::SlashCommands,
+            InputSuggestionsMode::SlashCommands => InputSuggestionsModeMetadata::SlashCommands,
             InputSuggestionsMode::ConversationMenu => {
-                TelemetryInputSuggestionsMode::ConversationMenu
+                InputSuggestionsModeMetadata::ConversationMenu
             }
-            InputSuggestionsMode::ModelSelector => TelemetryInputSuggestionsMode::ModelSelector,
-            InputSuggestionsMode::ProfileSelector => TelemetryInputSuggestionsMode::ProfileSelector,
-            InputSuggestionsMode::PromptsMenu => TelemetryInputSuggestionsMode::PromptsMenu,
-            InputSuggestionsMode::SkillMenu => TelemetryInputSuggestionsMode::SkillMenu,
+            InputSuggestionsMode::ModelSelector => InputSuggestionsModeMetadata::ModelSelector,
+            InputSuggestionsMode::ProfileSelector => InputSuggestionsModeMetadata::ProfileSelector,
+            InputSuggestionsMode::PromptsMenu => InputSuggestionsModeMetadata::PromptsMenu,
+            InputSuggestionsMode::SkillMenu => InputSuggestionsModeMetadata::SkillMenu,
             InputSuggestionsMode::UserQueryMenu { .. } => {
-                TelemetryInputSuggestionsMode::ConversationMenu
+                InputSuggestionsModeMetadata::ConversationMenu
             }
             InputSuggestionsMode::InlineHistoryMenu { .. } => {
-                TelemetryInputSuggestionsMode::InlineHistoryMenu
+                InputSuggestionsModeMetadata::InlineHistoryMenu
             }
             InputSuggestionsMode::IndexedReposMenu => {
-                TelemetryInputSuggestionsMode::IndexedReposMenu
+                InputSuggestionsModeMetadata::IndexedReposMenu
             }
-            InputSuggestionsMode::PlanMenu { .. } => TelemetryInputSuggestionsMode::PlanMenu,
+            InputSuggestionsMode::PlanMenu { .. } => InputSuggestionsModeMetadata::PlanMenu,
             InputSuggestionsMode::Closed => unreachable!(),
         }
     }
@@ -6882,14 +6881,6 @@ impl Input {
         }
     }
 
-    fn maybe_send_autodetection_telemetry_on_manual_toggle(
-        &self,
-        new_input_type: InputType,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        let _ = (new_input_type, ctx);
-    }
-
     /// Takes the current collpased/expanded state of the info box and saves it to the user's settings so that last value can be
     /// reused the next time the user opens a workflow.
     fn update_workflows_info_box_expanded_setting(
@@ -8361,7 +8352,6 @@ impl Input {
             EditorEvent::DeleteAllLeft => {
                 if self.ai_input_model.as_ref(ctx).is_ai_input_enabled() {
                     let new_input_type = InputType::Shell;
-                    self.maybe_send_autodetection_telemetry_on_manual_toggle(new_input_type, ctx);
                     self.ai_input_model.update(ctx, |ai_input_model, ctx| {
                         ai_input_model.set_input_config_for_classic_mode(
                             InputConfig {
@@ -8986,7 +8976,6 @@ impl Input {
                 ai_input_model.set_input_config_for_classic_mode(new_input_config, ctx);
                 new_input_type
             });
-            self.maybe_send_autodetection_telemetry_on_manual_toggle(new_input_type, ctx);
         }
     }
 

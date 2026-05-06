@@ -1,6 +1,5 @@
 use crate::code::local_code_editor::LocalCodeEditorView;
 use crate::code_review::code_review_view::CodeReviewView;
-use crate::code_review::telemetry_event::CodeReviewTelemetryEvent;
 use crate::view_components::find::{FindDirection, FindEvent, FindModel};
 use std::collections::HashMap;
 use std::ops::Range;

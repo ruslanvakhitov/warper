@@ -5,7 +5,7 @@ use warp_core::features::FeatureFlag;
 use warp_core::user_preferences::GetUserPreferences as _;
 use warpui::{AppContext, Entity, ModelContext, SingletonEntity, UpdateModel};
 
-use crate::ai::blocklist::telemetry_banner::should_collect_ai_ugc_telemetry;
+use crate::ai::blocklist::ugc_policy_banner::should_collect_ai_ugc;
 use crate::terminal::safe_mode_settings::SafeModeSettings;
 
 use settings::{
@@ -145,7 +145,7 @@ pub struct PrivacySettings {
 pub struct PrivacySettingsSnapshot {
     is_telemetry_enabled: bool,
     is_telemetry_force_enabled: bool,
-    should_collect_ai_ugc_telemetry: bool,
+    should_collect_ai_ugc: bool,
     // This is an option so that, if a user has not set this value (and it's set to its default value of true),
     // the default value won't override a value that the user previously set on a different device.
     // This is set to a non-option once the user manually changes this setting.
@@ -172,8 +172,8 @@ impl PrivacySettingsSnapshot {
             && !FeatureFlag::AgentModeAnalytics.is_enabled()
     }
 
-    pub fn should_collect_ai_ugc_telemetry(&self) -> bool {
-        self.should_collect_ai_ugc_telemetry
+    pub fn should_collect_ai_ugc(&self) -> bool {
+        self.should_collect_ai_ugc
     }
 
     #[cfg(test)]
@@ -182,7 +182,7 @@ impl PrivacySettingsSnapshot {
             cloud_conversation_storage_enabled: None,
             is_telemetry_enabled: true,
             is_telemetry_force_enabled: true,
-            should_collect_ai_ugc_telemetry: true,
+            should_collect_ai_ugc: true,
         }
     }
 }
@@ -366,7 +366,7 @@ impl PrivacySettings {
                 .then_some(false),
             is_telemetry_enabled: self.is_telemetry_enabled,
             is_telemetry_force_enabled: self.is_telemetry_force_enabled,
-            should_collect_ai_ugc_telemetry: should_collect_ai_ugc_telemetry(
+            should_collect_ai_ugc: should_collect_ai_ugc(
                 app,
                 self.is_telemetry_enabled,
             ),

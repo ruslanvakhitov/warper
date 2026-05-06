@@ -1,7 +1,6 @@
 use crate::slides::{
     AgentAutonomy, AgentDevelopmentSettings, OnboardingModelInfo, ProjectOnboardingSettings,
 };
-use crate::telemetry::OnboardingEvent;
 use crate::OnboardingIntention;
 use ai::LLMId;
 use warpui::{Entity, ModelContext};
@@ -479,25 +478,7 @@ impl OnboardingStateModel {
         }
     }
 
-    fn send_completion_telemetry(&self, ctx: &mut ModelContext<Self>) {
-        let (intention, model, autonomy) = match &self.intention {
-            OnboardingIntention::Terminal => (self.intention.to_string(), None, None),
-            OnboardingIntention::AgentDrivenDevelopment => (
-                self.intention.to_string(),
-                Some(self.agent_settings.selected_model_id.to_string()),
-                self.agent_settings.autonomy.map(|x| x.to_string()),
-            ),
-        };
-
-        let has_project_path = matches!(
-            self.project_settings,
-            ProjectOnboardingSettings::Project { .. }
-        );
-
-            }
-
     pub(crate) fn complete(&mut self, ctx: &mut ModelContext<Self>) {
-        self.send_completion_telemetry(ctx);
         ctx.emit(OnboardingStateEvent::Completed);
         ctx.notify();
     }

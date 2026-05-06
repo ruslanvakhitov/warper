@@ -36,7 +36,6 @@ use crate::util::git::{
 
 use super::diff_size_limits::compute_diff_size;
 
-use crate::code_review::CodeReviewTelemetryEvent;
 #[cfg(not(target_family = "wasm"))]
 use warp_core::channel::ChannelState;
 use warp_core::{safe_warn};

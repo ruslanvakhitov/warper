@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 
 use warp_core::ui::theme::color::internal_colors;
-use warp_core::{ui::Icon};
+use warp_core::ui::Icon;
 use warp_util::path::LineAndColumnArg;
 use warpui::{
     elements::{
@@ -23,8 +23,8 @@ use crate::coding_panel_enablement_state::CodingPanelEnablementState;
 use crate::pane_group::working_directories::WorkingDirectory;
 use crate::pane_group::{PaneGroup, WorkingDirectoriesEvent, WorkingDirectoriesModel};
 #[cfg(feature = "local_fs")]
-use crate::server::telemetry::CodePanelsFileOpenEntrypoint;
-use crate::server::telemetry::FileTreeSource;
+use crate::server::event_metadata::CodePanelsFileOpenEntrypoint;
+use crate::server::event_metadata::FileTreeSource;
 use crate::settings_view::keybindings::{KeybindingChangedEvent, KeybindingChangedNotifier};
 #[cfg(feature = "local_fs")]
 use crate::util::file::external_editor::EditorSettings;
@@ -615,7 +615,6 @@ impl LeftPanelView {
                     None,
                 );
 
-
                 ctx.emit(LeftPanelEvent::OpenFileWithTarget {
                     path: path.clone(),
                     target,
@@ -801,8 +800,8 @@ impl LeftPanelView {
             LeftPanelAction::ProjectExplorer => {
                 active_view_state::set(self, ToolPanelView::ProjectExplorer, ctx);
                 if force_open {
-                                    } else {
-                                    }
+                } else {
+                }
             }
             LeftPanelAction::GlobalSearch { entry_focus } => {
                 let was_active = self.active_view.get()
@@ -816,8 +815,7 @@ impl LeftPanelView {
                     },
                     ctx,
                 );
-                if !was_active {
-                                    }
+                if !was_active {}
             }
         }
     }

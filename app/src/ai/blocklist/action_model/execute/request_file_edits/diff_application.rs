@@ -25,11 +25,6 @@ use crate::{
     safe_debug, safe_warn,
 };
 
-use super::telemetry::{
-    DiffInvalidFileEvent, DiffMatchFailedEvent, MissingLineNumbersEvent,
-    RequestFileEditsTelemetryEvent,
-};
-
 /// Result of reading a file from disk.
 ///
 /// This is the common currency for diff application logic.

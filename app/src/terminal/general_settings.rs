@@ -88,7 +88,7 @@ define_settings_group!(GeneralSettings, settings: [
         sync_to_cloud: SyncToCloud::Never,
         private: true,
     },
-    telemetry_banner_dismissed: TelemetryBannerDismissed {
+    ugc_policy_banner_dismissed: UgcPolicyBannerDismissed {
         type: bool,
         default: false,
         supported_platforms: SupportedPlatforms::ALL,

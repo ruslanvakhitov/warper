@@ -152,7 +152,7 @@ impl ConversationDetailsData {
         let harness = conversation
             .server_metadata()
             .map(|m| Harness::from(m.harness))
-            .or(Some(Harness::Oz));
+            .or(Some(Harness::Unknown));
 
         ConversationDetailsData {
             mode: PanelMode::Conversation {

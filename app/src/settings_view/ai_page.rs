@@ -104,7 +104,7 @@ impl AISubpage {
     }
 }
 use crate::menu::{MenuItem, MenuItemFields};
-use crate::server::telemetry::{
+use crate::server::event_metadata::{
     AgentModeAutoDetectionSettingOrigin, AutonomySettingToggleSource,
     ToggleCodeSuggestionsSettingSource,
 };

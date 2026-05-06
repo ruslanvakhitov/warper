@@ -37,7 +37,7 @@ use crate::ai::llms::LLMId;
 use crate::ai::{
     agent::{
         conversation::AIConversationId, AIAgentActionResultType, AIAgentAttachment, AIAgentContext,
-        AIAgentExchangeId, AIAgentInput, AIAgentOutputStatus, AIIdentifiers, EntrypointType,
+        AIAgentExchangeId, AIAgentInput, AIAgentOutputStatus, EntrypointType,
         FinishedAIAgentOutput, RenderableAIError, RequestCost, RequestMetadata, StaticQueryType,
         UserQueryMode,
     },
@@ -1836,21 +1836,9 @@ impl BlocklistAIController {
         request_params.parent_agent_id = parent_agent_id;
         request_params.agent_name = agent_name;
 
-        let server_conversation_token_for_identifiers =
-            conversation_data.server_conversation_token.clone();
-
         let response_stream = ctx.add_model(|ctx| {
-            // Create AIIdentifiers for the response stream
-            let ai_identifiers = AIIdentifiers {
-                server_output_id: None, // Will be populated by the successful response
-                server_conversation_id: server_conversation_token_for_identifiers.map(Into::into),
-                client_conversation_id: Some(conversation_data.id),
-                client_exchange_id: None,
-                model_id: Some(request_params.model.clone()),
-            };
             ResponseStream::new(
                 request_params.clone(),
-                ai_identifiers,
                 can_attempt_resume_on_error,
                 ctx,
             )

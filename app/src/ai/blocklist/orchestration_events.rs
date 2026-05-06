@@ -1,9 +1,4 @@
 use super::history_model::{BlocklistAIHistoryEvent, BlocklistAIHistoryModel};
-use super::telemetry::{
-    BlocklistOrchestrationTelemetryEvent, TeamAgentCommunicationFailedEvent,
-    TeamAgentCommunicationFailureReason, TeamAgentCommunicationKind,
-    TeamAgentCommunicationTransport, TeamAgentOrchestrationVersion,
-};
 use crate::ai::agent::{
     conversation::{AIConversationId, ConversationStatus},
     task::TaskId,
@@ -15,6 +10,46 @@ use uuid::Uuid;
 use warp_core::features::FeatureFlag;
 use warp_multi_agent_api as api;
 use warpui::{Entity, ModelContext, SingletonEntity};
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum TeamAgentCommunicationKind {
+    Message,
+    LifecycleEvent,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum TeamAgentCommunicationTransport {
+    Local,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum TeamAgentOrchestrationVersion {
+    V1,
+    V2,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum TeamAgentCommunicationFailureReason {
+    InvalidLifecycleEventType,
+    MissingSourceConversation,
+    MissingSourceIdentifier,
+    UnknownAgent,
+    NoTargets,
+    RequestFailed,
+}
+
+#[derive(Debug)]
+pub(crate) struct TeamAgentCommunicationFailedEvent {
+    pub communication_kind: TeamAgentCommunicationKind,
+    pub transport: TeamAgentCommunicationTransport,
+    pub orchestration_version: TeamAgentOrchestrationVersion,
+    pub failure_reason: TeamAgentCommunicationFailureReason,
+    pub source_conversation_id: AIConversationId,
+    pub source_run_id: Option<String>,
+    pub target_count: Option<usize>,
+    pub lifecycle_event_type: Option<String>,
+    pub error_message: Option<String>,
+}
 
 const MAX_RETRY_ATTEMPTS: i32 = 3;
 const MAX_PENDING_LIFECYCLE_EVENTS_PER_TARGET: usize = 200;

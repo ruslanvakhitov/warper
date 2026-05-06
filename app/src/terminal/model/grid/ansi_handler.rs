@@ -21,7 +21,7 @@ use warp_terminal::model::grid::cell;
 use warp_terminal::model::{KeyboardModes, KeyboardModesApplyBehavior};
 use warpui::image_cache::{resize_dimensions, FitType};
 
-use crate::server::telemetry::ImageProtocol;
+use crate::server::event_metadata::ImageProtocol;
 use crate::terminal::event::Event;
 use crate::terminal::event_listener::ChannelEventListener;
 use crate::terminal::model::ansi::{

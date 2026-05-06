@@ -6,7 +6,6 @@ use enum_iterator::{all, Sequence};
 use lazy_static::lazy_static;
 use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use std::any::Any;
 use std::{collections::HashSet, sync::Arc};
 use warp_core::ui::theme::Fill;
@@ -480,10 +479,6 @@ pub struct DataSourceSearchError {
 impl DataSourceRunError for DataSourceSearchError {
     fn user_facing_error(&self) -> String {
         self.message.clone()
-    }
-
-    fn telemetry_payload(&self) -> serde_json::Value {
-        json!(self)
     }
 
     fn as_any(&self) -> &dyn Any {

@@ -6,7 +6,7 @@ use warpui::{AppContext, SingletonEntity, ViewHandle};
 
 use crate::PrivacySettings;
 use crate::{
-    ai::blocklist::{telemetry_banner::should_collect_ai_ugc_telemetry, SerializedBlockListItem},
+    ai::blocklist::{ugc_policy_banner::should_collect_ai_ugc, SerializedBlockListItem},
     appearance::Appearance,
     settings::{BlockVisibilitySettings, DebugSettings, InputModeSettings},
 };
@@ -102,7 +102,7 @@ pub(super) fn create_terminal_model(
 
     let obfuscate_secrets = get_secret_obfuscation_mode(ctx);
     let is_ai_ugc_telemetry_enabled =
-        should_collect_ai_ugc_telemetry(ctx, PrivacySettings::as_ref(ctx).is_telemetry_enabled);
+        should_collect_ai_ugc(ctx, PrivacySettings::as_ref(ctx).is_telemetry_enabled);
 
     TerminalModel::new(
         restored_blocks.map(|v| v.as_slice()),

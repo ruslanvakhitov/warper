@@ -1,7 +1,7 @@
 use crate::appearance::Appearance;
 use crate::context_chips::prompt::Prompt;
 use crate::report_if_error;
-use crate::server::telemetry::{PromptChoice};
+use crate::server::event_metadata::PromptChoice;
 use crate::settings::EnforceMinimumContrast;
 use crate::terminal::blockgrid_element::BlockGridElement;
 use crate::terminal::model::blockgrid::BlockGrid;
@@ -480,14 +480,14 @@ impl TypedActionView for OnboardingPromptBlock {
                             report_if_error!(prompt.reset(ctx));
                         });
                         ctx.notify();
-                                            }
+                    }
                     OnboardingPromptType::PS1 => {
                         self.selected_prompt = Some(OnboardingPromptType::PS1);
                         SessionSettings::handle(ctx).update(ctx, |settings, ctx| {
                             report_if_error!(settings.honor_ps1.set_value(true, ctx));
                         });
                         ctx.notify();
-                                            }
+                    }
                 }
             }
             OnboardingPromptBlockAction::PromptConfirmed => {

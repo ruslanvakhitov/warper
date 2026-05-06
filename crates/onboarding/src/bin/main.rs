@@ -4,7 +4,7 @@ use ai::LLMId;
 use anyhow::Result;
 use onboarding::slides::OnboardingModelInfo;
 use onboarding::{
-    AgentOnboardingEvent, AgentOnboardingView, MockTelemetryContextProvider, SelectedSettings,
+    AgentOnboardingEvent, AgentOnboardingView, SelectedSettings,
 };
 use pathfinder_color::ColorU;
 use rust_embed::RustEmbed;
@@ -53,7 +53,6 @@ fn main() -> Result<()> {
         ctx.add_singleton_model(|ctx| build_appearance(phenomenon(), ctx));
 
         // Register telemetry context provider for logging telemetry events.
-        ctx.add_singleton_model(MockTelemetryContextProvider::new_context_provider);
 
         ctx.add_window(AddWindowOptions::default(), |ctx| {
             OnboardingMainView::new(ctx)

@@ -6,33 +6,12 @@ use serde_json::json;
 use serde_json::Value;
 use session_sharing_protocol::common::ParticipantId;
 use session_sharing_protocol::common::Role;
-use session_sharing_protocol::common::SessionId as SharedSessionId;
 use session_sharing_protocol::sharer::SessionEndedReason;
-use strum_macros::EnumDiscriminants;
-use strum_macros::EnumIter;
 use warp_completer::completer::MatchType;
 use warp_core::command::ExitCode;
-use warp_core::telemetry::EnablementState;
-use warp_core::telemetry::TelemetryEvent as TelemetryEventTrait;
-use warp_core::telemetry::TelemetryEventDesc;
 use warpui::keymap::Keystroke;
 use warpui::notification::{NotificationSendError, RequestPermissionsOutcome};
 use warpui::rendering::ThinStrokes;
-
-#[derive(Clone, Copy, Debug, Serialize)]
-pub enum SharedSessionActionSource {
-    BlocklistContextMenu,
-    Tab,
-    PaneHeader,
-    CommandPalette,
-    OnboardingBlock,
-    Closed,
-    InactivityModal,
-    NonUser,
-    SharingDialog,
-    RightClickMenu,
-    FooterChip,
-}
 
 use crate::ai::agent::api::ServerConversationToken;
 use crate::ai::agent::conversation::AIConversationId;
@@ -56,26 +35,22 @@ use crate::channel::Channel;
 use crate::code::editor_management::CodeSource;
 use crate::features::FeatureFlag;
 use crate::launch_configs::save_modal::SaveState;
-use crate::notebooks::telemetry::NotebookTelemetryAction;
-use crate::notebooks::NotebookId;
-use crate::notebooks::NotebookLocation;
 use crate::palette::PaletteMode;
 use crate::pane_group::PaneDragDropLocation;
 use crate::prompt::editor_modal::OpenSource as PromptEditorOpenSource;
 use crate::search::command_search::searcher::CommandSearchItemAction;
 use crate::search::QueryFilter;
 use crate::server::block::DisplaySetting;
-use crate::server::ids::ObjectUid;
 use crate::server::ids::ServerId;
 use crate::settings::import::config::ParsedTerminalSetting;
 use crate::settings::import::config::SettingType;
 use crate::settings::import::model::TerminalType;
 use crate::settings::AgentModeCodingPermissionsType;
-use crate::tab::TabTelemetryAction;
+use crate::tab::TabActionMetadata;
 use crate::terminal::block_list_viewport::InputMode;
 use crate::terminal::cli_agent_sessions::CLIAgentInputEntrypoint;
 use crate::terminal::cli_agent_sessions::CLIAgentRichInputCloseReason;
-use crate::terminal::input::TelemetryInputSuggestionsMode;
+use crate::terminal::input::InputSuggestionsModeMetadata;
 use crate::terminal::model::ansi::WarpificationUnavailableReason;
 use crate::terminal::model::block::BlockId;
 use crate::terminal::model::session::SessionId;
@@ -100,9 +75,6 @@ use crate::tips::WelcomeTipFeature;
 use crate::util::file::external_editor::settings::EditorLayout;
 #[cfg(feature = "local_fs")]
 use crate::util::openable_file_type::FileTarget;
-use crate::workflows::WorkflowId;
-use crate::workflows::WorkflowSelectionSource;
-use crate::workflows::WorkflowSource;
 use crate::workspace::tab_settings::TabCloseButtonPosition;
 use crate::workspace::tab_settings::WorkspaceDecorationVisibility;
 use crate::workspace::TabMovement;
@@ -123,33 +95,8 @@ pub enum ObjectType {
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-pub enum Space {
-    Personal,
-    Team { team_uid: ServerId },
-    Shared,
-}
-
-pub type GenericStringObjectId = ServerId;
-
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-pub enum CloudObjectTypeAndId {
-    Notebook(ServerId),
-    Workflow(ServerId),
-    Folder(ServerId),
-    GenericStringObject {
-        object_type: GenericStringObjectFormat,
-        id: ServerId,
-    },
-}
-
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum DriveSortOrder {
     Removed,
-}
-
-pub enum NotificationSourceAgent {
-    Oz,
-    CLI(CLIAgentInputEntrypoint),
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -199,12 +146,6 @@ pub struct AppStartupInfo {
     pub timing_data: Vec<TimingDataPoint>,
 }
 
-#[derive(Clone, Copy, Serialize, Deserialize)]
-pub enum DownloadSource {
-    Website,
-    Homebrew,
-}
-
 #[derive(Clone, Serialize, Deserialize)]
 pub struct BlockLatencyInfo {
     pub command: &'static str,
@@ -213,147 +154,6 @@ pub struct BlockLatencyInfo {
     pub execution_ms: u64,
 }
 
-// For use when recording what type of cloud object a particular telemetry is for.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum TelemetryCloudObjectType {
-    Workflow,
-    Notebook,
-    Folder,
-    GenericStringObject(GenericStringObjectFormat),
-}
-
-impl From<&CloudObjectTypeAndId> for TelemetryCloudObjectType {
-    fn from(cloud_object_type_and_id: &CloudObjectTypeAndId) -> Self {
-        match cloud_object_type_and_id {
-            CloudObjectTypeAndId::Notebook(_) => Self::Notebook,
-            CloudObjectTypeAndId::Workflow(_) => Self::Workflow,
-            CloudObjectTypeAndId::Folder(_) => Self::Folder,
-            CloudObjectTypeAndId::GenericStringObject { object_type, .. } => {
-                Self::GenericStringObject(*object_type)
-            }
-        }
-    }
-}
-
-/// For use when recording how a user has access to a cloud object.
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-pub enum TelemetrySpace {
-    /// The object is owned by the current user.
-    Personal,
-    /// The object is owned by a team the user is on.
-    Team,
-    /// The object was shared with the user.
-    Shared,
-}
-
-impl From<Space> for TelemetrySpace {
-    fn from(space: Space) -> Self {
-        match space {
-            Space::Personal => Self::Personal,
-            Space::Team { .. } => Self::Team,
-            Space::Shared => Self::Shared,
-        }
-    }
-}
-
-/// Common metadata to include in all Warp Drive telemetry events that act on a specific object.
-/// Events that only apply to a single object type may use specific metadata like [`WorkflowTelemetryMetadata`],
-/// [`NotebookTelemetryMetadata`], or [`EnvVarTelemetryMetadata`] instead.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct CloudObjectTelemetryMetadata {
-    pub object_type: TelemetryCloudObjectType,
-    /// The server UID of the object. This only exists for objects that have been synced to the
-    /// server.
-    pub object_uid: Option<ServerId>,
-    /// The space through which the user has access to the object.
-    pub space: Option<TelemetrySpace>,
-    /// If the object is owned by a team, this is the owning team's UID. For shared objects, the
-    /// user might not be on the team.
-    pub team_uid: Option<ServerId>,
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-pub struct WorkflowTelemetryMetadata {
-    pub workflow_categories: Option<Vec<String>>,
-    pub workflow_source: WorkflowSource,
-    pub workflow_space: Option<TelemetrySpace>,
-    pub workflow_selection_source: WorkflowSelectionSource,
-    // This field is only populated for cloud workflows that have been synced to the server
-    pub workflow_id: Option<WorkflowId>,
-    // Any referenced workflow enums that have been synced to the cloud
-    pub enum_ids: Vec<GenericStringObjectId>,
-}
-
-/// Metadata to include in all notebook telemetry events.
-///
-/// There are 4 expected configurations:
-/// * Personal cloud notebooks: `notebook_id` is `Some`, `team_uid` is `None`, and location is `PersonalCloud`
-/// * Team cloud notebooks: `notebook_id` is `Some`, `team_uid` is `Some`, and location is `Team`
-/// * Local file-based notebooks: `notebook_id` and `team_uid` are `None`, and location is `LocalFile`
-/// * Remote file-based notebooks: `notebook_id` and `team_uid` are `None`, and location is `RemoteFile`
-///
-/// This representation allows for invalid combinations, but makes querying the data easier (for
-/// example, to find all notebook events for a given team).
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-pub struct NotebookTelemetryMetadata {
-    /// The notebook ID, only available for cloud notebooks that have been synced to the server.
-    pub notebook_id: Option<NotebookId>,
-    /// The team UID, only available for cloud notebooks in a shared team.
-    pub team_uid: Option<ServerId>,
-    pub space: Option<TelemetrySpace>,
-    /// Where the notebook is canonically located.
-    pub location: NotebookLocation,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub markdown_table_count: Option<usize>,
-}
-
-impl NotebookTelemetryMetadata {
-    pub fn new(
-        notebook_id: impl Into<Option<NotebookId>>,
-        team_uid: impl Into<Option<ServerId>>,
-        location: impl Into<NotebookLocation>,
-        space: Option<TelemetrySpace>,
-    ) -> Self {
-        Self {
-            notebook_id: notebook_id.into(),
-            team_uid: team_uid.into(),
-            location: location.into(),
-            space,
-            markdown_table_count: None,
-        }
-    }
-
-    pub fn with_markdown_table_count(mut self, markdown_table_count: usize) -> Self {
-        self.markdown_table_count = Some(markdown_table_count);
-        self
-    }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct NotebookActionEvent {
-    #[serde(flatten)]
-    pub action: NotebookTelemetryAction,
-    #[serde(flatten)]
-    pub metadata: NotebookTelemetryMetadata,
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-pub struct EnvVarTelemetryMetadata {
-    /// The object ID, only available for cloud env vars that have been synced to the server.
-    pub object_id: Option<GenericStringObjectId>,
-    /// The team UID, only available for cloud env vars in a shared team.
-    pub team_uid: Option<ServerId>,
-    pub space: TelemetrySpace,
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-pub struct MCPServerTelemetryMetadata {
-    pub object_id: GenericStringObjectId,
-    pub name: String,
-    pub transport_type: MCPServerTelemetryTransportType,
-    /// The MCP server string extracted from '@modelcontextprotocol/<...>'.
-    pub mcp_server: Option<String>,
-}
 
 #[derive(Clone, Debug, Copy, Serialize, Deserialize)]
 pub enum MCPTemplateCreationSource {
@@ -382,13 +182,13 @@ pub enum MCPServerModel {
 }
 
 #[derive(Clone, Serialize, Deserialize)]
-pub enum MCPServerTelemetryTransportType {
+pub enum MCPServerTransportType {
     CLIServer,
     ServerSentEvents,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
-pub enum MCPServerTelemetryError {
+pub enum MCPServerActionError {
     Initialization(String),
     RequestCancelled,
     ResponseError(String),
@@ -399,7 +199,7 @@ pub enum MCPServerTelemetryError {
 }
 
 #[cfg(not(target_family = "wasm"))]
-impl From<rmcp::RmcpError> for MCPServerTelemetryError {
+impl From<rmcp::RmcpError> for MCPServerActionError {
     fn from(err: rmcp::RmcpError) -> Self {
         match err {
             rmcp::RmcpError::ClientInitialize(err) => Self::Initialization(err.to_string()),
@@ -420,41 +220,6 @@ impl From<rmcp::RmcpError> for MCPServerTelemetryError {
             },
         }
     }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OpenedSharingDialogEvent {
-    pub source: SharingDialogSource,
-
-    /// Metadata for the object being shared, if it's a Warp Drive object.
-    #[serde(flatten)]
-    pub object_metadata: Option<CloudObjectTelemetryMetadata>,
-
-    /// Metadata for the session being shared, if there is one.
-    pub session_id: Option<SharedSessionId>,
-}
-
-/// How the user opened the Warp Drive sharing dialog.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
-pub enum SharingDialogSource {
-    /// The sharing button in the pane header.
-    PaneHeader,
-    /// The per-pane command palette entry (includes keybindings).
-    CommandPalette,
-    /// The Warp Drive index context menu.
-    DriveIndex,
-    /// The sharing dialog was auto-opened from shared session creation.
-    StartedSessionShare,
-    /// The user intented into Warp with an email address to invite.
-    InviteeRequest,
-    /// The user jumped from an inherited ACL to its definition on a parent object.
-    InheritedPermission,
-    /// The onboarding block shown after users create new personal objects.
-    OnboardingBlock,
-    /// The conversation list overflow menu.
-    ConversationList,
-    /// The AI block context menu.
-    AIBlockContextMenu,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -498,7 +263,6 @@ pub enum PaletteSource {
     PrefixChange,
     Keybinding,
     CtrlTab { shift_pressed_initially: bool },
-    WarpDrive,
     QuitModal,
     LogOutModal,
     IntegrationTest,
@@ -530,7 +294,6 @@ pub enum CodePanelsFileOpenEntrypoint {
     GlobalSearch,
 }
 
-/// The CLI agent being used (for telemetry purposes).
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum CLIAgentType {
     Claude,
@@ -546,37 +309,23 @@ pub enum CLIAgentType {
     Unknown,
 }
 
-/// The kind of plugin chip shown or dismissed (for telemetry purposes).
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum PluginChipTelemetryKind {
+pub enum PluginChipKind {
     Install,
     Update,
 }
 
-/// Identifies the agent variant that triggered a notification (for telemetry purposes).
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum NotificationAgentVariant {
-    /// Warp's built-in agent (Oz).
-    Oz,
     /// A CLI agent (e.g., Claude Code, Gemini CLI, etc.).
     CLIAgent(CLIAgentType),
 }
 
-impl From<NotificationSourceAgent> for NotificationAgentVariant {
-    fn from(agent: NotificationSourceAgent) -> Self {
-        match agent {
-            NotificationSourceAgent::Oz => Self::Oz,
-            NotificationSourceAgent::CLI(_cli_agent) => Self::CLIAgent(CLIAgentType::Unknown),
-        }
-    }
-}
-
-/// The action taken on a plugin chip (for telemetry purposes).
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum PluginChipTelemetryAction {
+pub enum PluginChipAction {
     /// User clicked the auto-install button.
     Install,
     /// User clicked the auto-update button.
@@ -585,13 +334,6 @@ pub enum PluginChipTelemetryAction {
     InstallInstructions,
     /// User clicked the manual update instructions button.
     UpdateInstructions,
-}
-
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-pub enum WarpDriveSource {
-    Legacy,
-    LeftPanelToolbelt,
-    ForceOpened,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -618,7 +360,6 @@ pub enum CommandCorrectionEvent {
 pub enum CommandSearchResultType {
     History,
     Workflow,
-    ViewInWarpDrive,
     AIQuery,
     Project,
 }
@@ -683,17 +424,6 @@ pub enum SecretInteraction {
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-pub enum AnonymousUserSignupEntrypoint {
-    HitDriveObjectLimit,
-    LoginGatedFeature,
-    SignUpButton,
-    RenotificationBlock,
-    SignUpAIPrompt,
-    NextCommandSuggestionsUpgradeBanner,
-    Unknown,
-}
-
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum UndoCloseItemType {
     Window,
     Tab,
@@ -714,12 +444,6 @@ pub enum ToggleBlockFilterSource {
     ContextMenu,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct TierLimitHitEvent {
-    pub team_uid: ServerId,
-    pub feature: String,
-}
-
 #[derive(Clone, Debug, Copy, Serialize, Deserialize)]
 pub enum KnowledgePaneEntrypoint {
     /// Triggered by either the command palette or the mac menus
@@ -728,9 +452,6 @@ pub enum KnowledgePaneEntrypoint {
 
     #[serde(rename = "settings")]
     Settings,
-
-    #[serde(rename = "warp_drive")]
-    WarpDrive,
 
     #[serde(rename = "ai_blocklist")]
     AIBlocklist,
@@ -747,9 +468,6 @@ pub enum MCPServerCollectionPaneEntrypoint {
 
     #[serde(rename = "settings")]
     Settings,
-
-    #[serde(rename = "warp_drive")]
-    WarpDrive,
 
     #[serde(rename = "slash_command")]
     SlashCommand,
@@ -998,10 +716,6 @@ pub enum CodeContextDestination {
 
 #[derive(Clone, Debug, Serialize)]
 pub enum AgentModeCitation {
-    WarpDriveObject {
-        object_type: ObjectType,
-        uid: ObjectUid,
-    },
     WarpDocs {
         page: String,
     },
@@ -1085,10 +799,9 @@ impl From<FullAIAgentInput> for AIAgentInput {
     }
 }
 
-/// The origin of an agent view entry, for telemetry purposes.
 #[derive(Clone, Copy, Debug, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum TelemetryAgentViewEntryOrigin {
+pub enum AgentViewEntryMetadataOrigin {
     Input { was_prompt_autodetected: bool },
     ConversationSelector,
     AgentModeHomepage,
@@ -1128,7 +841,7 @@ pub enum TelemetryAgentViewEntryOrigin {
     ThirdPartyCloudAgent,
 }
 
-impl From<AgentViewEntryOrigin> for TelemetryAgentViewEntryOrigin {
+impl From<AgentViewEntryOrigin> for AgentViewEntryMetadataOrigin {
     fn from(origin: AgentViewEntryOrigin) -> Self {
         match origin {
             AgentViewEntryOrigin::Input {
@@ -1181,13 +894,6 @@ pub enum SlashMenuSource {
     UserTyped,
 }
 
-#[derive(Clone, Copy, Debug, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum LoginEventSource {
-    OnboardingSlide,
-    AuthModal,
-}
-
 /// Details about which type of slash command was accepted
 #[derive(Clone, Debug, Serialize)]
 pub enum SlashCommandAcceptedDetails {
@@ -1203,14 +909,6 @@ pub enum AutoReloadModalAction {
     Dismissed,
     #[serde(rename = "enabled_auto_reload")]
     EnabledAutoReload,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum OutOfCreditsBannerAction {
-    #[serde(rename = "dismissed")]
-    Dismissed,
-    #[serde(rename = "credits_purchased")]
-    CreditsPurchased,
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]

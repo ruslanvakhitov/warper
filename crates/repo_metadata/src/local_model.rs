@@ -25,7 +25,6 @@ use crate::{
     entry::{Entry, FileId, IgnoredPathStrategy},
     gitignores_for_directory, matches_gitignores,
     repository::Repository,
-    telemetry::RepoMetadataTelemetryEvent,
     RepoMetadataError,
 };
 use std::sync::Arc;

@@ -690,7 +690,6 @@ impl SettingsImportView {
             }
         });
 
-        self.send_completed_import_telemetry_event(terminal_type_and_profile, ctx);
         ctx.notify();
     }
 
@@ -865,33 +864,6 @@ impl SettingsImportView {
         ctx.notify();
     }
 
-    fn send_completed_import_telemetry_event(
-        &self,
-        terminal_type_and_profile: &TerminalTypeAndProfile,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        let model = ImportedConfigModel::handle(ctx);
-        let imported_settings = model.read(ctx, |model, _ctx| {
-            let Some(config) = model.config(terminal_type_and_profile) else {
-                log::error!("Could not find config for terminal {terminal_type_and_profile:?}");
-                return Default::default();
-            };
-
-            config
-                .valid_setting_types()
-                .into_iter()
-                .map(|setting_type| {
-                    let was_imported_by_user =
-                        model.should_import(terminal_type_and_profile, &setting_type);
-                    ParsedTerminalSetting {
-                        setting_type,
-                        was_imported_by_user,
-                    }
-                })
-                .collect_vec()
-        });
-
-            }
 }
 
 impl View for SettingsImportView {

@@ -16,7 +16,7 @@ use crate::ai::agent::{
     conversation::AIConversationId, AIAgentAction, AIAgentActionType, GrepResult, ServerOutputId,
 };
 use crate::ai::blocklist::{
-    telemetry_banner::should_collect_ai_ugc_telemetry, BlocklistAIPermissions,
+    ugc_policy_banner::should_collect_ai_ugc, BlocklistAIPermissions,
 };
 use crate::ai::paths::{host_native_absolute_path, shell_native_absolute_path};
 use crate::terminal::model::session::ExecuteCommandOptions;

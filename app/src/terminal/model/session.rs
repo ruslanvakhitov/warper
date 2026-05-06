@@ -28,7 +28,7 @@ use warp_completer::completer::{
 };
 use warpui::{platform::OperatingSystem, Entity, ModelContext, SingletonEntity};
 
-use crate::server::telemetry::{BootstrappingInfo};
+use crate::server::event_metadata::{BootstrappingInfo};
 use crate::terminal::event::ExecutedExecutorCommandEvent;
 use crate::terminal::ShellHost;
 use crate::terminal::ShellLaunchData;

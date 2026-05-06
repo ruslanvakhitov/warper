@@ -1,4 +1,3 @@
-use crate::antivirus::telemetry::AntivirusInfoTelemetryEvent;
 use crate::antivirus::{AntivirusInfo, AntivirusInfoEvent};
 use warpui::ModelContext;
 use windows::Win32::System::Com::{
@@ -51,7 +50,7 @@ impl AntivirusInfo {
             }
             Some(software) => {
                 log::info!("Detected antivirus / EDR software {software:#?}");
-                            }
+            }
         }
 
         self.0 = software;

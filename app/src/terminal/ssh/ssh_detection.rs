@@ -4,7 +4,7 @@ use warp_util::path::ShellFamily;
 use crate::terminal::warpify::settings::WarpifySettings;
 
 /// The different possible outcomes of detecting an interactive SSH session.
-/// Also the payload for the [`crate::server::telemetry::TelemetryEvent::SshInteractiveSessionDetected`] event.
+/// Local SSH session detection result.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum SshInteractiveSessionDetected {
     #[serde(rename = "feature_disabled")]

@@ -10,7 +10,7 @@ use crate::{
     code::editor_management::{CodeEditorStatus, CodeEditorSummary},
     pane_group::{CodePane, PaneGroup, PaneId, TerminalPane},
     report_if_error,
-    server::telemetry::CloseTarget,
+    server::event_metadata::CloseTarget,
     session_management::{RunningSessionSummary, SessionNavigationData},
     terminal::general_settings::GeneralSettings,
     workspace::Workspace,

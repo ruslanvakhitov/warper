@@ -21,7 +21,7 @@ use crate::{
             ACCEPT_PROMPT_SUGGESTION_KEYBINDING, REJECT_PROMPT_SUGGESTION_KEYSTROKE,
         },
     },
-    server::telemetry::ToggleCodeSuggestionsSettingSource,
+    server::event_metadata::ToggleCodeSuggestionsSettingSource,
     settings::AISettings,
     ui_components::{blended_colors, icons::Icon},
     view_components::{

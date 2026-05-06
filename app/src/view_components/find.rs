@@ -3,7 +3,7 @@ use crate::editor::{
     EditorView, Event as EditorEvent, PropagateAndNoOpNavigationKeys, SingleLineEditorOptions,
     TextOptions,
 };
-use crate::server::telemetry::{FindOption};
+use crate::server::event_metadata::{FindOption};
 use crate::settings::InputModeSettings;
 use crate::ui_components::{blended_colors, icons::Icon};
 use serde::Serialize;

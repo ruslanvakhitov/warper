@@ -15,8 +15,10 @@ use warpui::EntityId;
 use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::agent::AIAgentExchangeId;
 use crate::ai::blocklist::codebase_index_speedbump_banner::CodebaseIndexSpeedbumpBannerAction;
-use crate::code_review::telemetry_event::CodeReviewPaneEntrypoint;
-use crate::server::telemetry::{AgentModeRewindEntrypoint, PaletteSource, ToggleBlockFilterSource};
+use crate::code_review::metadata::CodeReviewPaneEntrypoint;
+use crate::server::event_metadata::{
+    AgentModeRewindEntrypoint, PaletteSource, ToggleBlockFilterSource,
+};
 use crate::terminal::available_shells::AvailableShell;
 use crate::terminal::model::completions::ShellCompletion;
 use crate::terminal::ssh::error::SshErrorBlockAction;
@@ -326,7 +328,7 @@ pub enum TerminalAction {
     },
     ClearMarkedText,
     SelectAgenticSuggestion(i32),
-    HideTelemetryBannerPermanently,
+    HideUgcPolicyBannerPermanently,
     ShowInitializationBlock,
     GenerateCodebaseIndex,
     ShowWarpifySettings,
@@ -581,7 +583,7 @@ impl fmt::Debug for TerminalAction {
             } => write!(f, "SetMarkedText {{{marked_text:?}, {selected_range:?}}}"),
             ClearMarkedText => write!(f, "ClearMarkedText"),
             SelectAgenticSuggestion(index) => write!(f, "SelectAgenticSuggestion({index:?})"),
-            HideTelemetryBannerPermanently => write!(f, "HideTelemetryBannerPermanently"),
+            HideUgcPolicyBannerPermanently => write!(f, "HideUgcPolicyBannerPermanently"),
             ShowInitializationBlock => write!(f, "ShowInitializationBlock"),
             GenerateCodebaseIndex => write!(f, "GenerateIndexForRepo"),
             ShowWarpifySettings => write!(f, "ShowWarpifySettings"),

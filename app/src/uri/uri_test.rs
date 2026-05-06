@@ -1,12 +1,7 @@
-use self::parse_url_paths::get_item_data_from_warp_link;
 use super::*;
 use crate::launch_configs::launch_config::make_mock_single_window_launch_config;
 use crate::linear::{LinearAction, LinearIssueWork};
 use crate::ChannelState;
-use warp_core::{
-    channel::{Channel, ChannelConfig, WarpServerConfig},
-    AppId,
-};
 
 #[test]
 fn test_find_matching_config() {
@@ -96,25 +91,6 @@ fn add_mock_config_with_name(name: &str, configs: &mut Vec<LaunchConfig>) {
     configs.push(new_config);
 }
 
-fn set_local_channel_with_server_config() {
-    ChannelState::set(ChannelState::new(
-        Channel::Local,
-        ChannelConfig {
-            app_id: AppId::new("dev", "warper", "Warper"),
-            logfile_name: "".into(),
-            server_config: Some(WarpServerConfig::local_override(
-                Some("http://localhost:8080".into()),
-                Some("ws://localhost:8081/graphql/v2".into()),
-                Some("ws://localhost:8082".into()),
-            )),
-            oz_config: None,
-            telemetry_config: None,
-            autoupdate_config: None,
-            mcp_static_config: None,
-        },
-    ));
-}
-
 #[test]
 fn test_get_launch_config_path() {
     assert_eq!(
@@ -169,57 +145,6 @@ fn test_remove_extension() {
 }
 
 #[test]
-fn test_warp_web_link_notebook() {
-    assert_eq!(
-        get_item_data_from_warp_link(
-            &Url::parse(&format!(
-                "{}/drive/notebook/Performance-Analysis-LkDlnAe34vfYD2JXsAkssc?focused_folder_id=test_uid00000000000123&invitee_email=test@example.com",
-                ChannelState::server_root_url()
-            ))
-            .unwrap()
-        ),
-        None
-    );
-}
-
-#[test]
-fn test_warp_web_link_session() {
-    assert_eq!(
-        get_item_data_from_warp_link(
-            &Url::parse(&format!(
-                "{}/session/317d0686-7a0b-4b67-806b-aaa3e9df501b?
-                pwd=6f727249-af9f-4025-a240-59df40a4c64b",
-                ChannelState::server_root_url()
-            ))
-            .unwrap()
-        ),
-        None
-    );
-}
-
-#[test]
-fn test_warp_web_link_workflow() {
-    assert_eq!(
-        get_item_data_from_warp_link(
-            &Url::parse(&format!(
-                "{}/drive/workflow/Remove-all-stopped-docker-container-image-and-volumes-ZCJSkai2gpwTqpBFs5HOfZ",
-                ChannelState::server_root_url()
-            ))
-            .unwrap()
-        ),
-        None
-    );
-}
-
-#[test]
-fn test_warp_web_link_failure() {
-    assert_eq!(
-        get_item_data_from_warp_link(&Url::parse("https://google.com").unwrap()),
-        None
-    );
-}
-
-#[test]
 fn test_action_new_agent_conversation_parse() {
     let url = Url::parse(&format!(
         "{}://action/new_agent_conversation",
@@ -240,101 +165,6 @@ fn test_validate_custom_uri_linear() {
     .unwrap();
     let host = validate_custom_uri(&url).unwrap();
     assert!(matches!(host, UriHost::Linear));
-}
-
-#[test]
-fn validate_custom_uri_rejects_hosted_hosts_without_server_config() {
-    ChannelState::set(ChannelState::init());
-
-    for url in [
-        format!("{}://auth/desktop_redirect", ChannelState::url_scheme()),
-        format!("{}://billing/checkout", ChannelState::url_scheme()),
-        format!("{}://team/settings", ChannelState::url_scheme()),
-        format!("{}://platform/api_keys", ChannelState::url_scheme()),
-        format!("{}://environment/open?id=abc", ChannelState::url_scheme()),
-        format!("{}://conversation/abc", ChannelState::url_scheme()),
-        format!("{}://drive/notebook?id=abc", ChannelState::url_scheme()),
-        format!(
-            "{}://shared_session/join?id=abc",
-            ChannelState::url_scheme()
-        ),
-        format!(
-            "{}://settings/billing_and_usage",
-            ChannelState::url_scheme()
-        ),
-        format!("{}://settings/teams", ChannelState::url_scheme()),
-        format!("{}://settings/environments", ChannelState::url_scheme()),
-        format!("{}://settings/platform", ChannelState::url_scheme()),
-    ] {
-        let url = Url::parse(&url).unwrap();
-        assert!(
-            validate_custom_uri(&url).is_err(),
-            "removed hosted URI must fail closed without Warp server config: {url}"
-        );
-    }
-}
-
-#[test]
-fn validate_custom_uri_rejects_hosted_hosts_even_with_stale_server_config() {
-    set_local_channel_with_server_config();
-
-    for url in [
-        format!("{}://auth/desktop_redirect", ChannelState::url_scheme()),
-        format!("{}://billing/checkout", ChannelState::url_scheme()),
-        format!("{}://team/settings", ChannelState::url_scheme()),
-        format!("{}://platform/api_keys", ChannelState::url_scheme()),
-        format!("{}://environment/open?id=abc", ChannelState::url_scheme()),
-        format!("{}://conversation/abc", ChannelState::url_scheme()),
-        format!("{}://drive/workflow?id=abc", ChannelState::url_scheme()),
-        format!(
-            "{}://shared_session/join?id=abc",
-            ChannelState::url_scheme()
-        ),
-    ] {
-        let url = Url::parse(&url).unwrap();
-        assert!(
-            validate_custom_uri(&url).is_err(),
-            "removed hosted URI must fail closed even if stale server config exists: {url}"
-        );
-    }
-
-    ChannelState::set(ChannelState::init());
-}
-
-#[test]
-fn validate_custom_uri_rejects_removed_settings_pages() {
-    for page in ["billing_and_usage", "teams", "environments", "platform"] {
-        let url = Url::parse(&format!("{}://settings/{page}", ChannelState::url_scheme())).unwrap();
-        assert!(
-            validate_custom_uri(&url).is_err(),
-            "settings/{page} must fail closed"
-        );
-    }
-}
-
-#[test]
-fn validate_custom_uri_rejects_removed_settings_pages_with_query_or_fragment() {
-    for url in [
-        format!(
-            "{}://settings/billing_and_usage?source=restore",
-            ChannelState::url_scheme()
-        ),
-        format!("{}://settings/teams#members", ChannelState::url_scheme()),
-        format!(
-            "{}://settings/environments?next=cloud-agent",
-            ChannelState::url_scheme()
-        ),
-        format!(
-            "{}://settings/platform?create_api_key=true",
-            ChannelState::url_scheme()
-        ),
-    ] {
-        let url = Url::parse(&url).unwrap();
-        assert!(
-            validate_custom_uri(&url).is_err(),
-            "removed settings URI must fail closed: {url}"
-        );
-    }
 }
 
 #[test]
@@ -362,28 +192,6 @@ fn validate_custom_uri_allows_local_actions_without_server_config() {
         assert!(
             validate_custom_uri(&url).is_ok(),
             "expected local URI to be valid: {url}"
-        );
-    }
-}
-
-#[test]
-fn stale_hosted_action_deeplinks_do_not_parse() {
-    for path in [
-        "/login",
-        "/logout",
-        "/reauth",
-        "/open_billing",
-        "/open_warp_drive",
-        "/share_session",
-        "/join_shared_session",
-        "/open_team_settings",
-        "/open_oz",
-        "/cloud_agent",
-    ] {
-        let url = Url::parse(&format!("{}://action{path}", ChannelState::url_scheme())).unwrap();
-        assert!(
-            Action::parse(&url).is_err(),
-            "stale hosted action must not parse: {url}"
         );
     }
 }
@@ -437,18 +245,18 @@ fn test_linear_issue_work_empty_prompt() {
 // -- handle_incoming_uri redaction -------------------------------------------
 //
 // These tests cover the fix for GH #737: the entry log inside
-// `handle_incoming_uri` used to write the full URL (including the Firebase
-// `refresh_token` query parameter) to `warp.log` at `info` level before any
-// redaction ran. They validate the redaction helper and the error messages
-// produced by `validate_custom_uri` to ensure that the fallback `warn`
-// emitted on invalid URIs never embeds the query string either.
+// `handle_incoming_uri` used to write full URLs with secret query parameters
+// to `warp.log` at `info` level before any redaction ran. They validate the
+// redaction helper and the error messages produced by `validate_custom_uri` to
+// ensure that the fallback `warn` emitted on invalid URIs never embeds the
+// query string either.
 
 /// The redacted log representation must contain scheme/host/path for triage
 /// but must never contain the query string or any token material.
 #[test]
 fn safe_url_log_fields_redacts_refresh_token() {
     let url = Url::parse(&format!(
-        "{}://auth/desktop_redirect?refresh_token=SENSITIVE_TOKEN&state=abc&user_uid=u",
+        "{}://mcp/oauth_callback?refresh_token=SENSITIVE_TOKEN&state=abc&user_uid=u",
         ChannelState::url_scheme()
     ))
     .unwrap();
@@ -460,11 +268,11 @@ fn safe_url_log_fields_redacts_refresh_token() {
         "expected scheme in redacted log, got: {logged}"
     );
     assert!(
-        logged.contains("host=auth"),
+        logged.contains("host=mcp"),
         "expected host in redacted log, got: {logged}"
     );
     assert!(
-        logged.contains("path=/desktop_redirect"),
+        logged.contains("path=/oauth_callback"),
         "expected path in redacted log, got: {logged}"
     );
     assert!(
@@ -519,12 +327,12 @@ fn safe_url_log_fields_redacts_generic_oauth_params() {
     );
 }
 
-/// Drive links carry user-identifiable `invitee_email` values in the query.
-/// The entry log must not surface them on non-dogfood channels.
+/// Local callback links can carry user-identifiable values in the query. The
+/// entry log must not surface them on non-dogfood channels.
 #[test]
-fn safe_url_log_fields_redacts_invitee_email() {
+fn safe_url_log_fields_redacts_user_email() {
     let url = Url::parse(&format!(
-        "{}://drive/notebook?id=abc&invitee_email=alice@example.com",
+        "{}://mcp/oauth_callback?user_email=alice@example.com",
         ChannelState::url_scheme()
     ))
     .unwrap();
@@ -536,10 +344,10 @@ fn safe_url_log_fields_redacts_invitee_email() {
         "redacted log must not contain invitee email: {logged}"
     );
     assert!(
-        !logged.contains("invitee_email"),
-        "redacted log must not contain invitee_email key: {logged}"
+        !logged.contains("user_email"),
+        "redacted log must not contain user_email key: {logged}"
     );
-    assert!(logged.contains("host=drive"), "expected host: {logged}");
+    assert!(logged.contains("host=mcp"), "expected host: {logged}");
 }
 
 /// URL fragments are not currently used as secret carriers by Warp today, but
@@ -548,7 +356,7 @@ fn safe_url_log_fields_redacts_invitee_email() {
 #[test]
 fn safe_url_log_fields_drops_fragment() {
     let url = Url::parse(&format!(
-        "{}://auth/desktop_redirect#sensitive_fragment",
+        "{}://mcp/oauth_callback#sensitive_fragment",
         ChannelState::url_scheme()
     ))
     .unwrap();
@@ -593,7 +401,7 @@ fn safe_url_log_fields_handles_file_urls_without_host() {
 #[test]
 fn validate_custom_uri_errors_do_not_leak_query_string() {
     // Unexpected scheme.
-    let url = Url::parse("https://auth/desktop_redirect?refresh_token=LEAKED").unwrap();
+    let url = Url::parse("https://mcp/oauth_callback?refresh_token=LEAKED").unwrap();
     let err = validate_custom_uri(&url).unwrap_err();
     let msg = format!("{err:?}");
     assert!(!msg.contains("refresh_token"), "{msg}");
@@ -610,9 +418,9 @@ fn validate_custom_uri_errors_do_not_leak_query_string() {
     assert!(!msg.contains("refresh_token"), "{msg}");
     assert!(!msg.contains("LEAKED"), "{msg}");
 
-    // Unexpected path for a host that doesn't allow arbitrary paths.
+    // Unsupported path for a host that has a local-only page allowlist.
     let url = Url::parse(&format!(
-        "{}://auth/not_the_redirect?refresh_token=LEAKED",
+        "{}://settings/not_the_page?refresh_token=LEAKED",
         ChannelState::url_scheme()
     ))
     .unwrap();

@@ -1,6 +1,5 @@
 use crate::model::OnboardingStateModel;
 use crate::slides::{bottom_nav, layout, slide_content};
-use crate::telemetry::OnboardingEvent;
 use crate::visuals::project_visual;
 use ui_components::{button, keyboard_shortcut, Component as _, Options as _};
 use warp_core::ui::{

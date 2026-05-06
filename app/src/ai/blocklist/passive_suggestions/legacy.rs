@@ -3,7 +3,7 @@ use crate::ai::agent::AIAgentExchangeId;
 use crate::ai::blocklist::controller::{
     response_stream::ResponseStreamId, BlocklistAIController, BlocklistAIControllerEvent,
 };
-use crate::server::telemetry::PromptSuggestionFallbackReason;
+use crate::server::event_metadata::PromptSuggestionFallbackReason;
 use crate::settings::AISettings;
 use crate::terminal::event::{BlockType, UserBlockCompleted};
 use crate::terminal::model::block::BlockId;

@@ -1,5 +1,5 @@
-mod telemetry;
-pub use telemetry::{SkillOpenOrigin, SkillTelemetryEvent};
+mod open_origin;
+pub use open_origin::SkillOpenOrigin;
 
 cfg_if::cfg_if! {
     if #[cfg(not(feature = "local_fs"))] {

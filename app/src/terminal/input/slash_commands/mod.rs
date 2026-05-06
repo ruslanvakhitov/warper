@@ -15,12 +15,12 @@ use crate::ai::blocklist::agent_view::{
     AgentViewEntryOrigin, DismissalStrategy, EphemeralMessage, ENTER_OR_EXIT_CONFIRMATION_WINDOW,
 };
 use crate::ai::blocklist::{BlocklistAIHistoryModel, SlashCommandRequest};
-use crate::code_review::telemetry_event::CodeReviewPaneEntrypoint;
+use crate::code_review::metadata::CodeReviewPaneEntrypoint;
 use crate::search::slash_command_menu::static_commands::commands::{self, COMMAND_REGISTRY};
 use crate::search::slash_command_menu::static_commands::Availability;
 use crate::search::slash_command_menu::{SlashCommandId, StaticCommand};
 use crate::server::ids::SyncId;
-use crate::server::telemetry::SlashCommandAcceptedDetails;
+use crate::server::event_metadata::SlashCommandAcceptedDetails;
 use crate::settings::AISettings;
 use crate::terminal::input::decorations::InputBackgroundJobOptions;
 use crate::terminal::input::inline_menu::{InlineMenuAction, InlineMenuType};
@@ -473,7 +473,7 @@ impl Input {
                         }
                     }
                     _ => {
-                        use crate::server::telemetry::PaletteSource;
+                        use crate::server::event_metadata::PaletteSource;
 
                         ctx.emit(Event::OpenFilesPalette {
                             source: PaletteSource::Keybinding,

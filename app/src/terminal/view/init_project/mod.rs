@@ -11,8 +11,8 @@ use crate::ai::blocklist::inline_action::inline_action_header::HeaderConfig;
 use crate::ai::blocklist::inline_action::requested_action::RenderableAction;
 use crate::ai::persisted_workspace::PersistedWorkspace;
 use crate::appearance::Appearance;
-use crate::code::lsp_telemetry::{LspEnablementSource, LspTelemetryEvent};
-use crate::server::telemetry::{
+use crate::code::lsp_metadata::{LspEnablementSource};
+use crate::server::event_metadata::{
     AgentModeSetupCodebaseContextActionType, AgentModeSetupProjectScopedRulesActionType,
 };
 use crate::ui_components::icons::Icon;
@@ -856,7 +856,6 @@ impl InitStepBlock {
             },
             move |_me, result, ctx| match result {
                 Ok(()) => {
-
                     PersistedWorkspace::handle(ctx).update(ctx, |workspace, _| {
                         workspace.enable_lsp_server_for_path(&repo_root, server_type);
                     });
@@ -877,7 +876,6 @@ impl InitStepBlock {
                     });
                 }
                 Err(e) => {
-
                     ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
                         toast_stack.add_ephemeral_toast(
                             DismissibleToast::error(format!(
@@ -919,7 +917,7 @@ impl TypedActionView for InitStepBlock {
     fn handle_action(&mut self, action: &Self::Action, ctx: &mut ViewContext<Self>) {
         match action {
             InitProjectBlockAction::IndexCodebase(directory) => {
-                                CodebaseIndexManager::handle(ctx).update(ctx, |manager, ctx| {
+                CodebaseIndexManager::handle(ctx).update(ctx, |manager, ctx| {
                     manager.index_directory(directory.clone(), ctx);
                 });
                 self.model.update(ctx, |model, ctx| {
@@ -931,7 +929,7 @@ impl TypedActionView for InitStepBlock {
                 });
             }
             InitProjectBlockAction::SkipIndex => {
-                                self.model.update(ctx, |model, ctx| {
+                self.model.update(ctx, |model, ctx| {
                     model.mark_step_completed(
                         InitStepKind::CodebaseContext,
                         InitActionResult::CodebaseContext(CodebaseIndexingResult::Skipped),
@@ -960,8 +958,7 @@ impl TypedActionView for InitStepBlock {
                 }
 
                 // Send telemetry for each enabled server
-                for server_type in enabled_servers.iter().chain(servers_to_install.iter()) {
-                                    }
+                for server_type in enabled_servers.iter().chain(servers_to_install.iter()) {}
 
                 // Spawn installation tasks for uninstalled servers
                 let model = self.model.clone();
@@ -1011,7 +1008,7 @@ impl TypedActionView for InitStepBlock {
                 });
             }
             InitProjectBlockAction::SkipLanguageServers => {
-                                self.model.update(ctx, |model, ctx| {
+                self.model.update(ctx, |model, ctx| {
                     model.mark_step_completed(
                         InitStepKind::LanguageServers,
                         InitActionResult::LanguageServers(LanguageServersResult::Skipped),
@@ -1054,19 +1051,19 @@ impl TypedActionView for InitStepBlock {
                 });
             }
             InitProjectBlockAction::GenerateRules => {
-                                self.model.update(ctx, |model, ctx| {
+                self.model.update(ctx, |model, ctx| {
                     model.mark_step_running(InitStepKind::ProjectScopedRules, ctx);
                     ctx.emit(InitProjectModelEvent::GenerateProjectRules);
                 });
             }
             InitProjectBlockAction::RegenerateRules => {
-                                self.model.update(ctx, |model, ctx| {
+                self.model.update(ctx, |model, ctx| {
                     model.disable_regenerate_button();
                     ctx.emit(InitProjectModelEvent::RegenerateProjectRules);
                 });
             }
             InitProjectBlockAction::SkipRules => {
-                                self.model.update(ctx, |model, ctx| {
+                self.model.update(ctx, |model, ctx| {
                     model.mark_step_completed(
                         InitStepKind::ProjectScopedRules,
                         InitActionResult::ProjectScopedRules(ProjectScopedRulesResult::Skipped),
@@ -1075,7 +1072,7 @@ impl TypedActionView for InitStepBlock {
                 });
             }
             InitProjectBlockAction::ViewCodebaseContextStatus => {
-                                self.model.update(ctx, |_, ctx| {
+                self.model.update(ctx, |_, ctx| {
                     ctx.emit(InitProjectModelEvent::ViewCodebaseContextStatus);
                 });
             }

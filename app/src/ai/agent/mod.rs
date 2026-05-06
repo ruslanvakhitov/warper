@@ -9,7 +9,7 @@ pub(crate) mod linearization;
 pub(crate) mod redaction;
 pub(crate) mod task;
 mod task_store;
-pub(super) mod telemetry;
+pub(super) mod citation_metadata;
 pub(super) mod util;
 
 // Re-export types that were moved to the ai crate.
@@ -31,7 +31,7 @@ use ai::skills::ParsedSkill;
 use chrono::{DateTime, Local, TimeDelta};
 use comment::ReviewComment;
 use task::TaskId;
-pub use telemetry::AIIdentifiers;
+pub use citation_metadata::AIIdentifiers;
 
 use warp_editor::render::model::LineCount;
 

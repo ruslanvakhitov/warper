@@ -1,4 +1,4 @@
-pub mod telemetry;
+pub mod metadata;
 
 use crate::ai::agent::conversation::ConversationStatus;
 use crate::code::editor::{add_color, remove_color};
@@ -11,9 +11,7 @@ use crate::terminal::CLIAgent;
 use crate::ui_components::icon_with_status::{
     render_icon_with_status, IconWithStatusSizing, IconWithStatusVariant,
 };
-use crate::workspace::view::vertical_tabs::telemetry::{
-    VerticalTabsChipEntrypoint, VerticalTabsTelemetryEvent,
-};
+use crate::workspace::view::vertical_tabs::metadata::VerticalTabsChipEntrypoint;
 use crate::FeatureFlag;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -3886,7 +3884,7 @@ fn render_terminal_diff_stats_badge(
         )
     })
     .on_click(move |ctx, app, _| {
-                let locator = PaneViewLocator {
+        let locator = PaneViewLocator {
             pane_group_id,
             pane_id,
         };
@@ -3915,7 +3913,7 @@ fn render_terminal_pull_request_badge(
         render_badge_container(render_pull_request_badge_content(&label, appearance), bg)
     })
     .on_click(move |ctx, app, _| {
-                ctx.dispatch_typed_action(WorkspaceAction::OpenLink(url.clone()));
+        ctx.dispatch_typed_action(WorkspaceAction::OpenLink(url.clone()));
     })
     .with_cursor(Cursor::PointingHand)
     .finish()

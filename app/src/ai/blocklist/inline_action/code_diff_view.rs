@@ -1,5 +1,5 @@
 use crate::ai::blocklist::view_util::render_provider_icon_button;
-use crate::ai::skills::{SkillOpenOrigin, SkillTelemetryEvent};
+use crate::ai::skills::{SkillOpenOrigin};
 use anyhow::Result;
 use lazy_static::lazy_static;
 use markdown_parser::{FormattedText, FormattedTextFragment, FormattedTextLine};
@@ -61,9 +61,7 @@ use crate::{
         blocklist::{
             action_model::{
                 AIActionStatus, BlocklistAIActionEvent, BlocklistAIActionModel,
-                EditAcceptAndContinueClickedEvent, EditAcceptClickedEvent, EditResolvedEvent,
-                EditStats, MalformedFinalLineProxyEvent, RequestFileEditsFormatKind,
-                RequestFileEditsTelemetryEvent,
+                RequestFileEditsFormatKind,
             },
             history_model::BlocklistAIHistoryModel,
             inline_action::{
@@ -91,14 +89,14 @@ use crate::{
         inline_diff::{InlineDiffView, InlineDiffViewEvent},
         DiffResult,
     },
-    code_review::telemetry_event::CodeReviewPaneEntrypoint,
+    code_review::metadata::CodeReviewPaneEntrypoint,
     menu::{Event as MenuEvent, Menu, MenuItemFields, MenuVariant},
     pane_group::{
         focus_state::PaneFocusHandle,
         pane::{view, PaneId},
         BackingView, PaneEvent,
     },
-    server::telemetry::{AgentModeCodeFileNavigationSource, ToggleCodeSuggestionsSettingSource},
+    server::event_metadata::{AgentModeCodeFileNavigationSource, ToggleCodeSuggestionsSettingSource},
     settings::AISettings,
     terminal::{input::SET_INPUT_MODE_AGENT_ACTION_NAME, ShellLaunchData},
     ui_components::{blended_colors, icons::Icon},
@@ -1111,7 +1109,6 @@ impl CodeDiffView {
 
         // Handled in `CodeDiffView` instead of `CodeDiffModel` so we emit one event for all files.
         // This isn't emitted in the executor because rejected diffs aren't executed.
-        self.send_telemetry_for_edit_resolution(RequestedEditResolution::Reject, ctx);
     }
 
     /// Revert all changes by replacing file contents with the base version.
@@ -2224,16 +2221,6 @@ impl CodeDiffView {
     fn server_output_id(&self) -> Option<ServerOutputId> {
         self.identifiers.server_output_id.clone()
     }
-
-    /// Helper function to send telemetry for edit resolution.
-    /// Consolidates the common telemetry logic for reject operations.
-    fn send_telemetry_for_edit_resolution(
-        &self,
-        response: RequestedEditResolution,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        let (lines_added, lines_removed) = self.pending_diffs_line_counts(ctx);
-            }
 
     /// We are processing unified diff and saving files concurrently. That's why
     /// we need to have separate handlers for diff calculation and save completed.

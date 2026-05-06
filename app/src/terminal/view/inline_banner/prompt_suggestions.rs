@@ -8,7 +8,7 @@ use crate::ai::blocklist::prompt::prompt_alert::{
 };
 use crate::ai::blocklist::BlocklistAIInputModel;
 use crate::ai::predict::prompt_suggestions::ACCEPT_PROMPT_SUGGESTION_KEYBINDING;
-use crate::server::telemetry::InteractionSource;
+use crate::server::event_metadata::InteractionSource;
 use crate::settings::InputSettings;
 use crate::terminal::view::passive_suggestions::PromptSuggestionResolution;
 use crate::util::bindings::keybinding_name_to_keystroke;

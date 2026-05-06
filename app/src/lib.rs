@@ -25,7 +25,6 @@ mod crash_recovery;
 mod debounce;
 mod debug_dump;
 mod default_terminal;
-mod download_method;
 #[cfg(windows)]
 mod dynamic_libraries;
 mod env_vars;
@@ -241,8 +240,8 @@ use crate::notification::NotificationContext;
 use crate::root_view::{
     quake_mode_window_id, quake_mode_window_is_open, OpenFromRestoredArg, OpenPath,
 };
-use crate::server::telemetry::PaletteSource;
-pub use crate::server::telemetry::{
+use crate::server::event_metadata::PaletteSource;
+pub use crate::server::event_metadata::{
     AgentModeEntrypoint, AgentModeEntrypointSelectionType,
 };
 use crate::terminal::CustomSecretRegexUpdater;

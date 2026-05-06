@@ -16,7 +16,7 @@ use crate::{
     },
     global_resource_handles::GlobalResourceHandlesProvider,
     persistence::ModelEvent,
-    server::telemetry::TelemetryAgentViewEntryOrigin,
+    server::event_metadata::AgentViewEntryMetadataOrigin,
     terminal::{
         input::message_bar::{Message, MessageItem},
         model::rich_content::RichContentType,
@@ -265,7 +265,6 @@ impl TerminalView {
                 });
             }
         }
-
 
         // Mark all AgentViewEntry rich content as dirty so their heights get
         // re-measured. When the agent view is active, AgentViewEntryBlock renders

@@ -18,7 +18,7 @@ pub use pending_user_query_block::{PendingUserQueryBlock, PendingUserQueryBlockE
 #[cfg(feature = "agent_mode_debug")]
 use self::code_diff_view::FileDiff;
 use crate::ai::agent::redaction::redact_secrets;
-use crate::ai::agent::telemetry::ForTelemetry as _;
+use crate::ai::agent::citation_metadata::ForEventMetadata as _;
 use crate::ai::agent::CancellationReason;
 use crate::ai::agent::PassiveSuggestionTrigger;
 use crate::ai::agent::SuggestPromptRequest;
@@ -38,7 +38,7 @@ use repo_metadata::repositories::DetectedRepositories;
 
 #[cfg(feature = "local_fs")]
 use crate::ai::skills::SkillOpenOrigin;
-use crate::ai::skills::{SkillManager, SkillTelemetryEvent};
+use crate::ai::skills::{SkillManager};
 use crate::code::editor::comment_editor::create_readonly_comment_markdown_editor;
 use crate::code::editor::view::CodeEditorRenderOptions;
 use crate::code::editor_management::CodeSource;
@@ -92,9 +92,9 @@ use crate::ai::blocklist::inline_action::search_codebase::{
 };
 use crate::ai::blocklist::inline_action::web_fetch::WebFetchView;
 use crate::ai::blocklist::inline_action::web_search::WebSearchView;
-use crate::code_review::telemetry_event::CodeReviewPaneEntrypoint;
+use crate::code_review::metadata::CodeReviewPaneEntrypoint;
 use crate::server::ids::SyncId;
-use crate::server::telemetry::AgentModeRewindEntrypoint;
+use crate::server::event_metadata::AgentModeRewindEntrypoint;
 use crate::settings::InputSettings;
 use crate::terminal::view::{CodeDiffAction, TerminalAction};
 use crate::ui_components::icons::Icon;
@@ -179,7 +179,7 @@ use crate::{report_error, report_if_error, ToastStack};
 use ai::agent::action::{AskUserQuestionItem, InsertReviewComment};
 
 use crate::editor::InteractionState;
-use crate::server::telemetry::{AutonomySettingToggleSource, InteractionSource};
+use crate::server::event_metadata::{AutonomySettingToggleSource, InteractionSource};
 use crate::settings::{
     AISettingsChangedEvent, AgentModeCodingPermissionsType, FontSettings, InputModeSettings,
     InputModeSettingsChangedEvent,
@@ -205,7 +205,6 @@ use crate::code_review::comments::{
     attach_pending_imported_comments, convert_insert_review_comments, AttachedReviewComment,
     CommentId, CommentOrigin,
 };
-use crate::code_review::CodeReviewTelemetryEvent;
 use crate::PrivacySettings;
 use crate::{
     ai::agent::{AIAgentInput, ServerOutputId},
@@ -221,7 +220,7 @@ use super::{
         CodeDiffState, CodeDiffView, CodeDiffViewAction, CodeDiffViewEvent,
     },
     permissions::is_agent_mode_autonomy_allowed,
-    telemetry_banner::should_collect_ai_ugc_telemetry,
+    ugc_policy_banner::should_collect_ai_ugc,
     BlocklistAIActionModel, BlocklistAIController, BlocklistAIHistoryEvent,
     BlocklistAIHistoryModel, BlocklistAIPermissions,
 };
@@ -2414,7 +2413,7 @@ impl AIBlock {
         let surfaced_citations = output
             .citations
             .iter()
-            .filter_map(|citation| citation.for_telemetry(ctx))
+            .filter_map(|citation| citation.for_event_metadata(ctx))
             .collect_vec();
         if !surfaced_citations.is_empty() {
                     }
@@ -3608,7 +3607,7 @@ impl AIBlock {
         let query = view.as_ref(ctx).query().unwrap_or_default();
 
         let should_collect_ugc =
-            should_collect_ai_ugc_telemetry(ctx, PrivacySettings::as_ref(ctx).is_telemetry_enabled);
+            should_collect_ai_ugc(ctx, PrivacySettings::as_ref(ctx).is_telemetry_enabled);
         let redacted_query = if should_collect_ugc {
             let mut redacted_query = query.clone();
             redact_secrets(&mut redacted_query);
@@ -5741,7 +5740,7 @@ impl TypedActionView for AIBlock {
                     .status(ctx)
                     .output_to_render()
                     .and_then(|output| output.get().server_output_id.clone());
-                if let Some(citation) = citation.for_telemetry(ctx) {
+                if let Some(citation) = citation.for_event_metadata(ctx) {
                                     }
             }
             AIBlockAction::OpenAIFactCollection => {

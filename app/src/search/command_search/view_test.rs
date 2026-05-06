@@ -5,7 +5,6 @@ use crate::{
     server::{
         cloud_objects::{listener::Listener, update_manager::UpdateManager},
         sync_queue::SyncQueue,
-        telemetry::context_provider::AppTelemetryContextProvider,
     },
     settings_view::keybindings::KeybindingChangedNotifier,
     system::SystemStats,
@@ -18,7 +17,6 @@ use super::*;
 fn initialize_app(app: &mut App) {
     initialize_settings_for_tests(app);
     app.add_singleton_model(|_| AuthStateProvider::new_for_test());
-    app.add_singleton_model(AppTelemetryContextProvider::new_context_provider);
     app.add_singleton_model(AuthManager::new_for_test);
     app.add_singleton_model(|_| NetworkStatus::new());
     app.add_singleton_model(|_| SystemStats::new());

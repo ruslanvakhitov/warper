@@ -4,14 +4,14 @@ use warpui::{
 };
 
 #[derive(Default, Debug, Clone)]
-pub struct TelemetryBanner {
+pub struct UgcPolicyBanner {
     pub is_onboarded: bool,
     pub learn_more_mouse_state: MouseStateHandle,
     pub privacy_settings_mouse_state: MouseStateHandle,
     pub close_button_mouse_state: MouseStateHandle,
 }
 
-impl TelemetryBanner {
+impl UgcPolicyBanner {
     pub fn new(is_onboarded: bool, _ctx: &mut ViewContext<Self>) -> Self {
         Self {
             is_onboarded,
@@ -22,9 +22,9 @@ impl TelemetryBanner {
     }
 }
 
-impl View for TelemetryBanner {
+impl View for UgcPolicyBanner {
     fn ui_name() -> &'static str {
-        "TelemetryBanner"
+        "UgcPolicyBanner"
     }
 
     fn render(&self, app: &AppContext) -> Box<dyn Element> {
@@ -33,19 +33,12 @@ impl View for TelemetryBanner {
     }
 }
 
-impl Entity for TelemetryBanner {
+impl Entity for UgcPolicyBanner {
     type Event = ();
 }
 
-/// Returns `true` if we should collect UGC (user-generated content) telemetry for AI features.
-///
-/// This should apply to telemetry events that include user-generated content, like queries or
-/// outputs, but need not be checked for regular metadata telemetry events.
-///
-/// For example, a metadata event that records if a user toggled Pair/Dispatch mode does not
-/// require this check, but an event that logs the input buffer for natural language detection
-/// _does_ need to check this.
-pub fn should_collect_ai_ugc_telemetry(app: &AppContext, is_telemetry_enabled: bool) -> bool {
+/// Returns `true` if local AI features may retain user-generated content in diagnostic metadata.
+pub fn should_collect_ai_ugc(app: &AppContext, is_telemetry_enabled: bool) -> bool {
     let _ = (app, is_telemetry_enabled);
     false
 }

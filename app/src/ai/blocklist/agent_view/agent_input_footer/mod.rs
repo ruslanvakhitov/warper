@@ -21,7 +21,6 @@ use crate::{
         ContextChipKind,
     },
     features::FeatureFlag,
-    server::telemetry::{PluginChipTelemetryKind},
     settings::{AISettings, AISettingsChangedEvent},
     settings_view::SettingsSection,
     terminal::{
@@ -100,7 +99,6 @@ use warpui::{
 use warpui::r#async::Timer;
 
 #[cfg(not(target_family = "wasm"))]
-use crate::server::telemetry::PluginChipTelemetryAction;
 #[cfg(not(target_family = "wasm"))]
 use crate::terminal::cli_agent_sessions::plugin_manager::{
     compare_versions, plugin_manager_for, plugin_manager_for_with_shell, CliAgentPluginManager,
@@ -139,15 +137,6 @@ const PLUGIN_CHIP_DEBOUNCE: Duration = Duration::from_secs(3);
 enum PluginChipKind {
     Install,
     Update,
-}
-
-impl From<PluginChipKind> for PluginChipTelemetryKind {
-    fn from(kind: PluginChipKind) -> Self {
-        match kind {
-            PluginChipKind::Install => PluginChipTelemetryKind::Install,
-            PluginChipKind::Update => PluginChipTelemetryKind::Update,
-        }
-    }
 }
 
 /// Builds a composite key for per-agent, per-host plugin chip dismissal.
@@ -914,7 +903,7 @@ impl AgentInputFooter {
         progress_toast: &str,
         error_label: &str,
         success_toast: &str,
-        operation_kind: PluginChipTelemetryKind,
+        operation_kind: PluginChipKind,
         operation: F,
         ctx: &mut ViewContext<Self>,
     ) -> bool
@@ -1063,7 +1052,7 @@ impl AgentInputFooter {
             "Installing Warp plugin...",
             "Failed to install Warp plugin",
             success_msg,
-            PluginChipTelemetryKind::Install,
+            PluginChipKind::Install,
             |manager| async move { manager.install().await },
             ctx,
         )
@@ -1080,7 +1069,7 @@ impl AgentInputFooter {
             "Updating Warp plugin...",
             "Failed to update Warp plugin",
             success_msg,
-            PluginChipTelemetryKind::Update,
+            PluginChipKind::Update,
             |manager| async move { manager.update().await },
             ctx,
         )

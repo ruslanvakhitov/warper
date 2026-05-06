@@ -28,12 +28,10 @@ use chrono::Local;
 pub(crate) use execute::apply_edits;
 pub(crate) use execute::coerce_integer_args;
 pub(crate) use execute::FileReadResult;
-pub(crate) use execute::MalformedFinalLineProxyEvent;
 pub use execute::{
-    read_local_file_context, EditAcceptAndContinueClickedEvent, EditAcceptClickedEvent,
-    EditResolvedEvent, EditStats, NewConversationDecision, PromptSuggestionExecutor,
+    read_local_file_context, NewConversationDecision, PromptSuggestionExecutor,
     ReadFileContextResult, RequestFileEditsExecutor, RequestFileEditsFormatKind,
-    RequestFileEditsTelemetryEvent, ShellCommandExecutor, ShellCommandExecutorEvent,
+    ShellCommandExecutor, ShellCommandExecutorEvent,
     StartAgentExecutor, StartAgentExecutorEvent, StartAgentRequest,
 };
 

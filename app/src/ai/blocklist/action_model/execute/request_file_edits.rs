@@ -1,6 +1,6 @@
 mod apply_diff_model;
 mod diff_application;
-mod telemetry;
+mod metadata;
 
 use warp_util::file::FileSaveError;
 
@@ -17,13 +17,7 @@ use apply_diff_model::ApplyDiffModel;
 pub(crate) use diff_application::apply_edits;
 use diff_application::DiffApplicationError;
 pub(crate) use diff_application::FileReadResult;
-pub(crate) use telemetry::MalformedFinalLineProxyEvent;
-#[allow(unused_imports)]
-pub use telemetry::{EditAcceptAndContinueClickedEvent, EditAcceptClickedEvent};
-pub use telemetry::{
-    EditReceivedEvent, EditResolvedEvent, EditStats, RequestFileEditsFormatKind,
-    RequestFileEditsTelemetryEvent,
-};
+pub use metadata::RequestFileEditsFormatKind;
 
 use crate::{
     ai::{

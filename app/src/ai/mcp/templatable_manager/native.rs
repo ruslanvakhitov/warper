@@ -16,7 +16,7 @@ use crate::ai::mcp::{JsonTemplate, MCPGalleryManager, MCPServerUpdate};
 
 use crate::ai::mcp::parsing::resolve_json;
 use crate::ai::mcp::TemplatableMCPServer;
-use crate::server::telemetry::{MCPServerModel, MCPServerTelemetryTransportType};
+use crate::server::event_metadata::{MCPServerModel, MCPServerTransportType};
 use crate::{
     ai::mcp::{
         logs, templatable_installation::VariableValue, MCPServer, StaticEnvVar,
@@ -50,22 +50,18 @@ use super::{
 
 /// Controls the behavior of `spawn_server_impl`.
 enum SpawnMode {
-    /// Initial spawn - clears logs and sends telemetry.
+    /// Initial spawn - clears logs and persists running state when requested.
     Initial {
         /// Whether to persist running state to SQLite.
         persist_running_state_to_sqlite: bool,
     },
-    /// Reconnection after transport closed - preserves logs, no telemetry.
+    /// Reconnection after transport closed - preserves logs.
     ///
     /// Waiters are notified via `pending_reconnections` when the connection completes.
     Reconnect,
 }
 
 impl SpawnMode {
-    fn should_send_telemetry(&self) -> bool {
-        matches!(self, SpawnMode::Initial { .. })
-    }
-
     fn should_persist_running_state_to_sqlite(&self) -> bool {
         matches!(
             self,

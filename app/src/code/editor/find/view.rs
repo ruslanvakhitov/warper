@@ -6,7 +6,7 @@ use crate::editor::{
     EditorView, Event as EditorEvent, InteractionState, PropagateAndNoOpNavigationKeys,
     SingleLineEditorOptions, TextOptions,
 };
-use crate::server::telemetry::{FindOption};
+use crate::server::event_metadata::{FindOption};
 use crate::themes::theme::Fill;
 use crate::ui_components::{blended_colors, icons::Icon};
 use crate::view_components::action_button::{ActionButton, DisabledSecondaryTheme, SecondaryTheme};

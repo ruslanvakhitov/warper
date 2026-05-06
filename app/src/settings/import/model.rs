@@ -80,34 +80,12 @@ impl ImportedConfigModel {
         self.started
     }
 
-    #[cfg(target_os = "macos")]
-    fn maybe_send_multiple_hotkeys_telemetry_event(
-        &self,
-        terminal_type: &TerminalType,
-        configs: &Result<Vec<Config>, ConfigError>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        if let TerminalType::ITerm = terminal_type {
-            if let Ok(configs) = configs {
-                if configs.iter().any(|config| {
-                    matches!(
-                        config.hotkey_mode.setting,
-                        Err(HotkeyError::MultipleHotkeys)
-                    )
-                }) {
-                                    }
-            }
-        }
-    }
-
     pub fn write_parse_results(
         &mut self,
         terminal_type: TerminalType,
         (configs, timer): (Result<Vec<Config>, ConfigError>, IntervalTimer),
         ctx: &mut ModelContext<Self>,
     ) {
-                #[cfg(target_os = "macos")]
-        self.maybe_send_multiple_hotkeys_telemetry_event(&terminal_type, &configs, ctx);
         self.parsed_terminals.insert(terminal_type, configs);
         ctx.emit(CompletedParseEvent {
             terminal: terminal_type,

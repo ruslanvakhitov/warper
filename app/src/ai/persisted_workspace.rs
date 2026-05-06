@@ -33,7 +33,6 @@ use warpui::{AppContext, Entity, ModelContext, SingletonEntity};
 #[cfg(feature = "local_fs")]
 use crate::code::language_server_shutdown_manager::LanguageServerShutdownManager;
 #[cfg(feature = "local_fs")]
-use crate::code::lsp_telemetry::LspTelemetryEvent;
 #[cfg(feature = "local_fs")]
 use crate::terminal::local_shell::LocalShellState;
 #[cfg(feature = "local_fs")]
@@ -242,12 +241,10 @@ impl PersistedWorkspace {
                         me.handle_index_metadata_event(root_path, *event);
                     }
                     CodebaseIndexManagerEvent::NewIndexCreated => {
-                        send_active_indexed_repos_changed_telemetry(ctx);
                     }
                     CodebaseIndexManagerEvent::RemoveExpiredIndexMetadata { expired_metadata } => {
                         // TODO: Disable expired metadata removal once we have other consumers of the workspace metadata.
                         me.clean_up_expired_metadata(expired_metadata.clone(), ctx);
-                        send_active_indexed_repos_changed_telemetry(ctx);
                     }
                     _ => {}
                 },
@@ -1213,11 +1210,6 @@ impl PersistedWorkspace {
         }
     }
 }
-
-fn send_active_indexed_repos_changed_telemetry<T: Entity>(ctx: &mut ModelContext<T>) {
-    let total = CodebaseIndexManager::as_ref(ctx).num_active_indices();
-    let hit_max = AIRequestUsageModel::as_ref(ctx).hit_codebase_index_limit(total);
-    }
 
 #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
 pub fn all_working_directories(app: &AppContext) -> HashSet<PathBuf> {

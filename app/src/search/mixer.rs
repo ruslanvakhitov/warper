@@ -425,9 +425,7 @@ impl<T: Action + Clone> SearchMixer<T> {
                             source.on_query_finished(ctx);
                             return;
                         }
-                        let error_payload =
-                            new_results.as_ref().err().map(|e| e.telemetry_payload());
-                                                mixer.add_new_results(data_source_id, new_results, ctx);
+                        mixer.add_new_results(data_source_id, new_results, ctx);
                         source.on_query_finished(ctx);
                     },
                 );
@@ -591,7 +589,6 @@ pub type DataSourceRunErrorWrapper = Box<dyn DataSourceRunError>;
 
 pub trait DataSourceRunError: 'static + Send + Sync + std::fmt::Debug {
     fn user_facing_error(&self) -> String;
-    fn telemetry_payload(&self) -> serde_json::Value;
     fn as_any(&self) -> &dyn Any;
 }
 

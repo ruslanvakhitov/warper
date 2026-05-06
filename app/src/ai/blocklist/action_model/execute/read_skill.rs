@@ -1,5 +1,5 @@
 use super::{ActionExecution, AnyActionExecution, ExecuteActionInput, PreprocessActionInput};
-use crate::ai::skills::{SkillManager, SkillTelemetryEvent};
+use crate::ai::skills::{SkillManager};
 use ai::agent::action_result::AnyFileContent;
 use warpui::{ModelContext, SingletonEntity};
 

@@ -1,4 +1,4 @@
-use crate::ai::blocklist::telemetry_banner::should_collect_ai_ugc_telemetry;
+use crate::ai::blocklist::ugc_policy_banner::should_collect_ai_ugc;
 use crate::appearance::Appearance;
 use crate::coding_entrypoints::glowing_editor::{GlowingEditor, GlowingEditorEvent};
 use crate::settings::PrivacySettings;
@@ -75,7 +75,7 @@ impl CreateProjectView {
                 // Always send metadata event for custom prompts
 
                 // Send content event only if UGC collection is enabled
-                let should_collect_ugc = should_collect_ai_ugc_telemetry(
+                let should_collect_ugc = should_collect_ai_ugc(
                     ctx,
                     PrivacySettings::as_ref(ctx).is_telemetry_enabled,
                 );

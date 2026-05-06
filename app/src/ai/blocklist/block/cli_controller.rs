@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use crate::server::telemetry::{CLISubagentControlState};
+use crate::server::event_metadata::{CLISubagentControlState};
 use instant::Instant;
 use parking_lot::FairMutex;
 use serde::{Deserialize, Serialize};

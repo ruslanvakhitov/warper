@@ -14,7 +14,6 @@ mod vertical_tabs;
 #[cfg(target_family = "wasm")]
 mod wasm_view;
 
-use self::vertical_tabs::telemetry::{VerticalTabsDisplayOption, VerticalTabsTelemetryEvent};
 use self::vertical_tabs::{
     render_detail_sidecar, render_settings_popup, VerticalTabsPanelState,
     VERTICAL_TABS_SETTINGS_BUTTON_POSITION_ID,
@@ -43,7 +42,6 @@ use crate::app_state::{
 };
 use crate::code_review::diff_state::DiffStateModel;
 #[cfg(feature = "local_fs")]
-use crate::code_review::CodeReviewTelemetryEvent;
 use crate::code_review::GlobalCodeReviewModel;
 use crate::coding_panel_enablement_state::CodingPanelEnablementState;
 use crate::default_terminal::DefaultTerminal;
@@ -104,7 +102,7 @@ use crate::auth::auth_state::AuthState;
 #[cfg(feature = "local_fs")]
 use crate::code::editor_management::CodeManager;
 use crate::code::editor_management::CodeSource;
-use crate::code_review::telemetry_event::CodeReviewPaneEntrypoint;
+use crate::code_review::metadata::CodeReviewPaneEntrypoint;
 use crate::launch_configs::launch_config::WindowTemplate;
 use crate::pane_group::{
     CodeReviewPanelArg, Direction as PaneGroupDirection, ExecutionProfileEditorPane,
@@ -178,7 +176,7 @@ use crate::search::command_search::searcher::{
     AcceptedHistoryItem, AcceptedWorkflow, CommandSearchItemAction,
 };
 use crate::search::command_search::view::{CommandSearchEvent, CommandSearchView};
-use crate::server::telemetry::{
+use crate::server::event_metadata::{
     AddTabWithShellSource, CloseTarget, FileTreeSource, KnowledgePaneEntrypoint,
     LaunchConfigUiLocation, MCPServerCollectionPaneEntrypoint,
 };
@@ -320,11 +318,11 @@ use crate::tab_configs::remove_confirmation_dialog::{
     RemoveTabConfigConfirmationDialog, RemoveTabConfigConfirmationEvent,
 };
 use crate::tab_configs::session_config_modal::{SessionConfigModal, SessionConfigModalEvent};
-use crate::tab_configs::telemetry::{
-    ExistingTabConfigOpenMode, GuidedModalSessionType, TabConfigsTelemetryEvent,
+use crate::tab_configs::metadata::{
+    ExistingTabConfigOpenMode, GuidedModalSessionType,
 };
 #[cfg(feature = "local_fs")]
-use crate::tab_configs::telemetry::{NewWorktreeConfigOpenSource, WorktreeBranchNamingMode};
+use crate::tab_configs::metadata::{NewWorktreeConfigOpenSource, WorktreeBranchNamingMode};
 use crate::tab_configs::{
     NewWorktreeModal, NewWorktreeModalEvent, TabConfigParamsModal, TabConfigParamsModalEvent,
 };
@@ -332,10 +330,10 @@ use crate::tab_configs::{
 use crate::code::editor::{add_color, remove_color};
 use crate::palette::PaletteMode;
 use crate::search::command_palette::view::{Event as CommandPaletteEvent, View as CommandPalette};
-use crate::server::telemetry::{NotificationsTurnedOnSource, PaletteSource, TabRenameEvent};
+use crate::server::event_metadata::{NotificationsTurnedOnSource, PaletteSource, TabRenameEvent};
 use crate::tab::{
     tab_position_id, NewSessionMenuItem, PaneNameMenuTarget, SelectedTabColor, TabBarState,
-    TabComponent, TabData, TabTelemetryAction, TAB_BAR_BORDER_HEIGHT,
+    TabComponent, TabData, TabActionMetadata, TAB_BAR_BORDER_HEIGHT,
 };
 use crate::terminal::view::ssh_file_upload::FileUploadId;
 use crate::ui_components::icons;
@@ -5028,7 +5026,7 @@ impl Workspace {
             })
     }
 
-    fn check_and_trigger_telemetry_banner_for_existing_users(
+    fn check_and_trigger_ugc_policy_banner_for_existing_users(
         &mut self,
         ctx: &mut ViewContext<Self>,
     ) {
@@ -5037,7 +5035,7 @@ impl Workspace {
         {
             if let Some(terminal_view_handle) = self.active_session_view(ctx) {
                 terminal_view_handle.update(ctx, |terminal_view, ctx| {
-                    terminal_view.insert_telemetry_banner(true, ctx);
+                    terminal_view.insert_ugc_policy_banner(true, ctx);
                 });
             }
         }
@@ -5087,7 +5085,7 @@ impl Workspace {
             // Add telemetry banner for new users BEFORE the agentic onboarding blocks.
             if let Some(terminal_view_handle) = self.active_session_view(ctx) {
                 terminal_view_handle.update(ctx, |terminal_view, ctx| {
-                    terminal_view.insert_telemetry_banner(false, ctx);
+                    terminal_view.insert_ugc_policy_banner(false, ctx);
                 });
             }
 
@@ -11561,17 +11559,6 @@ impl Workspace {
     ) {
         self.close_all_overlays(ctx);
         self.open_settings_pane(section, Some(search_query), ctx);
-    }
-
-    /// Opens the team settings page and fills the invite field with the given email. This is used when linking directing to
-    /// settings with the intent of inviting a user.
-    pub fn show_team_settings_page_with_email_invite(
-        &mut self,
-        email_invite: Option<&String>,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        let _ = email_invite;
-        self.show_settings_with_section(Some(SettingsSection::Account), ctx);
     }
 
     /// Opens the MCP servers settings page, optionally triggering auto-install of a gallery MCP.

@@ -26,7 +26,6 @@ use crate::code::local_code_editor::{
 use crate::editor::InteractionState;
 
 use super::editor::view::{CodeEditorRenderOptions, CodeEditorView};
-use super::lsp_telemetry::LspTelemetryEvent;
 
 /// A processed diagnostic with its converted offset range.
 /// Stored on LocalCodeEditorView and used for both decoration and hover display.

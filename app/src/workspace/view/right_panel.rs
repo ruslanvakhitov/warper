@@ -6,7 +6,7 @@ use crate::code_review::code_review_view::{
     render_file_navigation_button, CodeReviewView, CONTENT_LEFT_MARGIN, CONTENT_RIGHT_MARGIN,
 };
 use crate::code_review::code_review_view::{CodeReviewCommentDebugState, CodeReviewViewEvent};
-use crate::code_review::telemetry_event::CodeReviewContextDestination;
+use crate::code_review::metadata::CodeReviewContextDestination;
 use crate::pane_group::pane::view::header::{components::HEADER_EDGE_PADDING, PANE_HEADER_HEIGHT};
 use crate::pane_group::WorkingDirectoriesEvent;
 use crate::pane_group::{Event as PaneGroupEvent, PaneGroup, WorkingDirectoriesModel};

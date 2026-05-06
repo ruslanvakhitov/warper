@@ -14,7 +14,7 @@ use crate::{
         EnablementState, LspRepoStatus, PersistedWorkspace, PersistedWorkspaceEvent,
     },
     appearance::Appearance,
-    code::lsp_telemetry::{LspControlActionType, LspEnablementSource, LspTelemetryEvent},
+    code::lsp_metadata::{LspControlActionType, LspEnablementSource},
     settings::{AISettings, CodeSettings},
     terminal::general_settings::GeneralSettings,
     ui_components::{

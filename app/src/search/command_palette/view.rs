@@ -6,7 +6,7 @@ use crate::search::result_renderer::QueryResultRenderer;
 use crate::search::search_bar::SelectionUpdate;
 use crate::search::search_bar::{SearchBar, SearchBarEvent, SearchBarState, SearchResultOrdering};
 use crate::search::QueryFilter;
-use crate::server::telemetry::LaunchConfigUiLocation;
+use crate::server::event_metadata::LaunchConfigUiLocation;
 use crate::settings::CtrlTabBehavior;
 use crate::terminal::keys_settings::KeysSettings;
 use crate::themes::theme::WarpTheme;

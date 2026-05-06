@@ -2,7 +2,7 @@ use anyhow::Result;
 use warpui::{AppContext, Entity, SingletonEntity};
 
 use crate::{
-    server::telemetry::{PtySpawnMode},
+    server::event_metadata::{PtySpawnMode},
     terminal::local_tty::{self},
 };
 

@@ -19,7 +19,7 @@ use crate::context_chips::{
     available_chips, ChipAvailability, ChipRuntimeCapabilities, ContextChipKind,
 };
 
-use crate::server::telemetry::{PromptChoice};
+use crate::server::event_metadata::{PromptChoice};
 use crate::settings::{FontSettings, WarpPromptSeparator};
 use crate::terminal::blockgrid_element::BlockGridElement;
 use crate::terminal::SizeInfo;

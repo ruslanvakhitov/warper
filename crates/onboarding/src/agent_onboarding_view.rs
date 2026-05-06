@@ -6,7 +6,6 @@ use crate::slides::{
     AgentSlide, CustomizeUISlide, IntentionSlide, IntroSlide, OnboardingModelInfo, OnboardingSlide,
     ProjectSlide, ThemePickerSlide, ThemePickerSlideEvent, ThirdPartySlide,
 };
-use crate::telemetry::OnboardingEvent;
 use ai::LLMId;
 use warp_core::features::FeatureFlag;
 use warpui::assets::asset_cache::AssetSource;

@@ -34,7 +34,7 @@ use crate::context_chips::prompt_type::PromptType;
 use crate::features::FeatureFlag;
 use crate::pane_group::TerminalViewResources;
 use crate::persistence::ModelEvent;
-use crate::server::telemetry::{TelemetryAgentViewEntryOrigin};
+use crate::server::event_metadata::{AgentViewEntryMetadataOrigin};
 use crate::settings::DebugSettings;
 
 use crate::terminal::model::session::Sessions;

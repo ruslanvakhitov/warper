@@ -36,7 +36,7 @@ use crate::{
     },
 };
 
-use super::telemetry_banner::should_collect_ai_ugc_telemetry;
+use super::ugc_policy_banner::should_collect_ai_ugc;
 
 /// Cutoff score for deciding an user input matches a history command entry.
 const HISTORY_ENTRY_MATCH_CUTOFF: f32 = 0.9;
@@ -732,7 +732,7 @@ impl BlocklistAIInputModel {
                     );
                     if current_input_type != new_input_type {
                         let buffer_length = other_buffer_cloned.len();
-                        let input_buffer_text_for_telemetry = should_collect_ai_ugc_telemetry(
+                        let input_buffer_text_for_event_metadata = should_collect_ai_ugc(
                             ctx,
                             PrivacySettings::as_ref(ctx).is_telemetry_enabled,
                         )

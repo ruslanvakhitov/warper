@@ -1,5 +1,5 @@
 use crate::pane_group::focus_state::PaneFocusHandle;
-use crate::server::telemetry::MCPServerCollectionPaneEntrypoint;
+use crate::server::event_metadata::MCPServerCollectionPaneEntrypoint;
 use crate::settings_view::mcp_servers_page::MCPServersSettingsPage;
 use crate::{
     ai::execution_profiles::profiles::ClientProfileId,

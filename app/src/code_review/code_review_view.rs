@@ -50,15 +50,12 @@ use crate::{
         },
         editor_state::CodeReviewEditorState,
         hidden_lines::calculate_hidden_lines,
-        telemetry_event::{
-            AddToContextOrigin, CodeReviewContextDestination, CodeReviewTelemetryEvent,
-            PaneStateChange,
-        },
+        metadata::{AddToContextOrigin, CodeReviewContextDestination, PaneStateChange},
     },
 };
 
 #[cfg(feature = "local_fs")]
-use crate::code_review::telemetry_event::DiffSetContextScope;
+use crate::code_review::metadata::DiffSetContextScope;
 
 use crate::{
     code::editor::line::EditorLineLocation,
@@ -89,7 +86,7 @@ use crate::{
 
 use crate::code_review::find_model::CodeReviewFindModel;
 #[cfg(feature = "local_fs")]
-use crate::server::telemetry::CodePanelsFileOpenEntrypoint;
+use crate::server::event_metadata::CodePanelsFileOpenEntrypoint;
 use crate::terminal::cli_agent::{
     build_selection_line_range_prompt, build_selection_substring_prompt,
 };

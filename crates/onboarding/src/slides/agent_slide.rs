@@ -694,7 +694,7 @@ impl AgentSlide {
         let title_color = internal_colors::text_main(theme, background_for_text);
         let subtitle_color = internal_colors::text_sub(theme, background_for_text);
 
-        let title_el = Text::new("Set by Team Workspace", ui_font_family, 14.0)
+        let title_el = Text::new("Set by local policy", ui_font_family, 14.0)
             .with_color(title_color)
             .with_style(Properties {
                 weight: Weight::Normal,
@@ -704,7 +704,7 @@ impl AgentSlide {
             .finish();
 
         let subtitle_el = Text::new(
-            "Autonomy settings are configured as part of your team workspace.",
+            "Autonomy settings are configured by local policy.",
             ui_font_family,
             12.0,
         )

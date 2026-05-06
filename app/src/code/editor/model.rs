@@ -2,7 +2,6 @@
 // Adding this file level gate as some of the code around editability is not used in WASM yet.
 
 use crate::code::editor::line_iterator::LineIterator;
-use crate::code_review::CodeReviewTelemetryEvent;
 use num_traits::SaturatingSub;
 use rangemap::{RangeMap, RangeSet};
 use std::future::Future;
