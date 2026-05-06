@@ -2,7 +2,7 @@ use std::{borrow::Cow, mem};
 
 use string_offset::CharOffset;
 use warp_editor::{
-    content::{anchor::Anchor, buffer::Buffer, selection_model::BufferSelectionModel},
+    content::{anchor::Anchor, selection_model::BufferSelectionModel},
     editor::EmbeddedItemModel,
 };
 use warpui::{
@@ -18,9 +18,6 @@ use super::{model::ChildModelHandle, view::EditorViewAction, NotebookWorkflow};
 
 #[derive(Default)]
 struct MouseStateHandles {
-    insert_button_state: MouseStateHandle,
-    copy_button_state: MouseStateHandle,
-    edit_button_state: MouseStateHandle,
     remove_embedding_button_state: MouseStateHandle,
 }
 
@@ -28,7 +25,6 @@ pub struct NotebookEmbed {
     start: Anchor,
     hashed_id: String,
     is_selected: bool,
-    content: ModelHandle<Buffer>,
     selection_model: ModelHandle<BufferSelectionModel>,
     mouse_state_handles: MouseStateHandles,
 }
@@ -37,7 +33,6 @@ impl NotebookEmbed {
     pub fn new(
         start: CharOffset,
         hashed_id: String,
-        content: ModelHandle<Buffer>,
         selection_model: ModelHandle<BufferSelectionModel>,
         ctx: &mut ModelContext<Self>,
     ) -> Self {
@@ -48,7 +43,6 @@ impl NotebookEmbed {
         let embedding = Self {
             start,
             hashed_id,
-            content,
             selection_model,
             is_selected: false,
             mouse_state_handles: Default::default(),
@@ -61,13 +55,11 @@ impl NotebookEmbed {
         self.hashed_id.as_str()
     }
 
-    pub fn try_apply_cached_highlighting(&self, _ctx: &mut ModelContext<Self>) {}
-
     pub fn start_offset(&self, ctx: &impl ModelAsRef) -> Option<CharOffset> {
         self.selection_model.as_ref(ctx).resolve_anchor(&self.start)
     }
 
-    fn selectable(&self, ctx: &AppContext) -> bool {
+    fn selectable(&self) -> bool {
         false
     }
 }
@@ -77,7 +69,7 @@ impl Entity for NotebookEmbed {
 }
 
 impl EmbeddedItemModel for NotebookEmbed {
-    fn render_item_footer(&self, ctx: &AppContext) -> Option<Box<dyn Element>> {
+    fn render_item_footer(&self, _: &AppContext) -> Option<Box<dyn Element>> {
         None
     }
 
@@ -128,18 +120,18 @@ impl ChildModelHandle for ModelHandle<NotebookEmbed> {
     }
 
     fn selectable(&self, app: &AppContext) -> bool {
-        self.as_ref(app).selectable(app)
+        self.as_ref(app).selectable()
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
 
-    fn executable_workflow(&self, app: &AppContext) -> Option<NotebookWorkflow> {
+    fn executable_workflow(&self, _: &AppContext) -> Option<NotebookWorkflow> {
         None
     }
 
-    fn executable_command<'a>(&'a self, app: &'a AppContext) -> Option<Cow<'a, str>> {
+    fn executable_command<'a>(&'a self, _: &'a AppContext) -> Option<Cow<'a, str>> {
         None
     }
 

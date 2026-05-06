@@ -415,7 +415,6 @@ impl<T: Action + Clone> SearchMixer<T> {
                 // If we get here, then we should run the query against the data source right now.
                 let query_generation = self.query_generation;
                 let source = source.clone();
-                let filters = registered_source.filters.to_owned();
                 let new_abort_handle = ctx.spawn(
                     source.run_query(&query, ctx),
                     move |mixer, new_results, ctx| {

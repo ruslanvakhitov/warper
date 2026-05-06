@@ -45,25 +45,3 @@ pub fn post_process_notebook(data: &str) -> String {
     // TODO(kevin): We should not strip out newlines in the code block.
     data.lines().filter(|line| !line.is_empty()).join("\n")
 }
-
-/// Translate a notebook's Markdown content into an external Markdown format.
-///
-/// This:
-/// * Normalizes code block languages
-/// * Includes extra context for embedded objects.
-#[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
-pub fn export_notebook(data: &str, ctx: &AppContext) -> anyhow::Result<String> {
-    use warp_editor::content::{buffer::Buffer, markdown::MarkdownStyle};
-
-    // Parse the Markdown directly rather than using [`Buffer::from_markdown`] so that we can
-    // report errors to the exporter.
-    let parsed = markdown_parser::parse_markdown(data)?;
-    Ok(Buffer::export_to_markdown(
-        parsed,
-        Some(editor::notebook_embedded_item_conversion),
-        MarkdownStyle::Export {
-            app_context: Some(ctx),
-            should_not_escape_markdown_punctuation: false,
-        },
-    ))
-}

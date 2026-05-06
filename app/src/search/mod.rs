@@ -6,7 +6,6 @@ pub mod binding_source;
 pub mod command_palette;
 pub mod command_search;
 pub mod data_source;
-mod env_var_collections;
 pub mod external_secrets;
 pub mod files;
 mod filter_chip_renderer;

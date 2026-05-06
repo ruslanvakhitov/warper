@@ -87,11 +87,6 @@ pub enum TipAction {
     CommandSearch,
     AiCommandSearch,
     SaveNewLaunchConfig,
-    // Note that this item has been deprecated from the UI and is not in any section.
-    // We are leaving it in this enum to ensure that we don't re-use `Workflows` as a
-    // value. Since old clients will have this value in their user defaults, we want
-    // to prevent future usage of this enum value.
-    Workflows,
 }
 
 impl TipAction {
@@ -104,7 +99,6 @@ impl TipAction {
             TipAction::AiCommandSearch => "input:toggle_natural_language_command_search",
             TipAction::ThemePicker => "workspace:show_theme_chooser",
             TipAction::SaveNewLaunchConfig => "workspace:open_launch_config_save_modal",
-            TipAction::Workflows => "input:toggle_workflows",
         }
     }
 
@@ -277,10 +271,6 @@ impl TipsCompleted {
         }
 
         is_new_value
-    }
-
-    pub fn serialized_tips(&self) -> Result<String, serde_json::Error> {
-        serde_json::to_string(&self.features_used)
     }
 
     pub fn completed_count(&self) -> usize {

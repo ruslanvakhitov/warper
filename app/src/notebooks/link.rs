@@ -216,7 +216,7 @@ impl NotebookLinks {
                     match self.session_source.base_directory(ctx) {
                         Some(directory) => directory.join(clean_path),
                         None => {
-                            return Either::Right(future::ready(Err(ResolveError::MissingContext)))
+                            return Either::Right(future::ready(Err(ResolveError::MissingContext)));
                         }
                     }
                 } else {

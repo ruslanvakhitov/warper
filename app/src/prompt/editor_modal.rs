@@ -1,4 +1,3 @@
-use itertools::Itertools;
 use warp_core::ui::theme::Fill;
 
 use pathfinder_geometry::vector::vec2f;

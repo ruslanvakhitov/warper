@@ -35,13 +35,6 @@ pub enum FilterableDropdownEvent {
     Close,
 }
 
-#[derive(Default, Debug, PartialEq)]
-pub enum FilterableDropdownOrientation {
-    Up,
-    #[default]
-    Down,
-}
-
 pub struct FilterableDropdown<A: Action + Clone> {
     is_expanded: bool,
     disabled: bool,
@@ -52,7 +45,6 @@ pub struct FilterableDropdown<A: Action + Clone> {
     filter_editor: ViewHandle<EditorView>,
     selected_item: Option<MenuItem<DropdownAction<A>>>,
     items: Vec<DropdownItem<A>>,
-    orientation: FilterableDropdownOrientation,
     static_menu_header: Option<&'static str>,
     button_variant: ButtonVariant,
     style_override: Option<UiComponentStyles>,
@@ -115,7 +107,6 @@ where
             main_axis_size: MainAxisSize::Max,
             selected_item: None,
             items: Default::default(),
-            orientation: Default::default(),
             static_menu_header: None,
             button_variant: ButtonVariant::Outlined,
             style_override: None,
@@ -126,13 +117,6 @@ where
             vertical_margin: DROPDOWN_PADDING,
             top_bar_height: TOP_MENU_BAR_HEIGHT,
         }
-    }
-
-    pub fn set_menu_header_text_override<F>(&mut self, formatter: F)
-    where
-        F: Fn(&str) -> String + 'static,
-    {
-        self.menu_header_text_override = Some(Box::new(formatter));
     }
 
     pub fn set_footer<F>(&mut self, builder: F, ctx: &mut ViewContext<Self>)
@@ -155,29 +139,8 @@ where
         });
     }
 
-    /// Set the main_axis_size behavior for the dropdown header button.
-    ///
-    /// Default is MainAxisSize::Max, set to MainAxisSize::Min if you want to wrap the dropdown to
-    /// the text that's filling it.
-    pub fn set_main_axis_size(
-        &mut self,
-        main_axis_size: MainAxisSize,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        self.main_axis_size = main_axis_size;
-        ctx.notify();
-    }
-
     pub fn set_style(&mut self, style: UiComponentStyles) {
         self.style_override = Some(style);
-    }
-
-    pub fn set_button_variant(&mut self, button_variant: ButtonVariant) {
-        self.button_variant = button_variant;
-    }
-
-    pub fn set_orientation(&mut self, orientation: FilterableDropdownOrientation) {
-        self.orientation = orientation;
     }
 
     pub fn add_items(&mut self, items: Vec<DropdownItem<A>>, ctx: &mut ViewContext<Self>) {
@@ -236,18 +199,6 @@ where
     }
 
     /// The number of items in the dropdown.
-    pub fn len(&self) -> usize {
-        self.items.len()
-    }
-
-    #[expect(dead_code)]
-    pub fn reset_selection(&mut self, ctx: &mut ViewContext<Self>) {
-        self.dropdown.update(ctx, |dropdown, ctx| {
-            dropdown.reset_selection(ctx);
-            ctx.notify();
-        });
-    }
-
     /// Select the item with the given name. If no such item exists, this clears the selection.
     pub fn set_selected_by_name(
         &mut self,
@@ -714,23 +665,13 @@ where
         if self.is_expanded {
             dropdown_stack.add_positioned_overlay_child(
                 dropdown_menu,
-                if self.orientation == FilterableDropdownOrientation::Down {
-                    OffsetPositioning::offset_from_save_position_element(
-                        self.top_bar_label(),
-                        vec2f(0., 0.),
-                        PositionedElementOffsetBounds::WindowByPosition,
-                        PositionedElementAnchor::BottomLeft,
-                        ChildAnchor::TopLeft,
-                    )
-                } else {
-                    OffsetPositioning::offset_from_save_position_element(
-                        self.top_bar_label(),
-                        vec2f(0., 0.),
-                        PositionedElementOffsetBounds::WindowByPosition,
-                        PositionedElementAnchor::TopLeft,
-                        ChildAnchor::BottomLeft,
-                    )
-                },
+                OffsetPositioning::offset_from_save_position_element(
+                    self.top_bar_label(),
+                    vec2f(0., 0.),
+                    PositionedElementOffsetBounds::WindowByPosition,
+                    PositionedElementAnchor::BottomLeft,
+                    ChildAnchor::TopLeft,
+                ),
             );
         }
         Container::new(dropdown_stack.finish())

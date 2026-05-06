@@ -5,7 +5,7 @@ use crate::search::ai_context_menu::mixer::AIContextMenuSearchableAction;
 use crate::search::data_source::{Query, QueryResult};
 use crate::search::mixer::{DataSourceRunErrorWrapper, SyncDataSource};
 use fuzzy_match::FuzzyMatchResult;
-use warpui::{AppContext, Entity, SingletonEntity};
+use warpui::{AppContext, Entity};
 
 const MAX_RESULTS: usize = 50;
 /// Minimum fuzzy match score to include a conversation in filtered results.

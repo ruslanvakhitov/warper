@@ -3032,42 +3032,25 @@ impl EditorView {
 
         let ai_context_menu_state = if options.include_ai_context_menu {
             let ai_context_menu = ctx.add_typed_action_view(AIContextMenu::new);
-            ctx.subscribe_to_view(
-                &ai_context_menu,
-                |me, _, event: &AIContextMenuEvent, ctx| {
-                    let is_udi_enabled =
-                        InputSettings::as_ref(ctx).is_universal_developer_input_enabled(ctx);
-                    let current_input_mode = if me.is_ai_input {
-                        InputType::AI
-                    } else {
-                        InputType::Shell
-                    };
-                    match event {
-                        AIContextMenuEvent::Close {
-                            item_count,
-                            query_length,
-                        } => {
-                            ctx.emit(Event::SetAIContextMenuOpen(false));
-                            ctx.focus_self();
-                            ctx.notify();
-                        }
-                        AIContextMenuEvent::ResultAccepted {
-                            action,
-                            item_count,
-                            query_length,
-                        } => {
-                            ctx.emit(Event::AcceptAIContextMenuItem(action.clone()));
-                            ctx.focus_self();
-                            ctx.notify();
-                        }
-                        AIContextMenuEvent::CategorySelected { category } => {
-                            ctx.emit(Event::SelectAIContextMenuCategory(*category));
-                            ctx.focus_self();
-                            ctx.notify();
-                        }
+            ctx.subscribe_to_view(&ai_context_menu, |_, _, event: &AIContextMenuEvent, ctx| {
+                match event {
+                    AIContextMenuEvent::Close { .. } => {
+                        ctx.emit(Event::SetAIContextMenuOpen(false));
+                        ctx.focus_self();
+                        ctx.notify();
                     }
-                },
-            );
+                    AIContextMenuEvent::ResultAccepted { action, .. } => {
+                        ctx.emit(Event::AcceptAIContextMenuItem(action.clone()));
+                        ctx.focus_self();
+                        ctx.notify();
+                    }
+                    AIContextMenuEvent::CategorySelected { category } => {
+                        ctx.emit(Event::SelectAIContextMenuCategory(*category));
+                        ctx.focus_self();
+                        ctx.notify();
+                    }
+                }
+            });
 
             Some(AIContextMenuState {
                 at_context_menu_button_mouse_handle: Default::default(),
@@ -3426,7 +3409,6 @@ impl EditorView {
         {
             self.clear_autosuggestion(ctx);
         }
-        let _ = (input_type, ctx);
     }
 
     /// Set placeholder text that appears when buffer matches the given prefix.
@@ -5116,8 +5098,6 @@ impl EditorView {
             }
             return;
         }
-
-        let is_udi_enabled = InputSettings::as_ref(ctx).is_universal_developer_input_enabled(ctx);
 
         self.process_attached_images_future_handle = Some(ctx.spawn(
             async move {

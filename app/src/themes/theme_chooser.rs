@@ -335,7 +335,7 @@ impl ThemeChooser {
         }
     }
 
-    pub fn record_open_theme(&mut self, ctx: &mut ViewContext<Self>) -> bool {
+    pub fn record_open_theme(&mut self) -> bool {
         true
     }
 

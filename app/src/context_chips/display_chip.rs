@@ -12,7 +12,6 @@ use crate::code_review::code_review_view::CODE_REVIEW_TOOLTIP_TEXT;
 use crate::code_review::diff_state::DiffStats;
 use crate::context_chips::node_version_popup::{NodeVersionPopupEvent, NodeVersionPopupView};
 use crate::context_chips::spacing;
-use crate::settings::InputSettings;
 use crate::settings_view::keybindings::{KeybindingChangedEvent, KeybindingChangedNotifier};
 use crate::terminal::cli_agent_sessions::CLIAgentSessionsModel;
 use crate::terminal::input::{MenuPositioning, MenuPositioningProvider};
@@ -1569,10 +1568,6 @@ impl TypedActionView for DisplayChip {
                             });
                         }
                         ctx.emit(PromptDisplayChipEvent::ToggleMenu { open: is_menu_open });
-                        if is_menu_open {
-                            let is_udi_enabled = InputSettings::as_ref(ctx)
-                                .is_universal_developer_input_enabled(ctx);
-                        }
                         ctx.notify();
                     }
                     DisplayChipKind::WorkingDirectory {
@@ -1595,10 +1590,6 @@ impl TypedActionView for DisplayChip {
                             });
                         }
                         ctx.emit(PromptDisplayChipEvent::ToggleMenu { open: is_menu_open });
-                        if is_menu_open {
-                            let is_udi_enabled = InputSettings::as_ref(ctx)
-                                .is_universal_developer_input_enabled(ctx);
-                        }
                         ctx.notify();
                     }
                     DisplayChipKind::NodeVersion { popup, popup_open } => {

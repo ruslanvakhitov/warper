@@ -1206,10 +1206,6 @@ impl NotebooksEditorModel {
         };
 
         // Re-apply cached highlighting for models when there is a theme update.
-        for model in self.child_models.model_handles::<NotebookEmbed>() {
-            model.update(ctx, |model, ctx| model.try_apply_cached_highlighting(ctx));
-        }
-
         for model in self.child_models.model_handles::<NotebookCommand>() {
             model.update(ctx, |model, ctx| model.try_apply_cached_highlighting(ctx));
         }
@@ -2103,13 +2099,7 @@ impl ChildModels {
         for (hashed_id, start_offset) in new_embedded_item {
             log::debug!("Adding EmbeddedItem model at {start_offset}");
             let new_model: ModelHandle<_> = ctx.add_model(|ctx| {
-                NotebookEmbed::new(
-                    start_offset,
-                    hashed_id,
-                    content.clone(),
-                    selection_model.clone(),
-                    ctx,
-                )
+                NotebookEmbed::new(start_offset, hashed_id, selection_model.clone(), ctx)
             });
 
             self.models.insert(start_offset, Box::new(new_model));
