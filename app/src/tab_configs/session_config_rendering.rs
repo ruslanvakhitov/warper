@@ -552,13 +552,13 @@ where
 }
 
 /// All possible session types, in display order.
-const ALL_SESSION_TYPES: &[SessionType] = &[SessionType::Oz, SessionType::Terminal];
+const ALL_SESSION_TYPES: &[SessionType] = &[SessionType::Agent, SessionType::Terminal];
 
-/// Returns the session types to display, filtering out the built-in agent when AI is disabled.
-pub fn visible_session_types(show_oz: bool) -> Vec<SessionType> {
+/// Returns the session types to display, filtering out local Agent Mode when AI is disabled.
+pub fn visible_session_types(show_agent: bool) -> Vec<SessionType> {
     ALL_SESSION_TYPES
         .iter()
-        .filter(|st| show_oz || !matches!(st, SessionType::Oz))
+        .filter(|st| show_agent || !matches!(st, SessionType::Agent))
         .copied()
         .collect()
 }

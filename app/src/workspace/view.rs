@@ -98,7 +98,6 @@ use super::util;
 use super::WorkspaceRegistry;
 use crate::ai::execution_profiles::editor::ExecutionProfileEditorManager;
 use crate::ai::execution_profiles::profiles::{AIExecutionProfilesModel, ClientProfileId};
-use crate::auth::auth_state::AuthState;
 #[cfg(feature = "local_fs")]
 use crate::code::editor_management::CodeManager;
 use crate::code::editor_management::CodeSource;
@@ -141,7 +140,6 @@ use url::Url;
 use crate::wasm_nux_dialog::WasmNUXDialog;
 
 use crate::appearance::{Appearance, AppearanceManager};
-use crate::auth::AuthStateProvider;
 use crate::banner::BannerState;
 use crate::changelog_model::{ChangelogModel, Event as ChangelogEvent};
 use crate::channel::Channel;
@@ -176,16 +174,12 @@ use crate::search::command_search::searcher::{
     AcceptedHistoryItem, AcceptedWorkflow, CommandSearchItemAction,
 };
 use crate::search::command_search::view::{CommandSearchEvent, CommandSearchView};
-use crate::server::event_metadata::{
-    AddTabWithShellSource, CloseTarget, FileTreeSource, KnowledgePaneEntrypoint,
-    LaunchConfigUiLocation, MCPServerCollectionPaneEntrypoint,
-};
 use crate::session_management::{SessionNavigationData, SessionSource};
 use crate::settings::{
     active_theme_kind, respect_system_theme, AccessibilitySettings, AliasExpansionSettings,
     AppEditorSettings, BlockVisibilitySettings, CursorBlink, DebugSettings, FontSettings,
-    GPUSettings, InputSettings, MonospaceFontSize, PaneSettings, PrivacySettings,
-    SelectionSettings, SshSettings, ThemeSettings,
+    GPUSettings, InputSettings, MonospaceFontSize, PaneSettings, SelectionSettings, SshSettings,
+    ThemeSettings,
 };
 use crate::settings_view::flags;
 use crate::settings_view::keybindings::{KeybindingChangedEvent, KeybindingChangedNotifier};
@@ -213,6 +207,7 @@ use crate::terminal::view::docker_sandbox::DEFAULT_DOCKER_SANDBOX_BASE_IMAGE;
 use crate::terminal::{self, SizeInfo, TerminalView};
 #[cfg(target_os = "macos")]
 use crate::workspace::cli_install;
+use crate::workspace::metadata::{AddTabWithShellSource, LaunchConfigUiLocation};
 use crate::workspaces::user_workspaces::UserWorkspaces;
 use ::settings::{Setting, ToggleableSetting};
 use warp_core::features::FeatureFlag;
@@ -255,7 +250,7 @@ use crate::workspace::sync_inputs::SyncedInputState;
 use crate::workspace::toast_stack::{
     ToastStack as WorkspaceToastStack, ToastStackEvent as WorkspaceToastStackEvent,
 };
-use crate::{GlobalResourceHandles};
+use crate::GlobalResourceHandles;
 
 use itertools::Itertools;
 use parking_lot::FairMutex;
@@ -314,15 +309,13 @@ use super::util::{
 };
 use crate::launch_configs::save_modal::{LaunchConfigModalEvent, LaunchConfigSaveModal};
 use crate::tab_configs::action_sidecar::SidecarItemKind;
+use crate::tab_configs::metadata::{ExistingTabConfigOpenMode, GuidedModalSessionType};
+#[cfg(feature = "local_fs")]
+use crate::tab_configs::metadata::{NewWorktreeConfigOpenSource, WorktreeBranchNamingMode};
 use crate::tab_configs::remove_confirmation_dialog::{
     RemoveTabConfigConfirmationDialog, RemoveTabConfigConfirmationEvent,
 };
 use crate::tab_configs::session_config_modal::{SessionConfigModal, SessionConfigModalEvent};
-use crate::tab_configs::metadata::{
-    ExistingTabConfigOpenMode, GuidedModalSessionType,
-};
-#[cfg(feature = "local_fs")]
-use crate::tab_configs::metadata::{NewWorktreeConfigOpenSource, WorktreeBranchNamingMode};
 use crate::tab_configs::{
     NewWorktreeModal, NewWorktreeModalEvent, TabConfigParamsModal, TabConfigParamsModalEvent,
 };
@@ -330,13 +323,13 @@ use crate::tab_configs::{
 use crate::code::editor::{add_color, remove_color};
 use crate::palette::PaletteMode;
 use crate::search::command_palette::view::{Event as CommandPaletteEvent, View as CommandPalette};
-use crate::server::event_metadata::{NotificationsTurnedOnSource, PaletteSource, TabRenameEvent};
 use crate::tab::{
-    tab_position_id, NewSessionMenuItem, PaneNameMenuTarget, SelectedTabColor, TabBarState,
-    TabComponent, TabData, TabActionMetadata, TAB_BAR_BORDER_HEIGHT,
+    tab_position_id, NewSessionMenuItem, PaneNameMenuTarget, SelectedTabColor, TabActionMetadata,
+    TabBarState, TabComponent, TabData, TAB_BAR_BORDER_HEIGHT,
 };
 use crate::terminal::view::ssh_file_upload::FileUploadId;
 use crate::ui_components::icons;
+use crate::workspace::metadata::PaletteSource;
 use lazy_static::lazy_static;
 use pathfinder_color::ColorU;
 use std::fmt::Write;
@@ -494,8 +487,6 @@ const MAX_FORK_TOAST_TITLE_LENGTH: usize = 100;
 const MAX_WINDOW_TITLE_LENGTH: usize = 80;
 
 /// The default display name used for the user if they have no associated display name.
-pub const DEFAULT_USER_DISPLAY_NAME: &str = "User";
-
 lazy_static! {
     static ref PANEL_CORNER_RADIUS: CornerRadius = CornerRadius::with_all(Radius::Pixels(8.));
     static ref PANEL_HEADER_CORNER_RADIUS: CornerRadius =
@@ -724,7 +715,6 @@ pub struct Workspace {
     vertical_tabs_search_input: ViewHandle<EditorView>,
     tips_completed: ModelHandle<TipsCompleted>,
     user_default_shell_unsupported_banner_model_handle: ModelHandle<BannerState>,
-    auth_state: Arc<AuthState>,
     tab_bar_overflow_menu: ViewHandle<Menu<WorkspaceAction>>,
     show_tab_bar_overflow_menu: bool,
     tab_right_click_menu: ViewHandle<Menu<WorkspaceAction>>,
@@ -1106,7 +1096,7 @@ impl Workspace {
                 // Only update the title if it was actually changed. Otherwise, lets assume
                 // user's intend was to cancel the operation.
                 if view.display_title(ctx) != title {
-                                        view.set_title(&title, ctx);
+                    view.set_title(&title, ctx);
                 }
             });
             self.clear_tab_name_editor(ctx);
@@ -1292,11 +1282,11 @@ impl Workspace {
         match event {
             SuggestedRuleModalEvent::AddNewRule { rule } => {
                 self.current_workspace_state.is_suggested_rule_modal_open = false;
-                            }
+            }
             SuggestedRuleModalEvent::OpenRuleForEditing { rule } => {
                 self.current_workspace_state.is_suggested_rule_modal_open = false;
                 self.open_ai_fact_collection_pane(Some(Direction::Right), None, ctx);
-                            }
+            }
             SuggestedRuleModalEvent::Close => {
                 self.current_workspace_state.is_suggested_rule_modal_open = false;
                 self.focus_active_tab(ctx);
@@ -1584,7 +1574,7 @@ impl Workspace {
         match event {
             SessionConfigModalEvent::Completed(selection) => {
                 let pending_intention = self.pending_onboarding_intention.take();
-                                self.close_session_config_modal(ctx);
+                self.close_session_config_modal(ctx);
                 let has_worktree = selection.enable_worktree;
                 let has_params = {
                     use crate::tab_configs::session_config::build_tab_config;
@@ -1788,10 +1778,10 @@ impl Workspace {
 
     pub(crate) fn show_session_config_modal(&mut self, ctx: &mut ViewContext<Self>) {
         // Configure the modal to hide the built-in agent when AI is disabled.
-        let show_oz = AISettings::as_ref(ctx).is_any_ai_enabled(ctx);
+        let show_agent = AISettings::as_ref(ctx).is_any_ai_enabled(ctx);
         self.session_config_modal.view.update(ctx, |modal, ctx| {
             modal.body().update(ctx, |body, ctx| {
-                body.configure(show_oz);
+                body.configure(show_agent);
                 ctx.notify();
             });
         });
@@ -1801,7 +1791,7 @@ impl Workspace {
         self.pending_session_config_tab_config_chip = self.pending_onboarding_intention.is_some();
         self.show_session_config_tab_config_chip = false;
         ctx.focus(&self.session_config_modal.view);
-                ctx.notify();
+        ctx.notify();
     }
 
     fn close_session_config_modal(&mut self, ctx: &mut ViewContext<Self>) {
@@ -2327,7 +2317,6 @@ impl Workspace {
             vertical_tabs_search_input: Self::vertical_tabs_search_input(ctx),
             tips_completed,
             user_default_shell_unsupported_banner_model_handle,
-            auth_state: AuthStateProvider::as_ref(ctx).get().clone(),
             tab_bar_overflow_menu,
             show_tab_bar_overflow_menu: false,
             tab_right_click_menu,
@@ -3623,7 +3612,7 @@ impl Workspace {
         let title = tab.pane_group.as_ref(ctx).display_title(ctx);
 
         self.rename_tab_internal(index, &title, ctx);
-            }
+    }
 
     fn set_active_tab_name(&mut self, title: &str, ctx: &mut ViewContext<Self>) {
         let Some(pane_group) = self
@@ -3652,7 +3641,7 @@ impl Workspace {
         pane_group.update(ctx, |pane_group, ctx| {
             if pane_group.display_title(ctx) != title {
                 pane_group.set_title(title, ctx);
-                            }
+            }
         });
         ctx.notify();
     }
@@ -3672,13 +3661,13 @@ impl Workspace {
         }
         let is_same = self.tabs[index].color() == Some(color);
         self.tabs[index].selected_color = if is_same {
-                        if FeatureFlag::DirectoryTabColors.is_enabled() {
+            if FeatureFlag::DirectoryTabColors.is_enabled() {
                 SelectedTabColor::Cleared
             } else {
                 SelectedTabColor::Unset
             }
         } else {
-                        SelectedTabColor::Color(color)
+            SelectedTabColor::Color(color)
         };
         ctx.notify();
     }
@@ -3725,7 +3714,7 @@ impl Workspace {
         tab.pane_group.update(ctx, |view, ctx| {
             view.clear_title(ctx);
         });
-                self.update_window_title(ctx);
+        self.update_window_title(ctx);
         ctx.notify();
     }
 
@@ -4795,7 +4784,7 @@ impl Workspace {
                 worktree_branch_name.as_deref(),
                 ctx,
             );
-                    } else {
+        } else {
             // Pass the active terminal's cwd to seed the branch picker's git lookup.
             let cwd = self
                 .active_session_view(ctx)
@@ -4839,7 +4828,7 @@ impl Workspace {
             *settings.open_file_layout,
             None,
         );
-                self.open_file_with_target(
+        self.open_file_with_target(
             path.clone(),
             target,
             None,
@@ -5028,17 +5017,8 @@ impl Workspace {
 
     fn check_and_trigger_ugc_policy_banner_for_existing_users(
         &mut self,
-        ctx: &mut ViewContext<Self>,
+        _ctx: &mut ViewContext<Self>,
     ) {
-        if FeatureFlag::GlobalAIAnalyticsBanner.is_enabled()
-            && PrivacySettings::as_ref(ctx).is_telemetry_enabled
-        {
-            if let Some(terminal_view_handle) = self.active_session_view(ctx) {
-                terminal_view_handle.update(ctx, |terminal_view, ctx| {
-                    terminal_view.insert_ugc_policy_banner(true, ctx);
-                });
-            }
-        }
     }
 
     fn should_trigger_get_started_onboarding(&self, ctx: &mut ViewContext<Self>) -> bool {
@@ -5046,21 +5026,8 @@ impl Workspace {
             return false;
         }
 
-        if self.auth_state.is_onboarded().unwrap_or_default() {
-            return false;
-        }
-
-        if self.auth_state.is_anonymous_or_logged_out() {
-            return false;
-        }
-
-        // If AgentOnboarding is enabled and the user is NOT in the control group for the
-        // AgentOnboarding experiment, don't show Get Started onboarding.
-        if self.should_show_agent_onboarding(ctx) {
-            return false;
-        }
-
-        true
+        let _ = ctx;
+        false
     }
 
     fn trigger_get_started_onboarding(&mut self, ctx: &mut ViewContext<Self>) {
@@ -5070,28 +5037,7 @@ impl Workspace {
     /// If the user is new and therefore has not seen the in app onboarding,
     /// triggers the welcome block to be shown after bootstrapping is completed.
     fn check_and_trigger_onboarding(&mut self, ctx: &mut ViewContext<Self>) -> bool {
-        if !self.auth_state.is_onboarded().unwrap_or_default() {
-            if self.should_show_agent_onboarding(ctx) {
-                // If the user is anonymous, we shouldn't trigger agent onboarding.
-                // It will not display anyway, and we don't want to mark the user as onboarded.
-                if self.auth_state.is_anonymous_or_logged_out() {
-                    return false;
-                }
-                self.trigger_agent_onboarding(ctx);
-            } else {
-                self.trigger_legacy_onboarding(ctx);
-            }
-
-            // Add telemetry banner for new users BEFORE the agentic onboarding blocks.
-            if let Some(terminal_view_handle) = self.active_session_view(ctx) {
-                terminal_view_handle.update(ctx, |terminal_view, ctx| {
-                    terminal_view.insert_ugc_policy_banner(false, ctx);
-                });
-            }
-
-            return true;
-        }
-
+        let _ = ctx;
         false
     }
 
@@ -5281,7 +5227,6 @@ impl Workspace {
         additional_paths: &[PathBuf],
         ctx: &mut ViewContext<Self>,
     ) {
-
         let grouping_on = FeatureFlag::TabbedEditorView.is_enabled()
             && *EditorSettings::as_ref(ctx)
                 .prefer_tabbed_editor_view
@@ -5497,8 +5442,7 @@ impl Workspace {
             self.welcome_tips_view.update(ctx, |tips_view, ctx| {
                 tips_view.set_action_target(ctx.window_id(), input_id, ctx)
             });
-
-                    }
+        }
         ctx.focus(&self.welcome_tips_view);
         ctx.notify();
     }
@@ -5666,7 +5610,7 @@ impl Workspace {
 
         if !self.current_workspace_state.is_resource_center_open {
             self.open_resource_center_main_page(ctx);
-                    } else {
+        } else {
             // Close side panel
             self.current_workspace_state.is_resource_center_open = false;
         }
@@ -5937,7 +5881,7 @@ impl Workspace {
                         // so we don't need to do anything - the width is already preserved
                     }
                 }
-                                self.setup_code_review_panel(panel_update_params.review_pane_context, ctx);
+                self.setup_code_review_panel(panel_update_params.review_pane_context, ctx);
             }
         } else {
             self.focus_active_tab(ctx);
@@ -6157,7 +6101,7 @@ impl Workspace {
 
             // Open side panel
             self.current_workspace_state.is_resource_center_open = true;
-                    } else if current_page != ResourceCenterPage::Keybindings
+        } else if current_page != ResourceCenterPage::Keybindings
             && self.current_workspace_state.is_resource_center_open
         {
             // Navigate to keybindings page
@@ -6165,7 +6109,7 @@ impl Workspace {
                 .update(ctx, |resource_center_view, ctx| {
                     resource_center_view.set_current_page(ResourceCenterPage::Keybindings, ctx)
                 });
-                    } else {
+        } else {
             // Close side panel
             self.current_workspace_state.is_resource_center_open = false;
             self.focus_active_tab(ctx);
@@ -6688,8 +6632,7 @@ impl Workspace {
                     worktree_name.as_deref(),
                     ctx,
                 );
-                if should_track_existing_config_open {
-                                    }
+                if should_track_existing_config_open {}
                 self.close_tab_config_params_modal(ctx);
                 self.complete_pending_session_config_replacement(ctx);
 
@@ -6932,7 +6875,7 @@ impl Workspace {
                         ctx,
                     );
                 }
-                            }
+            }
             Err(e) => {
                 log::warn!("Failed to parse generated worktree config: {e:?}");
             }
@@ -7042,7 +6985,7 @@ impl Workspace {
         let param_values = tab_config.default_param_values();
         log::info!("Opening tab from saved worktree config");
         self.open_tab_config_with_params(tab_config, param_values, Some(&branch_name), ctx);
-            }
+    }
 
     #[cfg(not(feature = "local_fs"))]
     fn open_worktree_in_repo(&mut self, _repo_path: String, _ctx: &mut ViewContext<Self>) {}
@@ -7713,7 +7656,6 @@ impl Workspace {
                     })
                     .build();
 
-
                 if cfg!(all(not(target_family = "wasm"), target_os = "macos")) {
                     AppContext::show_native_platform_modal(ctx, dialog);
                     return false;
@@ -7762,7 +7704,7 @@ impl Workspace {
         // Telemetry whenever tabs actually closed, not when confirmation dialog comes up.
         if tabs_closed {
             ctx.dispatch_global_action("workspace:save_app", ());
-                    }
+        }
     }
 
     /// Opens a confirmation dialog if necessary, or closes immediately if not.
@@ -7779,8 +7721,7 @@ impl Workspace {
         let tabs_closed = self.close_tabs(indices_to_remove, skip_confirmation, true, ctx);
 
         // Telemetry whenever tabs actually closed, not when confirmation dialog comes up.
-        if tabs_closed {
-                    }
+        if tabs_closed {}
     }
 
     /// Opens a confirmation dialog if necessary, or closes immediately if not.
@@ -7801,8 +7742,7 @@ impl Workspace {
         // Telemetry whenever tabs actually closed, not when confirmation dialog comes up.
         if tabs_closed {
             match direction {
-                TabMovement::Right if self.active_tab_index > index => {
-                                    }
+                TabMovement::Right if self.active_tab_index > index => {}
                 _ => (),
             }
         }
@@ -7979,7 +7919,7 @@ impl Workspace {
         source: AddTabWithShellSource,
         ctx: &mut ViewContext<Self>,
     ) {
-                self.add_new_session_tab_with_default_mode(
+        self.add_new_session_tab_with_default_mode(
             NewSessionSource::Tab,
             Some(ctx.window_id()),
             Some(shell),
@@ -9218,13 +9158,13 @@ impl Workspace {
 
         if index == self.active_tab_index {
             self.set_active_tab_index(new_index, ctx);
-                    } else {
+        } else {
             // Don't want to change the active tab for the user due to an adjacent
             // tab being moved left/right.
             if new_index == self.active_tab_index {
                 self.set_active_tab_index(index, ctx);
             }
-                    }
+        }
 
         ctx.notify();
     }
@@ -9352,8 +9292,7 @@ impl Workspace {
                     }
                 }
                             });
-
-                    }
+        }
     }
 
     fn toggle_notifications(&mut self, ctx: &mut ViewContext<Self>) {
@@ -9607,7 +9546,6 @@ impl Workspace {
 
         ctx.focus(&self.palette);
 
-
         ctx.notify();
     }
 
@@ -9738,11 +9676,10 @@ impl Workspace {
             }
             SettingsViewEvent::OpenAIFactCollection => {
                 self.open_ai_fact_collection_pane(Some(Direction::Right), None, ctx);
-                            }
+            }
             SettingsViewEvent::OpenMCPServerCollection => {
                 self.show_settings_with_section(Some(SettingsSection::MCPServers), ctx);
-
-                            }
+            }
             SettingsViewEvent::OpenExecutionProfileEditor(profile_id) => {
                 self.open_execution_profile_editor_pane(None, *profile_id, ctx);
             }
@@ -9995,7 +9932,7 @@ impl Workspace {
                     AIFactPage::Rules
                 };
                 self.open_ai_fact_collection_pane(None, Some(page), ctx);
-                            }
+            }
             pane_group::Event::OpenPromptEditor => {
                 self.open_prompt_editor(PromptEditorOpenSource::InputContextMenu, ctx);
             }
@@ -10016,7 +9953,7 @@ impl Workspace {
                     Some(AIFactPage::RuleEditor { sync_id: None }),
                     ctx,
                 );
-                            }
+            }
             #[cfg_attr(not(feature = "local_fs"), allow(unused_variables))]
             pane_group::Event::OpenFileInWarp { path, session } => {
                 #[cfg(feature = "local_fs")]
@@ -10825,8 +10762,7 @@ impl Workspace {
                     input_handle.read(ctx, |input, ctx| input.menu_positioning(ctx))
                 });
 
-            if !self.current_workspace_state.is_command_search_open {
-                            }
+            if !self.current_workspace_state.is_command_search_open {}
 
             // Make sure we close any already-open input suggestions panel.
             if let Some(input_handle) = &active_input_handle {
@@ -11854,7 +11790,7 @@ impl Workspace {
 
                 self.current_workspace_state.is_codex_modal_open = false;
                 ctx.notify();
-                            }
+            }
         }
     }
 
@@ -11942,7 +11878,7 @@ impl Workspace {
         self.current_workspace_state.is_codex_modal_open = true;
         ctx.focus(&self.codex_modal);
         ctx.notify();
-            }
+    }
 
     /// Opens a new tab and enters agent view with a prompt from a Linear deeplink.
     pub fn open_linear_issue_work(
@@ -11950,7 +11886,6 @@ impl Workspace {
         args: &crate::linear::LinearIssueWork,
         ctx: &mut ViewContext<Self>,
     ) {
-
         self.add_new_session_tab_internal_with_default_session_mode_behavior(
             NewSessionSource::Tab,
             Some(ctx.window_id()),
@@ -12058,8 +11993,7 @@ impl Workspace {
         self.close_all_overlays(ctx);
         self.current_workspace_state.is_prompt_editor_open = true;
         ctx.focus(&self.prompt_editor_modal);
-
-            }
+    }
 
     fn open_agent_toolbar_editor(
         &mut self,
@@ -12480,10 +12414,7 @@ impl Workspace {
         ctx: &AppContext,
     ) -> Box<dyn Element> {
         let mut tab_bar = Flex::row().with_cross_axis_alignment(CrossAxisAlignment::Center);
-        let is_web_anonymous_user = self
-            .auth_state
-            .is_user_web_anonymous_user()
-            .unwrap_or_default();
+        let is_web_anonymous_user = false;
 
         // Simplified mode for legacy restored non-terminal views on WASM.
         #[cfg(target_family = "wasm")]
@@ -13136,26 +13067,8 @@ impl Workspace {
     }
 
     fn render_avatar_button(&self, appearance: &Appearance, _ctx: &AppContext) -> Box<dyn Element> {
-        let is_anonymous = self.auth_state.is_anonymous_or_logged_out();
-        let display_name = self
-            .auth_state
-            .username_for_display()
-            .unwrap_or(DEFAULT_USER_DISPLAY_NAME.to_owned());
-
-        let avatar_content = if self.auth_state.is_anonymous_or_logged_out() {
-            AvatarContent::Icon(icons::Icon::Gear)
-        } else {
-            self.auth_state
-                .user_photo_url()
-                .map(|url| AvatarContent::Image {
-                    url,
-                    display_name: display_name.clone(),
-                })
-                .unwrap_or(AvatarContent::DisplayName(display_name.clone()))
-        };
-
         let avatar = Avatar::new(
-            avatar_content,
+            AvatarContent::Icon(icons::Icon::Gear),
             UiComponentStyles {
                 width: Some(20.),
                 height: Some(20.),
@@ -13178,27 +13091,6 @@ impl Workspace {
             if state.is_mouse_over_element() {
                 if !state.is_clicked() {
                     container = container.with_background(appearance.theme().surface_2());
-                }
-                // On hover, show tooltip of user's display name (if it exists)
-                if !self.is_user_menu_open && !is_anonymous {
-                    stack.add_positioned_overlay_child(
-                        appearance
-                            .ui_builder()
-                            .tool_tip(display_name.clone())
-                            .with_style(UiComponentStyles {
-                                background: Some(appearance.theme().tooltip_background().into()),
-                                font_color: Some(appearance.theme().background().into_solid()),
-                                ..Default::default()
-                            })
-                            .build()
-                            .finish(),
-                        OffsetPositioning::offset_from_parent(
-                            vec2f(0., 4.),
-                            ParentOffsetBounds::WindowByPosition,
-                            ParentAnchor::BottomMiddle,
-                            ChildAnchor::TopMiddle,
-                        ),
-                    );
                 }
             }
             stack.add_child(container.finish());
@@ -14142,7 +14034,6 @@ impl Workspace {
     }
 
     fn add_toggle_setting_context_flags(&self, app: &AppContext, context: &mut Context) {
-        let privacy_settings = PrivacySettings::as_ref(app);
         let editor_settings = AppEditorSettings::as_ref(app);
         let semantic_selection_settings = SemanticSelection::as_ref(app);
         let selection_settings = SelectionSettings::as_ref(app);
@@ -14254,10 +14145,6 @@ impl Workspace {
 
         if *input_settings.syntax_highlighting.value() {
             context.set.insert(flags::SYNTAX_HIGHLIGHTING_FLAG);
-        }
-
-        if privacy_settings.is_telemetry_enabled {
-            context.set.insert(flags::TELEMETRY_FLAG);
         }
 
         if *block_list_settings
@@ -14550,17 +14437,6 @@ impl Workspace {
         self.tab_views().map(|tab| tab.id())
     }
 
-    fn redirect_to_sign_in(&mut self) {
-        log::info!("Ignoring sign-in redirect request in local-only Warper");
-    }
-
-    /// Triggers the necessary cleanup for when a user logs out.
-    pub fn on_log_out(&mut self, ctx: &mut ViewContext<Self>) {
-        // Logging out should mimic the same behaviour as closing a window.
-        // This gives views a chance to clean up any state through on_view_detached before being dropped.
-        self.on_window_closed(ctx);
-    }
-
     fn open_left_panel_view(&mut self, action: &LeftPanelAction, ctx: &mut ViewContext<Self>) {
         if !self.active_tab_pane_group().as_ref(ctx).left_panel_open {
             self.toggle_left_panel(ctx);
@@ -14740,9 +14616,6 @@ impl TypedActionView for Workspace {
                             });
                             self.add_terminal_tab(false, ctx);
                         }
-                    }
-                    DefaultSessionMode::CloudAgent => {
-                        self.add_terminal_tab(false, ctx);
                     }
                     DefaultSessionMode::DockerSandbox => {
                         self.add_docker_sandbox_tab(ctx);
@@ -15074,8 +14947,7 @@ impl TypedActionView for Workspace {
                         left_panel.focus_active_view_on_entry(ctx);
                     });
 
-                    if file_tree_active {
-                                            }
+                    if file_tree_active {}
                 }
             }
             ToggleRightPanel => {
@@ -15147,21 +15019,21 @@ impl TypedActionView for Workspace {
                         .vertical_tabs_display_granularity
                         .set_value(granularity, ctx);
                 });
-                                ctx.notify();
+                ctx.notify();
             }
             SetVerticalTabsTabItemMode(mode) => {
                 let mode = *mode;
                 TabSettings::handle(ctx).update(ctx, |settings, ctx| {
                     let _ = settings.vertical_tabs_tab_item_mode.set_value(mode, ctx);
                 });
-                                ctx.notify();
+                ctx.notify();
             }
             SetVerticalTabsViewMode(mode) => {
                 let mode = *mode;
                 TabSettings::handle(ctx).update(ctx, |settings, ctx| {
                     let _ = settings.vertical_tabs_view_mode.set_value(mode, ctx);
                 });
-                                ctx.notify();
+                ctx.notify();
             }
             SetVerticalTabsPrimaryInfo(primary_info) => {
                 let primary_info = *primary_info;
@@ -15170,7 +15042,7 @@ impl TypedActionView for Workspace {
                         .vertical_tabs_primary_info
                         .set_value(primary_info, ctx);
                 });
-                                ctx.notify();
+                ctx.notify();
             }
             SetVerticalTabsCompactSubtitle(subtitle) => {
                 let subtitle = *subtitle;
@@ -15179,7 +15051,7 @@ impl TypedActionView for Workspace {
                         .vertical_tabs_compact_subtitle
                         .set_value(subtitle, ctx);
                 });
-                                ctx.notify();
+                ctx.notify();
             }
             ToggleVerticalTabsShowPrLink => {
                 let new_value = TabSettings::handle(ctx).update(ctx, |settings, ctx| {
@@ -15189,7 +15061,7 @@ impl TypedActionView for Workspace {
                         .set_value(new_value, ctx);
                     new_value
                 });
-                                ctx.notify();
+                ctx.notify();
             }
             ToggleVerticalTabsShowDiffStats => {
                 let new_value = TabSettings::handle(ctx).update(ctx, |settings, ctx| {
@@ -15199,7 +15071,7 @@ impl TypedActionView for Workspace {
                         .set_value(new_value, ctx);
                     new_value
                 });
-                                ctx.notify();
+                ctx.notify();
             }
             ToggleVerticalTabsShowDetailsOnHover => {
                 let new_value = TabSettings::handle(ctx).update(ctx, |settings, ctx| {
@@ -15209,7 +15081,7 @@ impl TypedActionView for Workspace {
                         .set_value(new_value, ctx);
                     new_value
                 });
-                                ctx.notify();
+                ctx.notify();
             }
             ClosePanel => {
                 if self.left_panel_view.is_self_or_child_focused(ctx) {
@@ -15229,14 +15101,12 @@ impl TypedActionView for Workspace {
                 entrypoint,
                 zero_state_prompt_suggestion_type,
             } => {
-
                 self.add_terminal_tab_in_ai_mode(*zero_state_prompt_suggestion_type, ctx);
             }
             NewPaneInAgentMode {
                 entrypoint,
                 zero_state_prompt_suggestion_type,
             } => {
-
                 self.add_terminal_pane_in_ai_mode(*zero_state_prompt_suggestion_type, ctx);
             }
             DragTab {
@@ -15245,7 +15115,7 @@ impl TypedActionView for Workspace {
             } => self.on_tab_drag(*tab_index, *tab_position, ctx),
             DropTab => {
                 self.current_workspace_state.is_tab_being_dragged = false;
-                            }
+            }
             CopyTextToClipboard(text) => {
                 ctx.clipboard()
                     .write(ClipboardContent::plain_text(text.to_string()));
@@ -15281,7 +15151,6 @@ impl TypedActionView for Workspace {
                     view.add_ephemeral_toast(new_toast, ctx);
                 });
 
-
                 self.process_updated_sync_state(ctx);
             }
             ToggleSyncTerminalInputsInTab => {
@@ -15310,7 +15179,6 @@ impl TypedActionView for Workspace {
                     view.add_ephemeral_toast(new_toast, ctx);
                 });
 
-
                 self.process_updated_sync_state(ctx);
             }
             DisableTerminalInputSync => {
@@ -15325,7 +15193,7 @@ impl TypedActionView for Workspace {
                         DismissibleToast::success("Disabled all synchronized inputs.".to_string());
                     view.add_ephemeral_toast(new_toast, ctx);
                 });
-                            }
+            }
             HandleConflictingWorkflow(_) | HandleConflictingEnvVarCollection(_) => {}
             OpenPromptEditor { open_source } => {
                 self.open_prompt_editor(*open_source, ctx);
@@ -15429,11 +15297,10 @@ impl TypedActionView for Workspace {
             }
             OpenAIFactCollection => {
                 self.open_ai_fact_collection_pane(None, None, ctx);
-                            }
+            }
             OpenMCPServerCollection => {
                 self.show_settings_with_section(Some(SettingsSection::MCPServers), ctx);
-
-                            }
+            }
             ToggleAIDocumentPane {
                 document_id,
                 document_version,
@@ -15846,7 +15713,7 @@ impl TypedActionView for Workspace {
 
                 conversation_utils::delete_conversation(*conversation_id, *terminal_view_id, ctx);
 
-                                ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
+                ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
                     toast_stack.add_ephemeral_toast(
                         DismissibleToast::success("Conversation deleted".to_string()),
                         window_id,

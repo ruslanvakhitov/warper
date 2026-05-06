@@ -246,7 +246,7 @@ enum TerminalPrimaryLineFont {
     Monospace,
 }
 
-fn oz_icon_fill(theme: &WarpTheme) -> WarpThemeFill {
+fn local_agent_icon_fill(theme: &WarpTheme) -> WarpThemeFill {
     theme.main_text_color(theme.background())
 }
 
@@ -255,7 +255,7 @@ fn render_pane_icon_with_status(
     theme: &WarpTheme,
 ) -> Box<dyn Element> {
     let sizing = match &variant {
-        IconWithStatusVariant::OzAgent { .. } => &VERTICAL_TABS_AGENT_SIZING,
+        IconWithStatusVariant::LocalAgent { .. } => &VERTICAL_TABS_AGENT_SIZING,
         IconWithStatusVariant::CLIAgent { status, .. } if status.is_some() => {
             &VERTICAL_TABS_AGENT_SIZING
         }
@@ -740,7 +740,7 @@ enum VerticalTabsResolvedMode {
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum SummaryPaneKind {
     Terminal,
-    OzAgent { is_ambient: bool },
+    LocalAgent { is_ambient: bool },
     CLIAgent { agent: CLIAgent },
     Code { title: String },
     CodeDiff,
@@ -1228,7 +1228,9 @@ fn render_detail_kind_badge_icon(
                 WarpIcon::Terminal
             };
             let color = match icon {
-                WarpIcon::Warp | WarpIcon::Oz | WarpIcon::OzCloud => oz_icon_fill(theme),
+                WarpIcon::Warp | WarpIcon::AgentMode | WarpIcon::AmbientAgentMode => {
+                    local_agent_icon_fill(theme)
+                }
                 WarpIcon::Terminal => disabled_text,
                 _ => sub_text,
             };
@@ -2215,7 +2217,7 @@ fn resolve_icon_with_status_variant(
             let has_conversation = terminal_view
                 .selected_conversation_display_title(app)
                 .is_some();
-            let is_oz_agent = has_conversation;
+            let is_local_agent = has_conversation;
 
             if let Some(session) = cli_agent_session
                 .filter(|s| s.listener.is_some())
@@ -2237,8 +2239,8 @@ fn resolve_icon_with_status_variant(
                     agent: session.agent,
                     status: None,
                 }
-            } else if is_oz_agent {
-                IconWithStatusVariant::OzAgent {
+            } else if is_local_agent {
+                IconWithStatusVariant::LocalAgent {
                     status: terminal_view.selected_conversation_status_for_display(app),
                     is_ambient: false,
                 }
@@ -2419,7 +2421,7 @@ impl TypedPane<'_> {
                     .selected_conversation_display_title(app)
                     .is_some()
                 {
-                    SummaryPaneKind::OzAgent { is_ambient: false }
+                    SummaryPaneKind::LocalAgent { is_ambient: false }
                 } else {
                     SummaryPaneKind::Terminal
                 }
@@ -2826,7 +2828,7 @@ fn terminal_pane_search_text_fragments(
         primary_text,
         working_directory,
         terminal_view.current_git_branch(app),
-        terminal_kind_badge_label(agent_text.is_oz_agent, agent_text.cli_agent),
+        terminal_kind_badge_label(agent_text.is_local_agent, agent_text.cli_agent),
         pull_request_label,
         terminal_view.current_diff_line_changes(app),
     )
@@ -2902,11 +2904,11 @@ fn terminal_primary_line_data(
     }
 }
 
-fn terminal_kind_badge_label(is_oz_agent: bool, cli_agent: Option<CLIAgent>) -> String {
+fn terminal_kind_badge_label(is_local_agent: bool, cli_agent: Option<CLIAgent>) -> String {
     if let Some(cli_agent) = cli_agent {
         cli_agent.display_name().to_string()
-    } else if is_oz_agent {
-        "Warp agent".to_string()
+    } else if is_local_agent {
+        "Agent".to_string()
     } else {
         "Terminal".to_string()
     }
@@ -2924,7 +2926,7 @@ struct TerminalAgentText {
     conversation_latest_user_prompt: Option<String>,
     cli_agent_title: Option<String>,
     cli_agent_latest_user_prompt: Option<String>,
-    is_oz_agent: bool,
+    is_local_agent: bool,
     cli_agent: Option<CLIAgent>,
 }
 
@@ -2965,7 +2967,7 @@ fn terminal_agent_text(terminal_view: &TerminalView, app: &AppContext) -> Termin
     let cli_agent_session = CLIAgentSessionsModel::as_ref(app).session(terminal_view.id());
     let is_plugin_backed = cli_agent_session.is_some_and(|session| session.listener.is_some());
     let mut agent_text = TerminalAgentText {
-        is_oz_agent: false,
+        is_local_agent: false,
         cli_agent: cli_agent_session.map(|session| session.agent),
         ..Default::default()
     };
@@ -2977,8 +2979,8 @@ fn terminal_agent_text(terminal_view: &TerminalView, app: &AppContext) -> Termin
     agent_text.conversation_display_title = terminal_view.selected_conversation_display_title(app);
     agent_text.conversation_latest_user_prompt =
         terminal_view.selected_conversation_latest_user_prompt_for_tab_name(app);
-    agent_text.is_oz_agent =
-        agent_text.conversation_display_title.is_some() || agent_text.is_oz_agent;
+    agent_text.is_local_agent =
+        agent_text.conversation_display_title.is_some() || agent_text.is_local_agent;
 
     if let Some(session) = cli_agent_session {
         agent_text.cli_agent_title = session.session_context.title_like_text();
@@ -3511,14 +3513,14 @@ fn render_summary_pane_kind_icon_circle(
 ) -> Box<dyn Element> {
     let theme = appearance.theme();
     let (icon_element, background): (Box<dyn Element>, ElementFill) = match kind {
-        SummaryPaneKind::OzAgent { is_ambient } => {
+        SummaryPaneKind::LocalAgent { is_ambient } => {
             let icon = if is_ambient {
-                WarpIcon::OzCloud
+                WarpIcon::AmbientAgentMode
             } else {
-                WarpIcon::Warp
+                WarpIcon::AgentMode
             };
             (
-                icon.to_warpui_icon(oz_icon_fill(theme)).finish(),
+                icon.to_warpui_icon(local_agent_icon_fill(theme)).finish(),
                 theme.background().into(),
             )
         }
@@ -3591,11 +3593,11 @@ fn summary_pane_kind_icon(
     let sub_text = theme.sub_text_color(theme.background());
     match kind {
         SummaryPaneKind::Terminal => (WarpIcon::Terminal, main_text),
-        SummaryPaneKind::OzAgent { is_ambient } => (
+        SummaryPaneKind::LocalAgent { is_ambient } => (
             if is_ambient {
-                WarpIcon::OzCloud
+                WarpIcon::AmbientAgentMode
             } else {
-                WarpIcon::Warp
+                WarpIcon::AgentMode
             },
             main_text,
         ),
@@ -3695,7 +3697,7 @@ fn render_terminal_primary_line_for_view(
 
 /// Primary line for terminal pane rows. Precedence:
 /// 1. CLI agent session with plugin data (query/summary) + status
-/// 2. Warp agent conversation title + status
+/// 2. Local Agent conversation title + status
 /// 3. Terminal title
 fn render_terminal_primary_line(
     primary_line: TerminalPrimaryLineData,
@@ -5192,12 +5194,12 @@ fn render_terminal_detail_section(
     let agent_text = terminal_agent_text(terminal_view, app);
     let (conversation_display_title, cli_agent_title) =
         preferred_agent_tab_titles(&agent_text, agent_tab_text_preference(app));
-    let kind_label = terminal_kind_badge_label(agent_text.is_oz_agent, agent_text.cli_agent);
+    let kind_label = terminal_kind_badge_label(agent_text.is_local_agent, agent_text.cli_agent);
     let status = if let Some(session) =
         cli_agent_session.filter(|s| s.listener.is_some() && agent_supports_rich_status(&s.agent))
     {
         Some(session.status.to_conversation_status())
-    } else if agent_text.is_oz_agent {
+    } else if agent_text.is_local_agent {
         terminal_view.selected_conversation_status_for_display(app)
     } else {
         None

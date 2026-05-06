@@ -101,15 +101,13 @@ pub enum TabConfigPaneType {
     Terminal,
     /// A terminal that immediately enters Agent Mode.
     Agent,
-    /// A cloud-mode (ambient agent) pane with no local shell.
-    Cloud,
 }
 
 /// A single node in the flat `[[panes]]` array.  Distinguished as a split vs.
 /// leaf by the presence of `split` + `children`.
 ///
 /// Leaf panes must specify `type` to indicate whether they open as a terminal,
-/// agent, or cloud pane.
+/// or local Agent pane.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct TabConfigPaneNode {
@@ -365,7 +363,6 @@ fn resolve_pane_node(
         let pane_mode = match pane_type {
             TabConfigPaneType::Terminal => PaneMode::Terminal,
             TabConfigPaneType::Agent => PaneMode::Agent,
-            TabConfigPaneType::Cloud => PaneMode::Cloud,
         };
 
         let cwd = node

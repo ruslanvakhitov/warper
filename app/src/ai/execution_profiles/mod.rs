@@ -141,7 +141,7 @@ impl ComputerUsePermission {
             };
         }
 
-        let user_preference = *AISettings::as_ref(ctx).cloud_agent_computer_use_enabled;
+        let user_preference = *AISettings::as_ref(ctx).agent_computer_use_enabled;
         AgentComputerUseState {
             enabled: user_preference,
             is_forced_by_policy: false,

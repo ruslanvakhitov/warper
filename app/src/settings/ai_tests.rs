@@ -1,4 +1,5 @@
 use super::*;
+use crate::ai::request_limits::ServerTimestamp;
 use crate::{
     ai::request_limits::{RequestLimitInfo, RequestLimitRefreshDuration},
     auth::AuthStateProvider,
@@ -8,10 +9,9 @@ use crate::{
 use ai::api_keys::ApiKeyManager;
 use chrono::Utc;
 use warp_core::{
-    channel::{Channel, ChannelConfig, ChannelState, OzConfig, WarpServerConfig},
+    channel::{Channel, ChannelConfig, ChannelState},
     AppId,
 };
-use warp_graphql::scalars::time::ServerTimestamp;
 use warpui::{App, SingletonEntity};
 
 struct TestChannelGuard;
@@ -23,15 +23,8 @@ impl TestChannelGuard {
             ChannelConfig {
                 app_id: AppId::new("dev", "warper", "Warper"),
                 logfile_name: "warper.log".into(),
-                server_config: Some(WarpServerConfig::local_override(
-                    Some("http://127.0.0.1:9".into()),
-                    Some("ws://127.0.0.1:9/graphql/v2".into()),
-                    None,
-                )),
-                oz_config: Some(OzConfig {
-                    oz_root_url: "http://127.0.0.1:9".into(),
-                    workload_audience_url: None,
-                }),
+                server_config: None,
+                oz_config: None,
                 telemetry_config: None,
                 autoupdate_config: None,
                 mcp_static_config: None,

@@ -9,7 +9,6 @@ use std::path::PathBuf;
 use ai::api_keys::ApiKeyManager;
 use indexmap::IndexMap;
 
-use crate::auth::AuthStateProvider;
 use crate::report_if_error;
 use crate::terminal::CLIAgent;
 use crate::workspaces::user_workspaces::UserWorkspaces;
@@ -295,8 +294,6 @@ pub enum DefaultSessionMode {
     Terminal,
     /// New sessions start in agent view.
     Agent,
-    /// New sessions start in cloud (ambient) agent mode.
-    CloudAgent,
     /// New sessions open a user-defined tab config.
     /// The specific config is identified by the companion `default_tab_config_path` setting.
     TabConfig,
@@ -321,7 +318,6 @@ impl DefaultSessionMode {
         match self {
             DefaultSessionMode::Terminal => "Terminal",
             DefaultSessionMode::Agent => "Agent",
-            DefaultSessionMode::CloudAgent => "Agent",
             DefaultSessionMode::TabConfig => "Tab Config",
             DefaultSessionMode::DockerSandbox => "Local Docker Sandbox",
         }
@@ -1006,17 +1002,6 @@ define_settings_group!(AISettings, settings: [
         toml_path: "agents.knowledge.rules_enabled",
         description: "Whether the agent uses your saved rules during requests.",
     }
-    // Whether warp drive context should be included in AI requests
-    warp_drive_context_enabled: WarpDriveContextEnabled {
-        type: bool,
-        default: true,
-        supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Never,
-        private: false,
-        toml_path: "agents.knowledge.warp_drive_context_enabled",
-        description: "Whether local saved context is included in AI requests.",
-    }
-
     // Whether the codebase speedbump banner has been permanently dismissed for a given repo path.
     //
     // Not a user-visible settings - we model it as a setting so we can track state.
@@ -1089,7 +1074,7 @@ define_settings_group!(AISettings, settings: [
     //
     // We model it as a setting so it's only shown once to a given user regardless of the number of
     // devices they use.
-    did_check_to_trigger_oz_launch_modal: DidShowOzLaunchModal {
+    did_check_to_trigger_agent_launch_modal: DidShowAgentLaunchModal {
         type: bool,
         default: false,
         supported_platforms: SupportedPlatforms::ALL,
@@ -1099,7 +1084,7 @@ define_settings_group!(AISettings, settings: [
 
     // Used to determine whether the agent updates section of the agent view
     // zero state is expanded or collapsed by default.
-    should_expand_oz_updates: ShouldExpandOzUpdates {
+    should_expand_agent_updates: ShouldExpandAgentUpdates {
         type: bool,
         default: false,
         supported_platforms: SupportedPlatforms::ALL,
@@ -1109,13 +1094,13 @@ define_settings_group!(AISettings, settings: [
 
     // Used to determine whether the agent updates section of the agent view
     // zero state is shown or hidden.
-    should_show_oz_updates_in_zero_state: ShouldShowOzUpdatesInZeroState {
+    should_show_agent_updates_in_zero_state: ShouldShowAgentUpdatesInZeroState {
         type: bool,
         default: true,
         supported_platforms: SupportedPlatforms::ALL,
         sync_to_cloud: SyncToCloud::Never,
         private: false,
-        toml_path: "agents.warp_agent.other.should_show_oz_updates_in_zero_state",
+        toml_path: "agents.warp_agent.other.should_show_agent_updates_in_zero_state",
         description: "Whether the \"What's new\" section is shown in the agent view.",
     }
 
@@ -1248,13 +1233,13 @@ define_settings_group!(AISettings, settings: [
 
     // Whether computer use is enabled for local agent conversations.
     // This setting is only used when the AI autonomy setting is AlwaysAsk or not set.
-    cloud_agent_computer_use_enabled: CloudAgentComputerUseEnabled {
+    agent_computer_use_enabled: AgentComputerUseEnabled {
         type: bool,
         default: warp_core::channel::ChannelState::channel().is_dogfood(),
         supported_platforms: SupportedPlatforms::DESKTOP,
         sync_to_cloud: SyncToCloud::Never,
         private: false,
-        toml_path: "agents.warp_agent.other.cloud_agent_computer_use_enabled",
+        toml_path: "agents.warp_agent.other.agent_computer_use_enabled",
         description: "Whether computer use is enabled for local agent conversations.",
     }
 
@@ -1402,14 +1387,7 @@ impl AISettings {
                 && !self.is_ai_disabled_due_to_remote_session_local_policy(app);
         }
 
-        // Disable AI for anonymous and logged-out users.
-        let is_anonymous_or_logged_out = AuthStateProvider::as_ref(app)
-            .get()
-            .is_anonymous_or_logged_out();
-
-        *self.is_any_ai_enabled
-            && !is_anonymous_or_logged_out
-            && !self.is_ai_disabled_due_to_remote_session_local_policy(app)
+        false
     }
 
     pub fn default_session_mode(&self, app: &AppContext) -> DefaultSessionMode {
@@ -1421,8 +1399,8 @@ impl AISettings {
         match mode {
             // Terminal and TabConfig don't require AI.
             DefaultSessionMode::Terminal | DefaultSessionMode::TabConfig => mode,
-            // Agent and CloudAgent require AI to be enabled.
-            DefaultSessionMode::Agent | DefaultSessionMode::CloudAgent => {
+            // Agent requires AI to be enabled.
+            DefaultSessionMode::Agent => {
                 if self.is_any_ai_enabled(app) {
                     mode
                 } else {
@@ -1534,10 +1512,6 @@ impl AISettings {
 
     pub fn is_memory_enabled(&self, app: &warpui::AppContext) -> bool {
         self.is_any_ai_enabled(app) && *self.memory_enabled
-    }
-
-    pub fn is_warp_drive_context_enabled(&self, app: &warpui::AppContext) -> bool {
-        self.is_any_ai_enabled(app) && *self.warp_drive_context_enabled
     }
 
     pub fn is_file_based_mcp_enabled(&self, app: &warpui::AppContext) -> bool {

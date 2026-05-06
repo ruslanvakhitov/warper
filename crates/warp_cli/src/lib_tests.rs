@@ -173,7 +173,7 @@ fn hosted_agent_run_flags_are_not_registered() {
         ][..],
         &["agent", "run", "--task-id", "task-1"][..],
         &["agent", "run", "--prompt", "hello", "--sandboxed"][..],
-        &["agent", "run", "--prompt", "hello", "--harness", "oz"][..],
+        &["agent", "run", "--prompt", "hello", "--harness", "claude"][..],
         &["agent", "run", "--prompt", "hello", "--no-snapshot"][..],
         &[
             "agent",
@@ -257,7 +257,6 @@ fn help_does_not_expose_hosted_cli_surfaces() {
         "session sharing",
         "session-sharing",
         "cloud",
-        "Oz",
         "docs.warp.dev",
     ] {
         assert!(
@@ -284,7 +283,6 @@ fn help_does_not_expose_hosted_cli_surfaces() {
         "--snapshot-upload-timeout",
         "--snapshot-script-timeout",
         "cloud",
-        "Oz",
     ] {
         assert!(
             !agent_run_help.contains(removed),
