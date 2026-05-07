@@ -4876,6 +4876,10 @@ struct ApiKeysWidget {
 
 impl ApiKeysWidget {
     fn new(ctx: &mut ViewContext<<Self as SettingsWidget>::View>) -> Self {
+        ApiKeyManager::handle(ctx).update(ctx, |manager, ctx| {
+            manager.load_keys_from_secure_storage_if_needed(ctx);
+        });
+
         let ai_settings = AISettings::as_ref(ctx);
         let workspace_handle = UserWorkspaces::handle(ctx);
         let is_any_ai_enabled = ai_settings.is_any_ai_enabled(ctx);
