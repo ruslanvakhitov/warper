@@ -15,21 +15,15 @@ use serde::{Deserialize, Serialize};
 use smol_str::SmolStr;
 use warp_editor::content::{buffer::Buffer, markdown::MarkdownStyle};
 
-use warpui::{AppContext, SingletonEntity};
+use warpui::AppContext;
 
 use crate::ai::agent::{AgentReviewCommentBatch, DiffSetHunk};
 use crate::ai::blocklist::CLAUDE_ORANGE;
 use crate::code::editor::line::EditorLineLocation;
 use crate::code_review::comments::AttachedReviewCommentTarget;
-use crate::server::telemetry::CLIAgentType;
 use crate::ui_components::icons::Icon;
-use crate::workspaces::user_workspaces::UserWorkspaces;
 use warp_completer::parsers::simple::top_level_command;
 use warp_util::path::EscapeChar;
-
-/// UID for the Uber team.
-/// See https://warp.metabaseapp.com/dashboard/1454?team_id=46347
-const UBER_TEAM_UID: &str = "BdVbYjy9LRZcZrYBemSfAF";
 
 /// Gemini brand blue color
 pub(crate) const GEMINI_BLUE: ColorU = ColorU {
@@ -287,7 +281,7 @@ impl CLIAgent {
         command: &str,
         escape_char: Option<EscapeChar>,
         aliases: Option<&HashMap<SmolStr, String>>,
-        ctx: &AppContext,
+        _ctx: &AppContext,
     ) -> Option<CLIAgent> {
         let trimmed = command.trim_start();
         let first_word = Self::extract_first_command(trimmed, escape_char)?;
@@ -308,31 +302,9 @@ impl CLIAgent {
         let resolved_first_word = Self::extract_first_command(&resolved_command, escape_char)?;
 
         // Check if resolved command matches any known CLI agent.
-        // Also matches `aifx agent run claude` as Claude for Uber employees.
         enum_iterator::all::<CLIAgent>()
             .filter(|agent| !matches!(agent, CLIAgent::Unknown))
-            .find(|agent| {
-                resolved_first_word == agent.command_prefix()
-                    || (matches!(agent, CLIAgent::Claude)
-                        && Self::is_aifx_agent_run_claude(&resolved_command, ctx))
-            })
-    }
-
-    /// Returns true if the resolved command is `aifx agent run claude` (Uber's
-    /// internal wrapper around Claude) and the user is on the Uber team.
-    /// We special-case this so Uber employees get the toolbar without needing
-    /// to configure anything.
-    fn is_aifx_agent_run_claude(resolved_command: &str, ctx: &AppContext) -> bool {
-        resolved_command.starts_with("aifx agent run claude")
-            && Self::is_on_uber_team(UserWorkspaces::as_ref(ctx))
-    }
-
-    fn is_on_uber_team(user_workspaces: &UserWorkspaces) -> bool {
-        user_workspaces
-            .workspaces()
-            .iter()
-            .flat_map(|workspace| workspace.teams.iter())
-            .any(|team| team.uid.uid() == UBER_TEAM_UID)
+            .find(|agent| resolved_first_word == agent.command_prefix())
     }
 }
 
@@ -492,24 +464,6 @@ pub fn build_selection_line_range_prompt(
     end_line: usize,
 ) -> String {
     format!("{file_path} L{start_line}-L{end_line}")
-}
-
-impl From<CLIAgent> for CLIAgentType {
-    fn from(agent: CLIAgent) -> Self {
-        match agent {
-            CLIAgent::Claude => CLIAgentType::Claude,
-            CLIAgent::Gemini => CLIAgentType::Gemini,
-            CLIAgent::Codex => CLIAgentType::Codex,
-            CLIAgent::Amp => CLIAgentType::Amp,
-            CLIAgent::Droid => CLIAgentType::Droid,
-            CLIAgent::OpenCode => CLIAgentType::OpenCode,
-            CLIAgent::Copilot => CLIAgentType::Copilot,
-            CLIAgent::Pi => CLIAgentType::Pi,
-            CLIAgent::Auggie => CLIAgentType::Auggie,
-            CLIAgent::CursorCli => CLIAgentType::Cursor,
-            CLIAgent::Unknown => CLIAgentType::Unknown,
-        }
-    }
 }
 
 #[cfg(test)]

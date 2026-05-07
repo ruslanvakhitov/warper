@@ -1,5 +1,4 @@
 use crate::appearance::Appearance;
-use crate::drive::CloudObjectTypeAndId;
 use crate::search::binding_source::{BindingFilterFn, BindingSource};
 use crate::search::command_palette::mixer::CommandPaletteItemAction;
 use crate::search::command_palette::SelectedItems;
@@ -7,16 +6,13 @@ use crate::search::result_renderer::QueryResultRenderer;
 use crate::search::search_bar::SelectionUpdate;
 use crate::search::search_bar::{SearchBar, SearchBarEvent, SearchBarState, SearchResultOrdering};
 use crate::search::QueryFilter;
-use crate::send_telemetry_from_ctx;
-use crate::server::telemetry::LaunchConfigUiLocation;
-use crate::server::telemetry::TelemetryEvent;
 use crate::settings::CtrlTabBehavior;
 use crate::terminal::keys_settings::KeysSettings;
 use crate::themes::theme::WarpTheme;
 use crate::view_components::DismissibleToast;
+use crate::workspace::metadata::LaunchConfigUiLocation;
 use crate::ToastStack;
 use lazy_static::lazy_static;
-use warp_core::send_telemetry_from_app_ctx;
 use warp_util::path::LineAndColumnArg;
 
 use crate::search::action::search_item::MatchedBinding;
@@ -34,13 +30,12 @@ use std::collections::HashSet;
 use std::ops::Deref;
 use std::sync::Arc;
 
-use crate::features::FeatureFlag;
 use crate::palette::PaletteMode;
 use crate::root_view::OpenLaunchConfigArg;
 use crate::search::command_palette::data_sources::DataSourceStore;
-use crate::server::ids::SyncId;
 use crate::session_management::SessionSource;
 use crate::workspace::{active_terminal_in_window, ForkedConversationDestination, WorkspaceAction};
+use warp_server_client::ids::SyncId;
 use warpui::elements::{
     Align, Border, ChildView, Clipped, ClippedScrollStateHandle, ClippedScrollable, ConstrainedBox,
     Container, CornerRadius, Dismiss, Empty, Fill, Flex, ParentElement, Radius, SavePosition,
@@ -60,7 +55,7 @@ lazy_static! {
     /// Set of hardcoded action names that we want to show in the command palette zero state.
     static ref SUGGESTED_ACTIONS: HashSet<&'static str> = HashSet::from_iter(
         [
-            if FeatureFlag::AgentMode.is_enabled() { "input:toggle_input_type" } else { "workspace:toggle_ai_assistant" },
+            "input:toggle_input_type",
             "workspace:show_theme_chooser",
             "workspace:create_personal_workflow",
         ]
@@ -101,8 +96,6 @@ pub enum Event {
     InvokeEnvironmentVariables { id: SyncId },
     /// Open a notebook identified by `id`.
     OpenNotebook { id: SyncId },
-    /// View the relevant object in the Warp Drive sidebar.
-    ViewInWarpDrive { id: CloudObjectTypeAndId },
     /// Open a file at the given path.
     OpenFile {
         path: String,
@@ -141,10 +134,6 @@ pub struct View {
 
     /// The current navigation mode.
     navigation_mode: NavigationMode,
-
-    /// Whether the active session is a shared session viewer.
-    /// This is set by the workspace when opening the palette.
-    is_shared_session_viewer: bool,
 }
 
 impl Entity for View {
@@ -276,7 +265,7 @@ impl View {
 
         let mixer = ctx.add_model(|_| CommandPaletteMixer::new());
         data_source_store.update(ctx, |store, ctx| {
-            store.reset_search_mixer(mixer.clone(), false, ctx);
+            store.reset_search_mixer(mixer.clone(), ctx);
             ctx.notify();
         });
 
@@ -318,7 +307,6 @@ impl View {
             placeholder_query_renderer: placeholder_element,
             suggested_binding_ids,
             zero_state_items,
-            is_shared_session_viewer: false,
         }
     }
 
@@ -402,7 +390,6 @@ impl View {
                 | (PaletteMode::LaunchConfig, QueryFilter::LaunchConfigurations)
                 | (PaletteMode::Files, QueryFilter::Files)
                 | (PaletteMode::Conversations, QueryFilter::Conversations)
-                | (PaletteMode::WarpDrive, QueryFilter::Drive)
         )
     }
 
@@ -414,18 +401,6 @@ impl View {
     ) {
         self.session_source.update(ctx, |binding_source, ctx| {
             *binding_source = session_source;
-            ctx.notify();
-        });
-    }
-
-    /// Sets whether the active session is a shared session viewer.
-    /// This should be called by the workspace before opening the palette.
-    pub fn set_is_shared_session_viewer(&mut self, is_viewer: bool, ctx: &mut ViewContext<Self>) {
-        self.is_shared_session_viewer = is_viewer;
-
-        let mixer = self.search_bar.as_ref(ctx).mixer().clone();
-        self.data_source_store.update(ctx, |store, ctx| {
-            store.reset_search_mixer(mixer.clone(), self.is_shared_session_viewer, ctx);
             ctx.notify();
         });
     }
@@ -615,23 +590,7 @@ impl View {
     }
 
     fn close(&mut self, ctx: &mut ViewContext<Self>, accepted_action_type: Option<&'static str>) {
-        let buffer_length = self.search_bar.as_ref(ctx).query(ctx).len();
-        let filter = self.active_query_filter(ctx);
-        let event = if let Some(result_type) = accepted_action_type {
-            TelemetryEvent::PaletteSearchResultAccepted {
-                result_type,
-                filter,
-                buffer_length,
-            }
-        } else {
-            TelemetryEvent::PaletteSearchExited {
-                filter,
-                buffer_length,
-            }
-        };
-
-        send_telemetry_from_ctx!(event, ctx);
-
+        let _ = accepted_action_type;
         self.state.clipped_scroll_state = Default::default();
         self.reset(ctx);
 
@@ -809,8 +768,6 @@ impl View {
                         &pane_view_locator,
                     );
                 }
-
-                send_telemetry_from_ctx!(TelemetryEvent::SelectNavigationPaletteItem, ctx);
             }
             CommandPaletteItemAction::NavigateToConversation {
                 pane_view_locator,
@@ -854,7 +811,6 @@ impl View {
                     terminal_view_id,
                     restore_layout: None,
                 });
-                send_telemetry_from_app_ctx!(TelemetryEvent::SelectNavigationPaletteItem, ctx);
             }
             CommandPaletteItemAction::ForkConversation { conversation_id } => {
                 ctx.dispatch_typed_action(&WorkspaceAction::ForkAIConversation {
@@ -878,16 +834,6 @@ impl View {
                         ui_location: LaunchConfigUiLocation::CommandPalette,
                     },
                 );
-            }
-            CommandPaletteItemAction::ExecuteWorkflow { id } => {
-                ctx.emit(Event::ExecuteWorkflow { id })
-            }
-            CommandPaletteItemAction::InvokeEnvironmentVariables { id } => {
-                ctx.emit(Event::InvokeEnvironmentVariables { id })
-            }
-            CommandPaletteItemAction::OpenNotebook { id } => ctx.emit(Event::OpenNotebook { id }),
-            CommandPaletteItemAction::ViewInWarpDrive { id } => {
-                ctx.emit(Event::ViewInWarpDrive { id })
             }
             CommandPaletteItemAction::NewSession { source } => {
                 self.dispatch_typed_action_on_view(source.action().deref(), ctx);
@@ -938,6 +884,13 @@ impl View {
                     line_and_column_arg: None,
                 });
             }
+            CommandPaletteItemAction::ExecuteWorkflow { id } => {
+                ctx.emit(Event::ExecuteWorkflow { id })
+            }
+            CommandPaletteItemAction::InvokeEnvironmentVariables { id } => {
+                ctx.emit(Event::InvokeEnvironmentVariables { id })
+            }
+            CommandPaletteItemAction::OpenNotebook { id } => ctx.emit(Event::OpenNotebook { id }),
             CommandPaletteItemAction::NewConversationInProject {
                 path: _,
                 project_name,
@@ -1007,11 +960,6 @@ impl View {
         action: &dyn warpui::Action,
         ctx: &mut ViewContext<Self>,
     ) {
-        send_telemetry_from_ctx!(
-            TelemetryEvent::SelectCommandPaletteOption(format!("{action:?}")),
-            ctx
-        );
-
         let (window_id, view_id) = match self.binding_source.as_ref(ctx) {
             BindingSource::View {
                 window_id, view_id, ..

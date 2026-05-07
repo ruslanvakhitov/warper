@@ -1,5 +1,3 @@
-use pathfinder_color::ColorU;
-use warp_core::ui::theme::color::internal_colors;
 use warpui::{
     elements::{
         Border, ConstrainedBox, Container, CornerRadius, CrossAxisAlignment, Flex, Icon,
@@ -19,60 +17,44 @@ const ALERT_ICON_SIZE: f32 = 16.;
 
 const DEFAULT_MAIN_AXIS_SIZE: MainAxisSize = MainAxisSize::Min;
 
-const SUCCESS_ICON_PATH: &str = "bundled/svg/check-skinny.svg";
-const ERROR_ICON_PATH: &str = "bundled/svg/alert-circle.svg";
+const WARNING_ICON_PATH: &str = "bundled/svg/alert-circle.svg";
 
 /// Represents the type of alert. Controls color and icon in order to communicate success, error, etc.
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum AlertFlavor {
-    #[default]
-    Default,
-    Success,
-    Error,
     Warning,
 }
 
 impl AlertFlavor {
     pub fn icon_path(&self) -> Option<&'static str> {
         match self {
-            Self::Default => None,
-            Self::Success => Some(SUCCESS_ICON_PATH),
-            Self::Error | Self::Warning => Some(ERROR_ICON_PATH),
+            Self::Warning => Some(WARNING_ICON_PATH),
         }
     }
 
-    pub fn text_color(&self, appearance: &Appearance) -> ColorU {
+    pub fn text_color(&self, appearance: &Appearance) -> pathfinder_color::ColorU {
         let theme = appearance.theme();
         match self {
-            AlertFlavor::Default => theme.main_text_color(theme.background()).into(),
             AlertFlavor::Warning => theme.ansi_fg_yellow(),
-            _ => theme.background().into(),
         }
     }
 
     pub fn bg_color(&self, appearance: &Appearance) -> Fill {
         let theme = appearance.theme();
         match self {
-            Self::Default => internal_colors::neutral_4(theme).into(),
-            Self::Success => theme.ansi_fg_green().into(),
-            Self::Error => theme.ansi_fg_red().into(),
             Self::Warning => theme.yellow_overlay_1(),
         }
     }
 
     pub fn border_color(&self, appearance: &Appearance) -> Fill {
-        let theme = appearance.theme();
+        let _ = appearance;
         match self {
-            AlertFlavor::Default => internal_colors::neutral_3(theme).into(),
-            AlertFlavor::Success => theme.ansi_bg_green().into(),
-            AlertFlavor::Error => theme.ansi_bg_red().into(),
-            AlertFlavor::Warning => Fill::Solid(ColorU::transparent_black()),
+            AlertFlavor::Warning => Fill::Solid(pathfinder_color::ColorU::transparent_black()),
         }
     }
 }
 
 /// Configuration passed from parent to control the alert's appearance and behavior
-#[derive(Default)]
 pub struct AlertConfig {
     pub flavor: AlertFlavor,
     pub message: String,
@@ -86,12 +68,6 @@ pub struct Alert;
 impl Alert {
     pub fn new() -> Self {
         Self
-    }
-
-    /// Creates a basic alert without a link.
-    /// Ergonomic constructor to avoid writing `Alert::<()>::new()`.
-    pub fn basic() -> Self {
-        Self::new()
     }
 
     pub fn render(&self, config: AlertConfig, appearance: &Appearance) -> Box<dyn Element> {
@@ -149,25 +125,12 @@ impl Alert {
 
 // Convenience methods for creating common alert configurations
 impl AlertConfig {
-    pub fn new(message: String, flavor: AlertFlavor) -> Self {
+    pub fn warning(message: String) -> Self {
         Self {
-            flavor,
+            flavor: AlertFlavor::Warning,
             message,
             main_axis_size: None,
         }
-    }
-
-    pub fn error(message: String) -> Self {
-        Self::new(message, AlertFlavor::Error)
-    }
-
-    #[allow(dead_code)]
-    pub fn success(message: String) -> Self {
-        Self::new(message, AlertFlavor::Success)
-    }
-
-    pub fn warning(message: String) -> Self {
-        Self::new(message, AlertFlavor::Warning)
     }
 
     pub fn with_main_axis_size(mut self, main_axis_size: MainAxisSize) -> Self {

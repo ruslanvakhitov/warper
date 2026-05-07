@@ -1,6 +1,6 @@
 //! Remote repository metadata model (client-side).
 //!
-//! Holds file tree state for repositories on remote servers. In this initial phase
+//! Holds file tree state for repositories on remote sessions. In this initial phase
 //! there is no syncing or indexing — state is populated externally (e.g. by a future
 //! remote client model or via test helpers).
 
@@ -34,7 +34,7 @@ pub enum RemoteRepositoryMetadataEvent {
 
 /// Client-side model for remote repository metadata.
 ///
-/// This model holds file tree state for repositories living on remote servers.
+/// This model holds file tree state for repositories living on remote sessions.
 /// It provides the same read-only query surface as the local model, and write
 /// methods that will be the integration points for the future remote sync layer.
 ///
@@ -171,7 +171,7 @@ impl RemoteRepoMetadataModel {
         }
     }
 
-    /// Applies an incremental update received from the remote server.
+    /// Applies an incremental update received from the remote session.
     ///
     /// Looks up the repository by matching `(host_id, repo_path)` against
     /// tracked [`RemoteRepositoryIdentifier`]s, then delegates to

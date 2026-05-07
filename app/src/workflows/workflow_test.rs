@@ -1,8 +1,5 @@
-use crate::{
-    cloud_object::model::generic_string_model::GenericStringObjectId,
-    server::ids::{ClientId, HashableId, ServerId, SyncId},
-    workflows::workflow::{Argument, ArgumentType, Workflow},
-};
+use crate::workflows::workflow::{Argument, ArgumentType, Workflow};
+use warp_server_client::ids::{ClientId, HashableId, ServerId, SyncId};
 
 #[test]
 fn test_workflow_serialization_with_enum_params() {
@@ -19,7 +16,7 @@ fn test_workflow_serialization_with_enum_params() {
             Argument {
                 name: "server id enum".to_string(),
                 arg_type: ArgumentType::Enum {
-                    enum_id: SyncId::from(GenericStringObjectId::from(ServerId::from(123))),
+                    enum_id: SyncId::ServerId(ServerId::from(123)),
                 },
                 description: Some("description".to_string()),
                 default_value: None,

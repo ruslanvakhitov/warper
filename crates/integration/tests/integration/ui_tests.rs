@@ -62,8 +62,6 @@ integration_tests! {
     test_restore_snapshot_with_background_output,
     test_restore_snapshot_with_notebooks,
     test_restore_snapshot_with_workflows,
-    test_restore_snapshot_with_test_json_object,
-    test_restore_snapshot_with_common_shareable_metadata_ids,
     test_restore_snapshot_with_markdown_file,
     test_restore_snapshot_with_settings_page,
     // TODO(kevin): figure out why the file name doesn't match.
@@ -126,7 +124,6 @@ integration_tests! {
     test_with_launch_config_with_no_active_pane,
     test_find_query_not_evaluated_on_terminal_mode_change,
     test_custom_open_completions_menu_binding,
-    test_ssh_with_shell_override,
 
     #[ignore = "Affected by agent_view feature flag UI changes"]
     test_copy_prompt_from_block_honor_ps1_disabled,
@@ -170,23 +167,11 @@ integration_tests! {
     test_synced_inputs_terminal_mode_change_view_focus,
 
     #[ignore = "Affected by agent_view feature flag UI changes"]
-    test_can_bootstrap_remote_bash_subshell,
-    #[ignore = "Affected by agent_view feature flag UI changes"]
-    test_can_bootstrap_remote_zsh_subshell,
-
-    #[ignore = "Affected by agent_view feature flag UI changes"]
     test_can_auto_bootstrap,
 
     // Disabled due to flakiness on CI.
     #[ignore]
     test_create_session_with_split_pane_while_bootstrapping,
-
-    // For some reason, disabling the `AgentMode` flag does not actually disable Agent Mode in the test
-    // run. Ignore for now.
-    #[ignore]
-    test_ask_warp_ai_keybinding_for_selected_block,
-
-    test_create_folder_from_command_palette,
 
     test_tab_behavior_setting,
 
@@ -195,11 +180,6 @@ integration_tests! {
     test_history_command_is_linked_to_local_workflow,
     #[ignore = "Affected by agent_view feature flag UI changes"]
     test_up_arrow_history_enters_shift_tab_for_workflow,
-
-    test_websocket_begins_on_startup,
-    test_websocket_does_not_begin_on_startup,
-    test_websocket_begins_after_joining_a_team,
-    test_websocket_begins_after_creating_an_object,
 
     test_secret_is_obfuscated_on_copy,
     test_secret_tooltip_respects_safe_mode_setting,
@@ -220,15 +200,9 @@ integration_tests! {
     test_closed_panes_cleared_on_rearrangement,
     test_tab_closes_when_last_visible_pane_closed,
 
-    test_notebook_pane_tracking,
-    test_close_notebook_tab,
     test_open_in_warp_banner,
-    test_close_notebook_window,
-    test_backspace_inside_rendered_mermaid_block_is_atomic,
 
-    test_open_workflow_in_pane,
     test_create_personal_workflow_pane_from_command_palette,
-    test_create_team_workflow_pane_from_command_palette,
 
     // TODO(alokedesai): Fix this on the latest version of Bash.
     #[ignore]
@@ -300,9 +274,6 @@ integration_tests! {
     test_middle_click_paste,
     test_agent_mode_pane_minimum_size,
 
-    test_rule_creation,
-    test_rule_update,
-    test_rule_pane_opening,
     test_undo_close_stack_timeout_cleanup,
 
     test_file_tree_opens_files_in_warp,

@@ -106,7 +106,7 @@ fn prepare_gemini_settings_adds_context_file_name_when_system_prompt_present() {
     let settings: Value = serde_json::from_slice(&fs::read(settings_path).unwrap()).unwrap();
     assert_eq!(
         settings["context"]["fileName"],
-        Value::Array(vec![Value::String("OZ_SYSTEM_PROMPT.md".to_owned())]),
+        Value::Array(vec![Value::String("GEMINI_SYSTEM_PROMPT.md".to_owned())]),
     );
 }
 
@@ -129,7 +129,7 @@ fn prepare_gemini_settings_appends_to_existing_context_file_name() {
         .iter()
         .map(|v| v.as_str().unwrap().to_owned())
         .collect();
-    assert_eq!(file_names, vec!["existing.md", "OZ_SYSTEM_PROMPT.md"]);
+    assert_eq!(file_names, vec!["existing.md", "GEMINI_SYSTEM_PROMPT.md"]);
 }
 
 #[test]
@@ -138,7 +138,7 @@ fn prepare_gemini_settings_does_not_duplicate_system_prompt_file_name() {
     let settings_path = tmp.path().join("settings.json");
     fs::write(
         &settings_path,
-        r#"{"context":{"fileName":["OZ_SYSTEM_PROMPT.md"]}}"#,
+        r#"{"context":{"fileName":["GEMINI_SYSTEM_PROMPT.md"]}}"#,
     )
     .unwrap();
 
@@ -151,7 +151,7 @@ fn prepare_gemini_settings_does_not_duplicate_system_prompt_file_name() {
         .iter()
         .map(|v| v.as_str().unwrap().to_owned())
         .collect();
-    assert_eq!(file_names, vec!["OZ_SYSTEM_PROMPT.md"]);
+    assert_eq!(file_names, vec!["GEMINI_SYSTEM_PROMPT.md"]);
 }
 
 #[test]

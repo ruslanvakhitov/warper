@@ -11,16 +11,7 @@ use super::Availability;
 pub static AGENT: LazyLock<StaticCommand> = LazyLock::new(|| StaticCommand {
     name: "/agent",
     description: "Start a new conversation",
-    icon_path: "bundled/svg/oz.svg",
-    availability: Availability::AI_ENABLED,
-    auto_enter_ai_mode: false,
-    argument: Some(Argument::optional().with_execute_on_selection()),
-});
-
-pub static CLOUD_AGENT: LazyLock<StaticCommand> = LazyLock::new(|| StaticCommand {
-    name: "/cloud-agent",
-    description: "Start a new cloud agent conversation",
-    icon_path: "bundled/svg/oz-cloud.svg",
+    icon_path: "bundled/svg/warp.svg",
     availability: Availability::AI_ENABLED,
     auto_enter_ai_mode: false,
     argument: Some(Argument::optional().with_execute_on_selection()),
@@ -44,19 +35,6 @@ pub const PR_COMMENTS: StaticCommand = StaticCommand {
     argument: None,
 };
 
-pub static CREATE_ENVIRONMENT: LazyLock<StaticCommand> = LazyLock::new(|| StaticCommand {
-    name: "/create-environment",
-    description: "Create an Oz environment (Docker image + repos) via guided setup",
-    icon_path: "bundled/svg/dataflow.svg",
-    availability: Availability::AI_ENABLED,
-    auto_enter_ai_mode: false,
-    argument: Some(
-        Argument::optional()
-            .with_hint_text("<optional repo paths or GitHub URLs>")
-            .with_execute_on_selection(),
-    ),
-});
-
 pub const CREATE_DOCKER_SANDBOX: StaticCommand = StaticCommand {
     name: "/docker-sandbox",
     description: "Create a new docker sandbox terminal session",
@@ -68,7 +46,7 @@ pub const CREATE_DOCKER_SANDBOX: StaticCommand = StaticCommand {
 
 pub static CREATE_NEW_PROJECT: LazyLock<StaticCommand> = LazyLock::new(|| StaticCommand {
     name: "/create-new-project",
-    description: "Have Oz walk you through creating a new coding project",
+    description: "Use the agent to create a new coding project",
     icon_path: "bundled/svg/plus.svg",
     availability: Availability::LOCAL | Availability::AI_ENABLED,
     auto_enter_ai_mode: true,
@@ -208,15 +186,6 @@ pub const OPEN_SETTINGS_FILE: StaticCommand = StaticCommand {
     argument: None,
 };
 
-pub const CHANGELOG: StaticCommand = StaticCommand {
-    name: "/changelog",
-    description: "Open the latest changelog",
-    icon_path: "bundled/svg/book-open.svg",
-    availability: Availability::ALWAYS,
-    auto_enter_ai_mode: false,
-    argument: None,
-};
-
 // Accepts an optional argument so that buffers like `/feedback some text` still parse to
 // this command (the trailing text is ignored on execution). Without this, typing any
 // argument after `/feedback` would fall through and be treated as plain input.
@@ -259,7 +228,7 @@ pub static NEW: LazyLock<StaticCommand> = LazyLock::new(|| StaticCommand {
 pub static MODEL: LazyLock<StaticCommand> = LazyLock::new(|| StaticCommand {
     name: "/model",
     description: "Switch the base agent model",
-    icon_path: "bundled/svg/oz.svg",
+    icon_path: "bundled/svg/warp.svg",
     availability: Availability::AGENT_VIEW | Availability::AI_ENABLED,
     auto_enter_ai_mode: true,
     argument: None,
@@ -290,7 +259,7 @@ pub const ORCHESTRATE_NAME: &str = "/orchestrate";
 pub static ORCHESTRATE: LazyLock<StaticCommand> = LazyLock::new(|| StaticCommand {
     name: ORCHESTRATE_NAME,
     description: "Break a task into subtasks and run them in parallel with multiple agents",
-    icon_path: "bundled/svg/oz.svg",
+    icon_path: "bundled/svg/warp.svg",
     availability: Availability::LOCAL | Availability::AI_ENABLED,
     auto_enter_ai_mode: true,
     argument: Some(Argument::optional().with_hint_text("<describe your task>")),
@@ -366,33 +335,6 @@ pub const FORK_FROM: StaticCommand = StaticCommand {
         .union(Availability::NO_LRC_CONTROL)
         .union(Availability::AI_ENABLED),
     auto_enter_ai_mode: true,
-    argument: None,
-};
-
-pub const USAGE: StaticCommand = StaticCommand {
-    name: "/usage",
-    description: "Open billing and usage settings",
-    icon_path: "bundled/svg/bar-chart-04.svg",
-    availability: Availability::AI_ENABLED,
-    auto_enter_ai_mode: false,
-    argument: None,
-};
-
-pub const REMOTE_CONTROL: StaticCommand = StaticCommand {
-    name: "/remote-control",
-    description: "Start remote control for this session",
-    icon_path: "bundled/svg/phone-01.svg",
-    availability: Availability::AI_ENABLED,
-    auto_enter_ai_mode: false,
-    argument: None,
-};
-
-pub const COST: StaticCommand = StaticCommand {
-    name: "/cost",
-    description: "Toggle credit usage details",
-    icon_path: "bundled/svg/bar-chart-04.svg",
-    availability: Availability::AGENT_VIEW.union(Availability::AI_ENABLED),
-    auto_enter_ai_mode: false,
     argument: None,
 };
 
@@ -515,7 +457,6 @@ fn all_commands() -> Vec<StaticCommand> {
         ADD_MCP,
         ADD_PROMPT.clone(),
         ADD_RULE,
-        COST,
         FEEDBACK.clone(),
         INDEX,
         INIT,
@@ -526,7 +467,6 @@ fn all_commands() -> Vec<StaticCommand> {
         NEW.clone(),
         PLAN.clone(),
         RENAME_TAB.clone(),
-        USAGE,
         CONVERSATIONS,
         EXPORT_TO_CLIPBOARD,
         MODEL.clone(),
@@ -536,25 +476,11 @@ fn all_commands() -> Vec<StaticCommand> {
         commands.push(CREATE_DOCKER_SANDBOX);
     }
 
-    if FeatureFlag::CreatingSharedSessions.is_enabled()
-        && FeatureFlag::HOARemoteControl.is_enabled()
-    {
-        commands.push(REMOTE_CONTROL);
-    }
-
-    if FeatureFlag::Changelog.is_enabled() {
-        commands.push(CHANGELOG);
-    }
-
     if FeatureFlag::AgentView.is_enabled() {
         commands.push(PROMPTS.clone());
     }
 
     commands.push(OPEN_CODE_REVIEW);
-
-    if FeatureFlag::CreateEnvironmentSlashCommand.is_enabled() {
-        commands.push(CREATE_ENVIRONMENT.clone());
-    }
 
     if FeatureFlag::CreateProjectFlow.is_enabled() {
         commands.push(CREATE_NEW_PROJECT.clone());
@@ -590,10 +516,6 @@ fn all_commands() -> Vec<StaticCommand> {
         && !FeatureFlag::PRCommentsSkill.is_enabled()
     {
         commands.push(PR_COMMENTS);
-    }
-
-    if FeatureFlag::CloudMode.is_enabled() && FeatureFlag::CloudModeFromLocalSession.is_enabled() {
-        commands.push(CLOUD_AGENT.clone());
     }
 
     if FeatureFlag::InlineProfileSelector.is_enabled() {

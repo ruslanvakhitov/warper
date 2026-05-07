@@ -9,9 +9,7 @@ use crate::ai::blocklist::agent_view::agent_input_footer::{
     AgentInputFooter, AgentInputFooterEvent,
 };
 use crate::terminal::cli_agent_sessions::{CLIAgentInputEntrypoint, CLIAgentSessionsModel};
-use crate::terminal::shared_session::{SharedSessionActionSource, SharedSessionScrollbackType};
 use base64::Engine;
-use session_sharing_protocol::sharer::SessionSourceType;
 use warpui::clipboard::{ClipboardContent, ImageData};
 mod warpify_footer;
 
@@ -24,13 +22,13 @@ use std::time::Duration;
 use warpui::r#async::Timer;
 
 use crate::code_review::diff_state::GitDeltaPreference;
-use crate::code_review::telemetry_event::CodeReviewPaneEntrypoint;
+use crate::code_review::metadata::CodeReviewPaneEntrypoint;
 use anyhow::anyhow;
 use parking_lot::FairMutex;
 use pathfinder_color::ColorU;
 use warp_core::{
     features::FeatureFlag,
-    report_error, send_telemetry_from_ctx,
+    report_error,
     settings::Setting,
     ui::{
         appearance::Appearance,
@@ -54,12 +52,10 @@ use warpui::{
 use crate::{
     ai::blocklist::{agent_view::agent_view_bg_fill, block::cli_controller::CLISubagentEvent},
     cmd_or_ctrl_shift,
-    server::telemetry::{CLIAgentType, CLISubagentControlState, TelemetryEvent},
     settings::{
         AISettings, AISettingsChangedEvent, CompiledCommandsForCodingAgentToolbar,
         InputModeSettings,
     },
-    terminal::cli_agent_sessions::CLIAgentRichInputCloseReason,
     terminal::{
         model_events::{ModelEvent, ModelEventDispatcher},
         TerminalModel,
@@ -205,7 +201,6 @@ impl TerminalView {
         match event {
             UseAgentToolbarEvent::Dismiss => {
                 self.hide_use_agent_footer_in_blocklist(ctx);
-                send_telemetry_from_ctx!(TelemetryEvent::AgentToolbarDismissed, ctx);
                 ctx.notify();
             }
             UseAgentToolbarEvent::WriteToPty(text) => {
@@ -228,23 +223,11 @@ impl TerminalView {
                     ctx,
                 );
             }
-            UseAgentToolbarEvent::ToggleFileExplorer(cli_agent) => {
-                self.toggle_file_tree(Some((*cli_agent).into()), ctx);
-            }
-            UseAgentToolbarEvent::StartRemoteControl { scrollback_type } => {
-                self.auto_stop_sharing_on_cli_end =
-                    *scrollback_type == SharedSessionScrollbackType::None;
-                self.attempt_to_share_session(
-                    *scrollback_type,
-                    Some(SharedSessionActionSource::FooterChip),
-                    SessionSourceType::default(),
-                    true,
-                    ctx,
-                );
+            UseAgentToolbarEvent::ToggleFileExplorer(_) => {
+                self.toggle_file_tree(ctx);
             }
             UseAgentToolbarEvent::StopRemoteControl => {
-                self.auto_stop_sharing_on_cli_end = false;
-                self.stop_sharing_session(SharedSessionActionSource::FooterChip, ctx);
+                self.close_cli_agent_rich_input_and_disable_auto_toggle(ctx);
             }
             UseAgentToolbarEvent::OpenRichInput => {
                 if self.has_active_cli_agent_input_session(ctx) {
@@ -266,12 +249,6 @@ impl TerminalView {
                         self.handle_action(&TerminalAction::TriggerSubshellBootstrap, ctx);
                     }
                 }
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::WarpifyFooterAcceptedWarpify {
-                        is_ssh: mode.is_ssh()
-                    },
-                    ctx
-                );
             }
             UseAgentToolbarEvent::UseAgent => {
                 self.hide_use_agent_footer_in_blocklist(ctx);
@@ -312,7 +289,7 @@ impl TerminalView {
         if cli_agent.is_some() {
             // For CLI agent commands, only check the CLI agent footer setting.
             // This is independent of the global AI toggle so that users who
-            // disable Warp AI still get the footer for third-party coding agents.
+            // disable Warp-hosted AI still get the footer for third-party coding agents.
             if !*ai_settings.should_render_cli_agent_footer {
                 return false;
             }
@@ -338,11 +315,8 @@ impl TerminalView {
             }
         }
 
-        // Don't show the use agent footer during LRCs in setup phase of ambient agent sessions.
-        let is_shared_ambient_session = model.is_shared_ambient_agent_session();
-
         !self.is_input_box_visible(model, app)
-            && ((active_block.is_eligible_to_tag_in_agent() && !is_shared_ambient_session)
+            && (active_block.is_eligible_to_tag_in_agent()
                 || active_block.is_eligible_for_agent_handoff())
     }
 
@@ -434,19 +408,6 @@ impl TerminalView {
             input.clear_buffer_and_reset_undo_stack(ctx);
         });
         ctx.notify();
-
-        let model = self.model.lock();
-        let active_block = model.block_list().active_block();
-        let conversation_id = active_block.ai_conversation_id();
-        let block_id = active_block.id().clone();
-        send_telemetry_from_ctx!(
-            TelemetryEvent::CLISubagentControlStateChanged {
-                conversation_id,
-                block_id,
-                control_state: CLISubagentControlState::AgentTaggedIn,
-            },
-            ctx
-        );
     }
 
     /// Tags the agent "out". See docs on `tag_in_agent_for_user_long_running_command` for
@@ -483,19 +444,6 @@ impl TerminalView {
         self.redetermine_terminal_focus(ctx);
 
         ctx.notify();
-
-        let model = self.model.lock();
-        let active_block = model.block_list().active_block();
-        let conversation_id = active_block.ai_conversation_id();
-        let block_id = active_block.id().clone();
-        send_telemetry_from_ctx!(
-            TelemetryEvent::CLISubagentControlStateChanged {
-                conversation_id,
-                block_id,
-                control_state: CLISubagentControlState::AgentTaggedOut,
-            },
-            ctx
-        );
     }
 
     pub(super) fn maybe_show_use_agent_footer_in_blocklist(&mut self, ctx: &mut ViewContext<Self>) {
@@ -514,17 +462,6 @@ impl TerminalView {
         }
 
         let should_insert_after_block = !InputModeSettings::as_ref(ctx).is_pinned_to_top();
-
-        // Send telemetry when showing CLI agent footer
-        if let Some(session) = CLIAgentSessionsModel::as_ref(ctx).session(self.view_id) {
-            let cli_agent_type: CLIAgentType = session.agent.into();
-            send_telemetry_from_ctx!(
-                TelemetryEvent::CLIAgentToolbarShown {
-                    cli_agent: cli_agent_type,
-                },
-                ctx
-            );
-        }
 
         self.insert_rich_content(
             None,
@@ -547,25 +484,20 @@ impl TerminalView {
     /// Closes the CLI agent rich input session. Side effects (input config restore,
     /// buffer clear, hint text) are handled reactively by subscribers to
     /// `CLIAgentSessionsModelEvent::InputSessionChanged`.
-    pub(in crate::terminal) fn close_cli_agent_rich_input(
-        &mut self,
-        reason: CLIAgentRichInputCloseReason,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        self.close_cli_agent_rich_input_impl(true, reason, ctx);
+    pub(in crate::terminal) fn close_cli_agent_rich_input(&mut self, ctx: &mut ViewContext<Self>) {
+        self.close_cli_agent_rich_input_impl(true, ctx);
     }
 
     pub(in crate::terminal) fn close_cli_agent_rich_input_and_disable_auto_toggle(
         &mut self,
         ctx: &mut ViewContext<Self>,
     ) {
-        self.close_cli_agent_rich_input_impl(false, CLIAgentRichInputCloseReason::Manual, ctx);
+        self.close_cli_agent_rich_input_impl(false, ctx);
     }
 
     fn close_cli_agent_rich_input_impl(
         &mut self,
         should_auto_toggle_input: bool,
-        reason: CLIAgentRichInputCloseReason,
         ctx: &mut ViewContext<Self>,
     ) {
         if !self.has_active_cli_agent_input_session(ctx) {
@@ -580,16 +512,6 @@ impl TerminalView {
             sessions_model.set_draft(view_id, draft);
             sessions_model.close_input(view_id, should_auto_toggle_input, ctx);
         });
-
-        let cli_agent_type: Option<CLIAgentType> = CLIAgentSessionsModel::as_ref(ctx)
-            .session(self.view_id)
-            .map(|s| s.agent.into());
-        if let Some(cli_agent) = cli_agent_type {
-            send_telemetry_from_ctx!(
-                TelemetryEvent::CLIAgentRichInputClosed { cli_agent, reason },
-                ctx
-            );
-        }
 
         self.redetermine_terminal_focus(ctx);
         ctx.notify();
@@ -613,7 +535,7 @@ impl TerminalView {
         };
 
         if should_close {
-            self.close_cli_agent_rich_input(CLIAgentRichInputCloseReason::Submit, ctx);
+            self.close_cli_agent_rich_input(ctx);
         } else {
             self.input.update(ctx, |input, ctx| {
                 input.clear_buffer_and_reset_undo_stack(ctx);
@@ -631,20 +553,6 @@ impl TerminalView {
         }
         if text.trim().is_empty() {
             return;
-        }
-
-        let prompt_length = text.chars().count();
-        let cli_agent: Option<CLIAgentType> = CLIAgentSessionsModel::as_ref(ctx)
-            .session(self.view_id)
-            .map(|s| s.agent.into());
-        if let Some(cli_agent) = cli_agent {
-            send_telemetry_from_ctx!(
-                TelemetryEvent::CLIAgentRichInputSubmitted {
-                    cli_agent,
-                    prompt_length,
-                },
-                ctx
-            );
         }
 
         // Clear any saved draft so submitted text isn't restored on the next open.
@@ -888,12 +796,12 @@ impl TerminalView {
 
         // The Ctrl-G binding and footer button are both gated on an active CLI
         // agent session, so the session should always exist here.
-        let Some(cli_agent) = CLIAgentSessionsModel::as_ref(ctx)
+        if CLIAgentSessionsModel::as_ref(ctx)
             .session(self.view_id)
-            .map(|session| session.agent)
-        else {
+            .is_none()
+        {
             return;
-        };
+        }
 
         let ai_input_model = self.ai_input_model.as_ref(ctx);
         let previous_input_config = ai_input_model.input_config();
@@ -911,14 +819,6 @@ impl TerminalView {
                 ctx,
             );
         });
-
-        send_telemetry_from_ctx!(
-            TelemetryEvent::CLIAgentRichInputOpened {
-                cli_agent: cli_agent.into(),
-                entrypoint,
-            },
-            ctx
-        );
 
         // Input mode switch, buffer clear, draft restoration, and hint text
         // are handled reactively by Input's subscription to InputSessionChanged.
@@ -970,7 +870,7 @@ impl UseAgentToolbar {
                 "Use agent",
                 AgentFooterButtonTheme::new(Some(terminal_model.clone())),
             )
-            .with_icon(Icon::Oz)
+            .with_icon(Icon::Warp)
             .with_keybinding(KeystrokeSource::Fixed(USE_AGENT_KEYSTROKE.clone()), ctx)
             .with_size(button_size)
             .with_tooltip("Ask the Warp agent to assist")
@@ -984,7 +884,7 @@ impl UseAgentToolbar {
                 "Give control back to agent",
                 AgentFooterButtonTheme::new(Some(terminal_model.clone())),
             )
-            .with_icon(Icon::Oz)
+            .with_icon(Icon::Warp)
             .with_keybinding(KeystrokeSource::Fixed(USE_AGENT_KEYSTROKE.clone()), ctx)
             .with_size(button_size)
             .with_tooltip("Ask the Warp agent to resume")
@@ -1074,14 +974,7 @@ impl UseAgentToolbar {
             AgentInputFooterEvent::ToggleFileExplorer(agent) => {
                 ctx.emit(UseAgentToolbarEvent::ToggleFileExplorer(*agent));
             }
-            AgentInputFooterEvent::StartRemoteControl => {
-                let scrollback_type = if self.cli_agent(ctx).is_some() {
-                    SharedSessionScrollbackType::None
-                } else {
-                    SharedSessionScrollbackType::All
-                };
-                ctx.emit(UseAgentToolbarEvent::StartRemoteControl { scrollback_type });
-            }
+            AgentInputFooterEvent::StartRemoteControl => {}
             AgentInputFooterEvent::StopRemoteControl => {
                 ctx.emit(UseAgentToolbarEvent::StopRemoteControl);
             }
@@ -1182,10 +1075,6 @@ pub enum UseAgentToolbarEvent {
     ToggleCodeReviewPane(CLIAgent),
     /// Toggle the file explorer (from CLI agent view).
     ToggleFileExplorer(CLIAgent),
-    /// Start remote control (one-click share without modal).
-    StartRemoteControl {
-        scrollback_type: SharedSessionScrollbackType,
-    },
     /// Stop remote control (stop the active shared session).
     StopRemoteControl,
     /// Open the rich input editor for composing a prompt.

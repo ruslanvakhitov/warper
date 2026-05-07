@@ -16,9 +16,6 @@ If you're not sure whether you should add a test, check our testing policy: http
 - [ ] Is this change enabling the use of a server API on client channels that rely on the production server (e.g. WarpStable)?
   - [ ] If so, has the new server API been stable on production for at least one server release cycle? See [here](https://www.notion.so/warpdev/How-to-add-a-new-full-stack-feature-8412cede405a4ec194b32bdd4b951035?pvs=4#73b202f939834b97ab1fbdf7fc82cd53) for more details.
 
-## Agent Mode
-- [ ] Warp Agent Mode - This PR was created via Warp's AI Agent Mode
-
 ## Changelog Entries for Stable
 <!--
 The entries below will be used when constructing a soft-copy of the stable release changelog. Leave blank or remove the lines if no entry in the stable changelog is needed. Entries should be on the same line, without the `{{` `}}` brackets. You can use multiple lines, even of the same type. The valid suffixes are:

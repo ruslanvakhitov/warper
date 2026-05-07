@@ -1,22 +1,9 @@
 use std::path::PathBuf;
 
-use crate::cloud_object::UniquePer;
-use crate::server::sync_queue::QueueItem;
 use crate::settings::AISettings;
-use crate::workspaces::user_workspaces::UserWorkspaces;
-use crate::{
-    cloud_object::{
-        model::{
-            generic_string_model::{GenericStringModel, GenericStringObjectId, StringModel},
-            json_model::{JsonModel, JsonSerializer},
-        },
-        GenericCloudObject, GenericStringObjectFormat, GenericStringObjectUniqueKey,
-        JsonObjectType, Revision, ServerCloudObject,
-    },
-    settings::{
-        AgentModeCommandExecutionPredicate, DEFAULT_COMMAND_EXECUTION_ALLOWLIST,
-        DEFAULT_COMMAND_EXECUTION_DENYLIST,
-    },
+use crate::settings::{
+    AgentModeCommandExecutionPredicate, DEFAULT_COMMAND_EXECUTION_ALLOWLIST,
+    DEFAULT_COMMAND_EXECUTION_DENYLIST,
 };
 use serde::{Deserialize, Serialize};
 use warp_core::channel::ChannelState;
@@ -47,9 +34,15 @@ pub enum ActionPermission {
 impl ActionPermission {
     pub fn description(&self) -> &'static str {
         match self {
-            ActionPermission::AgentDecides | ActionPermission::Unknown => "The Agent chooses the safest path: acting on its own when confident, and asking for approval when uncertain.",
-            ActionPermission::AlwaysAllow => "Give the Agent full autonomy  — no manual approval ever required.",
-            ActionPermission::AlwaysAsk => "Require explicit approval before the Agent takes any action.",
+            ActionPermission::AgentDecides | ActionPermission::Unknown => {
+                "The Agent chooses the safest path: acting on its own when confident, and asking for approval when uncertain."
+            }
+            ActionPermission::AlwaysAllow => {
+                "Give the Agent full autonomy  — no manual approval ever required."
+            }
+            ActionPermission::AlwaysAsk => {
+                "Require explicit approval before the Agent takes any action."
+            }
         }
     }
 
@@ -83,7 +76,9 @@ impl WriteToPtyPermission {
             WriteToPtyPermission::AskOnFirstWrite => {
                 "The agent will ask for permission the first time it needs to interact with a running command. After that, it will continue automatically for the rest of that command."
             }
-            WriteToPtyPermission::AlwaysAsk => "The agent will always ask for permission to interact with a running command.",
+            WriteToPtyPermission::AlwaysAsk => {
+                "The agent will always ask for permission to interact with a running command."
+            }
             WriteToPtyPermission::Unknown => ActionPermission::Unknown.description(),
         }
     }
@@ -105,13 +100,12 @@ pub enum ComputerUsePermission {
     Unknown,
 }
 
-/// Result of resolving the cloud agent computer use setting.
-/// Contains both the effective value and whether it's forced by organization policy.
-pub struct CloudAgentComputerUseState {
-    /// Whether computer use is enabled for cloud agents.
+/// Result of resolving the local agent computer use setting.
+pub struct AgentComputerUseState {
+    /// Whether computer use is enabled for local agents.
     pub enabled: bool,
-    /// Whether this value is forced by organization settings (true = user cannot change it).
-    pub is_forced_by_org: bool,
+    /// Whether this value is forced by local policy.
+    pub is_forced_by_policy: bool,
 }
 
 impl ComputerUsePermission {
@@ -138,42 +132,19 @@ impl ComputerUsePermission {
         matches!(self, Self::AlwaysAllow)
     }
 
-    /// Resolves the effective cloud agent computer use state by reading the workspace
-    /// autonomy setting and user's local preference from their respective singletons.
-    pub fn resolve_cloud_agent_state(ctx: &AppContext) -> CloudAgentComputerUseState {
+    /// Resolves the effective local agent computer use state from local preferences.
+    pub fn resolve_agent_state(ctx: &AppContext) -> AgentComputerUseState {
         if !FeatureFlag::AgentModeComputerUse.is_enabled() {
-            return CloudAgentComputerUseState {
+            return AgentComputerUseState {
                 enabled: false,
-                is_forced_by_org: false,
+                is_forced_by_policy: false,
             };
         }
 
-        let autonomy_setting = UserWorkspaces::as_ref(ctx)
-            .ai_autonomy_settings()
-            .computer_use_setting;
-        let user_preference = *AISettings::as_ref(ctx).cloud_agent_computer_use_enabled;
-
-        match autonomy_setting {
-            Some(ComputerUsePermission::Never) => CloudAgentComputerUseState {
-                enabled: false,
-                is_forced_by_org: true,
-            },
-            Some(ComputerUsePermission::AlwaysAllow) => CloudAgentComputerUseState {
-                enabled: true,
-                is_forced_by_org: true,
-            },
-            // TODO(QUALITY-297): Currently this case should never be hit because the
-            // AlwaysAsk variant isn't accessible in the admin console. We need to figure
-            // out how to handle it when it eventually becomes available. For now, I'm
-            // treating this conservatively and marking computer use as disabled.
-            Some(ComputerUsePermission::AlwaysAsk) => CloudAgentComputerUseState {
-                enabled: false,
-                is_forced_by_org: true,
-            },
-            Some(ComputerUsePermission::Unknown) | None => CloudAgentComputerUseState {
-                enabled: user_preference,
-                is_forced_by_org: false,
-            },
+        let user_preference = *AISettings::as_ref(ctx).agent_computer_use_enabled;
+        AgentComputerUseState {
+            enabled: user_preference,
+            is_forced_by_policy: false,
         }
     }
 }
@@ -248,9 +219,6 @@ pub struct AIExecutionProfile {
     pub cli_agent_model: Option<LLMId>,
     pub computer_use_model: Option<LLMId>,
 
-    /// Whether plans created by the agent should be automatically synced to Warp Drive
-    pub autosync_plans_to_warp_drive: bool,
-
     /// Whether the agent may use web search when helpful for completing tasks
     pub web_search_enabled: bool,
 }
@@ -276,7 +244,6 @@ impl Default for AIExecutionProfile {
             coding_model: None,
             cli_agent_model: None,
             computer_use_model: None,
-            autosync_plans_to_warp_drive: true,
             web_search_enabled: true,
         }
     }
@@ -327,7 +294,6 @@ impl AIExecutionProfile {
             coding_model: None,
             cli_agent_model: None,
             computer_use_model: None,
-            autosync_plans_to_warp_drive: false,
             web_search_enabled: true,
         }
     }
@@ -381,41 +347,13 @@ impl AIExecutionProfile {
             coding_model: None,
             cli_agent_model: None,
             computer_use_model: None,
-            autosync_plans_to_warp_drive: FeatureFlag::SyncAmbientPlans.is_enabled(),
             web_search_enabled: true,
         }
     }
 }
 
-pub type CloudAIExecutionProfile =
-    GenericCloudObject<GenericStringObjectId, CloudAIExecutionProfileModel>;
-pub type CloudAIExecutionProfileModel = GenericStringModel<AIExecutionProfile, JsonSerializer>;
-
-impl StringModel for AIExecutionProfile {
-    type CloudObjectType = CloudAIExecutionProfile;
-
-    fn model_type_name(&self) -> &'static str {
-        "AIExecutionProfile"
-    }
-
-    fn should_enforce_revisions() -> bool {
-        true
-    }
-
-    fn model_format() -> GenericStringObjectFormat {
-        GenericStringObjectFormat::Json(JsonObjectType::AIExecutionProfile)
-    }
-
-    fn should_show_activity_toasts() -> bool {
-        false
-    }
-
-    fn warn_if_unsaved_at_quit() -> bool {
-        true
-    }
-
-    fn display_name(&self) -> String {
-        // Handles case where default profile was previously created and named "Untitled"
+impl AIExecutionProfile {
+    pub fn display_name(&self) -> String {
         if self.is_default_profile {
             "Default".to_string()
         } else if self.name.trim().is_empty() {
@@ -423,50 +361,5 @@ impl StringModel for AIExecutionProfile {
         } else {
             self.name.clone()
         }
-    }
-
-    fn update_object_queue_item(
-        &self,
-        revision_ts: Option<Revision>,
-        object: &Self::CloudObjectType,
-    ) -> QueueItem {
-        QueueItem::UpdateAIExecutionProfile {
-            model: object.model().clone().into(),
-            id: object.id,
-            revision: revision_ts.or_else(|| object.metadata.revision.clone()),
-        }
-    }
-
-    fn new_from_server_update(&self, server_cloud_object: &ServerCloudObject) -> Option<Self> {
-        if let ServerCloudObject::AIExecutionProfile(server_ai_execution_profile) =
-            server_cloud_object
-        {
-            return Some(server_ai_execution_profile.model.clone().string_model);
-        }
-        None
-    }
-
-    fn should_clear_on_unique_key_conflict(&self) -> bool {
-        true
-    }
-
-    fn uniqueness_key(&self) -> Option<GenericStringObjectUniqueKey> {
-        // We want to prevent the creation of several default profiles per user. If it's not the default
-        // profile, then there can be many.
-        self.is_default_profile
-            .then_some(GenericStringObjectUniqueKey {
-                key: "default".to_string(),
-                unique_per: UniquePer::User,
-            })
-    }
-
-    fn renders_in_warp_drive(&self) -> bool {
-        false
-    }
-}
-
-impl JsonModel for AIExecutionProfile {
-    fn json_object_type() -> JsonObjectType {
-        JsonObjectType::AIExecutionProfile
     }
 }

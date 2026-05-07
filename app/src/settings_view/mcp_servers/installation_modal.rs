@@ -26,7 +26,7 @@ use warpui::{
 };
 use warpui::{SingletonEntity, ViewContext};
 
-use crate::ai::mcp::{TemplatableMCPServer, TemplatableMCPServerManager, TemplateVariable};
+use crate::ai::mcp::{TemplatableMCPServer, TemplateVariable};
 
 use crate::ui_components::{
     avatar::{Avatar, AvatarContent},
@@ -106,9 +106,7 @@ impl InstallationModalBody {
         self.instructions_in_markdown = instructions_in_markdown;
 
         if let Some(templatable_mcp_server) = &self.templatable_mcp_server {
-            self.is_shared = TemplatableMCPServerManager::as_ref(ctx)
-                .is_server_template_shared(templatable_mcp_server.uuid, ctx);
-
+            self.is_shared = false;
             self.variable_inputs = templatable_mcp_server
                 .template
                 .variables
@@ -408,7 +406,7 @@ impl InstallationModalBody {
         form_column
     }
 
-    fn render_source_indicator(is_shared: bool, appearance: &Appearance) -> Box<dyn Element> {
+    fn render_source_indicator(_is_shared: bool, appearance: &Appearance) -> Box<dyn Element> {
         let info_icon = ConstrainedBox::new(
             Icon::Info
                 .to_warpui_icon(appearance.theme().disabled_ui_text_color())
@@ -418,11 +416,7 @@ impl InstallationModalBody {
         .with_height(16.)
         .finish();
 
-        let source_text = if is_shared {
-            "Shared from team"
-        } else {
-            "From another device"
-        };
+        let source_text = "Template";
 
         let label_text = Text::new_inline(
             source_text.to_string(),

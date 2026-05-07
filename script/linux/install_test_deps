@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Install all dependencies required to build, run, and test Warp on Linux.
+# Install all dependencies required to build, run, and test Warper on Linux.
 
 set -e
 
@@ -24,15 +24,6 @@ if [[ "$(source /etc/os-release; echo $ID $ID_LIKE)" = *"debian"* ]]; then
     vim
   )
   sudo apt-get install -y "${PACKAGES[@]}"
-
-  # If gcloud is not already installed, install it so that we can run SSH integration tests.
-  if [[ ! -x "$(command -v gcloud)" ]]; then
-    echo "⬇️  Installing the gcloud CLI..."
-    echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] http://packages.cloud.google.com/apt cloud-sdk main" | sudo tee /etc/apt/sources.list.d/google-cloud-sdk.list
-    curl -f https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key --keyring /usr/share/keyrings/cloud.google.gpg add -
-    sudo apt-get update -y
-    sudo apt-get install google-cloud-cli -y
-  fi
 else
   echo -e "⚠️  ${red}Unknown Linux distribution; necessary test dependencies may not be installed!${reset}"
 fi

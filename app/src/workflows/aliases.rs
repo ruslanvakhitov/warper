@@ -5,32 +5,25 @@ use serde::{Deserialize, Serialize};
 use settings_value::SettingsValue;
 use warp_core::{
     define_settings_group,
-    settings::{RespectUserSyncSetting, Setting, SupportedPlatforms, SyncToCloud},
+    settings::{Setting, SupportedPlatforms, SyncToCloud},
 };
-use warpui::{AppContext, ModelContext, SingletonEntity};
+use warpui::{AppContext, ModelContext};
 
-use crate::{
-    cloud_object::{
-        model::persistence::{CloudModel, CloudModelEvent},
-        CloudObject as _,
-    },
-    drive::CloudObjectTypeAndId,
-    server::ids::SyncId,
-};
+use warp_server_client::ids::SyncId;
 
 define_settings_group!(WorkflowAliases, settings: [
     aliases: Aliases {
         type: Vec<WorkflowAlias>,
         default: vec![],
         supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        sync_to_cloud: SyncToCloud::Never,
         private: true,
         storage_key: "WorkflowAliases",
     }
 ]);
 
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone, schemars::JsonSchema, SettingsValue)]
-#[schemars(description = "A shortcut alias for a Warp Drive workflow.")]
+#[schemars(description = "A shortcut alias for a local workflow.")]
 pub struct WorkflowAlias {
     #[schemars(description = "The alias text that triggers this workflow.")]
     pub alias: String,
@@ -44,20 +37,8 @@ pub struct WorkflowAlias {
 
 impl WorkflowAliases {
     /// Call once to subscribe to UpdateManager notifications that a workflow has been deleted.
-    pub fn connect(&self, ctx: &mut ModelContext<Self>) {
-        ctx.subscribe_to_model(&CloudModel::handle(ctx), |me, event, ctx| {
-            let result = match event {
-                CloudModelEvent::ObjectTrashed {
-                    type_and_id: CloudObjectTypeAndId::Workflow(server_id),
-                    ..
-                } => me.remove_aliases_for_workflow(*server_id, ctx),
-                _ => Result::Ok(()),
-            };
-
-            if let Err(e) = result {
-                log::error!("Error removing aliases for workflow: {e:?}");
-            }
-        });
+    pub fn connect(&self, _ctx: &mut ModelContext<Self>) {
+        // Workflow aliases are local-only in Warper.
     }
 
     pub fn get_all_aliases(&self) -> &[WorkflowAlias] {
@@ -65,23 +46,13 @@ impl WorkflowAliases {
     }
 
     /// A mapping of all aliases, for autocomplete.
-    pub fn autocomplete_data(&self, ctx: &AppContext) -> HashMap<String, String> {
-        let cloud_model = CloudModel::as_ref(ctx);
-        let mut alias_data = HashMap::with_capacity(self.aliases.len());
-        for alias in self.aliases.iter() {
-            if let Some(backing_workflow) = cloud_model.get_workflow(&alias.workflow_id) {
-                alias_data.insert(alias.alias.clone(), backing_workflow.display_name());
-            }
-        }
-        alias_data
+    pub fn autocomplete_data(&self, _ctx: &AppContext) -> HashMap<String, String> {
+        HashMap::new()
     }
 
     // potentially support autocomplete
-    pub fn match_alias(&self, input_text: &str) -> Option<WorkflowAlias> {
-        self.aliases
-            .iter()
-            .find(|alias| alias.alias == input_text)
-            .cloned()
+    pub fn match_alias(&self, _input_text: &str) -> Option<WorkflowAlias> {
+        None
     }
 
     pub fn get_aliases_for_workflow(&self, workflow_id: SyncId) -> Vec<&WorkflowAlias> {

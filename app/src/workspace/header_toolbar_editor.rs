@@ -8,7 +8,6 @@ use crate::chip_configurator::{
     ChipEditorSectionsConfig, ConfigurableItem, ControlItemRenderer,
 };
 use crate::report_if_error;
-use crate::settings::AISettings;
 use crate::workspace::header_toolbar_item::HeaderToolbarItemKind;
 use crate::workspace::tab_settings::{
     HeaderToolbarChipSelection, TabSettings, TabSettingsChangedEvent,
@@ -177,15 +176,6 @@ fn sync_show_hide_settings<V: View>(
             report_if_error!(settings
                 .show_code_review_button
                 .set_value(code_review_placed, ctx));
-        });
-    }
-
-    let notifications_placed = placed.contains(&&HeaderToolbarItemKind::NotificationsMailbox);
-    if *AISettings::as_ref(ctx).show_agent_notifications != notifications_placed {
-        AISettings::handle(ctx).update(ctx, |settings, ctx| {
-            report_if_error!(settings
-                .show_agent_notifications
-                .set_value(notifications_placed, ctx));
         });
     }
 }

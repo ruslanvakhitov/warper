@@ -12,10 +12,7 @@ use crate::ai::agent::{
 use crate::ai::blocklist::{BlocklistAIHistoryModel, BlocklistAIPermissions};
 use crate::ai::execution_profiles::{profiles::AIExecutionProfilesModel, ActionPermission};
 use crate::ai::mcp::templatable_manager::TemplatableMCPServerManager;
-use crate::auth::AuthStateProvider;
-use crate::cloud_object::model::persistence::CloudModel;
 use crate::network::NetworkStatus;
-use crate::server::{cloud_objects::update_manager::UpdateManager, sync_queue::SyncQueue};
 use crate::terminal::event::BlockMetadataReceivedEvent;
 use crate::terminal::model::block::BlockMetadata;
 use crate::terminal::model::session::active_session::ActiveSession;
@@ -25,7 +22,7 @@ use crate::terminal::model_events::{ModelEvent, ModelEventDispatcher};
 use crate::terminal::shell::ShellType;
 use crate::terminal::ShellLaunchData;
 use crate::test_util::settings::initialize_settings_for_tests;
-use crate::workspaces::{team_tester::TeamTesterStatus, user_workspaces::UserWorkspaces};
+use crate::workspaces::user_workspaces::UserWorkspaces;
 use crate::LaunchMode;
 
 use super::*;
@@ -53,12 +50,7 @@ fn initialize_upload_artifact_test(
     initialize_settings_for_tests(app);
 
     let history = app.add_singleton_model(|_| BlocklistAIHistoryModel::new_for_test());
-    app.add_singleton_model(|_| AuthStateProvider::new_for_test());
-    app.add_singleton_model(SyncQueue::mock);
     app.add_singleton_model(|_| NetworkStatus::new());
-    app.add_singleton_model(TeamTesterStatus::mock);
-    app.add_singleton_model(UpdateManager::mock);
-    app.add_singleton_model(CloudModel::mock);
     app.add_singleton_model(|_| TemplatableMCPServerManager::default());
     app.add_singleton_model(UserWorkspaces::default_mock);
     let profiles = app.add_singleton_model(|ctx| {
@@ -140,7 +132,7 @@ fn should_autoexecute_honors_file_read_permissions_for_resolved_path() {
         let executor =
             app.add_model(|_| UploadArtifactExecutor::new(active_session, terminal_view_id));
         let conversation_id = history.update(&mut app, |history, ctx| {
-            history.start_new_conversation(terminal_view_id, false, false, ctx)
+            history.start_new_conversation(terminal_view_id, false, ctx)
         });
         let action = build_upload_artifact_action("reports/report.txt");
 
@@ -190,7 +182,7 @@ fn execute_returns_error_when_conversation_has_not_synced_to_server() {
         let executor =
             app.add_model(|_| UploadArtifactExecutor::new(active_session, terminal_view_id));
         let conversation_id = history.update(&mut app, |history, ctx| {
-            history.start_new_conversation(terminal_view_id, false, false, ctx)
+            history.start_new_conversation(terminal_view_id, false, ctx)
         });
         let action = build_upload_artifact_action(&artifact_path.display().to_string());
 

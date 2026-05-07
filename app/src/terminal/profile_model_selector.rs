@@ -1,6 +1,5 @@
 use ai::api_keys::{ApiKeyManager, ApiKeyManagerEvent};
 use indexmap::IndexMap;
-use instant::{Duration, Instant};
 use parking_lot::FairMutex;
 use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::vec2f;
@@ -34,28 +33,24 @@ use crate::{
             profiles::{AIExecutionProfilesModel, AIExecutionProfilesModelEvent, ClientProfileId},
         },
         llms::{
-            dedupe_model_display_names, is_using_api_key_for_provider, LLMId, LLMInfo,
-            LLMPreferences, LLMPreferencesEvent, LLMSpec,
+            is_using_api_key_for_provider, LLMId, LLMInfo, LLMPreferences, LLMPreferencesEvent,
+            LLMSpec,
         },
     },
     appearance::Appearance,
-    cloud_object::model::generic_string_model::StringModel,
     context_chips::{
         display_chip::{udi_font_size, udi_icon_size},
         spacing,
     },
     menu::{Event as MenuEvent, Menu, MenuItem, MenuItemFields},
     settings_view::SettingsSection,
-    terminal::view::ambient_agent::AmbientAgentViewModel,
+    terminal::view::local_agent::AmbientAgentViewModel,
     terminal::{
         input::{MenuPositioning, MenuPositioningProvider},
         TerminalModel,
     },
     ui_components::icons::Icon,
-    view_components::{
-        action_button::{ActionButton, ActionButtonTheme, ButtonSize, SecondaryTheme},
-        FeaturePopup, NewFeaturePopupEvent, NewFeaturePopupLabel,
-    },
+    view_components::action_button::{ActionButton, ActionButtonTheme, ButtonSize, SecondaryTheme},
     workspace::WorkspaceAction,
 };
 
@@ -66,7 +61,6 @@ use warp_core::{
 };
 
 const MENU_WIDTH: f32 = 280.;
-const NEW_MODEL_CHOICES_POPUP_DELAY: Duration = Duration::from_millis(500);
 const BLURRED_OPACITY: Opacity = 50;
 const SEPARATOR_WIDTH: f32 = 1.0;
 const CORNER_RADIUS: f32 = 4.0;
@@ -141,14 +135,7 @@ impl ActionButtonTheme for SelectorChipTheme {
     }
 
     fn font_properties(&self) -> Option<warpui::fonts::Properties> {
-        if FeatureFlag::CloudModeInputV2.is_enabled() {
-            Some(warpui::fonts::Properties {
-                weight: warpui::fonts::Weight::Semibold,
-                ..Default::default()
-            })
-        } else {
-            None
-        }
+        None
     }
 }
 
@@ -169,9 +156,6 @@ pub struct ProfileModelSelector {
     model_mouse_state: MouseStateHandle,
     menu_positioning_provider: Arc<dyn MenuPositioningProvider>,
     is_blurred: bool,
-    new_model_popup: ViewHandle<FeaturePopup>,
-    input_model: ModelHandle<BlocklistAIInputModel>,
-    ambient_agent_view_model: ModelHandle<AmbientAgentViewModel>,
     render_compact: bool,
     hovered_llm_info: Option<LLMInfo>,
     manage_api_key_button: ViewHandle<ActionButton>,
@@ -230,7 +214,7 @@ impl ProfileModelSelector {
         menu_positioning_provider: Arc<dyn crate::terminal::input::MenuPositioningProvider>,
         terminal_view_id: EntityId,
         input_model: ModelHandle<BlocklistAIInputModel>,
-        ambient_agent_view_model: ModelHandle<AmbientAgentViewModel>,
+        _: ModelHandle<AmbientAgentViewModel>,
         terminal_model: Arc<FairMutex<TerminalModel>>,
         controller: Option<ModelHandle<BlocklistAIController>>,
         ctx: &mut ViewContext<Self>,
@@ -326,37 +310,6 @@ impl ProfileModelSelector {
 
         let sidecar_dropdown = ctx.add_typed_action_view(|_ctx| Menu::new());
 
-        let new_model_popup = ctx.add_typed_action_view(|_ctx| {
-            FeaturePopup::new_feature(NewFeaturePopupLabel::FromCallable(Box::new(|ctx| {
-                let llm_preferences = LLMPreferences::as_ref(ctx);
-                let new_choices = llm_preferences.new_choices_since_last_update();
-                if let Some(new_choices) = new_choices {
-                    let deduped_names = dedupe_model_display_names(new_choices.iter());
-                    let max_display = 5;
-                    let has_overflow = deduped_names.len() > max_display;
-                    let display_names = &deduped_names[..deduped_names.len().min(max_display)];
-
-                    let mut label = display_names
-                        .iter()
-                        .map(|name| {
-                            if *name == "auto" {
-                                "auto-select the best model for the task"
-                            } else {
-                                name
-                            }
-                        })
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                    if has_overflow {
-                        label += ", ...";
-                    }
-                    label
-                } else {
-                    "New models available".to_string()
-                }
-            })))
-        });
-
         ctx.subscribe_to_view(&profile_dropdown, |me, _, event, ctx| {
             if let MenuEvent::Close { .. } = event {
                 me.set_profile_menu_visibility(false, ctx);
@@ -415,29 +368,9 @@ impl ProfileModelSelector {
             }
         });
 
-        ctx.subscribe_to_view(&new_model_popup, move |_me, _, event, ctx| {
-            if matches!(event, NewFeaturePopupEvent::Dismissed) {
-                LLMPreferences::handle(ctx).update(ctx, |preferences, _| {
-                    preferences.hide_llm_popup(terminal_view_id)
-                });
-                ctx.notify();
-            }
-        });
-
         ctx.subscribe_to_model(&input_model, move |_me, _, event, ctx| match event {
-            BlocklistAIInputEvent::InputTypeChanged { config }
-            | BlocklistAIInputEvent::LockChanged { config } => {
-                if config.is_locked && !config.input_type.is_ai() {
-                    let llm_preferences = LLMPreferences::as_ref(ctx);
-                    llm_preferences.hide_llm_popup(terminal_view_id);
-                } else if config.input_type.is_ai() {
-                    ctx.spawn(
-                        warpui::r#async::Timer::after(NEW_MODEL_CHOICES_POPUP_DELAY),
-                        |_, _, ctx| {
-                            ctx.notify();
-                        },
-                    );
-                }
+            BlocklistAIInputEvent::InputTypeChanged { .. }
+            | BlocklistAIInputEvent::LockChanged { .. } => {
                 ctx.notify();
             }
         });
@@ -447,16 +380,10 @@ impl ProfileModelSelector {
             |me, _, event, ctx| match event {
                 LLMPreferencesEvent::UpdatedAvailableLLMs => {
                     me.refresh_state(ctx);
-                    me.new_model_popup.update(ctx, |_popup, ctx| {
-                        ctx.notify();
-                    });
                     ctx.notify();
                 }
                 LLMPreferencesEvent::UpdatedActiveAgentModeLLM => {
                     me.refresh_state(ctx);
-                    me.new_model_popup.update(ctx, |_popup, ctx| {
-                        ctx.notify();
-                    });
                     ctx.notify();
                 }
                 _ => (),
@@ -464,10 +391,8 @@ impl ProfileModelSelector {
         );
 
         if let Some(controller) = &controller {
-            ctx.subscribe_to_model(controller, |me, _, event, ctx| {
+            ctx.subscribe_to_model(controller, |_me, _, event, ctx| {
                 if let BlocklistAIControllerEvent::SentRequest { .. } = event {
-                    let llm_preferences = LLMPreferences::as_ref(ctx);
-                    llm_preferences.hide_llm_popup(me.terminal_view_id);
                     ctx.notify();
                 }
             });
@@ -536,9 +461,6 @@ impl ProfileModelSelector {
             model_mouse_state: Default::default(),
             menu_positioning_provider,
             is_blurred: false,
-            new_model_popup,
-            input_model,
-            ambient_agent_view_model,
             render_compact: false,
             hovered_llm_info: None,
             manage_api_key_button,
@@ -570,10 +492,6 @@ impl ProfileModelSelector {
         self.is_model_menu_open = is_open;
         self.is_profile_menu_open = false;
         if is_open {
-            LLMPreferences::handle(ctx).update(ctx, |preferences, _| {
-                preferences.hide_llm_popup(self.terminal_view_id)
-            });
-
             // Initialize hovered_llm_info to the currently selected model
             let selected_index = self
                 .model_dropdown
@@ -1364,16 +1282,8 @@ impl ProfileModelSelector {
         let theme = appearance.theme();
         let llm_preferences = LLMPreferences::as_ref(app);
 
-        // Allow editing if composing an ambient agent query, or if the user has edit access
-        // in a shared session (i.e., not a viewer, or is an executor).
-        let is_composing_ambient_agent = self
-            .ambient_agent_view_model
-            .as_ref(app)
-            .is_configuring_ambient_agent();
         let terminal_model = self.terminal_model.lock();
-        let has_edit_access = is_composing_ambient_agent
-            || !terminal_model.shared_session_status().is_viewer()
-            || terminal_model.shared_session_status().is_executor();
+        let has_edit_access = true;
         let is_lrc = FeatureFlag::InlineMenuHeaders.is_enabled()
             && terminal_model
                 .block_list()
@@ -1853,18 +1763,9 @@ impl View for ProfileModelSelector {
         let profiles_model = AIExecutionProfilesModel::as_ref(app);
         let has_multiple_profiles = profiles_model.has_multiple_profiles();
 
-        // Check if user is a viewer in a shared session
-        let is_viewer = self
-            .terminal_model
-            .lock()
-            .shared_session_status()
-            .is_viewer();
-
         let mut compact_row = Flex::row().with_cross_axis_alignment(CrossAxisAlignment::Center);
 
-        // Only add profile button to compact layout if there are multiple profiles
-        // and the user is not a viewer (we currently don't support profiles in shared sessions).
-        let should_show_profile_section = has_multiple_profiles && !is_viewer;
+        let should_show_profile_section = has_multiple_profiles;
         if should_show_profile_section {
             let profile_button_with_save_position = SavePosition::new(
                 ChildView::new(&self.profile_compact_button).finish(),
@@ -1979,38 +1880,6 @@ impl View for ProfileModelSelector {
                         ),
                     );
                 }
-            }
-        }
-
-        let is_udi_enabled =
-            crate::settings::InputSettings::as_ref(app).is_universal_developer_input_enabled(app);
-
-        if is_udi_enabled
-            || self
-                .input_model
-                .as_ref(app)
-                .last_ai_autodetection_ts()
-                .is_none_or(|ts| Instant::now().duration_since(ts) > NEW_MODEL_CHOICES_POPUP_DELAY)
-        {
-            let llm_preferences = LLMPreferences::as_ref(app);
-            match (
-                llm_preferences.should_show_new_choices_popup(self.terminal_view_id),
-                llm_preferences.new_choices_since_last_update(),
-            ) {
-                (true, Some(new_choices)) if !new_choices.is_empty() => {
-                    llm_preferences.mark_new_choices_popup_as_shown(self.terminal_view_id);
-                    stack.add_positioned_overlay_child(
-                        ChildView::new(&self.new_model_popup).finish(),
-                        // Render the popup above the chip, centered horizontally.
-                        OffsetPositioning::offset_from_parent(
-                            vec2f(0., -6.),
-                            ParentOffsetBounds::WindowByPosition,
-                            ParentAnchor::TopMiddle,
-                            ChildAnchor::BottomMiddle,
-                        ),
-                    );
-                }
-                _ => (),
             }
         }
 

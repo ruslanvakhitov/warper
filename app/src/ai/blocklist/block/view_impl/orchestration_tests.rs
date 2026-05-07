@@ -18,8 +18,7 @@ fn child_conversation_card_data_for_success_result_returns_conversation_id_and_t
     App::test((), |mut app| async move {
         let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new_for_test());
         let conversation_id = history_model.update(&mut app, |history_model, ctx| {
-            let conversation_id =
-                history_model.start_new_conversation(EntityId::new(), false, false, ctx);
+            let conversation_id = history_model.start_new_conversation(EntityId::new(), false, ctx);
             history_model.set_server_conversation_token_for_conversation(
                 conversation_id,
                 "child-agent-id".to_string(),
@@ -98,8 +97,7 @@ fn child_conversation_card_data_for_success_result_without_available_title_uses_
     App::test((), |mut app| async move {
         let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new_for_test());
         let conversation_id = history_model.update(&mut app, |history_model, ctx| {
-            let conversation_id =
-                history_model.start_new_conversation(EntityId::new(), false, false, ctx);
+            let conversation_id = history_model.start_new_conversation(EntityId::new(), false, ctx);
             history_model.set_server_conversation_token_for_conversation(
                 conversation_id,
                 "child-agent-id".to_string(),
@@ -163,8 +161,7 @@ fn agent_display_name_from_id_returns_child_agent_name() {
     App::test((), |mut app| async move {
         let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new_for_test());
         history_model.update(&mut app, |history_model, ctx| {
-            let conversation_id =
-                history_model.start_new_conversation(EntityId::new(), false, false, ctx);
+            let conversation_id = history_model.start_new_conversation(EntityId::new(), false, ctx);
             history_model.set_server_conversation_token_for_conversation(
                 conversation_id,
                 "child-agent-id".to_string(),
@@ -187,8 +184,7 @@ fn agent_display_name_from_id_returns_orchestrator_label() {
     App::test((), |mut app| async move {
         let history_model = app.add_singleton_model(|_| BlocklistAIHistoryModel::new_for_test());
         history_model.update(&mut app, |history_model, ctx| {
-            let conversation_id =
-                history_model.start_new_conversation(EntityId::new(), false, false, ctx);
+            let conversation_id = history_model.start_new_conversation(EntityId::new(), false, ctx);
             let conversation = history_model
                 .conversation_mut(&conversation_id)
                 .expect("conversation should exist");

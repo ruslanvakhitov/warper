@@ -76,17 +76,6 @@ integration_tests! {
     // Tests zsh-specific behavior with nounset option.
     test_zsh_bootstraps_with_nounset_option,
 
-    // Tests of ssh wrapper logic from bootstrap script.
-    test_legacy_ssh_into_bash,
-    test_legacy_ssh_into_zsh,
-    test_tmux_ssh_into_bash,
-    test_tmux_ssh_into_zsh,
-    // TODO(vorporeal): Reenable fish once we actually support it as a remote
-    // shell.
-    // test_ssh_into_fish,
-    test_ssh_into_sh,
-    test_ssh_into_ash,
-
     // Tests of custom prompt behavior.
     test_copy_prompt_from_block_honor_ps1_enabled,
     test_copy_prompt_from_input_honor_ps1_enabled,

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Builds a Warp binary and bundles it up for distribution.
+# Builds a Warper binary and bundles it up for distribution.
 
 set -e
 
@@ -19,9 +19,9 @@ cleanup() {
 # Run cleanup() when the script terminates (whether it succeeded or failed).
 trap cleanup EXIT
 
-# By default we build dev bundles.
-RELEASE_CHANNEL="dev"
-FEATURES="release_bundle,crash_reporting"
+# By default we build local-first OSS Warper bundles.
+RELEASE_CHANNEL="oss"
+FEATURES="release_bundle"
 PACKAGES=( appimage )
 BUILD="true"
 BUILD_ARCH="$(uname -m)"
@@ -112,6 +112,11 @@ done
 # set positional arguments in their proper place
 eval set -- "$PARAMS"
 
+if [[ "$RELEASE_CHANNEL" != "oss" ]]; then
+  echo "Error: Warper bundles only support the oss channel." >&2
+  exit 1
+fi
+
 if [[ $DEBUG = true ]]; then
   CARGO_PROFILE="dev"
 elif [[ $RELEASE_CHANNEL = "local" || $RELEASE_CHANNEL = "dev" ]]; then
@@ -176,19 +181,7 @@ elif [[ $RELEASE_CHANNEL = "oss" ]]; then
   WARP_BIN="warp-oss"
   BINARY_NAME="warp-oss"
   APP_NAME="Warper"
-  # The OSS channel does not ship Sentry, so drop the crash_reporting feature
-  # (which would otherwise pull in the Sentry SDK as a dependency).
   FEATURES="release_bundle"
-fi
-
-# Artifact-specific binary naming
-if [[ "$ARTIFACT" == "cli" ]]; then
-  # For CLI artifacts, use oz instead of warp as the binary name.  The OSS
-  # channel is an exception: its CLI command name is `warp-oss`, matching
-  # `Channel::cli_command_name` in the Rust source.
-  if [[ $RELEASE_CHANNEL != "oss" ]]; then
-    BINARY_NAME="${BINARY_NAME/warp/oz}"
-  fi
 fi
 
 # Artifact-specific configuration
@@ -198,7 +191,11 @@ elif [[ "$ARTIFACT" == "app" ]]; then
   FEATURES="$FEATURES,gui,nld_improvements"
 fi
 
-BUNDLE_ID="dev.warp.$APP_NAME"
+if [[ $RELEASE_CHANNEL = "oss" ]]; then
+  BUNDLE_ID="dev.warper.Warper"
+else
+  BUNDLE_ID="dev.warp.$APP_NAME"
+fi
 EXECUTABLE_PATH="$CARGO_TARGET_OUTPUT_DIR/$WARP_BIN"
 DEBUG_EXECUTABLE_PATH="$EXECUTABLE_PATH.debug"
 
@@ -217,7 +214,7 @@ fi
 
 # Build the binary.
 if [[ "$BUILD" == "true" ]]; then
-  echo "Building and bundling Warp for channel $RELEASE_CHANNEL and bundle id $BUNDLE_ID"
+  echo "Building and bundling Warper for channel $RELEASE_CHANNEL and bundle id $BUNDLE_ID"
   cargo build -p warp --profile "$CARGO_PROFILE" --bin "$WARP_BIN" --features "$FEATURES"
   echo "Making debug copy of '$EXECUTABLE_PATH' at '$DEBUG_EXECUTABLE_PATH'"
   cp "$EXECUTABLE_PATH" "$DEBUG_EXECUTABLE_PATH"

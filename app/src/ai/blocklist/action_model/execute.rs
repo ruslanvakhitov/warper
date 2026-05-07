@@ -38,11 +38,7 @@ use read_skill::ReadSkillExecutor;
 use request_computer_use::RequestComputerUseExecutor;
 pub(crate) use request_file_edits::apply_edits;
 pub(crate) use request_file_edits::FileReadResult;
-pub(crate) use request_file_edits::MalformedFinalLineProxyEvent;
-pub use request_file_edits::{
-    EditAcceptAndContinueClickedEvent, EditAcceptClickedEvent, EditResolvedEvent, EditStats,
-    RequestFileEditsExecutor, RequestFileEditsFormatKind, RequestFileEditsTelemetryEvent,
-};
+pub use request_file_edits::{RequestFileEditsExecutor, RequestFileEditsFormatKind};
 pub use send_message::SendMessageToAgentExecutor;
 use serde::{Deserialize, Serialize};
 pub use shell_command::{ShellCommandExecutor, ShellCommandExecutorEvent};
@@ -85,9 +81,8 @@ use crate::{
         agent::{
             conversation::AIConversationId, AIAgentAction, AIAgentActionId, AIAgentActionResult,
             AIAgentActionResultType, AIAgentActionType, CancellationReason, FileContext,
-            FileLocations, ServerOutputId,
+            FileLocations,
         },
-        ambient_agents::AmbientAgentTaskId,
         get_relevant_files::controller::GetRelevantFilesController,
     },
     terminal::{
@@ -96,7 +91,6 @@ use crate::{
         shell::ShellType,
         ShellLaunchData, TerminalModel,
     },
-    BlocklistAIHistoryModel,
 };
 
 /// Types of actions that can be executed in parallel.
@@ -125,7 +119,6 @@ struct ExecuteActionInput<'a> {
 #[derive(Debug, Clone, Copy)]
 struct PreprocessActionInput<'a> {
     action: &'a AIAgentAction,
-    conversation_id: AIConversationId,
 }
 
 type AsyncExecuteActionFn<T> = Pin<Box<dyn Spawnable<Output = T>>>;
@@ -199,7 +192,6 @@ where
 pub enum NotExecutedReason {
     NotReady,
     NeedsConfirmation,
-    WaitingOnSharer,
 }
 
 impl NotExecutedReason {
@@ -264,9 +256,6 @@ pub struct BlocklistAIActionExecutor {
     /// We track them per action rather than as a single slot so multiple actions from the same
     /// parallel phase can complete independently.
     async_executing_actions: std::collections::HashMap<AIAgentActionId, AsyncExecutingAction>,
-
-    /// Reference to the terminal model for checking session sharing state.
-    terminal_model: Arc<FairMutex<TerminalModel>>,
 }
 
 impl BlocklistAIActionExecutor {
@@ -344,7 +333,6 @@ impl BlocklistAIActionExecutor {
             use_computer_executor,
             request_computer_use_executor,
             async_executing_actions: Default::default(),
-            terminal_model,
             read_skill_executor,
             fetch_conversation_executor,
             start_agent_executor,
@@ -413,32 +401,13 @@ impl BlocklistAIActionExecutor {
         &self.ask_user_question_executor
     }
 
-    pub fn set_ambient_agent_task_id(
-        &self,
-        id: Option<AmbientAgentTaskId>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        self.request_computer_use_executor
-            .update(ctx, |executor, _| {
-                executor.set_ambient_agent_task_id(id);
-            });
-    }
-
     pub fn preprocess_action(
         &self,
         action: &AIAgentAction,
-        conversation_id: AIConversationId,
+        _conversation_id: AIConversationId,
         ctx: &mut ModelContext<Self>,
     ) -> BoxFuture<'static, ()> {
-        // In view-only mode, we do not need to perform any preprocessing work.
-        if self.is_shared_session_viewer() {
-            return futures::future::ready(()).boxed();
-        }
-
-        let input = PreprocessActionInput {
-            action,
-            conversation_id,
-        };
+        let input = PreprocessActionInput { action };
 
         match &action.action {
             AIAgentActionType::RequestCommandOutput { .. }
@@ -527,14 +496,6 @@ impl BlocklistAIActionExecutor {
         is_user_initiated: bool,
         ctx: &mut ModelContext<Self>,
     ) -> TryExecuteResult {
-        // We should never actually execute actions in view-only mode.
-        if self.is_shared_session_viewer() {
-            return TryExecuteResult::NotExecuted {
-                reason: NotExecutedReason::WaitingOnSharer,
-                action: Box::new(action),
-            };
-        }
-
         let input = ExecuteActionInput {
             action: &action,
             conversation_id,
@@ -784,10 +745,6 @@ impl BlocklistAIActionExecutor {
         reason: Option<CancellationReason>,
         ctx: &mut ModelContext<Self>,
     ) {
-        // A viewer should not be able to cancel an action.
-        if self.is_shared_session_viewer() {
-            return;
-        }
         if let Some(running) = self.async_executing_actions.remove(action_id) {
             if running.is_shell_command_action() {
                 self.shell_command_executor.update(ctx, |executor, ctx| {
@@ -900,10 +857,6 @@ impl BlocklistAIActionExecutor {
                 .ask_user_question_executor
                 .update(ctx, |executor, ctx| executor.should_autoexecute(input, ctx)),
         }
-    }
-
-    fn is_shared_session_viewer(&self) -> bool {
-        self.terminal_model.lock().is_shared_session_viewer()
     }
 }
 impl Entity for BlocklistAIActionExecutor {
@@ -1210,17 +1163,6 @@ async fn is_git_repository(absolute_path: &str, session: &Session) -> anyhow::Re
         )
         .await?;
     Ok(command_output.success())
-}
-
-fn get_server_output_id(
-    conversation_id: AIConversationId,
-    ctx: &mut AppContext,
-) -> Option<ServerOutputId> {
-    BlocklistAIHistoryModel::as_ref(ctx)
-        .conversation(&conversation_id)?
-        .latest_exchange()?
-        .output_status
-        .server_output_id()
 }
 
 #[cfg(feature = "local_fs")]

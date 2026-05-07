@@ -7,8 +7,7 @@ use std::time::Duration;
 
 use instant::Instant;
 
-use crate::server::ids::SyncId;
-use crate::server::telemetry::ImageProtocol;
+use crate::terminal::metadata::ImageProtocol;
 use crate::terminal::model::block::BlockMetadata;
 use crate::terminal::model::block::SerializedBlock;
 use crate::terminal::model::completions::ShellCompletion;
@@ -16,14 +15,13 @@ use crate::terminal::model::terminal_model::HandlerEvent;
 use crate::terminal::shell::ShellType;
 use crate::terminal::ClipboardType;
 use crate::util::AsciiDebug;
+use warp_server_client::ids::SyncId;
 
 use super::history::HistoryEntry;
-use super::model::ansi::{FinishUpdateValue, WarpificationUnavailableReason};
+use super::model::ansi::WarpificationUnavailableReason;
 use super::model::block::BlockId;
 use super::model::session::{SessionId, SessionInfo};
 use super::model::terminal_model::{BlockIndex, ExitReason, TmuxInstallationState};
-
-pub use remote_server::setup::RemoteServerSetupState;
 
 #[derive(Clone)]
 /// Events sent to the main thread by the terminal model & event loop.
@@ -65,10 +63,7 @@ pub enum Event {
     /// An indication that a successful SSH connection was initiated via the
     /// SSH wrapper.  The argument is the name of the remote shell.
     SSH(String),
-    /// Emitted when the remote shell for a session is about to exit, so
-    /// per-session resources (e.g. the `ssh … remote-server-proxy` child that
-    /// holds a multiplexed channel on the ControlMaster) can be torn down
-    /// before the outer ssh tunnel starts closing.
+    /// Emitted when the remote shell for a session is about to exit.
     ExitShell {
         session_id: SessionId,
     },
@@ -112,31 +107,6 @@ pub enum Event {
         is_tagged_in: bool,
     },
     Handler(HandlerEvent),
-    /// Emitted by the async remote server setup task to report intermediate
-    /// state changes (e.g. Checking → Installing → Initializing) so the
-    /// prompt can show stage-specific messages.
-    RemoteServerSetupStateChanged {
-        session_id: SessionId,
-        state: RemoteServerSetupState,
-    },
-    /// Emitted when the remote server binary has been successfully checked or
-    /// installed and is ready. The session is initialized independently on
-    /// `Bootstrapped`; when the remote server later connects, the client is
-    /// attached to the existing session's `RemoteServerCommandExecutor` via
-    /// the `RemoteServerManagerEvent::SessionConnected` subscription in
-    /// `Sessions::new`.
-    RemoteServerReady {
-        session_id: SessionId,
-    },
-    /// Emitted when the remote server setup failed. The session falls back to
-    /// the ControlMaster-based `RemoteCommandExecutor`.
-    RemoteServerFailed {
-        session_id: SessionId,
-        error: String,
-    },
-    /// Emitted when the assisted auto-update has completed and we're ready to
-    /// relaunch the app.
-    FinishUpdate(FinishUpdateValue),
     TextSelectionChanged,
     ShellSpawned(ShellType),
     SendCompletionsPrompt,
@@ -468,28 +438,6 @@ impl Debug for Event {
                 write!(f, "AgentTaggedInChanged(is_tagged_in: {is_tagged_in})")
             }
             Event::Handler(handler_event) => write!(f, "Handler({handler_event:?}))"),
-            Event::RemoteServerSetupStateChanged {
-                session_id,
-                ref state,
-            } => {
-                write!(
-                    f,
-                    "RemoteServerSetupStateChanged(session: {session_id:?}, state: {state:?})"
-                )
-            }
-            Event::RemoteServerReady { session_id } => {
-                write!(f, "RemoteServerReady(session: {session_id:?})")
-            }
-            Event::RemoteServerFailed {
-                session_id,
-                ref error,
-            } => {
-                write!(
-                    f,
-                    "RemoteServerFailed(session: {session_id:?}, error: {error})"
-                )
-            }
-            Event::FinishUpdate(data) => write!(f, "FinishUpdate({})", data.update_id),
             Event::TextSelectionChanged => write!(f, "TextSelectionChanged"),
             Event::ShellSpawned(shell_type) => write!(f, "ShellSpawned({shell_type:?})"),
             Event::SendCompletionsPrompt => write!(f, "SendCompletionsPrompt"),

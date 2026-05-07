@@ -1,35 +1,18 @@
-use std::collections::HashSet;
-
 use ai::agent::action_result::{AIAgentActionResultType, RequestComputerUseResult};
 use futures::{future::BoxFuture, FutureExt};
 use warpui::{Entity, EntityId, ModelContext, SingletonEntity};
 
-use crate::ai::agent::{AIAgentActionId, AIAgentActionType};
-use crate::ai::ambient_agents::AmbientAgentTaskId;
-use crate::send_telemetry_from_ctx;
-use crate::server::telemetry::TelemetryEvent;
+use crate::ai::agent::AIAgentActionType;
 
 use super::{ActionExecution, AnyActionExecution, ExecuteActionInput, PreprocessActionInput};
 
 pub struct RequestComputerUseExecutor {
     terminal_view_id: EntityId,
-    ambient_agent_task_id: Option<AmbientAgentTaskId>,
-    /// Actions that were determined to be auto-executed in should_autoexecute().
-    /// Used to determine is_autoexecuted when emitting telemetry in execute().
-    autoexecuted_actions: HashSet<AIAgentActionId>,
 }
 
 impl RequestComputerUseExecutor {
     pub fn new(terminal_view_id: EntityId) -> Self {
-        Self {
-            terminal_view_id,
-            ambient_agent_task_id: None,
-            autoexecuted_actions: HashSet::new(),
-        }
-    }
-
-    pub fn set_ambient_agent_task_id(&mut self, id: Option<AmbientAgentTaskId>) {
-        self.ambient_agent_task_id = id;
+        Self { terminal_view_id }
     }
 
     pub(super) fn should_autoexecute(
@@ -45,39 +28,18 @@ impl RequestComputerUseExecutor {
         // Check profile permission
         let permission = crate::ai::blocklist::BlocklistAIPermissions::as_ref(ctx)
             .get_computer_use_setting(ctx, Some(self.terminal_view_id));
-        if permission.is_always_allow() {
-            // Track that this action was auto-executed for telemetry in execute()
-            self.autoexecuted_actions.insert(action.id.clone());
-            return true;
-        }
-
-        // Otherwise require user confirmation for computer use.
-        false
+        permission.is_always_allow()
     }
 
     pub(super) fn execute(
         &mut self,
         input: ExecuteActionInput,
-        ctx: &mut ModelContext<Self>,
+        _ctx: &mut ModelContext<Self>,
     ) -> impl Into<AnyActionExecution> {
-        let ExecuteActionInput {
-            action,
-            conversation_id,
-        } = input;
+        let action = input.action;
         let AIAgentActionType::RequestComputerUse(request) = &action.action else {
             return ActionExecution::InvalidAction;
         };
-
-        // If we're executing, that implies that computer use has been approved.
-        let is_autoexecuted = self.autoexecuted_actions.remove(&action.id);
-        send_telemetry_from_ctx!(
-            TelemetryEvent::ComputerUseApproved {
-                conversation_id,
-                is_autoexecuted,
-                ambient_agent_task_id: self.ambient_agent_task_id,
-            },
-            ctx
-        );
 
         let screenshot_params = request.screenshot_params;
         let mut actor = computer_use::create_actor();

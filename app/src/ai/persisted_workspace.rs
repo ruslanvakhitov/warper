@@ -11,14 +11,11 @@ use repo_metadata::repositories::{DetectedRepositories, DetectedRepositoriesEven
 use serde::{Deserialize, Serialize};
 
 use crate::ai::blocklist::{BlocklistAIHistoryEvent, BlocklistAIHistoryModel};
-use crate::ai::AIRequestUsageModel;
 use crate::persistence::ModelEvent;
 use crate::report_if_error;
-use crate::send_telemetry_from_ctx;
 use crate::settings::CodeSettings;
 use crate::terminal::TerminalView;
-use crate::workspaces::user_workspaces::{UserWorkspaces, UserWorkspacesEvent};
-use crate::TelemetryEvent;
+use crate::workspaces::user_workspaces::UserWorkspaces;
 use ai::{
     index::full_source_code_embedding::manager::{CodebaseIndexManager, CodebaseIndexManagerEvent},
     workspace::{WorkspaceMetadata, WorkspaceMetadataEvent},
@@ -35,9 +32,6 @@ use warpui::{AppContext, Entity, ModelContext, SingletonEntity};
 #[cfg(feature = "local_fs")]
 use crate::code::language_server_shutdown_manager::LanguageServerShutdownManager;
 #[cfg(feature = "local_fs")]
-use crate::code::lsp_telemetry::LspTelemetryEvent;
-#[cfg(feature = "local_fs")]
-use crate::server::server_api::ServerApiProvider;
 #[cfg(feature = "local_fs")]
 use crate::terminal::local_shell::LocalShellState;
 #[cfg(feature = "local_fs")]
@@ -46,6 +40,11 @@ use crate::{view_components::DismissibleToast, workspace::ToastStack};
 use lsp::LspEvent;
 #[cfg(feature = "local_fs")]
 use warp_core::channel::ChannelState;
+
+#[cfg(feature = "local_fs")]
+fn local_http_client() -> Arc<http_client::Client> {
+    Arc::new(http_client::Client::new())
+}
 
 use ai::project_context::model::{ProjectContextModel, ProjectContextModelEvent};
 
@@ -240,13 +239,10 @@ impl PersistedWorkspace {
                     CodebaseIndexManagerEvent::IndexMetadataUpdated { root_path, event } => {
                         me.handle_index_metadata_event(root_path, *event);
                     }
-                    CodebaseIndexManagerEvent::NewIndexCreated => {
-                        send_active_indexed_repos_changed_telemetry(ctx);
-                    }
+                    CodebaseIndexManagerEvent::NewIndexCreated => {}
                     CodebaseIndexManagerEvent::RemoveExpiredIndexMetadata { expired_metadata } => {
                         // TODO: Disable expired metadata removal once we have other consumers of the workspace metadata.
                         me.clean_up_expired_metadata(expired_metadata.clone(), ctx);
-                        send_active_indexed_repos_changed_telemetry(ctx);
                     }
                     _ => {}
                 },
@@ -264,18 +260,6 @@ impl PersistedWorkspace {
                     me.trigger_incremental_sync_for_conversation(*terminal_view_id, ctx);
                 }
             });
-
-            // Subscribe to changes in workspace settings.
-            ctx.subscribe_to_model(
-                &UserWorkspaces::handle(ctx),
-                |me, user_workspaces_event, ctx| {
-                    if let UserWorkspacesEvent::CodebaseContextEnablementChanged =
-                        user_workspaces_event
-                    {
-                        me.on_settings_changed(ctx);
-                    }
-                },
-            );
 
             // Subscribe to ProjectContextModel events to persist rule changes
             ctx.subscribe_to_model(&ProjectContextModel::handle(ctx), |me, event, _ctx| {
@@ -539,7 +523,7 @@ impl PersistedWorkspace {
         let path_future = LocalShellState::handle(ctx).update(ctx, |shell_state, ctx| {
             shell_state.get_interactive_path_env_var(ctx)
         });
-        let http_client = ServerApiProvider::as_ref(ctx).get_http_client();
+        let http_client = local_http_client();
 
         ctx.spawn(
             async move {
@@ -612,51 +596,6 @@ impl PersistedWorkspace {
                     .count()
             })
             .sum()
-    }
-
-    fn on_settings_changed(&mut self, ctx: &mut ModelContext<Self>) {
-        Self::maybe_enable_codebase_indexing(ctx);
-    }
-
-    pub fn on_user_changed(&self, ctx: &mut ModelContext<Self>) {
-        Self::maybe_enable_codebase_indexing(ctx);
-    }
-
-    /// Enables or disables codebase indexing according to the setting.
-    fn maybe_enable_codebase_indexing(ctx: &mut ModelContext<Self>) {
-        CodebaseIndexManager::handle(ctx).update(ctx, |manager, ctx| {
-            if UserWorkspaces::as_ref(ctx).is_codebase_context_enabled(ctx) {
-                Self::enable_codebase_indexing(manager, ctx);
-            } else {
-                manager.reset_codebase_indexing(ctx);
-            }
-        });
-    }
-
-    fn enable_codebase_indexing(
-        manager: &mut CodebaseIndexManager,
-        ctx: &mut ModelContext<CodebaseIndexManager>,
-    ) {
-        let request_model = AIRequestUsageModel::handle(ctx);
-        let codebase_limits = request_model.as_ref(ctx).codebase_context_limits();
-        manager.update_max_limits(
-            codebase_limits.max_indices_allowed,
-            codebase_limits.max_files_per_repo,
-            codebase_limits.embedding_generation_batch_size,
-            ctx,
-        );
-
-        #[cfg(feature = "local_fs")]
-        for dir in all_working_directories(ctx) {
-            // Auto-index working directory ONLY if the user has "Read files" set to "Always allow" OR this directory is in the allowlist.
-            let auto_indexing_enabled = *CodeSettings::as_ref(ctx).auto_indexing_enabled;
-
-            if auto_indexing_enabled {
-                if let Some(root) = DetectedRepositories::as_ref(ctx).get_root_for_path(&dir) {
-                    manager.index_directory(root, ctx);
-                }
-            }
-        }
     }
 
     #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
@@ -914,7 +853,7 @@ impl PersistedWorkspace {
         let repo_root_clone = repo_root.clone();
         let file_path_clone = file_path.clone();
         let executor = lsp::CommandBuilder::new(path_env_var);
-        let http_client = ServerApiProvider::as_ref(ctx).get_http_client();
+        let http_client = local_http_client();
         ctx.spawn(
             async move {
                 let candidate = server_type.candidate(http_client);
@@ -1039,7 +978,7 @@ impl PersistedWorkspace {
             );
             let log_relative_path =
                 crate::code::lsp_logs::relative_log_path(server, &workspace_root);
-            let http_client = ServerApiProvider::as_ref(ctx).get_http_client();
+            let http_client = local_http_client();
             let config = LspServerConfig::new(
                 server,
                 workspace_root.clone(),
@@ -1074,24 +1013,11 @@ impl PersistedWorkspace {
 
         for server in servers {
             let workspace_root_display = workspace_root_display.clone();
-            let server_type_name = server.as_ref(ctx).server_name();
             ctx.subscribe_to_model(&server, move |_me, event, ctx| match event {
                 LspEvent::Started => {
-                    send_telemetry_from_ctx!(
-                        LspTelemetryEvent::ServerStarted {
-                            server_type: server_type_name.clone(),
-                        },
-                        ctx
-                    );
-                }
+                                    }
                 LspEvent::Failed(e) => {
-                    send_telemetry_from_ctx!(
-                        LspTelemetryEvent::ServerFailed {
-                            server_type: server_type_name.clone(),
-                        },
-                        ctx
-                    );
-                    if let Some(window_id) = WindowManager::as_ref(ctx).active_window()
+                                        if let Some(window_id) = WindowManager::as_ref(ctx).active_window()
                     {
                         ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
                             let toast = DismissibleToast::error(format!(
@@ -1196,7 +1122,7 @@ impl PersistedWorkspace {
                     shell_state.get_interactive_path_env_var(ctx)
                 });
 
-                let http_client = ServerApiProvider::as_ref(ctx).get_http_client();
+                let http_client = local_http_client();
                 ctx.spawn(
                     async move {
                         // Wait for interactive PATH, then check installation
@@ -1223,18 +1149,6 @@ impl PersistedWorkspace {
             }
         }
     }
-}
-
-fn send_active_indexed_repos_changed_telemetry<T: Entity>(ctx: &mut ModelContext<T>) {
-    let total = CodebaseIndexManager::as_ref(ctx).num_active_indices();
-    let hit_max = AIRequestUsageModel::as_ref(ctx).hit_codebase_index_limit(total);
-    send_telemetry_from_ctx!(
-        TelemetryEvent::ActiveIndexedReposChanged {
-            updated_number_of_codebase_indices: total,
-            hit_max_indices: hit_max
-        },
-        ctx
-    );
 }
 
 #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]

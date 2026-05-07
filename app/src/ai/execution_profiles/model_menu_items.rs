@@ -122,7 +122,7 @@ fn make_item_fields<A: Action + Clone>(
             None,
         )
     } else {
-        let provider_icon = llm.provider.icon().unwrap_or(Icon::Oz);
+        let provider_icon = llm.provider.icon().unwrap_or(Icon::Warp);
         MenuItemFields::new(label).with_icon(provider_icon)
     };
 

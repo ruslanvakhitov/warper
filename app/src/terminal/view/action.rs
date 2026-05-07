@@ -6,8 +6,6 @@ use std::path::PathBuf;
 use ai::skills::SkillReference;
 use command_corrections::Correction;
 use pathfinder_geometry::vector::Vector2F;
-use session_sharing_protocol::common::Role;
-use session_sharing_protocol::sharer::RoleUpdateReason;
 use warp_util::user_input::UserInput;
 use warpui::elements::HyperlinkUrl;
 use warpui::event::ModifiersState;
@@ -17,32 +15,31 @@ use warpui::EntityId;
 use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::agent::AIAgentExchangeId;
 use crate::ai::blocklist::codebase_index_speedbump_banner::CodebaseIndexSpeedbumpBannerAction;
-use crate::code_review::telemetry_event::CodeReviewPaneEntrypoint;
-use crate::server::telemetry::{AgentModeRewindEntrypoint, PaletteSource, ToggleBlockFilterSource};
+use crate::ai::blocklist::metadata::AgentModeRewindEntrypoint;
+use crate::code_review::metadata::CodeReviewPaneEntrypoint;
 use crate::terminal::available_shells::AvailableShell;
+use crate::terminal::metadata::ToggleBlockFilterSource;
 use crate::terminal::model::completions::ShellCompletion;
-use crate::terminal::shared_session::SharedSessionActionSource;
 use crate::terminal::ssh::error::SshErrorBlockAction;
 use crate::terminal::view::inline_banner::AgentModeSetupSpeedbumpBannerAction;
 use crate::terminal::view::passive_suggestions::PromptSuggestionResolution;
 use crate::terminal::view::RichContentSecretTooltipInfo;
-use crate::workflows::workflow::Workflow;
-use crate::{
-    server::ids::SyncId,
-    terminal::{
-        block_list_element::{
-            BlockHoverAction, BlockListMenuSource, BlockSelectAction, BlockTextSelectAction,
-        },
-        block_list_viewport::OverhangingBlock,
-        model::{
-            index::Point,
-            mouse::MouseState,
-            selection::{SelectAction, SelectionDirection},
-            terminal_model::{BlockIndex, WithinModel},
-            SecretHandle,
-        },
+use crate::terminal::{
+    block_list_element::{
+        BlockHoverAction, BlockListMenuSource, BlockSelectAction, BlockTextSelectAction,
+    },
+    block_list_viewport::OverhangingBlock,
+    model::{
+        index::Point,
+        mouse::MouseState,
+        selection::{SelectAction, SelectionDirection},
+        terminal_model::{BlockIndex, WithinModel},
+        SecretHandle,
     },
 };
+use crate::workflows::workflow::Workflow;
+use crate::workspace::metadata::PaletteSource;
+use warp_server_client::ids::SyncId;
 
 use super::inline_banner::{
     AnonymousUserLoginBannerAction, AwsBedrockLoginBannerAction, AwsCliNotInstalledBannerAction,
@@ -113,9 +110,6 @@ pub enum TerminalAction {
     AltScroll {
         delta: i32,
     },
-    SharedSessionViewerAltScroll {
-        new_scroll_top: Lines,
-    },
     ScrollToTopOfBlock {
         topmost_block: BlockIndex,
     },
@@ -170,7 +164,6 @@ pub enum TerminalAction {
     CopyOutputs,
     CopyCommands,
     CopyGitBranch,
-    OpenShareModal,
     ReinputCommands,
     ReinputCommandsWithSudo,
     ClearBuffer,
@@ -286,8 +279,8 @@ pub enum TerminalAction {
     OpenWorkflowModal,
     OpenWorkflowModalForAIWorkflow(Workflow),
     OpenWorkflowModalForBlock(BlockIndex),
-    OpenWorkflowModalWithCloudWorkflow(SyncId),
-    AskAIAssistant {
+    OpenWorkflowModalWithLocalWorkflow(SyncId),
+    AttachBlockAsAgentContext {
         block_index: BlockIndex,
     },
     /// Starts a subshell in the active session.
@@ -306,26 +299,9 @@ pub enum TerminalAction {
     OpenBlockFilterEditor(BlockIndex),
     OnboardingFlow(OnboardingVersion),
     ImportSettings,
-    StopSharingCurrentSession {
-        source: SharedSessionActionSource,
-    },
-    OpenSharedSessionOnDesktop {
-        source: SharedSessionActionSource,
-    },
     ToggleBlockFilterOnSelectedOrLastBlock(ToggleBlockFilterSource),
-    OpenShareSessionModal {
-        source: SharedSessionActionSource,
-    },
-    CopySharedSessionLink {
-        source: SharedSessionActionSource,
-    },
     VimModeBanner(VimModeBannerAction),
     ToggleSnackbarInActivePane,
-    MakeAllParticipantsReaders {
-        reason: RoleUpdateReason,
-    },
-    OpenSharedSessionViewerRoleMenu,
-    RequestSharedSessionRole(Role),
     /// User selected a block inside an AI block's attached block menu so we jump to it and select
     /// it if possible.
     SelectAIAttachedBlock(BlockIndex),
@@ -342,21 +318,16 @@ pub enum TerminalAction {
     ToggleCLIAgentVoiceInput(voice_input::VoiceInputToggledFrom),
 
     HyperlinkClick(HyperlinkUrl),
-    AttemptLoginGatedFeature,
     StartFileDropTarget,
     StopFileDropTarget,
-    OpenTeamSettingsPage,
     SetMarkedText {
         marked_text: UserInput<String>,
         selected_range: Range<usize>,
     },
     ClearMarkedText,
     SelectAgenticSuggestion(i32),
-    HideTelemetryBannerPermanently,
     ShowInitializationBlock,
     GenerateCodebaseIndex,
-    /// This is for debugging, dev only for now
-    LoadAgentModeConversation,
     ShowWarpifySettings,
     /// Removes a pending attachment (image or file) by index in the unified list.
     DeleteAttachment {
@@ -398,23 +369,10 @@ pub enum TerminalAction {
     DismissCodeToolbeltTooltip,
     /// Start a Language Server for the current working directory (if supported)
     StartLspServer,
-    /// Start the guided Warp Environment setup flow (inserts the inline setup block).
-    SetupCloudEnvironment(Vec<String>),
-    /// Start the guided Warp Environment setup flow immediately (no inline setup block).
-    SetupCloudEnvironmentAndStart(Vec<String>),
-    /// Show the environment setup mode selector to choose between remote GitHub or local agent flow.
-    TriggerEnvironmentSetupSelection(Vec<String>),
-    /// Open the Environment Management pane.
-    OpenEnvironmentManagementPane,
     ToggleLongRunningCommandControl,
     ToggleHideCliResponses,
     ExitAgentView,
-    EnterCloudAgentView,
     StartNewAgentConversation,
-    /// Toggle the cloud mode conversation details panel
-    ToggleCloudModeDetailsPanel,
-    /// Cancel the ambient agent task while it's loading
-    CancelAmbientAgentTask,
     OpenInlineHistoryMenu,
     OpenModelSelector,
     ResolvePromptSuggestion(PromptSuggestionResolution),
@@ -441,10 +399,6 @@ impl fmt::Debug for TerminalAction {
         match self {
             Scroll { delta } => write!(f, "Scroll {{ delta: {delta} }}"),
             AltScroll { delta } => write!(f, "AltScroll {{ delta: {delta} }}"),
-            SharedSessionViewerAltScroll { new_scroll_top } => write!(
-                f,
-                "SharedSessionViewerAltScroll {{ new_scroll_top: {new_scroll_top} }}"
-            ),
             ScrollToTopOfBlock { topmost_block } => write!(
                 f,
                 "JumpToPreviousCommand {{ topmost_block: {topmost_block} }}"
@@ -497,7 +451,6 @@ impl fmt::Debug for TerminalAction {
             CopyOutputs => f.write_str("CopyOutputs"),
             CopyCommands => f.write_str("CopyCommands"),
             CopyGitBranch => f.write_str("CopyGitBranch"),
-            OpenShareModal => f.write_str("OpenShareModal"),
             ReinputCommands => f.write_str("ReinputCommands"),
             ReinputCommandsWithSudo => f.write_str("ReinputCommandsWithSudo"),
             ClearBuffer => f.write_str("ClearBuffer"),
@@ -574,11 +527,13 @@ impl fmt::Debug for TerminalAction {
             OpenWorkflowModalForBlock(block_index) => {
                 write!(f, "OpenWorkflowModalForBlock({block_index:?})")
             }
-            OpenWorkflowModalWithCloudWorkflow(_) => {
-                f.write_str("OpenWorkflowModalWithCloudWorkflow")
+            OpenWorkflowModalWithLocalWorkflow(_) => {
+                f.write_str("OpenWorkflowModalWithLocalWorkflow")
             }
             OpenBlockListContextMenu => f.write_str("OpenBlockListContextMenu"),
-            AskAIAssistant { block_index } => write!(f, "AskAIAssistant({block_index:?})"),
+            AttachBlockAsAgentContext { block_index } => {
+                write!(f, "AttachBlockAsAgentContext({block_index:?})")
+            }
             TriggerSubshellBootstrap => f.write_str("TriggerSubshellBootstrap"),
             DismissWarpifyBanner(remember) => write!(f, "DismissWarpifyBanner({remember:?})"),
             ShowSubshellBanner(_) => f.write_str("ShowSubshellBanner"),
@@ -591,24 +546,11 @@ impl fmt::Debug for TerminalAction {
             }
             OnboardingFlow(version) => write!(f, "OnboardingFlow({version:?})"),
             ImportSettings => write!(f, "ImportSettings"),
-            StopSharingCurrentSession { source } => {
-                write!(f, "StopSharingCurrentSession({source:?})")
-            }
-            OpenSharedSessionOnDesktop { source } => {
-                write!(f, "OpenSharedSessionOnDesktop({source:?})")
-            }
             ToggleBlockFilterOnSelectedOrLastBlock(_) => {
                 f.write_str("ToggleBlockFilterOnSelectedOrLastBlock")
             }
-            OpenShareSessionModal { source } => write!(f, "OpenShareSessionModal({source:?})"),
-            CopySharedSessionLink { .. } => f.write_str("CopySharedSessionLink"),
             VimModeBanner(action) => write!(f, "VimModeBanner({action:?})"),
             ToggleSnackbarInActivePane => write!(f, "ToggleSnackbarInActivePane"),
-            MakeAllParticipantsReaders { reason } => {
-                write!(f, "MakeAllParticipantsReaders {{ reason: {reason:?} }}")
-            }
-            OpenSharedSessionViewerRoleMenu => write!(f, "OpenSharedSessionViewerRoleMenu"),
-            RequestSharedSessionRole(role) => write!(f, "RequestSharedSessionRole({role:?})"),
             MiddleClickOnGrid { position } => {
                 write!(f, "MiddleClickonGrid {{ position: {position:?} }}")
             }
@@ -627,23 +569,19 @@ impl fmt::Debug for TerminalAction {
             #[cfg(feature = "voice_input")]
             ToggleCLIAgentVoiceInput(source) => write!(f, "ToggleCLIAgentVoiceInput({source:?})"),
             HyperlinkClick(hyperlink_url) => write!(f, "HyperlinkClick({hyperlink_url:?})"),
-            AttemptLoginGatedFeature => write!(f, "AttemptLoginGatedFeature"),
             StartFileDropTarget => write!(f, "StartFileDropTarget"),
             StopFileDropTarget => write!(f, "StopFileDropTarget"),
             RunNativeShellCompletions { buffer_text, .. } => {
                 write!(f, "RunNativeShellCompletions({buffer_text:?})")
             }
-            OpenTeamSettingsPage => write!(f, "OpenTeamSettingsPage"),
             SetMarkedText {
                 marked_text,
                 selected_range,
             } => write!(f, "SetMarkedText {{{marked_text:?}, {selected_range:?}}}"),
             ClearMarkedText => write!(f, "ClearMarkedText"),
             SelectAgenticSuggestion(index) => write!(f, "SelectAgenticSuggestion({index:?})"),
-            HideTelemetryBannerPermanently => write!(f, "HideTelemetryBannerPermanently"),
             ShowInitializationBlock => write!(f, "ShowInitializationBlock"),
             GenerateCodebaseIndex => write!(f, "GenerateIndexForRepo"),
-            LoadAgentModeConversation => write!(f, "LoadAgentModeConversation"),
             ShowWarpifySettings => write!(f, "ShowWarpifySettings"),
             DeleteAttachment { index } => write!(f, "DeleteAttachment({index:?})"),
             WriteCodebaseIndex => write!(f, "PersistCodebaseIndex"),
@@ -682,20 +620,13 @@ impl fmt::Debug for TerminalAction {
             OpenFilesPalette { .. } => write!(f, "OpenFilesPalette"),
             DismissCodeToolbeltTooltip => write!(f, "DismissCodeToolbeltTooltip"),
             StartLspServer => write!(f, "StartLspServer"),
-            SetupCloudEnvironment(_) => write!(f, "SetupCloudEnvironment"),
-            SetupCloudEnvironmentAndStart(_) => write!(f, "SetupCloudEnvironmentAndStart"),
-            TriggerEnvironmentSetupSelection(_) => write!(f, "TriggerEnvironmentSetupSelection"),
-            OpenEnvironmentManagementPane => write!(f, "OpenEnvironmentManagementPane"),
             SummarizeConversation => write!(f, "SummarizeConversation"),
             ToggleLongRunningCommandControl => {
                 write!(f, "TakeOverLongRunningCommandControlForUser")
             }
             ToggleHideCliResponses => write!(f, "ToggleHideCliResponses"),
             ExitAgentView => write!(f, "ExitAgentView"),
-            EnterCloudAgentView => write!(f, "EnterCloudAgentView"),
             StartNewAgentConversation => write!(f, "StartNewAgentConversation"),
-            ToggleCloudModeDetailsPanel => write!(f, "ToggleCloudModeDetailsPanel"),
-            CancelAmbientAgentTask => write!(f, "CancelAmbientAgentTask"),
             OpenInlineHistoryMenu => write!(f, "OpenInlineHistoryMenu"),
             OpenModelSelector => write!(f, "OpenModelSelector"),
             ResolvePromptSuggestion(..) => write!(f, "ResolvePromptSuggestion"),

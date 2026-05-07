@@ -1,15 +1,13 @@
 #!/bin/bash
 #
-# Cross-platform entrypoint for running a local Warp build.
+# Cross-platform entrypoint for running a local Warper build.
 #
-# On macOS this delegates to `./script/macos/run`, which builds and runs Warp
+# On macOS this delegates to `./script/macos/run`, which builds and runs Warper
 # as a real `.app` bundle (with code signing, plist updates, etc.). On Linux
 # and Windows it invokes `cargo run` directly for the appropriate binary.
 #
-# This script owns all cross-platform setup (running install_channel_config,
-# detecting internal vs OSS builds, and mapping legacy `--features` entries
-# to environment variables), so platform-specific scripts can assume those
-# values are already provided via environment variables.
+# Warper is local-first. The default run path never probes private Warp
+# repositories, cloud channel config, or hosted rollout state.
 
 set -e
 
@@ -20,16 +18,8 @@ OS_TYPE="$(uname -s)"
 
 FEATURES="gui"
 
-./script/install_channel_config || echo "Skipping internal channel config installation (no repo access)."
-
-# If warp_channel_config is on PATH, build the Local channel binary; otherwise build the OSS channel.
-if command -v warp-channel-config &>/dev/null; then
-    WARP_BIN_NAME="warp"
-    WARP_CHANNEL="local"
-else
-    WARP_BIN_NAME="warp-oss"
-    WARP_CHANNEL="oss"
-fi
+WARP_BIN_NAME="warp-oss"
+WARP_CHANNEL="oss"
 
 # Shared argument parsing. macOS-specific flags (--dont-open,
 # --open_with_launchd, --generate-schema) are forwarded through MAC_ARGS and
@@ -55,13 +45,8 @@ while (( "$#" )); do
       fi
       ;;
     --host-id)
-      if [ -n "$2" ] && [ "${2:0:1}" != "-" ]; then
-        export WARP_CLOUD_MODE_DEFAULT_HOST="$2"
-        shift 2
-      else
-        echo "Error: Argument for $1 is missing" >&2
-        exit 1
-      fi
+      echo "Error: --host-id is a Warp cloud-mode option and is not supported by Warper." >&2
+      exit 1
       ;;
     --release)
       CARGO_PARAMS+=("$1")
@@ -87,20 +72,10 @@ while (( "$#" )); do
   esac
 done
 
-# These cargo features were removed and replaced by environment variables read
-# by warp-channel-config. Intercept them here so that existing --features
-# invocations keep working.
-for mapping in \
-    "with_local_server:WITH_LOCAL_SERVER" \
-    "with_local_session_sharing_server:WITH_LOCAL_SESSION_SHARING_SERVER" \
-    "with_sandbox_telemetry:WITH_SANDBOX_TELEMETRY"; do
-    feature="${mapping%%:*}"
-    env_var="${mapping##*:}"
-    if [[ ",$FEATURES," =~ ,"$feature", ]]; then
-        export "$env_var"=1
-        FEATURES="$(echo "$FEATURES" | sed "s/,$feature,/,/; s/^$feature,//; s/,$feature$//; s/^$feature$//")"
-        FEATURES="$(echo "$FEATURES" | sed 's/,,*/,/g; s/^,//; s/,$//')"
-        echo "Note: '$feature' is no longer a cargo feature; setting $env_var=1 instead."
+for cloud_feature in with_local_server with_local_session_sharing_server with_sandbox_telemetry; do
+    if [[ ",$FEATURES," =~ ,"$cloud_feature", ]]; then
+        echo "Error: '$cloud_feature' is a Warp cloud/telemetry compatibility option and is not supported by Warper." >&2
+        exit 1
     fi
 done
 

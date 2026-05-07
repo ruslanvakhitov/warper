@@ -113,9 +113,7 @@ impl InlineDiffView {
     ///
     /// The `session_type` determines whether the file is local or remote.
     /// For `Local`, the file is registered by path on the local filesystem.
-    /// For `Remote`, the file is registered against the remote backend so
-    /// that `save()` / `delete()` dispatch over the wire via
-    /// `RemoteServerClient`.
+    /// Remote sessions are read-only after hosted remote file access removal.
     ///
     /// This must be called after construction for non-WASM environments.
     #[cfg(not(target_family = "wasm"))]
@@ -138,12 +136,9 @@ impl InlineDiffView {
                     file_model.register_file_path(&local_path, false, ctx)
                 })
             }
-            DiffSessionType::Remote(host_id) => {
-                let host_id = host_id.clone();
-                let remote_path = file_path.clone();
-                file_model.update(ctx, |file_model, _ctx| {
-                    file_model.register_remote_file(host_id, remote_path)
-                })
+            DiffSessionType::Remote(_) => {
+                log::debug!("Skipping writable file registration for remote diff {file_path}");
+                return;
             }
         };
 

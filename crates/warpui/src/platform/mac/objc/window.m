@@ -835,7 +835,7 @@ void open_file_path_in_explorer(NSString *pathString) {
     NSURL *url = [[NSURL fileURLWithPath:path] standardizedURL];
 
     // Dispatch this asynchronously on the main thread to avoid double-borrow
-    // errors; see https://warpdotdev.sentry.io/issues/4264975772.
+    // errors tracked in the file explorer activation path.
     dispatch_async(dispatch_get_main_queue(), ^{
       [[NSWorkspace sharedWorkspace] activateFileViewerSelectingURLs:@[ url ]];
     });

@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Bundle the application for distribution.
+# Bundle Warper for distribution.
 #
 # See the parameter parsing section below for available options.
 #
@@ -24,14 +24,8 @@
 #
 # Once the stapling is done, the app can be shared.
 #
-# Three passwords are read from GCP Secret Manager (or from env if --read-passwords-from-env is set) if you are codesigning.
-# 1) WARP_NOTARIZATION_PASSWORD:  This is an "app-specific password" that
-#    is tied to the zach@warp.dev account.  See https://support.apple.com/en-us/HT204397
-# 2) WARP_DEVELOPER_ID_CERT_PASSWORD: This is a password tied to the private key
-#    of our cert - it is needed to use the cert to sign our binary.
-# 3) WARP_CODESIGN_KEYCHAIN_PASSWORD: This is an arbitrary password only used
-#    in the lifetime of this app for creating the keychain used to sign.  Can
-#    be anything.
+# Codesigning and notarization are opt-in. Local Warper bundles default to
+# unsigned OSS artifacts and do not read hosted secrets.
 #
 # See
 # https://github.com/burtonageo/cargo-bundle
@@ -70,7 +64,7 @@ cleanup_dmg_files() {
         find "$target_dir" -name "rw.*.dmg" -type f -delete
     fi
     # Also check if any volumes are mounted and unmount them
-    hdiutil info | grep "/Volumes/Warp.*" | awk '{print $1}' | while read -r disk; do
+    hdiutil info | grep "/Volumes/Warper.*" | awk '{print $1}' | while read -r disk; do
         echo "Unmounting disk image: $disk"
         hdiutil detach "$disk" -force || true
     done
@@ -97,13 +91,13 @@ UNIVERSAL_BINARY=true
 BUILD_BINARY=true
 TARGET_ARCH=""
 DMG_NAME_SUFFIX=""
-# By default we build dev bundles.
-RELEASE_CHANNEL="dev"
-FEATURES="release_bundle,cocoa_sentry,extern_plist"
+# By default we build local-first OSS Warper bundles.
+RELEASE_CHANNEL="oss"
+FEATURES="release_bundle,extern_plist"
 REGISTER_SERVICES=true
 DEBUG=false
 ARTIFACT="app"
-CODESIGN=true
+CODESIGN=false
 SELFSIGN=false
 OPEN_AFTER_BUNDLE=false
 READ_PASSWORDS_FROM_ENV=false
@@ -243,6 +237,11 @@ done
 # set positional arguments in their proper place
 eval set -- "$PARAMS"
 
+if [[ "$RELEASE_CHANNEL" != "oss" ]]; then
+  echo "Error: Warper bundles only support the oss channel." >&2
+  exit 1
+fi
+
 # Infer a cargo profile from the bundle configuration.
 if [[ $DEBUG = true ]]; then
   CARGO_PROFILE="dev"
@@ -274,9 +273,7 @@ if [[ $RELEASE_CHANNEL = "local" ]]; then
     WARP_APP_NAME="WarpLocal"
     WARP_SCHEME_NAME="warplocal"
     FEATURES="$FEATURES,agent_mode_debug"
-    # For local builds, use different versions of our bundled frameworks (e.g.:
-    # Sentry).  This needs to be exported so it can be referenced by
-    # app/build.rs later, while running `cargo bundle`.
+    # For local builds, use development bundled frameworks.
     export FRAMEWORK_OVERRIDE="dev"
 elif [[ $RELEASE_CHANNEL = "dev" ]]; then
     WARP_BIN="dev"
@@ -286,9 +283,7 @@ elif [[ $RELEASE_CHANNEL = "dev" ]]; then
     FEATURES="$FEATURES,agent_mode_debug"
     # Enable heap usage tracking & profiling using jemalloc through pprof.
     FEATURES="$FEATURES,jemalloc_pprof,heap_usage_tracking"
-    # For dev builds, use different versions of our bundled frameworks (e.g.:
-    # Sentry).  This needs to be exported so it can be referenced by
-    # app/build.rs later, while running `cargo bundle`.
+    # For dev builds, use development bundled frameworks.
     export FRAMEWORK_OVERRIDE="dev"
     export HANDLE_MARKDOWN=1
 elif [[ $RELEASE_CHANNEL = "preview" ]]; then
@@ -309,8 +304,6 @@ elif [[ $RELEASE_CHANNEL = "oss" ]]; then
     BUNDLE_ID="dev.warper.Warper"
     WARP_APP_NAME="Warper"
     WARP_SCHEME_NAME="warper"
-    # The OSS channel does not ship Sentry, so drop the cocoa_sentry feature
-    # (which would otherwise pull in the Sentry framework dependency).
     FEATURES="release_bundle,extern_plist"
 fi
 
@@ -397,7 +390,7 @@ if [[ "$ARTIFACT" == "app" ]]; then
   cargo bundle --profile "$CARGO_PROFILE" --bin "$WARP_BIN" --target "$DEFAULT_TARGET" --features "$FEATURES"
   popd > /dev/null
 
-  echo "Adding rpath to support mac frameworks (e.g. Sentry)"
+  echo "Adding rpath to support bundled mac frameworks"
   install_name_tool -add_rpath "@executable_path/../Frameworks" "$BUNDLE_DIR/$WARP_APP_NAME.app/Contents/MacOS/$WARP_BIN"
 
   export WARP_SCHEME_NAME
@@ -530,25 +523,25 @@ if [[ "$ARTIFACT" == "app" ]]; then
   # Determine CLI wrapper script path based on release channel.  Each channel's
   # value here must match `Channel::cli_command_name` in the Rust source.
   if [[ $RELEASE_CHANNEL = "stable" ]]; then
-    CLI_SCRIPT_PATH="$BUNDLED_RESOURCES_DIR/bin/oz"
+    CLI_SCRIPT_PATH="$BUNDLED_RESOURCES_DIR/bin/warp"
   elif [[ $RELEASE_CHANNEL = "oss" ]]; then
     CLI_SCRIPT_PATH="$BUNDLED_RESOURCES_DIR/bin/warp-oss"
   else
-    CLI_SCRIPT_PATH="$BUNDLED_RESOURCES_DIR/bin/oz-$RELEASE_CHANNEL"
+    CLI_SCRIPT_PATH="$BUNDLED_RESOURCES_DIR/bin/warp-$RELEASE_CHANNEL"
   fi
 
   echo "Creating Resources/bin directory and CLI wrapper script..."
   mkdir -p "$BUNDLED_RESOURCES_DIR/bin"
-  
+
   cat > "$CLI_SCRIPT_PATH" << 'EOF'
 #!/bin/bash
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 exec -a "$0" "$script_dir/../../MacOS/WARP_BIN_PLACEHOLDER" "$@"
 EOF
-  
+
   # Replace the placeholder with the actual binary name
   sed -i '' "s/WARP_BIN_PLACEHOLDER/$WARP_BIN/" "$CLI_SCRIPT_PATH"
-  
+
   # Make the script executable
   chmod +x "$CLI_SCRIPT_PATH"
 
@@ -684,7 +677,7 @@ elif [[ $CODESIGN = true ]]; then
 
     # Create a .zip archive to notarize.
     ditto -c -k "$OUT_DIR/$WARP_BIN" "$NOTARIZATION_ARTIFACT"
-    
+
     # It's not possible to staple notarization tickets to standalone binaries:
     # https://developer.apple.com/documentation/security/customizing-the-notarization-workflow?language=objc#Staple-the-ticket-to-your-distribution
     STAPLE_TICKET=false
@@ -702,7 +695,7 @@ if [[ "$ARTIFACT" = app ]]; then
     local source_folder="$1"
 
     local args=(
-      --volname Warp
+      --volname "$WARP_APP_NAME"
       # For --no-internet-enable, see https://github.com/create-dmg/create-dmg/issues/179
       --no-internet-enable
       --background app/assets/resources/mac/warp_install_image.png
@@ -807,7 +800,7 @@ if [ "${GITHUB_ACTIONS}" == "true" ]; then
     echo "binary_path=$BINARY_PATH" >> "$GITHUB_OUTPUT"
     echo "target_arch=$TARGET_ARCH" >> "$GITHUB_OUTPUT"
     echo "rust_target=$DEFAULT_TARGET" >> "$GITHUB_OUTPUT"
-    
+
     # If the dSYM is available, output both its path and its realpath.
     # The realpath is needed because the dSYM is a symlink, and when preserving
     # the build artifacts, we want to preserve both the symlink and its target.
@@ -824,7 +817,7 @@ if [ "${GITHUB_ACTIONS}" == "true" ]; then
 
   echo "dock_tile_plugin_dir=$DOCK_TILE_PLUGIN_DIR" >> "$GITHUB_OUTPUT"
   echo "frameworks_dir=app/frameworks/${FRAMEWORK_OVERRIDE:-default}" >> "$GITHUB_OUTPUT"
-  
+
   # For full bundles, output DMG information
   if [[ -f "$OUT_DIR/$FINAL_DMG_NAME" ]]; then
     echo "dmg_name=$FINAL_DMG_NAME" >> "$GITHUB_OUTPUT"
@@ -835,7 +828,7 @@ if [ "${GITHUB_ACTIONS}" == "true" ]; then
   if [[ -n "$BUNDLED_RESOURCES_DIR" ]]; then
     echo "bundled_resources_dir=$BUNDLED_RESOURCES_DIR" >> "$GITHUB_OUTPUT"
   fi
-  
+
   echo "::echo::off"
 fi
 

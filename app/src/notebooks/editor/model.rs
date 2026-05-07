@@ -15,12 +15,7 @@ use warpui::{
     AppContext, Entity, ModelAsRef, ModelContext, ModelHandle, SingletonEntity, WindowId,
 };
 
-use crate::{
-    cloud_object::model::persistence::{CloudModel, CloudModelEvent},
-    debounce::debounce,
-    editor::InteractionState,
-    notebooks::telemetry::BlockInfo,
-};
+use crate::{debounce::debounce, editor::InteractionState, notebooks::actions::BlockInfo};
 use crate::{
     notebooks::editor::interaction_state_model::InteractionStateModelEvent,
     terminal::ShellLaunchData,
@@ -52,7 +47,7 @@ use warp_editor::{
 use warpui::elements::ListIndentLevel;
 
 use super::{
-    super::telemetry::SelectionMode as TelemetrySelectionMode, embedding_model::NotebookEmbed,
+    super::actions::SelectionMode as NotebookSelectionMode, embedding_model::NotebookEmbed,
     interaction_state_model::InteractionStateModel, notebook_command::NotebookCommand,
     NotebookWorkflow,
 };
@@ -214,11 +209,6 @@ impl NotebooksEditorModel {
             &interaction_state,
             Self::handle_interaction_state_model_event,
         );
-
-        let cloud_model = CloudModel::handle(ctx);
-        ctx.subscribe_to_model(&cloud_model, |me, event, ctx| {
-            me.handle_cloud_model_event(event, ctx)
-        });
 
         let (resize_tx, resize_rx) = async_channel::unbounded();
         ctx.spawn_stream_local(
@@ -420,34 +410,6 @@ impl NotebooksEditorModel {
             }
             // Handled by selection model.
             BufferEvent::AnchorUpdated { .. } | BufferEvent::ContentReplaced { .. } => (),
-        }
-    }
-
-    fn handle_cloud_model_event(&mut self, event: &CloudModelEvent, ctx: &mut ModelContext<Self>) {
-        // Ignore cloud events until bound to a real window, and when the window is closed.
-        let Some(window_id) = self.rte_window_id else {
-            return;
-        };
-        if !ctx.is_window_open(window_id) {
-            return;
-        }
-        match event {
-            CloudModelEvent::ObjectUpdated { type_and_id, .. }
-            | CloudModelEvent::ObjectTrashed { type_and_id, .. }
-            | CloudModelEvent::ObjectUntrashed { type_and_id, .. }
-            | CloudModelEvent::ObjectDeleted { type_and_id, .. }
-            | CloudModelEvent::ObjectMoved { type_and_id, .. } => {
-                if let Some(model) = self
-                    .child_models
-                    .model_handles::<NotebookEmbed>()
-                    .find(|model| model.as_ref(ctx).hashed_id() == type_and_id.sqlite_uid_hash())
-                {
-                    model.update(ctx, |model, ctx| {
-                        model.refresh_item_state(ctx);
-                    })
-                }
-            }
-            _ => (),
         }
     }
 
@@ -1244,10 +1206,6 @@ impl NotebooksEditorModel {
         };
 
         // Re-apply cached highlighting for models when there is a theme update.
-        for model in self.child_models.model_handles::<NotebookEmbed>() {
-            model.update(ctx, |model, ctx| model.try_apply_cached_highlighting(ctx));
-        }
-
         for model in self.child_models.model_handles::<NotebookCommand>() {
             model.update(ctx, |model, ctx| model.try_apply_cached_highlighting(ctx));
         }
@@ -1313,7 +1271,7 @@ impl NotebooksEditorModel {
 
         if !had_command_selection {
             ctx.emit(RichTextEditorModelEvent::SwitchedSelectionMode {
-                new_mode: TelemetrySelectionMode::Command,
+                new_mode: NotebookSelectionMode::Command,
             });
         };
 
@@ -1407,7 +1365,7 @@ impl NotebooksEditorModel {
 
         if self.clear_command_selections(ctx) {
             ctx.emit(RichTextEditorModelEvent::SwitchedSelectionMode {
-                new_mode: TelemetrySelectionMode::Text,
+                new_mode: NotebookSelectionMode::Text,
             });
         }
 
@@ -1745,7 +1703,7 @@ pub enum RichTextEditorModelEvent {
     ContentChanged(EditOrigin),
     /// The user switched selection modes.
     SwitchedSelectionMode {
-        new_mode: TelemetrySelectionMode,
+        new_mode: NotebookSelectionMode,
     },
 }
 
@@ -2141,13 +2099,7 @@ impl ChildModels {
         for (hashed_id, start_offset) in new_embedded_item {
             log::debug!("Adding EmbeddedItem model at {start_offset}");
             let new_model: ModelHandle<_> = ctx.add_model(|ctx| {
-                NotebookEmbed::new(
-                    start_offset,
-                    hashed_id,
-                    content.clone(),
-                    selection_model.clone(),
-                    ctx,
-                )
+                NotebookEmbed::new(start_offset, hashed_id, selection_model.clone(), ctx)
             });
 
             self.models.insert(start_offset, Box::new(new_model));

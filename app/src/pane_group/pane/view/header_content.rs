@@ -3,18 +3,12 @@
 //! This module provides the infrastructure for backing views to declaratively
 //! specify their header content without worrying about draggable behavior.
 
-use warp_core::ui::theme::Fill;
 use warpui::{
     elements::{DraggableState, MouseStateHandle},
     fonts::Properties,
     text_layout::ClipConfig,
-    AppContext, Element,
+    Element,
 };
-
-/// Closure that renders sharing controls (share button, view-only indicator) for a pane header.
-/// Accepts optional icon color and button size overrides.
-type RenderSharingControlsFn<'a> =
-    Box<dyn Fn(&AppContext, Option<Fill>, Option<f32>) -> Option<Box<dyn Element>> + 'a>;
 
 /// Context provided to backing views when rendering header content.
 ///
@@ -34,21 +28,7 @@ pub struct HeaderRenderContext<'a> {
     /// Extra left inset for the header's left-side controls, used to avoid
     /// overlap with a floating button overlay (e.g. the vertical tabs toggle).
     pub header_left_inset: f32,
-    /// Closure that renders the sharing controls. Use [`Self::sharing_controls`] to call this.
-    pub(super) render_sharing_controls_fn: RenderSharingControlsFn<'a>,
-}
-
-impl HeaderRenderContext<'_> {
-    /// Renders the sharing controls (share button, view-only indicator) for this pane.
-    /// Returns `None` if sharing is not enabled.
-    pub fn sharing_controls(
-        &self,
-        app: &AppContext,
-        icon_color: Option<Fill>,
-        button_size: Option<f32>,
-    ) -> Option<Box<dyn Element>> {
-        (self.render_sharing_controls_fn)(app, icon_color, button_size)
-    }
+    pub(super) _marker: std::marker::PhantomData<&'a ()>,
 }
 
 /// Render-time options for the header that apply to all header types.

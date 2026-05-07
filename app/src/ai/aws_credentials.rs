@@ -3,7 +3,7 @@ use std::time::{Duration, SystemTime};
 use crate::settings::{AISettings, AISettingsChangedEvent};
 use crate::terminal::event::{AfterBlockCompletedEvent, BlockType, UserBlockCompleted};
 use crate::terminal::model_events::{ModelEvent, ModelEventDispatcher};
-use crate::workspaces::user_workspaces::{UserWorkspaces, UserWorkspacesEvent};
+use crate::workspaces::user_workspaces::UserWorkspaces;
 pub use ai::api_keys::AwsCredentials;
 use ai::api_keys::{ApiKeyManager, AwsCredentialsRefreshStrategy, AwsCredentialsState};
 use anyhow::Context;
@@ -86,7 +86,7 @@ const AWS_BEDROCK_STS_AUDIENCE: &str = "sts.amazonaws.com";
 const BEDROCK_IDENTITY_TOKEN_DURATION: Duration = Duration::from_secs(60 * 60);
 
 pub(crate) fn aws_role_session_name(run_id: &str) -> String {
-    format!("Oz_Run_{run_id}")
+    format!("Agent_Run_{run_id}")
 }
 
 /// Cached STS client for OIDC credential refreshes.
@@ -170,8 +170,7 @@ pub trait AwsCredentialRefresher {
     ) where
         Self: Sized;
 
-    /// Sets up subscriptions to `UserWorkspaces` and `AISettings` to refresh AWS credentials
-    /// when workspace settings or AWS Bedrock settings change.
+    /// Sets up subscriptions to `AISettings` to refresh AWS credentials when AWS Bedrock settings change.
     fn subscribe_to_settings_changes(&mut self, ctx: &mut ModelContext<Self>)
     where
         Self: Sized;
@@ -199,18 +198,6 @@ impl AwsCredentialRefresher for ApiKeyManager {
     }
 
     fn subscribe_to_settings_changes(&mut self, ctx: &mut ModelContext<Self>) {
-        // Subscribe to UserWorkspaces events to refresh AWS credentials when workspace settings change
-        // (this also initializes AWS credentials on app startup via TeamsChanged)
-        ctx.subscribe_to_model(&UserWorkspaces::handle(ctx), |manager, event, ctx| {
-            if matches!(
-                event,
-                UserWorkspacesEvent::UpdateWorkspaceSettingsSuccess
-                    | UserWorkspacesEvent::TeamsChanged
-            ) {
-                drop(refresh_aws_credentials(manager, ctx));
-            }
-        });
-
         // Subscribe to AISettings changes to refresh AWS credentials when AWS Bedrock settings change
         ctx.subscribe_to_model(&AISettings::handle(ctx), |manager, event, ctx| {
             if matches!(
@@ -308,7 +295,7 @@ fn refresh_aws_credentials_oidc(
     }
 
     let Some(task_id) = task_id else {
-        let message = "AWS Bedrock inference requires an ambient task ID before credentials \
+        let message = "AWS Bedrock inference requires an agent run ID before credentials \
                        can be minted"
             .to_string();
         manager.set_aws_credentials_state(

@@ -71,11 +71,6 @@ pub struct SkillManager {
     skills_by_name: HashMap<String, HashSet<PathBuf>>,
     /// Skills bundled into Warp, each with activation condition and icon.
     bundled_skills: HashMap<String, BundledSkill>,
-    /// When true, all skills in `directory_skills` are in scope regardless of
-    /// the current working directory. Set by `AgentDriver` when a cloud
-    /// environment with configured repos is active, so the agent sees every
-    /// skill from every cloned repo.
-    is_cloud_environment: bool,
     #[allow(dead_code)]
     skill_watcher: ModelHandle<SkillWatcher>, // Can't remove this or it'll get cleaned up after new()
 }
@@ -109,15 +104,8 @@ impl SkillManager {
             skills_by_path: HashMap::new(),
             skills_by_name: HashMap::new(),
             bundled_skills: HashMap::new(),
-            is_cloud_environment: false,
             skill_watcher,
         }
-    }
-
-    /// Marks this manager as running in a cloud environment, enabling all
-    /// directory skills to be in scope regardless of the current working directory.
-    pub fn set_cloud_environment(&mut self, value: bool) {
-        self.is_cloud_environment = value;
     }
 
     /// Returns skills available for the given working directory.
@@ -139,17 +127,7 @@ impl SkillManager {
             );
         }
 
-        if self.is_cloud_environment {
-            // In cloud environments, all skills are in scope regardless of cwd.
-            for (dir, dir_skill_paths) in &self.directory_skills {
-                if is_home_directory(dir) {
-                    continue;
-                }
-                for path in dir_skill_paths {
-                    skill_paths.push((dir.clone(), path.clone()));
-                }
-            }
-        } else if let Some(working_directory) = working_directory {
+        if let Some(working_directory) = working_directory {
             let repo_root = repo_metadata::repositories::DetectedRepositories::as_ref(ctx)
                 .get_root_for_path(working_directory);
 
@@ -523,17 +501,12 @@ async fn read_bundled_skills(skills_dir: &Path) -> HashMap<String, ParsedSkill> 
 /// Builds the context map for bundled skill variable substitution.
 ///
 /// Supported variables:
-/// - `{{warp_server_url}}` - The server root URL (e.g., `https://api.warp.dev`)
 /// - `{{warp_cli_binary_name}}` - The CLI binary name (e.g., `warp` or `warp-cli`)
 /// - `{{warp_url_scheme}}` - The URL scheme (e.g., `warp`, `warpdev`, `warppreview`)
 /// - `{{settings_schema_path}}` - Path to the bundled JSON settings schema
 /// - `{{settings_file_path}}` - Path to the user's settings TOML file
 fn build_bundled_skill_context() -> HashMap<String, String> {
     let mut context: HashMap<String, String> = [
-        (
-            "warp_server_url".to_owned(),
-            ChannelState::server_root_url().into_owned(),
-        ),
         (
             "warp_cli_binary_name".to_owned(),
             ChannelState::channel().cli_command_name().to_owned(),

@@ -13,18 +13,12 @@ use warpui::{
 };
 
 use crate::{
-    ai::generate_code_review_content::api::{GenerateCodeReviewContentRequest, OutputType},
     code_review::git_dialog::{
-        interactive_path_future, render_branch_section, render_file_changes_box,
-        should_send_git_ops_ai_request, show_toast, user_facing_git_error, GitDialog,
-        GitDialogAction, GitDialogEvent, GitDialogMode,
+        interactive_path_future, render_branch_section, render_file_changes_box, show_toast,
+        user_facing_git_error, GitDialog, GitDialogAction, GitDialogEvent, GitDialogMode,
     },
-    server::server_api::{ai::AIClient, ServerApiProvider},
     ui_components::icons::Icon,
-    util::git::{
-        create_pr, get_branch_commit_messages, get_branch_diff_entries, get_diff_for_pr,
-        FileChangeEntry, PrInfo,
-    },
+    util::git::{create_pr, get_branch_diff_entries, FileChangeEntry, PrInfo},
     view_components::{DismissibleToast, ToastLink},
     workspace::ToastStack,
 };
@@ -117,35 +111,20 @@ pub(super) fn start_confirm(me: &mut GitDialog, ctx: &mut ViewContext<GitDialog>
 
     me.set_loading(loading_label_for(), ctx);
 
-    let code_review_ai = if should_send_git_ops_ai_request(ctx) {
-        Some(ServerApiProvider::handle(ctx).read(ctx, |p, _| p.get_ai_client()))
-    } else {
-        None
-    };
     let path_future = interactive_path_future(ctx);
 
     ctx.spawn(
         async move {
             let path_env = path_future.await;
-            if let Some(code_review_ai) = code_review_ai.as_ref() {
-                create_pr_with_ai_content(
-                    &repo_path,
-                    &branch_name,
-                    parent_branch.as_deref(),
-                    code_review_ai.as_ref(),
-                    path_env.as_deref(),
-                )
-                .await
-            } else {
-                create_pr(
-                    &repo_path,
-                    None,
-                    None,
-                    parent_branch.as_deref(),
-                    path_env.as_deref(),
-                )
-                .await
-            }
+            let _ = branch_name;
+            create_pr(
+                &repo_path,
+                None,
+                None,
+                parent_branch.as_deref(),
+                path_env.as_deref(),
+            )
+            .await
         },
         move |_me, result, ctx| {
             match result {
@@ -160,64 +139,6 @@ pub(super) fn start_confirm(me: &mut GitDialog, ctx: &mut ViewContext<GitDialog>
             ctx.emit(GitDialogEvent::Completed);
         },
     );
-}
-
-/// Generates PR title and body via AI (in parallel) and creates the PR.
-/// Falls back to `gh pr create --fill` if AI generation fails or returns
-/// empty content.
-pub(super) async fn create_pr_with_ai_content(
-    repo_path: &std::path::Path,
-    branch_name: &str,
-    parent_branch: Option<&str>,
-    code_review_ai: &dyn AIClient,
-    path_env: Option<&str>,
-) -> anyhow::Result<PrInfo> {
-    let diff = get_diff_for_pr(repo_path, parent_branch).await?;
-    let commit_messages = get_branch_commit_messages(repo_path, parent_branch)
-        .await
-        .unwrap_or_default();
-
-    let title_req = GenerateCodeReviewContentRequest {
-        output_type: OutputType::PrTitle,
-        diff: diff.clone(),
-        branch_name: branch_name.to_string(),
-        commit_messages: commit_messages.clone(),
-    };
-    let body_req = GenerateCodeReviewContentRequest {
-        output_type: OutputType::PrDescription,
-        diff,
-        branch_name: branch_name.to_string(),
-        commit_messages,
-    };
-
-    match futures::try_join!(
-        code_review_ai.generate_code_review_content(title_req),
-        code_review_ai.generate_code_review_content(body_req),
-    ) {
-        Ok((title_resp, body_resp))
-            if !title_resp.content.trim().is_empty() && !body_resp.content.trim().is_empty() =>
-        {
-            create_pr(
-                repo_path,
-                Some(&title_resp.content),
-                Some(&body_resp.content),
-                parent_branch,
-                path_env,
-            )
-            .await
-        }
-        Ok(_) => {
-            // Empty title/body would make `gh pr create` fail; fall back to --fill.
-            log::warn!(
-                "AI PR content generation returned empty title/body, falling back to --fill"
-            );
-            crate::util::git::create_pr(repo_path, None, None, parent_branch, path_env).await
-        }
-        Err(err) => {
-            log::warn!("AI PR content generation failed, falling back to --fill: {err}");
-            crate::util::git::create_pr(repo_path, None, None, parent_branch, path_env).await
-        }
-    }
 }
 
 /// Shows a toast announcing PR creation with a clickable "Open PR" link.

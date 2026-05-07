@@ -1,1 +1,1 @@
-ALTER TABLE windows DROP warp_drive_asset_width;
+-- WARPER-001: hosted Drive window state is not part of the local schema.

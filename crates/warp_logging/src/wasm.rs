@@ -160,27 +160,12 @@ impl Log for WasmLogger {
                 Level::Warn => {
                     console::warn_4(&s, &JsValue::from(&style.lvl_warn), &tgt_style, &args_style)
                 }
-                Level::Error => {
-                    let error = format!(
-                        "ERROR: {}\n\n{}:{}",
-                        record.args(),
-                        record.file().unwrap_or_else(|| record.target()),
-                        record
-                            .line()
-                            .map_or_else(|| "[Unknown]".to_string(), |line| line.to_string()),
-                    );
-                    // Send error logs to Sentry.
-                    warp_web_event_bus::emit_event(warp_web_event_bus::WarpEvent::ErrorLogged {
-                        error,
-                    });
-
-                    console::error_4(
-                        &s,
-                        &JsValue::from(&style.lvl_error),
-                        &tgt_style,
-                        &args_style,
-                    )
-                }
+                Level::Error => console::error_4(
+                    &s,
+                    &JsValue::from(&style.lvl_error),
+                    &tgt_style,
+                    &args_style,
+                ),
             }
         }
     }

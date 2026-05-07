@@ -26,17 +26,11 @@ use crate::{
         },
         mcp::templatable_manager::TemplatableMCPServerManager,
     },
-    auth::AuthStateProvider,
-    cloud_object::model::persistence::CloudModel,
     network::NetworkStatus,
-    server::{cloud_objects::update_manager::UpdateManager, sync_queue::SyncQueue},
     settings::{AgentModeCommandExecutionPredicate, PrivacySettings},
     test_util::settings::initialize_settings_for_tests_with_mode,
-    workspaces::{
-        team_tester::TeamTesterStatus, user_workspaces::UserWorkspaces,
-        workspace::SandboxedAgentSettings,
-    },
-    AgentNotificationsModel, GlobalResourceHandles, GlobalResourceHandlesProvider, LaunchMode,
+    workspaces::{user_workspaces::UserWorkspaces, workspace::SandboxedAgentSettings},
+    GlobalResourceHandles, GlobalResourceHandlesProvider, LaunchMode,
 };
 
 use super::{BlocklistAIHistoryModel, BlocklistAIPermissions};
@@ -74,15 +68,9 @@ fn initialize_permissions_test_with_mode(
     let history = app.add_singleton_model(|_| BlocklistAIHistoryModel::new(vec![], &[]));
     app.add_singleton_model(|_| CLIAgentSessionsModel::new());
     app.add_singleton_model(|_| ActiveAgentViewsModel::new());
-    app.add_singleton_model(AgentNotificationsModel::new);
     let permissions = app.add_singleton_model(BlocklistAIPermissions::new);
     let terminal_view_id = EntityId::new();
-    app.add_singleton_model(|_| AuthStateProvider::new_for_test());
-    app.add_singleton_model(SyncQueue::mock);
     app.add_singleton_model(|_| NetworkStatus::new());
-    app.add_singleton_model(TeamTesterStatus::mock);
-    app.add_singleton_model(UpdateManager::mock);
-    app.add_singleton_model(CloudModel::mock);
     app.add_singleton_model(|_| TemplatableMCPServerManager::default());
     let profile_model = app.add_singleton_model(|ctx| {
         AIExecutionProfilesModel::new(&LaunchMode::new_for_unit_test(), ctx)
@@ -91,7 +79,7 @@ fn initialize_permissions_test_with_mode(
     let user_workspaces = app.add_singleton_model(UserWorkspaces::default_mock);
 
     let conversation_id = history.update(app, |history_model, ctx| {
-        history_model.start_new_conversation(terminal_view_id, false, false, ctx)
+        history_model.start_new_conversation(terminal_view_id, false, ctx)
     });
 
     PermissionsTestState {

@@ -1,10 +1,8 @@
 use std::{collections::HashMap, sync::Arc};
 
-use crate::server::telemetry::{CLISubagentControlState, TelemetryEvent};
 use instant::Instant;
 use parking_lot::FairMutex;
 use serde::{Deserialize, Serialize};
-use warp_core::send_telemetry_from_ctx;
 use warpui::{Entity, EntityId, ModelContext, ModelHandle, SingletonEntity};
 
 use crate::ai::blocklist::context_model::block_context_from_terminal_model;
@@ -348,15 +346,6 @@ impl CLISubagentController {
             requested_command_action_id: action_id,
             agent_has_control,
         });
-
-        send_telemetry_from_ctx!(
-            TelemetryEvent::CLISubagentControlStateChanged {
-                conversation_id,
-                block_id,
-                control_state: CLISubagentControlState::UserInControl,
-            },
-            ctx
-        );
     }
 
     pub fn handoff_active_command_control_to_agent(&self, ctx: &mut ModelContext<Self>) {
@@ -393,28 +382,23 @@ impl CLISubagentController {
 
         // Trigger an auto-resume of the conversation when handing control to the agent.
         if let Some(conversation_id) = conversation_id {
-            let is_viewing_shared_session = BlocklistAIHistoryModel::as_ref(ctx)
-                .conversation(&conversation_id)
-                .is_some_and(|conversation| conversation.is_viewing_shared_session());
-            if !is_viewing_shared_session {
-                let resume_context = {
-                    let terminal_model = self.terminal_model.lock();
-                    block_context_from_terminal_model(&terminal_model, &block_id, false)
-                        .map(Box::new)
-                        .map(AIAgentContext::Block)
-                        .into_iter()
-                        .collect()
-                };
-                self.controller.update(ctx, |controller, ctx| {
-                    controller.resume_conversation(
-                        conversation_id,
-                        /*can_attempt_resume_on_error*/ true,
-                        /*is_auto_resume_after_error*/ false,
-                        resume_context,
-                        ctx,
-                    );
-                });
-            }
+            let resume_context = {
+                let terminal_model = self.terminal_model.lock();
+                block_context_from_terminal_model(&terminal_model, &block_id, false)
+                    .map(Box::new)
+                    .map(AIAgentContext::Block)
+                    .into_iter()
+                    .collect()
+            };
+            self.controller.update(ctx, |controller, ctx| {
+                controller.resume_conversation(
+                    conversation_id,
+                    /*can_attempt_resume_on_error*/ true,
+                    /*is_auto_resume_after_error*/ false,
+                    resume_context,
+                    ctx,
+                );
+            });
         }
 
         ctx.emit(CLISubagentEvent::UpdatedControl {
@@ -427,15 +411,6 @@ impl CLISubagentController {
         if was_transfer_from_agent {
             ctx.emit(CLISubagentEvent::ControlHandedBackAfterTransfer);
         }
-
-        send_telemetry_from_ctx!(
-            TelemetryEvent::CLISubagentControlStateChanged {
-                conversation_id,
-                block_id,
-                control_state: CLISubagentControlState::AgentInControl,
-            },
-            ctx
-        );
     }
 
     pub fn toggle_hide_responses(&self, ctx: &mut ModelContext<Self>) {
@@ -443,22 +418,7 @@ impl CLISubagentController {
         let active_block = terminal_model.block_list_mut().active_block_mut();
 
         if active_block.toggle_subagent_response_visibility() {
-            let conversation_id = active_block.ai_conversation_id();
-            let block_id = active_block.id().clone();
-            let is_hidden = active_block.should_hide_responses();
-
             ctx.emit(CLISubagentEvent::ToggledHideResponses);
-
-            if let Some(conversation_id) = conversation_id {
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::CLISubagentResponsesToggled {
-                        conversation_id,
-                        block_id,
-                        is_hidden,
-                    },
-                    ctx
-                );
-            }
         }
     }
 
@@ -510,8 +470,7 @@ impl CLISubagentController {
                 drop(terminal_model);
 
                 // When the CLI subagent is first created for a long running command,
-                // the agent now has control. Emit an UpdatedControl event so that
-                // shared-session state can reflect this initial control state.
+                // the agent now has control.
                 ctx.emit(CLISubagentEvent::UpdatedControl {
                     block_id: block_id.clone(),
                     requested_command_action_id: action_id.clone(),

@@ -5,40 +5,25 @@ use std::{env, fmt, path::Path};
 use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 use url::Url;
 
-use warp_core::channel::ChannelState;
-use warp_core::features::FeatureFlag;
-
 use crate::agent::OutputFormat;
+use warp_core::channel::ChannelState;
 
 #[cfg(windows)]
 mod process_handle;
 
-pub mod artifact;
 pub mod scope;
 pub mod skill;
 
 pub mod agent;
 pub mod completions;
 pub mod config_file;
-pub mod environment;
-pub mod federate;
-pub mod harness_support;
-pub mod integration;
 pub mod json_filter;
 pub mod mcp;
 pub mod model;
 pub mod provider;
-pub mod schedule;
 pub mod secret;
-pub mod share;
-pub mod task;
-pub const OZ_RUN_ID_ENV: &str = "OZ_RUN_ID";
-pub const OZ_PARENT_RUN_ID_ENV: &str = "OZ_PARENT_RUN_ID";
-pub const OZ_CLI_ENV: &str = "OZ_CLI";
-pub const OZ_HARNESS_ENV: &str = "OZ_HARNESS";
-pub const SERVER_ROOT_URL_OVERRIDE_ENV: &str = "WARP_SERVER_ROOT_URL";
-pub const WS_SERVER_URL_OVERRIDE_ENV: &str = "WARP_WS_SERVER_URL";
-pub const SESSION_SHARING_SERVER_URL_OVERRIDE_ENV: &str = "WARP_SESSION_SHARING_SERVER_URL";
+
+mod environment;
 
 /// Options related to the parent process that spawned this Warp instance.
 #[derive(Debug, Default, Clone, clap::Args)]
@@ -64,7 +49,7 @@ pub struct ParentOpts {
 /// Global options that apply to all CLI commands.
 #[derive(Debug, Default, Clone, clap::Args)]
 pub struct GlobalOptions {
-    /// API key for server authentication.
+    /// API key for local AI provider requests.
     #[arg(long = "api-key", global = true, env = "WARP_API_KEY")]
     pub api_key: Option<String>,
 
@@ -82,16 +67,14 @@ pub struct GlobalOptions {
 /// Command-line argument parser for the main Warp binary. This is used across all channels.
 #[derive(Debug, Default, Parser, Clone)]
 #[command(
-    name = "oz",
-    display_name = "Oz",
-    about = r#"The orchestration platform for cloud agents
+    name = "warp",
+    display_name = "Warp",
+    about = r#"Warp terminal and local AI tooling
 
-The Oz CLI is a tool for running, managing, and orchestrating coding agents at scale.
 Use the CLI to:
-* Launch and inspect cloud agents
-* Schedule cloud agents to run in the future
-* Manage the environments that cloud agents run in
-* Upload secrets to Oz's secure storage"#
+* Start local agent sessions
+* Manage local MCP servers
+* Inspect available AI models"#
 )]
 #[clap(args_conflicts_with_subcommands = true)]
 pub struct Args {
@@ -101,33 +84,6 @@ pub struct Args {
     /// Enable debug mode.
     #[arg(long = "debug", global = true, help = "Enable debug logging")]
     debug: bool,
-
-    /// Override the server root URL.
-    #[arg(
-        long = "server-root-url",
-        global = true,
-        hide = true,
-        env = "WARP_SERVER_ROOT_URL"
-    )]
-    server_root_url: Option<String>,
-
-    /// Override the websocket server URL.
-    #[arg(
-        long = "ws-server-url",
-        global = true,
-        hide = true,
-        env = "WARP_WS_SERVER_URL"
-    )]
-    ws_server_url: Option<String>,
-
-    /// Override the session sharing server URL.
-    #[arg(
-        long = "session-sharing-server-url",
-        global = true,
-        hide = true,
-        env = "WARP_SESSION_SHARING_SERVER_URL"
-    )]
-    session_sharing_server_url: Option<String>,
 
     #[command(subcommand)]
     command: Option<Command>,
@@ -169,69 +125,12 @@ impl Args {
             } else {
                 use clap::FromArgMatches as _;
 
-                // Check for disabled commands before parsing to prevent help from showing (e.g.
-                // `warp environment` should not return help text)
-                if !FeatureFlag::CloudEnvironments.is_enabled() {
-                    let args: Vec<String> = env::args().collect();
-                    if args.len() > 1 && args[1] == "environment" {
-                        eprintln!("error: unrecognized subcommand 'environment'\n");
-                        eprintln!("For more information, try '--help'");
-                        std::process::exit(2);
-                    }
-                }
-
-                if !FeatureFlag::ProviderCommand.is_enabled() {
-                    let args: Vec<String> = env::args().collect();
-                    if args.len() > 1 && args[1] == "provider" {
-                        eprintln!("error: unrecognized subcommand 'provider'\n");
-                        eprintln!("For more information, try '--help'");
-                        std::process::exit(2);
-                    }
-                }
-
-                if !FeatureFlag::IntegrationCommand.is_enabled() {
-                    let args: Vec<String> = env::args().collect();
-                    if args.len() > 1 && args[1] == "integration" {
-                        eprintln!("error: unrecognized subcommand 'integration'\n");
-                        eprintln!("For more information, try '--help'");
-                        std::process::exit(2);
-                    }
-                }
-
-                if !FeatureFlag::ScheduledAmbientAgents.is_enabled() {
-                    let args: Vec<String> = env::args().collect();
-                    if args.len() > 1 && args[1] == "schedule" {
-                        eprintln!("error: unrecognized subcommand 'schedule'\n");
-                        eprintln!("For more information, try '--help'");
-                        std::process::exit(2);
-                    }
-                }
-
-                if !FeatureFlag::WarpManagedSecrets.is_enabled() {
-                    let args: Vec<String> = env::args().collect();
-                    if args.len() > 1 && args[1] == "secret" {
-                        eprintln!("error: unrecognized subcommand 'secret'\n");
-                        eprintln!("For more information, try '--help'");
-                        std::process::exit(2);
-                    }
-                }
-
-                if !FeatureFlag::OzIdentityFederation.is_enabled() {
-                    let args: Vec<String> = env::args().collect();
-                    if args.len() > 1 && args[1] == "federate" {
-                        eprintln!("error: unrecognized subcommand 'federate'\n");
-                        eprintln!("For more information, try '--help'");
-                        std::process::exit(2);
-                    }
-                }
-
-                if !FeatureFlag::ArtifactCommand.is_enabled() {
-                    let args: Vec<String> = env::args().collect();
-                    if args.len() > 1 && args[1] == "artifact" {
-                        eprintln!("error: unrecognized subcommand 'artifact'\n");
-                        eprintln!("For more information, try '--help'");
-                        std::process::exit(2);
-                    }
+                // Warp-managed secrets are hosted infrastructure and are not part of Warper.
+                let args: Vec<String> = env::args().collect();
+                if args.len() > 1 && args[1] == "secret" {
+                    eprintln!("error: unrecognized subcommand 'secret'\n");
+                    eprintln!("For more information, try '--help'");
+                    std::process::exit(2);
                 }
 
                 let command = Self::clap_command();
@@ -255,90 +154,8 @@ impl Args {
     pub fn clap_command() -> clap::Command {
         let mut command = <Args as CommandFactory>::command();
 
-        // Hide the environment subcommands and --environment flags from help text
-        if !FeatureFlag::CloudEnvironments.is_enabled() {
-            command = command.mut_subcommand("environment", |c| c.hide(true));
-            command = command.mut_subcommand("agent", |agent_cmd| {
-                agent_cmd
-                    .mut_subcommand("run", |run_cmd| {
-                        run_cmd.mut_arg("environment", |arg| arg.hide(true))
-                    })
-                    .mut_subcommand("run-cloud", |cloud_cmd| {
-                        cloud_cmd.mut_arg("environment", |arg| arg.hide(true))
-                    })
-            });
-        }
-
-        // Hide the --conversation flag from help text
-        if !FeatureFlag::CloudConversations.is_enabled() {
-            command = command.mut_subcommand("agent", |agent_cmd| {
-                agent_cmd
-                    .mut_subcommand("run", |run_cmd| {
-                        run_cmd.mut_arg("conversation", |arg| arg.hide(true))
-                    })
-                    .mut_subcommand("run-cloud", |cloud_cmd| {
-                        cloud_cmd.mut_arg("conversation", |arg| arg.hide(true))
-                    })
-            });
-        }
-
-        if !FeatureFlag::AmbientAgentsCommandLine.is_enabled() {
-            command = command.mut_subcommand("agent", |agent_cmd| {
-                agent_cmd.mut_subcommand("run-cloud", |c| c.hide(true))
-            });
-        }
-
-        // Hide the provider subcommand from help text
-        if !FeatureFlag::ProviderCommand.is_enabled() {
-            command = command.mut_subcommand("provider", |c| c.hide(true));
-        }
-
-        // Hide the integration subcommand from help text
-        if !FeatureFlag::IntegrationCommand.is_enabled() {
-            command = command.mut_subcommand("integration", |c| c.hide(true));
-        }
-
-        // Hide the schedule subcommand from help text.
-        if !FeatureFlag::ScheduledAmbientAgents.is_enabled() {
-            command = command.mut_subcommand("schedule", |c| c.hide(true));
-        }
-
-        // Hide the secret subcommand from help text.
-        if !FeatureFlag::WarpManagedSecrets.is_enabled() {
-            command = command.mut_subcommand("secret", |c| c.hide(true));
-        }
-
-        // Hide the federate subcommand from help text.
-        if !FeatureFlag::OzIdentityFederation.is_enabled() {
-            command = command.mut_subcommand("federate", |c| c.hide(true));
-        }
-
-        // Hide the harness-support subcommand from help text.
-        if !FeatureFlag::AgentHarness.is_enabled() {
-            command = command.mut_subcommand("harness-support", |c| c.hide(true));
-        }
-
-        // Hide the conversation subcommand and --conversation flag from help text.
-        if !FeatureFlag::ConversationApi.is_enabled() {
-            command = command.mut_subcommand("run", |run_cmd| {
-                run_cmd
-                    .mut_subcommand("conversation", |c| c.hide(true))
-                    .mut_subcommand("get", |get_cmd| {
-                        get_cmd.mut_arg("conversation", |arg| arg.hide(true))
-                    })
-            });
-        }
-        // Hide the message subcommand from help text.
-        if !FeatureFlag::OrchestrationV2.is_enabled() {
-            command = command.mut_subcommand("run", |run_cmd| {
-                run_cmd.mut_subcommand("message", |c| c.hide(true))
-            });
-        }
-
-        // Hide the artifact subcommand from help text.
-        if !FeatureFlag::ArtifactCommand.is_enabled() {
-            command = command.mut_subcommand("artifact", |c| c.hide(true));
-        }
+        // Hide hosted Warp-managed secrets from help text.
+        command = command.mut_subcommand("secret", |c| c.hide(true));
 
         // Substitute the actual binary name into help output. Ideally clap would do this for us.
         let bin_name =
@@ -352,7 +169,6 @@ impl Args {
 
 <bold><underline>Learn more:</underline></bold>
 * Use <bold>{bin_name} help</bold> to learn more about each command
-* Read the documentation at https://docs.warp.dev/reference/cli
 "#
         ));
 
@@ -393,18 +209,6 @@ impl Args {
     pub fn debug(&self) -> bool {
         self.debug
     }
-
-    pub fn server_root_url(&self) -> Option<&str> {
-        self.server_root_url.as_deref()
-    }
-
-    pub fn ws_server_url(&self) -> Option<&str> {
-        self.ws_server_url.as_deref()
-    }
-
-    pub fn session_sharing_server_url(&self) -> Option<&str> {
-        self.session_sharing_server_url.as_deref()
-    }
 }
 
 /// Warp may spawn several worker processes - mostly servers that support the main application.
@@ -432,20 +236,6 @@ pub enum WorkerCommand {
         socket_name: std::path::PathBuf,
     },
 
-    /// Run the remote development server proxy over SSH stdio.
-    /// Ensures the daemon is running, then bridges its stdin/stdout
-    /// to the daemon via a Unix domain socket.
-    #[cfg(not(target_family = "wasm"))]
-    #[clap(hide = true)]
-    RemoteServerProxy,
-
-    /// Run the long-lived remote development server daemon.
-    /// Listens on a Unix domain socket and accepts multiple concurrent
-    /// connections from proxy processes.
-    #[cfg(not(target_family = "wasm"))]
-    #[clap(hide = true)]
-    RemoteServerDaemon,
-
     /// Run a headless ripgrep search worker.
     #[cfg(not(target_family = "wasm"))]
     #[clap(hide = true)]
@@ -467,61 +257,25 @@ pub enum WorkerCommand {
 /// but it allows scripting some Warp functionality.
 #[derive(Debug, Clone, Subcommand)]
 pub enum CliCommand {
-    /// Interact with Oz.
+    /// Run local agent tasks.
     #[command(subcommand)]
     Agent(crate::agent::AgentCommand),
-
-    /// Manage cloud environments.
-    #[command(subcommand)]
-    Environment(crate::environment::EnvironmentCommand),
 
     /// Manage MCP servers.
     #[command(subcommand)]
     MCP(crate::mcp::MCPCommand),
 
-    /// Manage runs.
-    #[command(subcommand, alias = "task")]
-    Run(crate::task::TaskCommand),
-
     /// Manage available models.
     #[command(subcommand)]
     Model(crate::model::ModelCommand),
-
-    /// Log in to Warp.
-    Login,
-    /// Log out of Warp.
-    Logout,
-    /// Print information about the logged-in user.
-    Whoami,
 
     /// Manage providers.
     #[command(subcommand)]
     Provider(crate::provider::ProviderCommand),
 
-    /// Manage integrations.
-    #[command(subcommand)]
-    Integration(crate::integration::IntegrationCommand),
-
-    /// Create and manage scheduled Oz agents. Scheduled agents run a user-defined task periodically, according to a cron schedule.
-    ///
-    /// As a shorthand, the `schedule` command behaves identically to `schedule create`.
-    Schedule(crate::schedule::ScheduleCommand),
-
     /// Manage secrets.
     #[command(subcommand)]
     Secret(crate::secret::SecretCommand),
-
-    /// Issue and manage federated identity tokens.
-    #[command(subcommand)]
-    Federate(crate::federate::FederateCommand),
-
-    /// Support commands for agent harnesses to integrate with Oz.
-    #[command(hide = true)]
-    HarnessSupport(crate::harness_support::HarnessSupportArgs),
-
-    /// Manage artifacts.
-    #[command(subcommand)]
-    Artifact(crate::artifact::ArtifactCommand),
 }
 
 /// A subcommand of the main Warp application. This includes all [`WorkerCommand`]s as well as app-specific debugging tools.
@@ -561,10 +315,9 @@ pub enum Command {
     #[clap(long_flag = "dump-debug-info")]
     DumpDebugInfo,
 
-    /// Print telemetry events in production and exit.
-    #[clap(long_flag = "print-telemetry-events", hide = true)]
-    #[cfg(not(target_family = "wasm"))]
-    PrintTelemetryEvents,
+    /// Spawn and tear down a local terminal session for WARPER-001 smoke tests.
+    #[clap(long_flag = "warper-local-terminal-smoke", hide = true)]
+    WarperLocalTerminalSmoke,
 }
 
 impl Command {
@@ -572,10 +325,10 @@ impl Command {
     pub fn prints_to_stdout(&self) -> bool {
         match self {
             Command::Worker(_) => false,
-            Command::CommandLine(_) | Command::DumpDebugInfo => true,
+            Command::CommandLine(_)
+            | Command::DumpDebugInfo
+            | Command::WarperLocalTerminalSmoke => true,
             Command::Completions { .. } => true,
-            #[cfg(not(target_family = "wasm"))]
-            Command::PrintTelemetryEvents => true,
         }
     }
 }

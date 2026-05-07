@@ -17,13 +17,9 @@ use crate::{
 };
 
 use super::{
+    actions::ActionEntrypoint,
     editor::{keys::custom_action_to_display, view::RichTextEditorView},
-    telemetry::ActionEntrypoint,
 };
-
-#[cfg(test)]
-#[path = "context_menu_tests.rs"]
-mod tests;
 
 const CONTEXT_MENU_WIDTH: f32 = 200.;
 
@@ -322,24 +318,6 @@ pub fn show_rich_editor_context_menu<A>(
                 editor: editor.clone(),
             },
         )));
-    }
-}
-
-/// Dispatch an action to show the notebook context menu for a plain text editor view.
-pub fn show_text_editor_context_menu<A>(
-    ctx: &mut EventContext,
-    position: Vector2F,
-    parent_position_id: &str,
-    editor: &ViewHandle<EditorView>,
-) where
-    A: Action + From<ContextMenuAction>,
-{
-    if let Some(parent_bounds) = ctx.element_position_by_id(parent_position_id) {
-        let offset = position - parent_bounds.origin();
-        ctx.dispatch_typed_action(A::from(ContextMenuAction::Open(MenuSource::TextEditor {
-            parent_offset: offset,
-            editor: editor.clone(),
-        })));
     }
 }
 

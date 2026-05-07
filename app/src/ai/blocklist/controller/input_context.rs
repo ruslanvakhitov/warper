@@ -11,27 +11,18 @@ use crate::{
     ai::{
         agent::{
             conversation::AIConversationId, AIAgentAttachment, AIAgentContext,
-            DocumentContentAttachmentSource, DriveObjectPayload,
+            DocumentContentAttachmentSource,
         },
         block_context::BlockContext,
         blocklist::BlocklistAIContextModel,
         document::ai_document_model::{AIDocumentId, AIDocumentModel},
-        facts::CloudAIFactModel,
         skills::list_skills_if_changed,
-    },
-    cloud_object::{
-        model::{
-            generic_string_model::{CloudStringObject, GenericStringObjectId},
-            persistence::CloudModel,
-        },
-        GenericCloudObject, GenericStringObjectFormat, JsonObjectType, ObjectType,
     },
     terminal::{
         model::{block::BlockId, session::active_session::ActiveSession},
         TerminalView,
     },
 };
-use warp_graphql::generic_string_object::GenericStringObjectFormat as GraphQLFormat;
 
 lazy_static! {
     // Regex to match <block:[block_id]> patterns
@@ -152,17 +143,7 @@ pub(super) fn parse_context_attachments(
                     }
                 };
 
-                // Prefer live editor content from AIDocumentModel (picks up unsaved user edits).
-                // Fall back to the synced CloudModel notebook if the document isn't loaded in
-                // the current session.
-                let content = AIDocumentModel::as_ref(ctx)
-                    .get_document_content(&ai_doc_id, ctx)
-                    .or_else(|| {
-                        CloudModel::as_ref(ctx)
-                            .get_all_active_notebooks()
-                            .find(|nb| nb.model().ai_document_id.as_ref() == Some(&ai_doc_id))
-                            .map(|nb| nb.model().data.clone())
-                    });
+                let content = AIDocumentModel::as_ref(ctx).get_document_content(&ai_doc_id, ctx);
 
                 if let Some(content) = content {
                     let attachment = AIAgentAttachment::DocumentContent {
@@ -176,24 +157,8 @@ pub(super) fn parse_context_attachments(
                     log::warn!("Plan not found for ai_document_id: {ai_doc_id}");
                 }
             } else {
-                let object_type = match object_type_str {
-                    "workflow" => ObjectType::Workflow,
-                    "notebook" => ObjectType::Notebook,
-                    "rule" => ObjectType::GenericStringObject(GenericStringObjectFormat::Json(
-                        JsonObjectType::AIFact,
-                    )),
-                    _ => continue, // Skip unknown object types
-                };
-
-                // Try to get the object data from CloudModel
-                let payload = get_object_attachment_payload(id_str, object_type, ctx);
-
-                // Create a DriveObject attachment with the object UID and payload
-                let attachment = AIAgentAttachment::DriveObject {
-                    uid: id_str.to_string(),
-                    payload,
-                };
-                referenced_attachments.insert(reference_string, attachment);
+                let _ = (reference_string, object_type_str, id_str);
+                log::warn!("Ignoring cloud object context reference in local-only Warper");
             }
         }
     }
@@ -293,51 +258,4 @@ fn find_block_attachment_in_all_terminals(
     }
 
     None
-}
-
-/// Gets the object payload from CloudModel for the given UID and object type.
-/// Returns None if the object is not found.
-fn get_object_attachment_payload(
-    uid: &str,
-    object_type: ObjectType,
-    ctx: &AppContext,
-) -> Option<DriveObjectPayload> {
-    match object_type {
-        ObjectType::Workflow => CloudModel::as_ref(ctx)
-            .get_workflow_by_uid(uid)
-            .map(|workflow| {
-                let workflow_data = &workflow.model().data;
-                DriveObjectPayload::Workflow {
-                    name: workflow_data.name().to_string(),
-                    description: workflow_data.description().cloned().unwrap_or_default(),
-                    command: workflow_data.content().to_string(),
-                }
-            }),
-        ObjectType::Notebook => CloudModel::as_ref(ctx)
-            .get_notebook_by_uid(uid)
-            .map(|notebook| DriveObjectPayload::Notebook {
-                title: notebook.model().title.clone(),
-                content: notebook.model().data.clone(),
-            }),
-        ObjectType::GenericStringObject(_) => {
-            // For generic string objects, we only support AI facts (rules) for now
-            CloudModel::as_ref(ctx)
-                .get_by_uid(&uid.to_string())
-                .and_then(|object| {
-                    if let Some(ai_fact) = object.as_any().downcast_ref::<GenericCloudObject<GenericStringObjectId, CloudAIFactModel>>() {
-                        let string_object = ai_fact as &dyn CloudStringObject;
-                        // Convert the format to GraphQL format since that's what the server expects
-                        let graphql_format: GraphQLFormat =
-                            string_object.generic_string_object_format().into();
-                        Some(DriveObjectPayload::GenericStringObject {
-                            payload: string_object.serialized().model_as_str().to_string(),
-                            object_type: graphql_format.to_string(),
-                        })
-                    } else {
-                        None
-                    }
-                })
-        }
-        _ => None, // Other object types not supported for drive object attachments
-    }
 }

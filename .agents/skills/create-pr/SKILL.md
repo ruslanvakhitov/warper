@@ -123,14 +123,6 @@ Add changelog entries when appropriate using the format at the bottom of the PR 
   gh pr ready
   ```
 
-### 6. Include co-author attribution
-
-When committing changes or creating a PR, include attribution at the end of every commit message or PR description:
-
-```
-Co-Authored-By: Warp <agent@warp.dev>
-```
-
 ## Testing Requirements
 
 ### Bug fixes require regression tests

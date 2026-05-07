@@ -1,0 +1,112 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+case "${1:-}" in
+    -h|--help)
+        cat <<'USAGE'
+Usage: script/warper_offline_local_smoke
+
+Runs deterministic, credential-free WARPER-001 local-only guardrails.
+
+Validates:
+  - startup/channel denylist checks for hosted Warp/Oz/Firebase endpoints
+    and hosted update/download paths, including /download/cli
+  - startup graph denylist checks for hosted clients and direct network primitives
+  - hosted UI/action/deeplink/restore/menu entrypoint vocabulary denylist checks
+  - removed auth/billing/team/Drive/shared-session/environment URI roots
+  - stale hosted auth/profile/task/telemetry restore and startup vocabulary checks
+  - telemetry, crash reporting, autoupdate, and Sentry upload/download denylist checks
+  - app/src and crates runtime endpoint literal and deleted hosted surface checks
+    outside tests/generated schema
+  - focused warp_core channel tests for absent hosted service configs
+  - Warper OSS runtime build check
+  - Warper OSS --help network-intercept smoke for nonlocal DNS/connect attempts
+  - local terminal-server/PTY session smoke under network interception
+
+Does not validate:
+  - launching the macOS .app (run script/warper_app_help_smoke after bundling)
+  - enforcing an OS-level outbound network block
+  - full .app GUI terminal-session network interception; this script uses a
+    deterministic local terminal-server/PTY harness instead
+  - manual terminal creation, pane splitting, or settings edits in a live UI
+  - app crate `#[cfg(test)]` modules for amputated hosted features
+  - private credentials, hosted Warp/Oz service availability, or OpenRouter behavior
+
+Use this as the local harness that can run in presubmit-like environments
+without private credentials; pair it with a manual blocked-network .app launch
+before release.
+USAGE
+        exit 0
+        ;;
+    "")
+        ;;
+    *)
+        echo "Unknown argument: $1"
+        echo "Run script/warper_offline_local_smoke --help for usage."
+        exit 2
+        ;;
+esac
+
+echo "WARPER-001 offline local smoke"
+echo
+echo "Validates:"
+echo "  - startup/channel hosted endpoint and update/download denylist"
+echo "  - startup graph hosted-client and direct-network primitive denylist"
+echo "  - UI/action/deeplink/restore/menu hosted entrypoint denylist"
+echo "  - removed auth/billing/team/Drive/shared-session/environment URI roots"
+echo "  - hosted auth/profile/task/telemetry restore and startup vocabulary denylist"
+echo "  - telemetry/crash/autoupdate/Sentry upload and download denylist"
+echo "  - runtime endpoint literals and deleted hosted surfaces in app/src and crates"
+echo "    outside tests/generated schema"
+echo "  - warp_core absent hosted service config tests"
+echo "  - Warper OSS runtime build check"
+echo "  - Warper OSS --help network-intercept smoke for nonlocal DNS/connect attempts"
+echo "  - local terminal-server/PTY session smoke under network interception"
+echo
+echo "Does not validate:"
+echo "  - macOS .app launch (run script/warper_app_help_smoke after bundling)"
+echo "  - OS-level outbound network blocking"
+echo "  - full .app GUI terminal-session network interception"
+echo "  - live UI terminal creation, pane splitting, or settings edits"
+echo "  - app crate #[cfg(test)] modules for amputated hosted features"
+echo "  - private credentials, hosted Warp/Oz availability, or OpenRouter behavior"
+echo
+echo "Uses a deterministic local terminal-server/PTY harness for terminal-session"
+echo "coverage without private credentials or the integration-test crate."
+echo
+
+echo "Running static denylist: startup"
+./script/check_warper_static_denylist
+echo "Running static denylist: startup-network"
+./script/check_warper_static_denylist startup-network
+echo "Running static denylist: entrypoints"
+./script/check_warper_static_denylist entrypoints
+echo "Running static denylist: hosted-restore-startup"
+./script/check_warper_static_denylist hosted-restore-startup
+echo "Running static denylist: telemetry-crash-update"
+./script/check_warper_static_denylist telemetry-crash-update
+echo "Running static denylist: all-runtime"
+./script/check_warper_static_denylist all-runtime
+
+echo "Running focused warp_core channel tests"
+cargo test \
+    -p warp_core \
+    channel::state::tests
+
+echo "Running Warper OSS runtime build check"
+cargo check \
+    -p warp \
+    --bin warp-oss
+
+echo "Building Warper OSS binary for network-intercept smoke"
+cargo build \
+    -p warp \
+    --bin warp-oss
+
+echo "Running Warper OSS --help network-intercept smoke"
+./script/warper_network_intercept_smoke target/debug/warp-oss --help
+
+echo "Running Warper terminal-session network-intercept smoke"
+./script/warper_terminal_session_network_smoke

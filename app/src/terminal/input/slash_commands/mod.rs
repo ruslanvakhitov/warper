@@ -7,7 +7,6 @@ pub use view::*;
 
 use ai::skills::SkillReference;
 use warp_core::features::FeatureFlag;
-use warp_core::send_telemetry_from_ctx;
 use warp_core::ui::appearance::Appearance;
 use warpui::clipboard::ClipboardContent;
 use warpui::{SingletonEntity, ViewContext};
@@ -16,13 +15,10 @@ use crate::ai::blocklist::agent_view::{
     AgentViewEntryOrigin, DismissalStrategy, EphemeralMessage, ENTER_OR_EXIT_CONFIRMATION_WINDOW,
 };
 use crate::ai::blocklist::{BlocklistAIHistoryModel, SlashCommandRequest};
-use crate::cloud_object::model::persistence::CloudModel;
-use crate::code_review::telemetry_event::CodeReviewPaneEntrypoint;
+use crate::code_review::metadata::CodeReviewPaneEntrypoint;
 use crate::search::slash_command_menu::static_commands::commands::{self, COMMAND_REGISTRY};
 use crate::search::slash_command_menu::static_commands::Availability;
 use crate::search::slash_command_menu::{SlashCommandId, StaticCommand};
-use crate::server::ids::SyncId;
-use crate::server::telemetry::SlashCommandAcceptedDetails;
 use crate::settings::AISettings;
 use crate::terminal::input::decorations::InputBackgroundJobOptions;
 use crate::terminal::input::inline_menu::{InlineMenuAction, InlineMenuType};
@@ -35,17 +31,12 @@ use crate::terminal::input::{
 };
 use crate::terminal::view::TerminalAction;
 use crate::view_components::DismissibleToast;
-use crate::workflows::{WorkflowSelectionSource, WorkflowSource, WorkflowType};
 use crate::workspace::{ForkedConversationDestination, ToastStack, WorkspaceAction};
-use crate::TelemetryEvent;
 
 #[derive(Debug, Clone)]
-pub enum AcceptSlashCommandOrSavedPrompt {
+pub enum AcceptSlashCommand {
     SlashCommand {
         id: SlashCommandId,
-    },
-    SavedPrompt {
-        id: SyncId,
     },
     /// A skill selected from browse or search. Contains name (for display/insertion) and path/bundled_skill_id (for execution).
     Skill {
@@ -53,7 +44,7 @@ pub enum AcceptSlashCommandOrSavedPrompt {
         name: String,
     },
 }
-impl InlineMenuAction for AcceptSlashCommandOrSavedPrompt {
+impl InlineMenuAction for AcceptSlashCommand {
     const MENU_TYPE: InlineMenuType = InlineMenuType::SlashCommands;
 }
 
@@ -110,7 +101,7 @@ impl Input {
             .as_ref()
             .is_some_and(|arg| arg.should_execute_on_selection)
         {
-            // TODO (zachbai): this is a hack for Oz launch. Caller
+            // TODO (zachbai): this is a hack for agent launch. Caller
             // should probably be invoking `execute_slash_command` in this case.
             let argument = if !self.suggestions_mode_model.as_ref(ctx).is_slash_commands() {
                 let trimmed = self.buffer_text(ctx).trim().to_owned();
@@ -236,29 +227,6 @@ impl Input {
                 });
                 ctx.notify();
             }
-            SlashCommandsEvent::SelectedSavedPrompt { id } => {
-                let Some(workflow) = CloudModel::as_ref(ctx).get_workflow(id).cloned() else {
-                    log::warn!("Tried to execute workflow for id {id:?} but it does not exist");
-                    return;
-                };
-                let is_in_agent_view = FeatureFlag::AgentView.is_enabled()
-                    && self.agent_view_controller.as_ref(ctx).is_fullscreen();
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::SlashCommandAccepted {
-                        command_details: SlashCommandAcceptedDetails::SavedPrompt,
-                        is_in_agent_view,
-                    },
-                    ctx
-                );
-
-                self.show_workflows_info_box_on_workflow_selection(
-                    WorkflowType::Cloud(Box::new(workflow)),
-                    WorkflowSource::WarpAI,
-                    WorkflowSelectionSource::SlashMenu,
-                    None,
-                    ctx,
-                );
-            }
             SlashCommandsEvent::SelectedStaticCommand {
                 id,
                 cmd_or_ctrl_enter,
@@ -382,20 +350,6 @@ impl Input {
                     origin: AgentViewEntryOrigin::SlashCommand { trigger },
                 });
             }
-            cloud_agent if command.name == commands::CLOUD_AGENT.name => {
-                let prompt = argument.and_then(|argument| {
-                    let trimmed = argument.trim();
-                    if trimmed.is_empty() {
-                        None
-                    } else {
-                        Some(trimmed.to_owned())
-                    }
-                });
-
-                ctx.emit(Event::EnterCloudAgentView {
-                    initial_prompt: prompt,
-                });
-            }
             create_docker_sandbox if command.name == commands::CREATE_DOCKER_SANDBOX.name => {
                 ctx.emit(Event::CreateDockerSandbox);
             }
@@ -419,19 +373,6 @@ impl Input {
                 };
 
                 ctx.dispatch_typed_action(&WorkspaceAction::SetActiveTabName(name.to_owned()));
-            }
-            create_env if command.name == commands::CREATE_ENVIRONMENT.name => {
-                // If the user included args after the slash command, treat them as repo paths/URLs.
-                let repos = argument
-                    .map(|arg| {
-                        arg.split_whitespace()
-                            .filter(|s| !s.is_empty())
-                            .map(|s| s.to_string())
-                            .collect()
-                    })
-                    .unwrap_or_default();
-
-                ctx.emit(Event::TriggerEnvironmentSetup { repos });
             }
             create_project if command.name == commands::CREATE_NEW_PROJECT.name => {
                 if argument.is_none_or(|args| args.is_empty()) {
@@ -523,7 +464,7 @@ impl Input {
                         }
                     }
                     _ => {
-                        use crate::server::telemetry::PaletteSource;
+                        use crate::workspace::metadata::PaletteSource;
 
                         ctx.emit(Event::OpenFilesPalette {
                             source: PaletteSource::Keybinding,
@@ -586,12 +527,6 @@ impl Input {
             }
             init if command.name == commands::INIT.name => {
                 ctx.dispatch_typed_action(&TerminalAction::InitProject);
-            }
-            changelog if command.name == commands::CHANGELOG.name => {
-                if !FeatureFlag::Changelog.is_enabled() {
-                    return false;
-                }
-                ctx.dispatch_typed_action(&WorkspaceAction::ViewLatestChangelog);
             }
             feedback if command.name == commands::FEEDBACK.name => {
                 ctx.dispatch_typed_action(&WorkspaceAction::SendFeedback);
@@ -660,7 +595,9 @@ impl Input {
                     .map(|path| path.to_path_buf())
                     .map(|path| path.to_string_lossy().to_string())
                 else {
-                    log::error!("Expected a valid working directory since /pr-comments is only available from the terminal");
+                    log::error!(
+                        "Expected a valid working directory since /pr-comments is only available from the terminal"
+                    );
                     return false;
                 };
 
@@ -670,50 +607,6 @@ impl Input {
                         ctx,
                     )
                 });
-            }
-            usage if command.name == commands::USAGE.name => {
-                ctx.dispatch_typed_action(&TerminalAction::OpenBillingAndUsagePane);
-            }
-            remote_control if command.name == commands::REMOTE_CONTROL.name => {
-                if !FeatureFlag::CreatingSharedSessions.is_enabled()
-                    || !FeatureFlag::HOARemoteControl.is_enabled()
-                {
-                    return false;
-                }
-                if self
-                    .model
-                    .lock()
-                    .shared_session_status()
-                    .is_sharer_or_viewer()
-                {
-                    show_error_toast("Session is already being shared".to_owned(), ctx);
-                    return true;
-                }
-                ctx.emit(Event::StartRemoteControl);
-            }
-            cost if command.name == commands::COST.name => {
-                let history = BlocklistAIHistoryModel::handle(ctx);
-                let conversation = history
-                    .as_ref(ctx)
-                    .active_conversation(self.terminal_view_id);
-                if conversation.is_none() {
-                    show_error_toast(
-                        "Cannot show conversation cost: no active conversation".to_owned(),
-                        ctx,
-                    );
-                } else if conversation.is_some_and(|c| c.is_empty()) {
-                    show_error_toast(
-                        "Cannot show conversation cost: conversation is empty".to_owned(),
-                        ctx,
-                    );
-                } else if conversation.is_some_and(|c| !c.status().is_done()) {
-                    show_error_toast(
-                        "Cannot show conversation cost: conversation is in progress".to_owned(),
-                        ctx,
-                    );
-                } else {
-                    ctx.dispatch_typed_action(&TerminalAction::ToggleUsageFooter);
-                }
             }
             fork if command.name == commands::FORK.name => {
                 let Some(conversation_id) = self
@@ -871,17 +764,6 @@ impl Input {
             });
         }
 
-        let is_in_agent_view = FeatureFlag::AgentView.is_enabled()
-            && self.agent_view_controller.as_ref(ctx).is_active();
-        send_telemetry_from_ctx!(
-            TelemetryEvent::SlashCommandAccepted {
-                command_details: SlashCommandAcceptedDetails::StaticCommand {
-                    command_name: command.name.to_owned(),
-                },
-                is_in_agent_view,
-            },
-            ctx
-        );
         true
     }
 

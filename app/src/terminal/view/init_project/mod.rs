@@ -11,22 +11,16 @@ use crate::ai::blocklist::inline_action::inline_action_header::HeaderConfig;
 use crate::ai::blocklist::inline_action::requested_action::RenderableAction;
 use crate::ai::persisted_workspace::PersistedWorkspace;
 use crate::appearance::Appearance;
-use crate::code::lsp_telemetry::{LspEnablementSource, LspTelemetryEvent};
-use crate::send_telemetry_from_ctx;
-use crate::server::telemetry::{
-    AgentModeSetupCodebaseContextActionType, AgentModeSetupCreateEnvironmentActionType,
-    AgentModeSetupProjectScopedRulesActionType,
-};
 use crate::ui_components::icons::Icon;
 use crate::view_components::DismissibleToast;
 use crate::workspace::ToastStack;
-use crate::TelemetryEvent;
 use ai::index::full_source_code_embedding::manager::CodebaseIndexManager;
 use lsp::supported_servers::LSPServerType;
 use lsp_server_selector::{create_lsp_server_selector, LSPServerInfo};
 pub use model::{InitProjectModel, InitProjectModelEvent, InitStepKind};
 use model::{InitStepData, InitStepStatus};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use warp_core::ui::theme::Fill;
 use warpui::{
     elements::{
@@ -53,6 +47,10 @@ pub const LINKABLE_FILES: [&str; 7] = [
     ".github/copilot-instructions.md",
 ];
 
+fn lsp_http_client() -> Arc<http_client::Client> {
+    Arc::new(http_client::Client::new())
+}
+
 /// Result of the codebase context/indexing step
 pub enum CodebaseIndexingResult {
     Accepted,
@@ -68,14 +66,6 @@ pub enum LanguageServersResult {
     Skipped,
 }
 
-/// Result of the create environment step
-pub enum CreateEnvironmentResult {
-    /// Environment was created
-    Created,
-    /// User skipped environment creation
-    Skipped,
-}
-
 /// Result of a completed /init step
 pub enum InitActionResult {
     /// Welcome step completed (always auto-completes)
@@ -83,7 +73,6 @@ pub enum InitActionResult {
     CodebaseContext(CodebaseIndexingResult),
     ProjectScopedRules(ProjectScopedRulesResult),
     LanguageServers(LanguageServersResult),
-    CreateEnvironment(CreateEnvironmentResult),
 }
 
 pub enum ProjectScopedRulesResult {
@@ -146,14 +135,6 @@ pub enum InitProjectBlockAction {
     RegenerateRules,
     SkipRules,
     ViewCodebaseContextStatus,
-    StartCreateEnvironment,
-    SkipCreateEnvironment,
-}
-
-#[derive(Default)]
-struct CreateEnvironmentMouseStateHandles {
-    create_button: MouseStateHandle,
-    skip_button: MouseStateHandle,
 }
 
 enum StepState {
@@ -173,10 +154,6 @@ enum StepState {
     },
     ProjectRules {
         mouse_states: ProjectRulesMouseStateHandles,
-        keyboard_nav_buttons: Option<ViewHandle<KeyboardNavigableButtons>>,
-    },
-    CreateEnvironment {
-        mouse_states: CreateEnvironmentMouseStateHandles,
         keyboard_nav_buttons: Option<ViewHandle<KeyboardNavigableButtons>>,
     },
 }
@@ -251,10 +228,6 @@ impl InitStepBlock {
                 mouse_states: ProjectRulesMouseStateHandles::default(),
                 keyboard_nav_buttons: None,
             },
-            InitStepKind::CreateEnvironment => StepState::CreateEnvironment {
-                mouse_states: CreateEnvironmentMouseStateHandles::default(),
-                keyboard_nav_buttons: None,
-            },
         };
 
         let mut new_block = Self { model, state };
@@ -313,17 +286,6 @@ impl InitStepBlock {
                 *keyboard_nav_buttons =
                     Some(ctx.add_typed_action_view(|_| KeyboardNavigableButtons::new(buttons)));
             }
-            (
-                InitStepStatus::Ready(InitStepData::CreateEnvironment),
-                StepState::CreateEnvironment {
-                    mouse_states,
-                    keyboard_nav_buttons,
-                },
-            ) => {
-                let buttons = Self::create_environment_buttons(mouse_states);
-                *keyboard_nav_buttons =
-                    Some(ctx.add_typed_action_view(|_| KeyboardNavigableButtons::new(buttons)));
-            }
             _ => {}
         }
     }
@@ -339,10 +301,6 @@ impl InitStepBlock {
                 ..
             }
             | StepState::ProjectRules {
-                keyboard_nav_buttons: Some(buttons),
-                ..
-            }
-            | StepState::CreateEnvironment {
                 keyboard_nav_buttons: Some(buttons),
                 ..
             } => ctx.focus(buttons),
@@ -362,7 +320,6 @@ impl InitStepBlock {
                 InitStepKind::LanguageServers
             }
             StepState::ProjectRules { .. } => InitStepKind::ProjectScopedRules,
-            StepState::CreateEnvironment { .. } => InitStepKind::CreateEnvironment,
         }
     }
 
@@ -450,25 +407,6 @@ impl InitStepBlock {
         ));
 
         buttons
-    }
-
-    fn create_environment_buttons(
-        mouse_states: &CreateEnvironmentMouseStateHandles,
-    ) -> Vec<KeyboardNavigableButtonBuilder> {
-        vec![
-            simple_navigation_button(
-                "Create an environment".to_string(),
-                mouse_states.create_button.clone(),
-                InitProjectBlockAction::StartCreateEnvironment,
-                false,
-            ),
-            simple_navigation_button(
-                "Skip for now".to_string(),
-                mouse_states.skip_button.clone(),
-                InitProjectBlockAction::SkipCreateEnvironment,
-                false,
-            ),
-        ]
     }
 
     /// Renders a "ready" state block with keyboard-navigable buttons and a header prompt.
@@ -842,65 +780,6 @@ impl InitStepBlock {
         }
     }
 
-    fn render_create_environment(&self, app: &AppContext) -> Box<dyn Element> {
-        let step = self
-            .model
-            .as_ref(app)
-            .get_step(InitStepKind::CreateEnvironment);
-
-        let Some(step) = step else {
-            return Empty::new().finish();
-        };
-
-        match &step.status {
-            InitStepStatus::Pending => Empty::new().finish(),
-            InitStepStatus::Ready(_) => {
-                let StepState::CreateEnvironment {
-                    keyboard_nav_buttons: Some(action_view),
-                    ..
-                } = &self.state
-                else {
-                    return Empty::new().finish();
-                };
-                Self::render_ready_with_buttons(
-                    action_view,
-                    "Would you like to create an environment for this project so you can run cloud agents in it? The agent will guide you through choosing GitHub repos, configuring a Docker image, and specifying startup commands.",
-                    app,
-                )
-            }
-            InitStepStatus::Running => {
-                let appearance = Appearance::as_ref(app);
-                RenderableAction::new("Creating environment...", app)
-                    .with_icon(in_progress_icon(appearance).finish())
-                    .with_content_item_spacing()
-                    .render(app)
-                    .finish()
-            }
-            InitStepStatus::Completed(result) => {
-                self.render_completed_create_environment(result, app)
-            }
-        }
-    }
-
-    fn render_completed_create_environment(
-        &self,
-        result: &InitActionResult,
-        app: &AppContext,
-    ) -> Box<dyn Element> {
-        let InitActionResult::CreateEnvironment(env_result) = result else {
-            return Empty::new().finish();
-        };
-
-        match env_result {
-            CreateEnvironmentResult::Created => {
-                Self::render_success_completion("Environment created", app)
-            }
-            CreateEnvironmentResult::Skipped => {
-                Self::render_skipped_completion("Environment creation skipped", app)
-            }
-        }
-    }
-
     fn render_completed_project_rules(
         &self,
         result: &InitActionResult,
@@ -962,8 +841,7 @@ impl InitStepBlock {
     ) {
         let window_id = ctx.window_id();
         let executor = lsp::CommandBuilder::new(path_env_var);
-        let http_client =
-            crate::server::server_api::ServerApiProvider::as_ref(ctx).get_http_client();
+        let http_client = lsp_http_client();
 
         ctx.spawn(
             async move {
@@ -974,14 +852,6 @@ impl InitStepBlock {
             },
             move |_me, result, ctx| match result {
                 Ok(()) => {
-                    send_telemetry_from_ctx!(
-                        LspTelemetryEvent::ServerInstallCompleted {
-                            server_type: server_type.binary_name().to_string(),
-                            success: true,
-                        },
-                        ctx
-                    );
-
                     PersistedWorkspace::handle(ctx).update(ctx, |workspace, _| {
                         workspace.enable_lsp_server_for_path(&repo_root, server_type);
                     });
@@ -1002,14 +872,6 @@ impl InitStepBlock {
                     });
                 }
                 Err(e) => {
-                    send_telemetry_from_ctx!(
-                        LspTelemetryEvent::ServerInstallCompleted {
-                            server_type: server_type.binary_name().to_string(),
-                            success: false,
-                        },
-                        ctx
-                    );
-
                     ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
                         toast_stack.add_ephemeral_toast(
                             DismissibleToast::error(format!(
@@ -1041,7 +903,6 @@ impl View for InitStepBlock {
             InitStepKind::CodebaseContext => self.render_codebase_context(app),
             InitStepKind::LanguageServers => self.render_language_servers(app),
             InitStepKind::ProjectScopedRules => self.render_project_rules(app),
-            InitStepKind::CreateEnvironment => self.render_create_environment(app),
         }
     }
 }
@@ -1052,12 +913,6 @@ impl TypedActionView for InitStepBlock {
     fn handle_action(&mut self, action: &Self::Action, ctx: &mut ViewContext<Self>) {
         match action {
             InitProjectBlockAction::IndexCodebase(directory) => {
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::AgentModeSetupCodebaseContextAction {
-                        action: AgentModeSetupCodebaseContextActionType::IndexCodebase,
-                    },
-                    ctx
-                );
                 CodebaseIndexManager::handle(ctx).update(ctx, |manager, ctx| {
                     manager.index_directory(directory.clone(), ctx);
                 });
@@ -1070,12 +925,6 @@ impl TypedActionView for InitStepBlock {
                 });
             }
             InitProjectBlockAction::SkipIndex => {
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::AgentModeSetupCodebaseContextAction {
-                        action: AgentModeSetupCodebaseContextActionType::SkipIndexing,
-                    },
-                    ctx
-                );
                 self.model.update(ctx, |model, ctx| {
                     model.mark_step_completed(
                         InitStepKind::CodebaseContext,
@@ -1102,18 +951,6 @@ impl TypedActionView for InitStepBlock {
                     } else {
                         servers_to_install.push(info.server_type);
                     }
-                }
-
-                // Send telemetry for each enabled server
-                for server_type in enabled_servers.iter().chain(servers_to_install.iter()) {
-                    send_telemetry_from_ctx!(
-                        LspTelemetryEvent::ServerEnabled {
-                            server_type: server_type.binary_name().to_string(),
-                            source: LspEnablementSource::InitFlow,
-                            needed_install: !enabled_servers.contains(server_type),
-                        },
-                        ctx
-                    );
                 }
 
                 // Spawn installation tasks for uninstalled servers
@@ -1164,7 +1001,6 @@ impl TypedActionView for InitStepBlock {
                 });
             }
             InitProjectBlockAction::SkipLanguageServers => {
-                send_telemetry_from_ctx!(LspTelemetryEvent::ServerEnablementSkipped, ctx);
                 self.model.update(ctx, |model, ctx| {
                     model.mark_step_completed(
                         InitStepKind::LanguageServers,
@@ -1174,20 +1010,6 @@ impl TypedActionView for InitStepBlock {
                 });
             }
             InitProjectBlockAction::LinkFromExisting(path) => {
-                let file_name = path
-                    .file_name()
-                    .and_then(|name| name.to_str())
-                    .unwrap_or("")
-                    .to_string();
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::AgentModeSetupProjectScopedRulesAction {
-                        action: AgentModeSetupProjectScopedRulesActionType::LinkFromExisting(
-                            file_name,
-                        ),
-                    },
-                    ctx
-                );
-
                 // Create symlink in background
                 #[cfg(feature = "local_fs")]
                 {
@@ -1216,36 +1038,18 @@ impl TypedActionView for InitStepBlock {
                 });
             }
             InitProjectBlockAction::GenerateRules => {
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::AgentModeSetupProjectScopedRulesAction {
-                        action: AgentModeSetupProjectScopedRulesActionType::GenerateWarpMd,
-                    },
-                    ctx
-                );
                 self.model.update(ctx, |model, ctx| {
                     model.mark_step_running(InitStepKind::ProjectScopedRules, ctx);
                     ctx.emit(InitProjectModelEvent::GenerateProjectRules);
                 });
             }
             InitProjectBlockAction::RegenerateRules => {
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::AgentModeSetupProjectScopedRulesAction {
-                        action: AgentModeSetupProjectScopedRulesActionType::RegenerateWarpMd,
-                    },
-                    ctx
-                );
                 self.model.update(ctx, |model, ctx| {
                     model.disable_regenerate_button();
                     ctx.emit(InitProjectModelEvent::RegenerateProjectRules);
                 });
             }
             InitProjectBlockAction::SkipRules => {
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::AgentModeSetupProjectScopedRulesAction {
-                        action: AgentModeSetupProjectScopedRulesActionType::SkipRules,
-                    },
-                    ctx
-                );
                 self.model.update(ctx, |model, ctx| {
                     model.mark_step_completed(
                         InitStepKind::ProjectScopedRules,
@@ -1255,41 +1059,8 @@ impl TypedActionView for InitStepBlock {
                 });
             }
             InitProjectBlockAction::ViewCodebaseContextStatus => {
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::AgentModeSetupCodebaseContextAction {
-                        action: AgentModeSetupCodebaseContextActionType::ViewIndexStatus,
-                    },
-                    ctx
-                );
                 self.model.update(ctx, |_, ctx| {
                     ctx.emit(InitProjectModelEvent::ViewCodebaseContextStatus);
-                });
-            }
-            InitProjectBlockAction::StartCreateEnvironment => {
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::AgentModeSetupCreateEnvironmentAction {
-                        action: AgentModeSetupCreateEnvironmentActionType::CreateEnvironment,
-                    },
-                    ctx
-                );
-                self.model.update(ctx, |model, ctx| {
-                    model.mark_step_running(InitStepKind::CreateEnvironment, ctx);
-                    ctx.emit(InitProjectModelEvent::CreateEnvironment);
-                });
-            }
-            InitProjectBlockAction::SkipCreateEnvironment => {
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::AgentModeSetupCreateEnvironmentAction {
-                        action: AgentModeSetupCreateEnvironmentActionType::SkipEnvironment,
-                    },
-                    ctx
-                );
-                self.model.update(ctx, |model, ctx| {
-                    model.mark_step_completed(
-                        InitStepKind::CreateEnvironment,
-                        InitActionResult::CreateEnvironment(CreateEnvironmentResult::Skipped),
-                        ctx,
-                    );
                 });
             }
         }

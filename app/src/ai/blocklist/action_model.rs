@@ -28,13 +28,10 @@ use chrono::Local;
 pub(crate) use execute::apply_edits;
 pub(crate) use execute::coerce_integer_args;
 pub(crate) use execute::FileReadResult;
-pub(crate) use execute::MalformedFinalLineProxyEvent;
 pub use execute::{
-    read_local_file_context, EditAcceptAndContinueClickedEvent, EditAcceptClickedEvent,
-    EditResolvedEvent, EditStats, NewConversationDecision, PromptSuggestionExecutor,
-    ReadFileContextResult, RequestFileEditsExecutor, RequestFileEditsFormatKind,
-    RequestFileEditsTelemetryEvent, ShellCommandExecutor, ShellCommandExecutorEvent,
-    StartAgentExecutor, StartAgentExecutorEvent, StartAgentRequest,
+    read_local_file_context, NewConversationDecision, PromptSuggestionExecutor,
+    RequestFileEditsExecutor, RequestFileEditsFormatKind, ShellCommandExecutor,
+    ShellCommandExecutorEvent, StartAgentExecutor, StartAgentExecutorEvent, StartAgentRequest,
 };
 
 use futures::future::{join_all, BoxFuture};
@@ -71,7 +68,6 @@ use self::execute::{
 use super::BlocklistAIHistoryModel;
 use crate::ai::ai_document_view::DEFAULT_PLANNING_DOCUMENT_TITLE;
 use crate::ai::document::ai_document_model::AIDocumentModel;
-use crate::{send_telemetry_from_ctx, TelemetryEvent};
 
 /// The status of an action from an AI output.
 #[derive(Clone, Debug)]
@@ -251,8 +247,8 @@ pub struct BlocklistAIActionModel {
     /// This is used for agent session sharing to avoid any tools blocking on the viewer's acceptance.
     is_view_only: bool,
 
-    /// The ID of the ambient agent task which owns this action model, if any.
-    ambient_agent_task_id: Option<crate::ai::ambient_agents::AmbientAgentTaskId>,
+    /// The local run ID which owns this action model, if any.
+    local_agent_run_id: Option<crate::ai::agent::conversation::LocalAgentRunId>,
 }
 
 impl BlocklistAIActionModel {
@@ -316,7 +312,7 @@ impl BlocklistAIActionModel {
             terminal_view_id,
             pending_preprocessed_actions: Default::default(),
             is_view_only: false,
-            ambient_agent_task_id: None,
+            local_agent_run_id: None,
         }
     }
 
@@ -410,15 +406,12 @@ impl BlocklistAIActionModel {
             .clone()
     }
 
-    pub fn set_ambient_agent_task_id(
+    pub fn set_local_agent_run_id(
         &mut self,
-        id: Option<crate::ai::ambient_agents::AmbientAgentTaskId>,
-        ctx: &mut ModelContext<Self>,
+        id: Option<crate::ai::agent::conversation::LocalAgentRunId>,
+        _ctx: &mut ModelContext<Self>,
     ) {
-        self.ambient_agent_task_id = id;
-        self.executor.update(ctx, |executor, ctx| {
-            executor.set_ambient_agent_task_id(id, ctx);
-        });
+        self.local_agent_run_id = id;
     }
 
     fn blocked_action_for_conversation(
@@ -1046,15 +1039,7 @@ impl BlocklistAIActionModel {
         if matches!(
             pending_action.action,
             AIAgentActionType::RequestComputerUse(_)
-        ) {
-            send_telemetry_from_ctx!(
-                TelemetryEvent::ComputerUseCancelled {
-                    conversation_id,
-                    ambient_agent_task_id: self.ambient_agent_task_id,
-                },
-                ctx
-            );
-        }
+        ) {}
 
         let result = Arc::new(AIAgentActionResult {
             id: pending_action.id,

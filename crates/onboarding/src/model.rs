@@ -1,10 +1,8 @@
 use crate::slides::{
     AgentAutonomy, AgentDevelopmentSettings, OnboardingModelInfo, ProjectOnboardingSettings,
 };
-use crate::telemetry::OnboardingEvent;
 use crate::OnboardingIntention;
 use ai::LLMId;
-use warp_core::send_telemetry_from_ctx;
 use warpui::{Entity, ModelContext};
 
 /// UI customization settings chosen during the "Customize your UI" onboarding slide.
@@ -14,7 +12,6 @@ pub struct UICustomizationSettings {
     pub show_conversation_history: bool,
     pub show_project_explorer: bool,
     pub show_global_search: bool,
-    pub show_warp_drive: bool,
     pub show_code_review_button: bool,
 }
 
@@ -26,7 +23,6 @@ impl UICustomizationSettings {
             show_conversation_history: true,
             show_project_explorer: true,
             show_global_search: true,
-            show_warp_drive: true,
             show_code_review_button: true,
         }
     }
@@ -38,7 +34,6 @@ impl UICustomizationSettings {
             show_conversation_history: false,
             show_project_explorer: false,
             show_global_search: false,
-            show_warp_drive: false,
             show_code_review_button: false,
         }
     }
@@ -51,15 +46,7 @@ impl UICustomizationSettings {
         (conversation_visible && self.show_conversation_history)
             || self.show_project_explorer
             || self.show_global_search
-            || self.show_warp_drive
     }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum OnboardingAuthState {
-    LoggedOut,
-    FreeUser,
-    PayingUser,
 }
 
 #[derive(Clone, Debug)]
@@ -81,7 +68,7 @@ impl SelectedSettings {
         use warp_core::features::FeatureFlag;
         match self {
             SelectedSettings::AgentDrivenDevelopment { agent_settings, .. } => {
-                !agent_settings.disable_oz
+                !agent_settings.disable_agent
             }
             SelectedSettings::Terminal { .. } => {
                 // With old onboarding (no OpenWarpNewSettingsModes), Terminal
@@ -89,23 +76,6 @@ impl SelectedSettings {
                 // Terminal intent explicitly disables AI.
                 !FeatureFlag::OpenWarpNewSettingsModes.is_enabled()
             }
-        }
-    }
-
-    pub fn is_warp_drive_enabled(&self) -> bool {
-        match self {
-            SelectedSettings::AgentDrivenDevelopment {
-                ui_customization, ..
-            } => ui_customization
-                .as_ref()
-                .map(|ui| ui.show_warp_drive)
-                .unwrap_or(true),
-            SelectedSettings::Terminal {
-                ui_customization, ..
-            } => ui_customization
-                .as_ref()
-                .map(|ui| ui.show_warp_drive)
-                .unwrap_or(false),
         }
     }
 }
@@ -127,8 +97,6 @@ pub(crate) enum OnboardingStateEvent {
     SelectedSlideChanged,
     IntentionChanged,
     Completed,
-    UpgradeRequested,
-    AuthStateChanged,
 }
 
 #[derive(Clone, Debug)]
@@ -143,15 +111,11 @@ pub(crate) struct OnboardingStateModel {
     workspace_enforces_autonomy: bool,
     /// Whether the AgentView feature flag is enabled.
     agent_modality_enabled: bool,
-    /// Whether the user is in the FreeUserNoAi experiment group (and is free tier).
-    /// When true, the Agent Driven Development option on the intention slide is locked
-    /// behind an upgrade CTA.
+    /// Hosted billing experiments are removed in Warper; retained only to keep
+    /// older callers compiling while always evaluating to false.
     free_user_no_ai_experiment: bool,
-    /// Yearly price per month in USD cents for the agent plan badge.
-    /// When `None`, falls back to a hardcoded default ($18/mo).
+    /// Hosted plan pricing is removed in Warper.
     agent_price_cents: Option<i32>,
-    /// Auth / billing state of the user.
-    auth_state: OnboardingAuthState,
 }
 
 impl OnboardingStateModel {
@@ -161,9 +125,8 @@ impl OnboardingStateModel {
         default_model_id: LLMId,
         workspace_enforces_autonomy: bool,
         agent_modality_enabled: bool,
-        free_user_no_ai_experiment: bool,
-        agent_price_cents: Option<i32>,
-        auth_state: OnboardingAuthState,
+        _free_user_no_ai_experiment: bool,
+        _agent_price_cents: Option<i32>,
     ) -> Self {
         Self {
             step: OnboardingStep::Intro,
@@ -174,26 +137,9 @@ impl OnboardingStateModel {
             models,
             workspace_enforces_autonomy,
             agent_modality_enabled,
-            free_user_no_ai_experiment,
-            agent_price_cents,
-            auth_state,
+            free_user_no_ai_experiment: false,
+            agent_price_cents: None,
         }
-    }
-
-    pub(crate) fn auth_state(&self) -> OnboardingAuthState {
-        self.auth_state
-    }
-
-    pub(crate) fn set_auth_state(
-        &mut self,
-        auth_state: OnboardingAuthState,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        if self.auth_state == auth_state {
-            return;
-        }
-        self.auth_state = auth_state;
-        ctx.emit(OnboardingStateEvent::AuthStateChanged);
     }
 
     pub(crate) fn settings(&self) -> SelectedSettings {
@@ -221,7 +167,7 @@ impl OnboardingStateModel {
                         },
                         cli_agent_toolbar_enabled: self.agent_settings.cli_agent_toolbar_enabled,
                         session_default: self.agent_settings.session_default,
-                        disable_oz: self.agent_settings.disable_oz,
+                        disable_agent: self.agent_settings.disable_agent,
                         // Agent intention always has notifications enabled (no toggle shown).
                         show_agent_notifications: true,
                     },
@@ -264,40 +210,15 @@ impl OnboardingStateModel {
         if self.ui_customization.use_vertical_tabs == value {
             return;
         }
-        send_telemetry_from_ctx!(
-            OnboardingEvent::SettingChanged {
-                setting: "tab_styling".to_string(),
-                value: if value { "vertical" } else { "horizontal" }.to_string(),
-            },
-            ctx
-        );
         self.ui_customization.use_vertical_tabs = value;
         ctx.notify();
     }
 
     pub(crate) fn set_tools_panel_enabled(&mut self, enabled: bool, ctx: &mut ModelContext<Self>) {
-        send_telemetry_from_ctx!(
-            OnboardingEvent::SettingChanged {
-                setting: "tools_panel".to_string(),
-                value: if enabled { "enabled" } else { "disabled" }.to_string(),
-            },
-            ctx
-        );
         self.ui_customization.show_conversation_history = enabled;
         self.ui_customization.show_project_explorer = enabled;
         self.ui_customization.show_global_search = enabled;
-        self.ui_customization.show_warp_drive = enabled;
         ctx.notify();
-    }
-
-    pub(crate) fn free_user_no_ai_experiment(&self) -> bool {
-        self.free_user_no_ai_experiment
-    }
-
-    pub(crate) fn agent_price_badge(&self) -> String {
-        const DEFAULT_AGENT_PRICE_CENTS: i32 = 1800;
-        let cents = self.agent_price_cents.unwrap_or(DEFAULT_AGENT_PRICE_CENTS);
-        format!("Starting at ${}/mo", cents / 100)
     }
 
     pub(crate) fn set_agent_price_cents(
@@ -320,13 +241,6 @@ impl OnboardingStateModel {
         if self.ui_customization.show_conversation_history == value {
             return;
         }
-        send_telemetry_from_ctx!(
-            OnboardingEvent::SettingChanged {
-                setting: "conversation_history".to_string(),
-                value: value.to_string(),
-            },
-            ctx
-        );
         self.ui_customization.show_conversation_history = value;
         ctx.notify();
     }
@@ -335,13 +249,6 @@ impl OnboardingStateModel {
         if self.ui_customization.show_project_explorer == value {
             return;
         }
-        send_telemetry_from_ctx!(
-            OnboardingEvent::SettingChanged {
-                setting: "project_explorer".to_string(),
-                value: value.to_string(),
-            },
-            ctx
-        );
         self.ui_customization.show_project_explorer = value;
         ctx.notify();
     }
@@ -350,29 +257,7 @@ impl OnboardingStateModel {
         if self.ui_customization.show_global_search == value {
             return;
         }
-        send_telemetry_from_ctx!(
-            OnboardingEvent::SettingChanged {
-                setting: "global_search".to_string(),
-                value: value.to_string(),
-            },
-            ctx
-        );
         self.ui_customization.show_global_search = value;
-        ctx.notify();
-    }
-
-    pub(crate) fn set_show_warp_drive(&mut self, value: bool, ctx: &mut ModelContext<Self>) {
-        if self.ui_customization.show_warp_drive == value {
-            return;
-        }
-        send_telemetry_from_ctx!(
-            OnboardingEvent::SettingChanged {
-                setting: "warp_drive".to_string(),
-                value: value.to_string(),
-            },
-            ctx
-        );
-        self.ui_customization.show_warp_drive = value;
         ctx.notify();
     }
 
@@ -384,13 +269,6 @@ impl OnboardingStateModel {
         if self.agent_settings.cli_agent_toolbar_enabled == value {
             return;
         }
-        send_telemetry_from_ctx!(
-            OnboardingEvent::SettingChanged {
-                setting: "cli_agent_toolbar".to_string(),
-                value: if value { "enabled" } else { "disabled" }.to_string(),
-            },
-            ctx
-        );
         self.agent_settings.cli_agent_toolbar_enabled = value;
         ctx.notify();
     }
@@ -403,13 +281,6 @@ impl OnboardingStateModel {
         if self.agent_settings.show_agent_notifications == value {
             return;
         }
-        send_telemetry_from_ctx!(
-            OnboardingEvent::SettingChanged {
-                setting: "show_agent_notifications".to_string(),
-                value: if value { "enabled" } else { "disabled" }.to_string(),
-            },
-            ctx
-        );
         self.agent_settings.show_agent_notifications = value;
         ctx.notify();
     }
@@ -422,29 +293,15 @@ impl OnboardingStateModel {
         if self.ui_customization.show_code_review_button == value {
             return;
         }
-        send_telemetry_from_ctx!(
-            OnboardingEvent::SettingChanged {
-                setting: "code_review".to_string(),
-                value: if value { "enabled" } else { "disabled" }.to_string(),
-            },
-            ctx
-        );
         self.ui_customization.show_code_review_button = value;
         ctx.notify();
     }
 
-    pub(crate) fn set_disable_oz(&mut self, value: bool, ctx: &mut ModelContext<Self>) {
-        if self.agent_settings.disable_oz == value {
+    pub(crate) fn set_disable_agent(&mut self, value: bool, ctx: &mut ModelContext<Self>) {
+        if self.agent_settings.disable_agent == value {
             return;
         }
-        send_telemetry_from_ctx!(
-            OnboardingEvent::SettingChanged {
-                setting: "disable_oz".to_string(),
-                value: value.to_string(),
-            },
-            ctx
-        );
-        self.agent_settings.disable_oz = value;
+        self.agent_settings.disable_agent = value;
         ctx.notify();
     }
 
@@ -456,7 +313,7 @@ impl OnboardingStateModel {
         if self.free_user_no_ai_experiment == value {
             return;
         }
-        self.free_user_no_ai_experiment = value;
+        self.free_user_no_ai_experiment = false;
         ctx.notify();
     }
 
@@ -480,14 +337,6 @@ impl OnboardingStateModel {
         if self.intention == intention {
             return;
         }
-
-        send_telemetry_from_ctx!(
-            OnboardingEvent::SettingChanged {
-                setting: "intention".to_string(),
-                value: intention.to_string(),
-            },
-            ctx
-        );
 
         self.intention = intention;
         // Reset UI customization to defaults for the new intention.
@@ -519,10 +368,6 @@ impl OnboardingStateModel {
             .is_some_and(|m| m.requires_upgrade)
     }
 
-    pub(crate) fn request_upgrade(&mut self, ctx: &mut ModelContext<Self>) {
-        ctx.emit(OnboardingStateEvent::UpgradeRequested);
-    }
-
     pub(crate) fn on_user_selected_model(&mut self, model_id: LLMId, ctx: &mut ModelContext<Self>) {
         if self.agent_settings.selected_model_id == model_id {
             return;
@@ -531,14 +376,6 @@ impl OnboardingStateModel {
         if self.is_model_disabled(&model_id) {
             return;
         }
-
-        send_telemetry_from_ctx!(
-            OnboardingEvent::SettingChanged {
-                setting: "model".to_string(),
-                value: model_id.to_string(),
-            },
-            ctx
-        );
 
         self.agent_settings.selected_model_id = model_id;
         ctx.notify();
@@ -584,14 +421,6 @@ impl OnboardingStateModel {
             return;
         }
 
-        send_telemetry_from_ctx!(
-            OnboardingEvent::SettingChanged {
-                setting: "autonomy".to_string(),
-                value: autonomy.to_string(),
-            },
-            ctx
-        );
-
         self.agent_settings.autonomy = Some(autonomy);
         ctx.notify();
     }
@@ -601,9 +430,7 @@ impl OnboardingStateModel {
         path: Option<String>,
         ctx: &mut ModelContext<Self>,
     ) {
-        if path.is_some() {
-            send_telemetry_from_ctx!(OnboardingEvent::FolderSelected, ctx);
-        }
+        if path.is_some() {}
         self.project_settings = ProjectOnboardingSettings::from_path(path);
         ctx.notify();
     }
@@ -618,46 +445,12 @@ impl OnboardingStateModel {
         } = &mut self.project_settings
         {
             let new_value = !*initialize_projects_automatically;
-            send_telemetry_from_ctx!(
-                OnboardingEvent::SettingChanged {
-                    setting: "initialize_project".to_string(),
-                    value: new_value.to_string(),
-                },
-                ctx
-            );
             *initialize_projects_automatically = new_value;
             ctx.notify();
         }
     }
 
-    fn send_completion_telemetry(&self, ctx: &mut ModelContext<Self>) {
-        let (intention, model, autonomy) = match &self.intention {
-            OnboardingIntention::Terminal => (self.intention.to_string(), None, None),
-            OnboardingIntention::AgentDrivenDevelopment => (
-                self.intention.to_string(),
-                Some(self.agent_settings.selected_model_id.to_string()),
-                self.agent_settings.autonomy.map(|x| x.to_string()),
-            ),
-        };
-
-        let has_project_path = matches!(
-            self.project_settings,
-            ProjectOnboardingSettings::Project { .. }
-        );
-
-        send_telemetry_from_ctx!(
-            OnboardingEvent::OnboardingSlidesCompleted {
-                intention,
-                model,
-                autonomy,
-                has_project_path,
-            },
-            ctx
-        );
-    }
-
     pub(crate) fn complete(&mut self, ctx: &mut ModelContext<Self>) {
-        self.send_completion_telemetry(ctx);
         ctx.emit(OnboardingStateEvent::Completed);
         ctx.notify();
     }
@@ -692,7 +485,6 @@ impl OnboardingStateModel {
         };
 
         if let Some(prev) = prev {
-            send_telemetry_from_ctx!(OnboardingEvent::SlideNavigatedBack, ctx);
             self.set_step(prev, ctx);
         }
     }
@@ -706,9 +498,7 @@ impl OnboardingStateModel {
         } else {
             matches!(self.step, OnboardingStep::Project)
         };
-        if !is_last_step {
-            send_telemetry_from_ctx!(OnboardingEvent::SlideNavigatedNext, ctx);
-        }
+        if !is_last_step {}
 
         if theme_picker_last {
             match self.step {
@@ -746,62 +536,13 @@ impl OnboardingStateModel {
         self.step = step;
 
         match step {
-            OnboardingStep::Intro => {
-                send_telemetry_from_ctx!(
-                    OnboardingEvent::SlideViewed {
-                        slide_name: "intro".to_string(),
-                    },
-                    ctx
-                );
-            }
-            OnboardingStep::ThemePicker => {
-                send_telemetry_from_ctx!(
-                    OnboardingEvent::SlideViewed {
-                        slide_name: "theme_picker".to_string(),
-                    },
-                    ctx
-                );
-            }
-            OnboardingStep::Intention => {
-                send_telemetry_from_ctx!(
-                    OnboardingEvent::SlideViewed {
-                        slide_name: "intention".to_string(),
-                    },
-                    ctx
-                );
-            }
-            OnboardingStep::Customize => {
-                send_telemetry_from_ctx!(
-                    OnboardingEvent::SlideViewed {
-                        slide_name: "customize".to_string(),
-                    },
-                    ctx
-                );
-            }
-            OnboardingStep::Agent => {
-                send_telemetry_from_ctx!(
-                    OnboardingEvent::SlideViewed {
-                        slide_name: "agent".to_string(),
-                    },
-                    ctx
-                );
-            }
-            OnboardingStep::ThirdParty => {
-                send_telemetry_from_ctx!(
-                    OnboardingEvent::SlideViewed {
-                        slide_name: "third_party".to_string(),
-                    },
-                    ctx
-                );
-            }
-            OnboardingStep::Project => {
-                send_telemetry_from_ctx!(
-                    OnboardingEvent::SlideViewed {
-                        slide_name: "project".to_string(),
-                    },
-                    ctx
-                );
-            }
+            OnboardingStep::Intro => {}
+            OnboardingStep::ThemePicker => {}
+            OnboardingStep::Intention => {}
+            OnboardingStep::Customize => {}
+            OnboardingStep::Agent => {}
+            OnboardingStep::ThirdParty => {}
+            OnboardingStep::Project => {}
         }
 
         ctx.emit(OnboardingStateEvent::SelectedSlideChanged);

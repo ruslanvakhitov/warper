@@ -12,8 +12,9 @@ pub fn memory_footprint_bytes() -> u64 {
 /// current process's memory usage.
 ///
 /// Each platform populates whichever fields it can natively provide.  The
-/// returned value is an opaque JSON blob suitable for attaching to Sentry
+/// returned value is an opaque JSON blob suitable for local diagnostics
 /// events and telemetry payloads.
+#[cfg(feature = "heap_usage_tracking")]
 pub fn memory_breakdown() -> serde_json::Value {
     platform::memory_breakdown()
 }
@@ -60,6 +61,7 @@ mod platform {
             .unwrap_or(0)
     }
 
+    #[cfg(feature = "heap_usage_tracking")]
     pub fn memory_breakdown() -> serde_json::Value {
         let Some(info) = query_task_vm_info() else {
             return serde_json::json!({});
@@ -127,6 +129,7 @@ mod platform {
             .unwrap_or(0)
     }
 
+    #[cfg(feature = "heap_usage_tracking")]
     pub fn memory_breakdown() -> serde_json::Value {
         let Ok(status) = std::fs::read_to_string("/proc/self/status") else {
             return serde_json::json!({});
@@ -198,6 +201,7 @@ mod platform {
         }
     }
 
+    #[cfg(feature = "heap_usage_tracking")]
     pub fn memory_breakdown() -> serde_json::Value {
         let Some(counters) = query_counters() else {
             return serde_json::json!({});

@@ -5,8 +5,6 @@ pub mod app_icon;
 pub mod app_installation_detection;
 mod block_visibility;
 mod changelog;
-pub mod cloud_preferences;
-pub mod cloud_preferences_syncer;
 mod code;
 mod debug;
 mod editor;
@@ -42,7 +40,6 @@ pub use ai::*;
 pub use alias_expansion::*;
 pub use block_visibility::*;
 pub use changelog::*;
-pub use cloud_preferences::*;
 pub use code::*;
 pub use debug::*;
 pub use editor::*;
@@ -139,7 +136,6 @@ pub const RESTORE_SESSION: &str = "RestoreSession";
 pub const INPUT_MODE: &str = "InputMode";
 pub const ACTIVATION_HOTKEY_ENABLED: &str = "ActivationHotkeyEnabled";
 pub const ACTIVATION_HOTKEY_KEYBINDING: &str = "ActivationHotkeyKeybinding";
-pub const DISMISSED_AI_ASSISTANT_WELCOME_KEY: &str = "DismissedWarpAIWarmWelcome";
 
 pub const TIMES_TO_SHOW_AUTOSUGGESTION_HINT: i8 = 2;
 pub const QUAKE_WINDOW_AUTOHIDE_SUPPORTED: bool = cfg!(any(target_os = "macos", windows));
@@ -590,3 +586,5 @@ pub fn user_preferences_file_path() -> PathBuf {
 pub fn user_preferences_toml_file_path() -> PathBuf {
     warp_core::paths::config_local_dir().join("settings.toml")
 }
+pub mod cloud_preferences;
+pub use cloud_preferences::*;

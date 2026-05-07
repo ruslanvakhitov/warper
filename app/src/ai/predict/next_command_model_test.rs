@@ -1,3 +1,7 @@
+use std::sync::Arc;
+
+use itertools::Itertools;
+
 use crate::completer::SessionContext;
 use crate::terminal::model::session::Session;
 use crate::terminal::model::session::{

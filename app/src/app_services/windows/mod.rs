@@ -16,8 +16,6 @@ mod single_instance_manager;
 #[derive(Error, Debug)]
 #[cfg(feature = "release_bundle")]
 pub enum StartupArgsForwardingError {
-    #[error("should not forward arguments after an auto-update")]
-    IgnoredAfterAutoUpdate,
     #[error("there is no other instance of Warp")]
     NoExistingInstance,
     #[error("failed to construct url")]
@@ -32,9 +30,6 @@ pub enum StartupArgsForwardingError {
 pub fn pass_startup_args_to_existing_instance(
     args: &warp_cli::AppArgs,
 ) -> Result<(), StartupArgsForwardingError> {
-    if args.finish_update {
-        return Err(StartupArgsForwardingError::IgnoredAfterAutoUpdate);
-    }
     if SingleInstanceManager::is_sole_running_instance()? {
         return Err(StartupArgsForwardingError::NoExistingInstance);
     }

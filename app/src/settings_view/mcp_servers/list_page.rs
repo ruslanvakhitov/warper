@@ -1,18 +1,3 @@
-use crate::ai::mcp::templatable::GalleryData;
-use crate::ai::mcp::MCPServerUpdate;
-use crate::modal::Modal;
-use crate::modal::ModalEvent;
-use crate::modal::ModalViewState;
-use crate::server::telemetry::{MCPTemplateInstallationSource, TelemetryEvent};
-use crate::settings::{AISettings, AISettingsChangedEvent};
-use crate::settings_view::mcp_servers_page::InstallOrigin;
-use crate::settings_view::settings_page::{
-    build_toggle_element, render_body_item_label, LocalOnlyIconState, ToggleState,
-};
-use crate::util::truncation::truncate_from_end;
-use crate::view_components::DismissibleToast;
-use crate::ToastStack;
-
 #[cfg(feature = "local_fs")]
 use crate::ai::mcp::{
     // Import events for file-based manager and watcher conditionally
@@ -21,21 +6,18 @@ use crate::ai::mcp::{
     FileMCPWatcher,
     FileMCPWatcherEvent,
 };
-
+use crate::settings::{AISettings, AISettingsChangedEvent};
+use crate::settings_view::settings_page::{
+    build_toggle_element, render_body_item_label, LocalOnlyIconState, ToggleState,
+};
 use crate::{
     ai::mcp::{
-        gallery::MCPGalleryManagerEvent,
         logs,
         templatable::TemplatableMCPServer,
         templatable_manager::{TemplatableMCPServerManager, TemplatableMCPServerManagerEvent},
-        FileBasedMCPManager, MCPGalleryManager, MCPProvider, TemplatableMCPServerInstallation,
+        FileBasedMCPManager, MCPProvider, TemplatableMCPServerInstallation,
     },
     appearance::Appearance,
-    cloud_object::{
-        model::persistence::{CloudModel, CloudModelEvent},
-        GenericStringObjectFormat, JsonObjectType,
-    },
-    drive::CloudObjectTypeAndId,
     editor::{EditorView, PropagateAndNoOpNavigationKeys, SingleLineEditorOptions, TextOptions},
     pane_group::Direction,
     search_bar::SearchBar,
@@ -43,24 +25,19 @@ use crate::{
         server_card::{
             ServerCardEvent, ServerCardOptions, ServerCardStatus, ServerCardView, TitleChip,
         },
-        style,
-        update_modal::{UpdateModalBody, UpdateModalBodyEvent},
-        ServerCardItemId,
+        style, ServerCardItemId,
     },
     ui_components::blended_colors,
     view_components::action_button::{ActionButton, NakedTheme},
     workflows::local_workflows::tail_command_for_shell,
     workspace::Workspace,
-    workspaces::user_workspaces::UserWorkspaces,
 };
 use markdown_parser::{FormattedText, FormattedTextFragment, FormattedTextLine};
 use settings::ToggleableSetting as _;
-use std::cmp::Ordering;
 use std::{collections::HashMap, path::PathBuf};
 use strum::IntoEnumIterator;
 use uuid::Uuid;
 use warp_core::features::FeatureFlag;
-use warp_core::send_telemetry_from_ctx;
 use warp_core::ui::{appearance::AppearanceEvent, theme::color::internal_colors, Icon};
 use warpui::{
     elements::{
@@ -75,7 +52,7 @@ use warpui::{
     AppContext, Element, Entity, SingletonEntity, TypedActionView, View, ViewContext, ViewHandle,
 };
 
-const DESCRIPTION_TEXT: &str = "Add MCP servers to extend the Warp Agent's capabilities. MCP servers expose data sources or tools to agents through a standardized interface, essentially acting like plugins. Add a custom server, or use the presets to get started with popular servers. You can also find team servers that have been shared with you here. ";
+const DESCRIPTION_TEXT: &str = "Add MCP servers to extend the Warp Agent's capabilities. MCP servers expose data sources or tools to agents through a standardized interface, essentially acting like plugins. Add a custom server, or use the presets to get started with popular servers. ";
 
 #[derive(Debug, Clone)]
 pub enum MCPServersListPageViewEvent {
@@ -85,11 +62,6 @@ pub enum MCPServersListPageViewEvent {
     StartInstallation {
         templatable_mcp_server: TemplatableMCPServer,
         instructions_in_markdown: Option<String>,
-        /// Where the install request was initiated from. List-page-originated
-        /// events are always `InstallOrigin::InApp` because they are emitted in
-        /// response to a direct user gesture on the gallery card. See
-        /// `specs/GH686/product.md`.
-        origin: InstallOrigin,
     },
     ShowModal,
     HideModal,
@@ -106,10 +78,8 @@ const NO_SEARCH_RESULTS_TEXT: &str = "No search results found";
 
 pub struct MCPServersListPageView {
     server_cards: HashMap<ServerCardItemId, ViewHandle<ServerCardView>>,
-    gallery_server_cards: HashMap<ServerCardItemId, ViewHandle<ServerCardView>>,
     // MCP server cards for uninstalled file-based servers, grouped by provider.
     file_based_template_cards: HashMap<MCPProvider, Vec<ViewHandle<ServerCardView>>>,
-    update_modal_state: ModalViewState<Modal<UpdateModalBody>>,
     search_editor: ViewHandle<EditorView>,
     search_bar: ViewHandle<SearchBar>,
     add_button: ViewHandle<ActionButton>,
@@ -118,18 +88,10 @@ pub struct MCPServersListPageView {
 
 impl MCPServersListPageView {
     pub fn new(ctx: &mut ViewContext<Self>) -> Self {
-        Self::listen_to_cloud_model_events(ctx);
-
         // Subscribe to templatable MCP server manager state changes
         let templatable_manager = TemplatableMCPServerManager::handle(ctx);
         ctx.subscribe_to_model(&templatable_manager, |me, _, event, ctx| {
             me.handle_templatable_mcp_manager_event(event, ctx);
-        });
-
-        // Subscribe to MCP gallery server manager state changes
-        let gallery_manager = MCPGalleryManager::handle(ctx);
-        ctx.subscribe_to_model(&gallery_manager, |me, _, event, ctx| {
-            me.handle_mcp_gallery_manager_event(event, ctx);
         });
 
         cfg_if::cfg_if!(
@@ -143,7 +105,6 @@ impl MCPServersListPageView {
                         // Refresh cards when servers are spawned or removed.
                         me.refresh_file_based_server_cards(ctx);
                     }
-                    _ => {}
                 });
 
                 // Refresh cards when MCP config files are parsed or removed.
@@ -153,7 +114,6 @@ impl MCPServersListPageView {
                     | FileMCPWatcherEvent::ConfigRemoved { .. } => {
                         me.refresh_file_based_server_cards(ctx);
                     }
-                    _ => {}
                 });
             }
         );
@@ -187,30 +147,6 @@ impl MCPServersListPageView {
             }
         });
 
-        let update_modal_body = ctx.add_typed_action_view(|_ctx| UpdateModalBody::new());
-        ctx.subscribe_to_view(&update_modal_body, |me, _, event, ctx| {
-            me.handle_update_modal_body_event(event, ctx);
-        });
-
-        let update_modal = ctx.add_typed_action_view(|ctx| {
-            Modal::new(None, update_modal_body, ctx).with_body_style(UiComponentStyles {
-                padding: Some(Coords::uniform(0.)),
-                ..Default::default()
-            })
-        });
-        ctx.subscribe_to_view(&update_modal, |me, _, event, ctx| {
-            me.handle_update_modal_event(event, ctx);
-        });
-
-        let update_modal_state = ModalViewState::new(update_modal);
-
-        let gallery_server_cards = Self::create_gallery_server_cards(ctx);
-        for server_card in gallery_server_cards.values() {
-            ctx.subscribe_to_view(server_card, |me, _, event, ctx| {
-                me.handle_server_card_event(event, ctx);
-            });
-        }
-
         let search_editor_text = TextOptions::ui_text(None, appearance.as_ref(ctx));
         let search_editor = {
             let options = SingleLineEditorOptions {
@@ -239,9 +175,7 @@ impl MCPServersListPageView {
 
         let mut me = Self {
             server_cards: Default::default(),
-            gallery_server_cards,
             file_based_template_cards: Default::default(),
-            update_modal_state,
             search_editor,
             search_bar,
             add_button,
@@ -251,99 +185,6 @@ impl MCPServersListPageView {
         me.create_server_cards(ctx);
         me.create_file_based_server_cards(ctx);
         me
-    }
-
-    fn listen_to_cloud_model_events(ctx: &mut ViewContext<Self>) {
-        let cloud_model = CloudModel::handle(ctx);
-        ctx.subscribe_to_model(&cloud_model, |me, _, event, ctx| match event {
-            CloudModelEvent::ObjectUpdated {
-                type_and_id:
-                    CloudObjectTypeAndId::GenericStringObject {
-                        object_type: GenericStringObjectFormat::Json(JsonObjectType::MCPServer),
-                        id: _,
-                    },
-                source: _,
-            }
-            | CloudModelEvent::ObjectTrashed {
-                type_and_id:
-                    CloudObjectTypeAndId::GenericStringObject {
-                        object_type: GenericStringObjectFormat::Json(JsonObjectType::MCPServer),
-                        id: _,
-                    },
-                source: _,
-            }
-            | CloudModelEvent::ObjectUntrashed {
-                type_and_id:
-                    CloudObjectTypeAndId::GenericStringObject {
-                        object_type: GenericStringObjectFormat::Json(JsonObjectType::MCPServer),
-                        id: _,
-                    },
-                source: _,
-            }
-            | CloudModelEvent::ObjectCreated {
-                type_and_id:
-                    CloudObjectTypeAndId::GenericStringObject {
-                        object_type: GenericStringObjectFormat::Json(JsonObjectType::MCPServer),
-                        id: _,
-                    },
-            }
-            | CloudModelEvent::ObjectDeleted {
-                type_and_id:
-                    CloudObjectTypeAndId::GenericStringObject {
-                        object_type: GenericStringObjectFormat::Json(JsonObjectType::MCPServer),
-                        id: _,
-                    },
-                folder_id: _,
-            }
-            | CloudModelEvent::ObjectSynced {
-                type_and_id:
-                    CloudObjectTypeAndId::GenericStringObject {
-                        object_type: GenericStringObjectFormat::Json(JsonObjectType::MCPServer),
-                        id: _,
-                    },
-                client_id: _,
-                server_id: _,
-            } => {
-                me.refresh_server_cards(ctx);
-            }
-            _ => {}
-        });
-    }
-
-    fn is_shared(item_id: ServerCardItemId, app: &AppContext) -> bool {
-        match item_id {
-            ServerCardItemId::TemplatableMCP(template_uuid) => {
-                TemplatableMCPServerManager::as_ref(app)
-                    .is_server_template_shared(template_uuid, app)
-            }
-            ServerCardItemId::TemplatableMCPInstallation(installation_uuid) => {
-                TemplatableMCPServerManager::as_ref(app)
-                    .is_server_installation_shared(installation_uuid, app)
-            }
-            ServerCardItemId::GalleryMCP(_) | ServerCardItemId::FileBasedMCP(_) => false,
-        }
-    }
-
-    fn is_shareable(
-        item_id: ServerCardItemId,
-        server_card_status: ServerCardStatus,
-        ctx: &mut ViewContext<Self>,
-    ) -> bool {
-        if !UserWorkspaces::as_ref(ctx).has_teams() {
-            return false;
-        }
-        if TemplatableMCPServerManager::get_first_team_space_id(ctx).is_none() {
-            return false;
-        }
-        match item_id {
-            ServerCardItemId::TemplatableMCP(_)
-            | ServerCardItemId::TemplatableMCPInstallation(_) => {
-                let is_shared = Self::is_shared(item_id, ctx);
-                let is_running = matches!(server_card_status, ServerCardStatus::Running);
-                !is_shared && is_running
-            }
-            ServerCardItemId::GalleryMCP(_) | ServerCardItemId::FileBasedMCP(_) => false,
-        }
     }
 
     fn register_server_card(&mut self, server_card: ServerCardView, ctx: &mut ViewContext<Self>) {
@@ -365,7 +206,6 @@ impl MCPServersListPageView {
         let item_id = ServerCardItemId::TemplatableMCP(template_uuid);
         let title_chip_text = Self::get_title_chip_text(item_id, template_uuid, ctx);
         let server_card_status = ServerCardStatus::AvailableToSave;
-        let is_shareable = Self::is_shareable(item_id, server_card_status, ctx);
 
         let server_card = ServerCardView::new(
             item_id,
@@ -377,10 +217,7 @@ impl MCPServersListPageView {
             None, // Templates can never have tools
             None, // Templates cannot have an error
             title_chip_text.into_iter().collect(),
-            ServerCardOptions {
-                show_share_icon_button: is_shareable,
-                ..server_card_status.into()
-            },
+            server_card_status.into(),
         );
         self.register_server_card(server_card, ctx);
     }
@@ -398,15 +235,6 @@ impl MCPServersListPageView {
                 Some(state) => state.into(),
                 None => ServerCardStatus::Installed,
             };
-        let is_shareable = Self::is_shareable(item_id, server_card_status, ctx);
-        let is_update_available = TemplatableMCPServerManager::as_ref(ctx)
-            .is_update_available_for_installation(installation_uuid, ctx);
-        let is_authorized_editor =
-            TemplatableMCPServerManager::handle(ctx).read(ctx, |templatable_manager, ctx| {
-                templatable_manager.is_authorized_editor(installation.template_uuid(), ctx)
-            });
-        let should_show_update_symbol = is_authorized_editor && is_update_available;
-
         let title_chip_text = Self::get_title_chip_text(item_id, installation.template_uuid(), ctx);
         let description = installation.templatable_mcp_server().description.clone();
         let tools = (server_card_status == ServerCardStatus::Running).then_some(
@@ -434,8 +262,7 @@ impl MCPServersListPageView {
             title_chip_text.into_iter().collect(),
             ServerCardOptions {
                 show_log_out_icon_button: uses_oauth,
-                show_share_icon_button: is_shareable,
-                show_update_available_icon_button: should_show_update_symbol,
+                show_update_available_icon_button: false,
                 ..server_card_status.into()
             },
         );
@@ -473,50 +300,6 @@ impl MCPServersListPageView {
         self.create_server_cards(ctx);
     }
 
-    fn create_gallery_server_cards(
-        ctx: &mut ViewContext<Self>,
-    ) -> HashMap<ServerCardItemId, ViewHandle<ServerCardView>> {
-        let gallery_manager = MCPGalleryManager::handle(ctx);
-        let gallery_items = gallery_manager.as_ref(ctx).get_gallery();
-
-        gallery_items
-            .into_iter()
-            .map(|gallery_item| {
-                let item_id = ServerCardItemId::GalleryMCP(gallery_item.uuid());
-                (
-                    item_id,
-                    ctx.add_typed_action_view(move |_ctx| {
-                        ServerCardView::new(
-                            item_id,
-                            gallery_item.title(),
-                            Some(gallery_item.description()),
-                            None,
-                            None,
-                            vec![],
-                            ServerCardStatus::AvailableToSave.into(),
-                        )
-                    }),
-                )
-            })
-            .collect()
-    }
-
-    fn share_templatable_mcp_server(&mut self, template_uuid: Uuid, ctx: &mut ViewContext<Self>) {
-        TemplatableMCPServerManager::handle(ctx).update(ctx, |templatable_manager, ctx| {
-            templatable_manager.share_templatable_mcp_server(template_uuid, ctx);
-        });
-    }
-
-    fn share_templatable_mcp_server_installation(
-        &mut self,
-        installation_uuid: Uuid,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        TemplatableMCPServerManager::handle(ctx).update(ctx, |templatable_manager, ctx| {
-            templatable_manager.share_templatable_mcp_server_installation(installation_uuid, ctx);
-        });
-    }
-
     pub fn delete_server(&mut self, item_id: ServerCardItemId, ctx: &mut ViewContext<Self>) {
         match item_id {
             ServerCardItemId::TemplatableMCP(template_uuid) => {
@@ -545,9 +328,6 @@ impl MCPServersListPageView {
                             installation_uuid,
                         ));
                 }
-            }
-            ServerCardItemId::GalleryMCP(_) => {
-                log::warn!("Delete is not implemented for gallery MCP items.")
             }
             ServerCardItemId::FileBasedMCP(_) => {
                 log::warn!("Delete is not implemented for file-based MCP servers.")
@@ -605,7 +385,6 @@ impl MCPServersListPageView {
                             .has_oauth_credentials_for_file_based_server(hash)
                     })
                 }),
-            ServerCardItemId::GalleryMCP(_) => false,
         }
     }
 
@@ -646,20 +425,6 @@ impl MCPServersListPageView {
             ServerCardEvent::Edit(item_id) => {
                 ctx.emit(MCPServersListPageViewEvent::Edit(*item_id));
             }
-            ServerCardEvent::Share(item_id) => match item_id {
-                ServerCardItemId::TemplatableMCP(template_uuid) => {
-                    self.share_templatable_mcp_server(*template_uuid, ctx);
-                }
-                ServerCardItemId::TemplatableMCPInstallation(installation_uuid) => {
-                    self.share_templatable_mcp_server_installation(*installation_uuid, ctx);
-                }
-                ServerCardItemId::GalleryMCP(_) => {
-                    log::error!("Share is not implemented for gallery MCP items.")
-                }
-                ServerCardItemId::FileBasedMCP(_) => {
-                    log::error!("Share is not implemented for file-based MCP servers.")
-                }
-            },
             ServerCardEvent::ViewLogs(item_id) => match item_id {
                 ServerCardItemId::TemplatableMCP(_) => {
                     log::error!("Viewing logs is not implemented for templatable MCP.");
@@ -686,9 +451,6 @@ impl MCPServersListPageView {
                         log::error!("Could not find installation for file-based server {uuid}");
                     }
                 }
-                ServerCardItemId::GalleryMCP(_) => {
-                    log::error!("Viewing logs is not implemented for gallery MCP items.")
-                }
             },
             ServerCardEvent::ToggleRunningSwitch(item_id, switch_state) => match item_id {
                 ServerCardItemId::TemplatableMCP(_) => {
@@ -700,9 +462,6 @@ impl MCPServersListPageView {
                 ServerCardItemId::FileBasedMCP(uuid) => {
                     self.toggle_server_running_file_based(*uuid, *switch_state, ctx);
                 }
-                ServerCardItemId::GalleryMCP(_) => {
-                    log::error!("Running a server is not implemented for gallery MCP items.")
-                }
             },
             ServerCardEvent::Install(item_id) => match item_id {
                 ServerCardItemId::FileBasedMCP(uuid) => {
@@ -712,42 +471,18 @@ impl MCPServersListPageView {
                 ServerCardItemId::TemplatableMCP(template_uuid) => {
                     let templatable_mcp_server = TemplatableMCPServerManager::as_ref(ctx)
                         .get_templatable_mcp_server(*template_uuid);
-                    let is_shared = TemplatableMCPServerManager::as_ref(ctx)
-                        .is_server_template_shared(*template_uuid, ctx);
-
                     if let Some(templatable_mcp_server) = templatable_mcp_server {
                         ctx.emit(MCPServersListPageViewEvent::StartInstallation {
                             templatable_mcp_server: templatable_mcp_server.clone(),
                             instructions_in_markdown: None,
-                            origin: InstallOrigin::InApp,
                         });
-                        let source: MCPTemplateInstallationSource = match is_shared {
-                            true => MCPTemplateInstallationSource::Shared,
-                            false => MCPTemplateInstallationSource::Local,
-                        };
-                        send_telemetry_from_ctx!(
-                            TelemetryEvent::MCPTemplateInstalled { source },
-                            ctx
-                        );
                     }
                 }
                 ServerCardItemId::TemplatableMCPInstallation(_) => {
                     log::warn!("Installing is not supported for templatable MCP installations.");
                 }
-                ServerCardItemId::GalleryMCP(gallery_uuid) => {
-                    self.install_from_gallery(*gallery_uuid, ctx);
-                }
             },
-            ServerCardEvent::InstallServerUpdate(item_id) => {
-                let ServerCardItemId::TemplatableMCPInstallation(installation_uuid) = item_id
-                else {
-                    log::error!(
-                        "Install server update is only supported for templatable MCP installations"
-                    );
-                    return;
-                };
-                self.start_server_update(*installation_uuid, ctx);
-            }
+            ServerCardEvent::InstallServerUpdate(_) => {}
             ServerCardEvent::LogOut(item_id) => {
                 if let Some(server_card) = self.get_server_card(*item_id) {
                     let server_name = server_card.as_ref(ctx).title();
@@ -761,328 +496,24 @@ impl MCPServersListPageView {
         }
     }
 
-    fn start_server_update(&mut self, installation_uuid: Uuid, ctx: &mut ViewContext<Self>) {
-        let Some(installation) =
-            TemplatableMCPServerManager::as_ref(ctx).get_installed_server(&installation_uuid)
-        else {
-            log::warn!("Cannot update server {installation_uuid}: Could not find installation.");
-            return;
-        };
-        let server_name = installation.templatable_mcp_server().name.clone();
-        let available_updates = TemplatableMCPServerManager::as_ref(ctx)
-            .get_updates_available_for_installation(installation_uuid, ctx);
-
-        // Automatically install it if there's only one update available, otherwise open the modal so the user can select which one they want to proceed with
-        if available_updates.len() == 1 {
-            self.process_server_update(installation_uuid, available_updates[0].clone(), ctx);
-        } else {
-            self.update_modal_state.view.update(ctx, |modal, ctx| {
-                modal.body().update(ctx, |body, ctx| {
-                    body.set_installation(installation_uuid, server_name, available_updates);
-                    ctx.notify();
-                });
-            });
-            self.update_modal_state.open();
-            ctx.focus(&self.update_modal_state.view);
-            ctx.emit(MCPServersListPageViewEvent::ShowModal);
-        }
-        ctx.notify();
-    }
-
-    fn process_server_update(
-        &mut self,
-        installation_uuid: Uuid,
-        update: MCPServerUpdate,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        let installation =
-            TemplatableMCPServerManager::as_ref(ctx).get_installed_server(&installation_uuid);
-        let Some(installation) = installation else {
-            log::warn!(
-                "Failed to update MCP server: Could not find installation {installation_uuid}"
-            );
-            return;
-        };
-        let local_templatable_mcp_server = installation.templatable_mcp_server();
-
-        match update {
-            MCPServerUpdate::CloudTemplate { .. } => {
-                let latest_templatable_mcp_server = TemplatableMCPServerManager::as_ref(ctx)
-                    .get_templatable_mcp_server(installation.template_uuid())
-                    .cloned();
-                let Some(latest_templatable_mcp_server) = latest_templatable_mcp_server else {
-                    log::warn!(
-                        "Failed to update MCP server: Could not find templatable MCP server for installation {installation_uuid}"
-                    );
-                    return;
-                };
-
-                if local_templatable_mcp_server.version == latest_templatable_mcp_server.version {
-                    log::warn!("Failed to update MCP server: Installed server is up to date");
-                    return;
-                }
-                if local_templatable_mcp_server.version > latest_templatable_mcp_server.version {
-                    log::warn!(
-                        "Failed to update MCP server: Installed server is ahead of the latest template"
-                    );
-                    return;
-                }
-
-                self.update_installation_via_template(
-                    installation.clone(),
-                    latest_templatable_mcp_server,
-                    ctx,
-                );
-                // We do not have to update the cloud template, because this update came from a cloud template
-                log::info!(
-                    "Successfully updated server {installation_uuid} with the newest cloud template."
-                );
-
-                // Show the toast that the server updated, even though we don't update the cloud template in this case
-                let window_id = ctx.window_id();
-                ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
-                    let toast = DismissibleToast::success(String::from("MCP server updated"));
-                    toast_stack.add_ephemeral_toast(toast, window_id, ctx);
-                });
-            }
-            MCPServerUpdate::Gallery { .. } => {
-                let Some(GalleryData {
-                    gallery_item_id,
-                    version: installed_gallery_version,
-                }) = local_templatable_mcp_server.gallery_data
-                else {
-                    log::warn!(
-                        "Failed to update MCP server to newest gallery version: Installed server is not from the MCP gallery."
-                    );
-                    return;
-                };
-                let Some(gallery_item) =
-                    MCPGalleryManager::as_ref(ctx).get_gallery_item(gallery_item_id)
-                else {
-                    log::warn!(
-                        "Failed to update MCP server to newest gallery version: Could not find gallery item with uuid {gallery_item_id}"
-                    );
-                    return;
-                };
-
-                if installed_gallery_version == gallery_item.version() {
-                    log::warn!(
-                        "Failed to update MCP server to newest gallery version: Installed server is up to date"
-                    );
-                    return;
-                }
-                if installed_gallery_version > gallery_item.version() {
-                    log::warn!(
-                        "Failed to update MCP server to newest gallery version: Installed server is ahead of the latest gallery item"
-                    );
-                    return;
-                }
-
-                let Some(gallery_templatable_mcp_server) =
-                    MCPGalleryManager::as_ref(ctx).get_templatable_mcp_server(gallery_item_id)
-                else {
-                    log::warn!(
-                        "Failed to update MCP server to newest gallery version: Could not find newest gallery item"
-                    );
-                    return;
-                };
-
-                // We need to update both the cloud template and the installation
-                let new_template = TemplatableMCPServer {
-                    uuid: installation.template_uuid(),
-                    ..gallery_templatable_mcp_server.clone()
-                };
-                self.update_installation_via_template(
-                    installation.clone(),
-                    new_template.clone(),
-                    ctx,
-                );
-                TemplatableMCPServerManager::handle(ctx).update(ctx, |templatable_manager, ctx| {
-                    templatable_manager.update_templatable_mcp_server(new_template, ctx);
-                });
-                log::info!(
-                    "Successfully updated server {installation_uuid} with the newest gallery template."
-                );
-                // We don't need to manually show a toast, because it will appear once the cloud template update goes through
-            }
-        };
-    }
-
-    fn update_installation_via_template(
-        &mut self,
-        installation: TemplatableMCPServerInstallation,
-        new_templatable_mcp_server: TemplatableMCPServer,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        let installation_uuid = installation.uuid();
-        if installation.template_uuid() != new_templatable_mcp_server.uuid {
-            log::warn!(
-                "Unable to update installation: installation template uuid differs from the new template uuid."
-            );
-            return;
-        }
-
-        let local_templatable_mcp_server = installation.templatable_mcp_server();
-
-        if local_templatable_mcp_server.template.json == new_templatable_mcp_server.template.json
-            || local_templatable_mcp_server.template.variables
-                == new_templatable_mcp_server.template.variables
-        {
-            // Re-install the server with the same variable values
-            // This will also bump the version of the installed server
-            TemplatableMCPServerManager::handle(ctx).update(ctx, |manager, ctx| {
-                manager.update_templatable_mcp_server_installation(
-                    installation_uuid,
-                    &new_templatable_mcp_server,
-                    true,
-                    ctx,
-                );
-            });
-            return;
-        }
-
-        // Breaking changes are detected, uninstall the server and trigger the installation modal
-        TemplatableMCPServerManager::handle(ctx).update(ctx, |manager, ctx| {
-            manager.delete_templatable_mcp_server_installation(installation_uuid, ctx);
-        });
-        ctx.emit(MCPServersListPageViewEvent::StartInstallation {
-            templatable_mcp_server: new_templatable_mcp_server,
-            instructions_in_markdown: None,
-            origin: InstallOrigin::InApp,
-        });
-        ctx.notify();
-    }
-
-    fn install_from_gallery(&mut self, gallery_uuid: Uuid, ctx: &mut ViewContext<Self>) {
-        let gallery_server = MCPGalleryManager::as_ref(ctx).get_gallery_item(gallery_uuid);
-        let Some(gallery_server) = gallery_server else {
-            log::warn!(
-                "Could not install gallery item {gallery_uuid}: Unable to find gallery item with matching id."
-            );
-            return;
-        };
-
-        let instructions = gallery_server.instructions_in_markdown().cloned();
-        log::info!(
-            "[ListPage] Installing from gallery with instructions: {:?}",
-            instructions.as_ref().map(|s| truncate_from_end(s, 53))
-        );
-        let templatable_server: Result<TemplatableMCPServer, String> =
-            gallery_server.clone().try_into();
-        match templatable_server {
-            Ok(templatable_server) => {
-                ctx.emit(MCPServersListPageViewEvent::StartInstallation {
-                    templatable_mcp_server: templatable_server,
-                    instructions_in_markdown: instructions,
-                    origin: InstallOrigin::InApp,
-                });
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::MCPTemplateInstalled {
-                        source: MCPTemplateInstallationSource::Gallery
-                    },
-                    ctx
-                );
-            }
-            Err(e) => {
-                log::warn!("Could not install gallery item {gallery_uuid}: {e}");
-            }
-        };
-    }
-
-    fn handle_update_modal_body_event(
-        &mut self,
-        event: &UpdateModalBodyEvent,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        match event {
-            UpdateModalBodyEvent::Cancel => {
-                self.update_modal_state.view.update(ctx, |modal, ctx| {
-                    modal.body().update(ctx, |body, _ctx| {
-                        body.clear();
-                    });
-                });
-                self.update_modal_state.close();
-                ctx.emit(MCPServersListPageViewEvent::HideModal);
-                ctx.notify();
-            }
-            UpdateModalBodyEvent::Update {
-                installation_uuid,
-                update,
-            } => {
-                let Some(installation_uuid) = installation_uuid else {
-                    log::warn!("Cannot update installation with uuid of None");
-                    return;
-                };
-                self.process_server_update(*installation_uuid, update.clone(), ctx);
-                self.update_modal_state.view.update(ctx, |modal, ctx| {
-                    modal.body().update(ctx, |body, _ctx| {
-                        body.clear();
-                    });
-                });
-                self.update_modal_state.close();
-                ctx.emit(MCPServersListPageViewEvent::HideModal);
-                ctx.notify();
-            }
-        }
-    }
-
-    fn handle_update_modal_event(&mut self, event: &ModalEvent, ctx: &mut ViewContext<Self>) {
-        match event {
-            ModalEvent::Close => {
-                self.update_modal_state.close();
-                ctx.emit(MCPServersListPageViewEvent::HideModal);
-                ctx.notify();
-            }
-        }
-    }
-
     fn handle_templatable_mcp_manager_event(
         &mut self,
         event: &TemplatableMCPServerManagerEvent,
         ctx: &mut ViewContext<Self>,
     ) {
         match event {
-            TemplatableMCPServerManagerEvent::StateChanged { uuid: _, state: _ }
+            TemplatableMCPServerManagerEvent::StateChanged
             | TemplatableMCPServerManagerEvent::ServerInstallationAdded(_)
             | TemplatableMCPServerManagerEvent::ServerInstallationDeleted(_)
-            | TemplatableMCPServerManagerEvent::TemplatableMCPServersUpdated
-            | TemplatableMCPServerManagerEvent::LegacyServerConverted => {
+            | TemplatableMCPServerManagerEvent::TemplatableMCPServersUpdated => {
                 self.refresh_server_cards(ctx);
                 self.refresh_file_based_server_cards(ctx);
             }
         }
     }
 
-    fn handle_mcp_gallery_manager_event(
-        &mut self,
-        event: &MCPGalleryManagerEvent,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        match event {
-            MCPGalleryManagerEvent::ItemsRefreshed => {
-                self.refresh_gallery_cards(ctx);
-                // We also need to refresh the server cards, because they use the gallery information to determine if an update is available
-                self.refresh_server_cards(ctx);
-            }
-        }
-    }
-
-    fn refresh_gallery_cards(&mut self, ctx: &mut ViewContext<Self>) {
-        self.gallery_server_cards = Self::create_gallery_server_cards(ctx);
-        for server_card_handle in self.gallery_server_cards.values() {
-            ctx.subscribe_to_view(server_card_handle, |me, _, event, ctx| {
-                me.handle_server_card_event(event, ctx);
-            });
-        }
-        ctx.notify();
-    }
-
     pub fn get_modal_content(&self) -> Option<Box<dyn Element>> {
-        if self.update_modal_state.is_open() {
-            Some(self.update_modal_state.render())
-        } else {
-            None
-        }
+        None
     }
 
     fn server_card_handle_matches_search(
@@ -1145,10 +576,7 @@ impl MCPServersListPageView {
                 FormattedTextFragment::plain_text(
                     "Automatically detect and spawn MCP servers from globally-scoped third-party AI agent configuration files (e.g. in your home directory). Servers detected inside a repository are never spawned automatically and must be enabled individually in the \"Detected from\" sections below. ",
                 ),
-                FormattedTextFragment::hyperlink(
-                    "See supported providers.",
-                    "https://docs.warp.dev/agent-platform/capabilities/mcp#file-based-mcp-servers",
-                ),
+                FormattedTextFragment::plain_text("Supported providers are listed above."),
             ]
         });
 
@@ -1181,13 +609,7 @@ impl MCPServersListPageView {
     }
 
     fn render_page_body(&self, appearance: &Appearance, app: &AppContext) -> Box<dyn Element> {
-        let description_fragments = vec![
-            FormattedTextFragment::plain_text(DESCRIPTION_TEXT),
-            FormattedTextFragment::hyperlink(
-                "Learn more.",
-                "https://docs.warp.dev/agent-platform/capabilities/mcp",
-            ),
-        ];
+        let description_fragments = vec![FormattedTextFragment::plain_text(DESCRIPTION_TEXT)];
 
         let description = FormattedTextElement::new(
             FormattedText::new([FormattedTextLine::Line(description_fragments)]),
@@ -1219,14 +641,6 @@ impl MCPServersListPageView {
             .map(|(k, v)| (*k, v.clone()))
             .collect();
 
-        // Collect filtered gallery cards.
-        let deduplicated_gallery_cards = self.deduplicate_gallery_cards(app);
-        let filtered_gallery_cards: Vec<ViewHandle<ServerCardView>> = deduplicated_gallery_cards
-            .values()
-            .filter(|v| Self::server_card_handle_matches_search(v, &search_term, app))
-            .cloned()
-            .collect();
-
         // Collect filtered file-based server cards by provider.
         let mut filtered_file_based_cards: HashMap<MCPProvider, Vec<ViewHandle<ServerCardView>>> =
             HashMap::new();
@@ -1243,9 +657,8 @@ impl MCPServersListPageView {
             }
         }
 
-        let has_any_content = !self.server_cards.is_empty()
-            || !filtered_gallery_cards.is_empty()
-            || !filtered_file_based_cards.is_empty();
+        let has_any_content =
+            !self.server_cards.is_empty() || !filtered_file_based_cards.is_empty();
 
         if !has_any_content {
             let empty_state = self.render_empty_state(appearance, app);
@@ -1257,13 +670,10 @@ impl MCPServersListPageView {
                 page.add_child(self.render_file_based_mcp_section(appearance, app));
             }
 
-            if filtered_server_cards.is_empty()
-                && filtered_gallery_cards.is_empty()
-                && filtered_file_based_cards.is_empty()
-            {
+            if filtered_server_cards.is_empty() && filtered_file_based_cards.is_empty() {
                 page.add_child(Self::render_no_search_results(appearance));
             } else {
-                let (owned_server_cards, mut shared_server_cards) =
+                let (owned_server_cards, _shared_server_cards) =
                     Self::separate_server_cards_by_installed(&filtered_server_cards, app);
 
                 if !owned_server_cards.is_empty() {
@@ -1274,31 +684,6 @@ impl MCPServersListPageView {
                         app,
                     ));
                 }
-                if !shared_server_cards.is_empty() {
-                    shared_server_cards.extend(filtered_gallery_cards);
-                    let team_name = UserWorkspaces::as_ref(app)
-                        .current_team()
-                        .map(|team| team.name.clone());
-                    let shared_by_text = match team_name {
-                        Some(name) => format!("Shared by Warp and {name}"),
-                        None => "Shared by Warp and from other devices".to_string(),
-                    };
-
-                    page.add_child(self.render_server_cards_section(
-                        &shared_by_text,
-                        &shared_server_cards,
-                        appearance,
-                        app,
-                    ));
-                } else if !filtered_gallery_cards.is_empty() {
-                    page.add_child(self.render_server_cards_section(
-                        "Shared from Warp",
-                        &filtered_gallery_cards,
-                        appearance,
-                        app,
-                    ));
-                }
-
                 // Render one section per provider (e.g. "Detected from Claude").
                 for (provider, cards) in &filtered_file_based_cards {
                     let section_title = format!("Detected from {}", provider.display_name());
@@ -1331,73 +716,25 @@ impl MCPServersListPageView {
 
     fn separate_server_cards_by_installed(
         server_cards: &HashMap<ServerCardItemId, ViewHandle<ServerCardView>>,
-        app: &AppContext,
+        _app: &AppContext,
     ) -> (
         Vec<ViewHandle<ServerCardView>>,
         Vec<ViewHandle<ServerCardView>>,
     ) {
         let mut owned_server_cards = Vec::new();
-        let mut shared_server_cards = Vec::new();
+        let shared_server_cards = Vec::new();
         for (item_id, server_card) in server_cards {
             match item_id {
-                ServerCardItemId::TemplatableMCP(_) => {
-                    if Self::is_shared(*item_id, app) {
-                        shared_server_cards.push(server_card.clone());
-                    } else {
-                        owned_server_cards.push(server_card.clone());
-                    }
-                }
+                ServerCardItemId::TemplatableMCP(_) => owned_server_cards.push(server_card.clone()),
                 ServerCardItemId::TemplatableMCPInstallation(_) => {
                     owned_server_cards.push(server_card.clone());
                 }
                 ServerCardItemId::FileBasedMCP(_) => {
                     owned_server_cards.push(server_card.clone());
                 }
-                ServerCardItemId::GalleryMCP(_) => {
-                    log::warn!(
-                        "Received an unexpected gallery server card when separating server cards by installed."
-                    );
-                }
             }
         }
         (owned_server_cards, shared_server_cards)
-    }
-
-    fn deduplicate_gallery_cards(
-        &self,
-        app: &AppContext,
-    ) -> HashMap<ServerCardItemId, ViewHandle<ServerCardView>> {
-        let gallery_ids = TemplatableMCPServerManager::as_ref(app).extract_server_info(
-            |template| {
-                template
-                    .gallery_data
-                    .map(|gallery_data| gallery_data.gallery_item_id)
-            },
-            |installation| installation.gallery_uuid(),
-            app,
-        );
-        let names = TemplatableMCPServerManager::as_ref(app).extract_server_info(
-            |template| Some(template.name.to_ascii_lowercase()),
-            |installation| {
-                Some(
-                    installation
-                        .templatable_mcp_server()
-                        .name
-                        .to_ascii_lowercase(),
-                )
-            },
-            app,
-        );
-
-        let mut deduplicated_gallery_cards = self.gallery_server_cards.clone();
-        deduplicated_gallery_cards.retain(|item_id, server_card| match item_id {
-            ServerCardItemId::GalleryMCP(gallery_uuid) => {
-                !names.contains(&server_card.as_ref(app).title().to_lowercase())
-                    && !gallery_ids.contains(gallery_uuid)
-            }
-            _ => false,
-        });
-        deduplicated_gallery_cards
     }
 
     fn render_server_cards(
@@ -1426,7 +763,6 @@ impl MCPServersListPageView {
                 ServerCardItemId::TemplatableMCPInstallation(_) => 1,
                 ServerCardItemId::FileBasedMCP(_) => 1,
                 ServerCardItemId::TemplatableMCP(_) => 2,
-                ServerCardItemId::GalleryMCP(_) => 2,
             }
         }
 
@@ -1436,17 +772,6 @@ impl MCPServersListPageView {
 
             priority(a_ref.item_id)
                 .cmp(&priority(b_ref.item_id))
-                .then_with(|| {
-                    // Only for uninstalled templates, we should put the ones in personal drive before the shared ones
-                    if matches!(a_ref.item_id, ServerCardItemId::TemplatableMCP(_))
-                        && matches!(b_ref.item_id, ServerCardItemId::TemplatableMCP(_))
-                    {
-                        Self::is_shared(a_ref.item_id, app)
-                            .cmp(&Self::is_shared(b_ref.item_id, app))
-                    } else {
-                        Ordering::Equal
-                    }
-                })
                 .then_with(|| {
                     a_ref
                         .title()
@@ -1642,10 +967,7 @@ impl MCPServersListPageView {
                 None, // tools only available when running
                 None, // no error when not yet started
                 title_chips,
-                ServerCardOptions {
-                    show_share_icon_button: false,
-                    ..ServerCardStatus::AvailableToSave.into()
-                },
+                ServerCardStatus::AvailableToSave.into(),
             );
             self.register_file_based_template_card(provider, server_card, ctx);
         }
@@ -1690,10 +1012,8 @@ impl MCPServersListPageView {
             error_text,
             title_chips,
             ServerCardOptions {
-                // File-based servers cannot be edited or shared from settings.
                 show_log_out_icon_button: uses_oauth,
                 show_edit_config_icon_button: false,
-                show_share_icon_button: false,
                 ..server_card_status.into()
             },
         );
@@ -1758,31 +1078,11 @@ impl MCPServersListPageView {
     }
 
     fn get_title_chip_text(
-        item_id: ServerCardItemId,
-        template_uuid: Uuid,
-        ctx: &mut ViewContext<Self>,
+        _item_id: ServerCardItemId,
+        _template_uuid: Uuid,
+        _ctx: &mut ViewContext<Self>,
     ) -> Option<TitleChip> {
-        match item_id {
-            ServerCardItemId::TemplatableMCP(_)
-            | ServerCardItemId::TemplatableMCPInstallation(_) => {
-                let is_shared =
-                    Self::is_shared(ServerCardItemId::TemplatableMCP(template_uuid), ctx);
-                let creator =
-                    TemplatableMCPServerManager::as_ref(ctx).get_creator(template_uuid, ctx);
-
-                if is_shared {
-                    match creator {
-                        Some(creator) => Some(TitleChip::text(format!("Shared by: {creator}"))),
-                        None => Some(TitleChip::text("Shared by a team member")),
-                    }
-                } else if matches!(item_id, ServerCardItemId::TemplatableMCP(_)) {
-                    Some(TitleChip::text("From another device"))
-                } else {
-                    None
-                }
-            }
-            _ => None,
-        }
+        None
     }
 }
 

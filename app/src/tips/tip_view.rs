@@ -24,8 +24,6 @@ use crate::resource_center::{Tip, TipAction, TipsCompleted};
 use crate::themes::theme::{Blend, Fill};
 use crate::util::bindings::trigger_to_keystroke;
 
-use super::WELCOME_TIP_FEATURE_LENGTH;
-
 const CHECK_MARK_WIDTH: f32 = 20.;
 const TIP_VIEW_WIDTH: f32 = 250.;
 const CHECK_SVG_PATH: &str = "bundled/svg/check-skinny.svg";
@@ -604,7 +602,7 @@ impl View for TipsView {
             ),
         );
 
-        if tips_completed.completed_count() == WELCOME_TIP_FEATURE_LENGTH {
+        if tips_completed.completed_count() == self.tip_items.len() {
             stack.add_positioned_child(
                 self.render_completed_overlay(appearance),
                 OffsetPositioning::offset_from_save_position_element(

@@ -5,7 +5,7 @@ use clap::Parser;
 use integration::test::*;
 use integration::Builder;
 use warp_cli::WorkerCommand;
-use warp_core::channel::{Channel, ChannelConfig, ChannelState, OzConfig, WarpServerConfig};
+use warp_core::channel::{Channel, ChannelConfig, ChannelState};
 use warp_core::AppId;
 
 /// The Warp integration test runner.
@@ -36,22 +36,9 @@ pub fn main() -> Result<()> {
                 },
             ),
             logfile_name: "warp_integration.log".into(),
-            server_config: WarpServerConfig {
-                firebase_auth_api_key: "".into(),
-                // Use an IP in the IANA testing range, with the TCP discard port, to
-                // black-hole server traffic.
-                server_root_url: "http://192.0.2.0:9".into(),
-                rtc_server_url: "ws://192.0.2.0:9/graphql/v2".into(),
-                session_sharing_server_url: None,
-            },
-            oz_config: OzConfig {
-                // Use an IP in the IANA testing range, with the TCP discard port, to
-                // black-hole server traffic.
-                oz_root_url: "http://192.0.2.0:9".into(),
-                workload_audience_url: None,
-            },
+            server_config: None,
+            oz_config: None,
             telemetry_config: None,
-            crash_reporting_config: None,
             autoupdate_config: None,
             mcp_static_config: None,
         },
@@ -192,8 +179,6 @@ fn register_tests() -> HashMap<&'static str, BoxedBuilderFn> {
     register_test!(test_restore_snapshot_with_background_output);
     register_test!(test_restore_snapshot_with_notebooks);
     register_test!(test_restore_snapshot_with_workflows);
-    register_test!(test_restore_snapshot_with_test_json_object);
-    register_test!(test_restore_snapshot_with_common_shareable_metadata_ids);
     register_test!(test_restore_snapshot_with_markdown_file);
     register_test!(test_restore_snapshot_with_code_file);
     register_test!(test_restore_snapshot_with_settings_page);
@@ -255,14 +240,6 @@ fn register_tests() -> HashMap<&'static str, BoxedBuilderFn> {
     register_test!(test_bash_bootstraps_with_prompt_command_array);
     register_test!(test_bash_bootstraps_with_prompt_command_array_that_sets_ps1);
     register_test!(test_zsh_bootstraps_with_nounset_option);
-    register_test!(test_legacy_ssh_into_bash);
-    register_test!(test_legacy_ssh_into_zsh);
-    register_test!(test_tmux_ssh_into_bash);
-    register_test!(test_tmux_ssh_into_zsh);
-    register_test!(test_ssh_into_fish);
-    register_test!(test_ssh_into_sh);
-    register_test!(test_ssh_into_ash);
-    register_test!(test_ssh_with_shell_override);
     register_test!(test_custom_open_completions_menu_binding);
     register_test!(test_color_overrides_in_prompt_dont_crash);
     register_test!(test_copy_prompt_from_block_honor_ps1_disabled);
@@ -302,13 +279,8 @@ fn register_tests() -> HashMap<&'static str, BoxedBuilderFn> {
     register_test!(test_can_bootstrap_local_bash_subshell);
     register_test!(test_can_bootstrap_local_fish_subshell);
     register_test!(test_can_bootstrap_local_zsh_subshell);
-    register_test!(test_can_bootstrap_remote_bash_subshell);
-    register_test!(test_can_bootstrap_remote_zsh_subshell);
 
     register_test!(test_can_auto_bootstrap);
-
-    register_test!(test_ask_warp_ai_keybinding_for_selected_block);
-    register_test!(test_create_folder_from_command_palette);
 
     register_test!(test_tab_behavior_setting);
 
@@ -319,11 +291,6 @@ fn register_tests() -> HashMap<&'static str, BoxedBuilderFn> {
     register_test!(test_histfile_left_joined_with_persisted_history);
     register_test!(test_history_command_is_linked_to_local_workflow);
     register_test!(test_up_arrow_history_enters_shift_tab_for_workflow);
-
-    register_test!(test_websocket_does_not_begin_on_startup);
-    register_test!(test_websocket_begins_on_startup);
-    register_test!(test_websocket_begins_after_joining_a_team);
-    register_test!(test_websocket_begins_after_creating_an_object);
 
     register_test!(test_secret_is_obfuscated_on_copy);
     register_test!(test_secret_tooltip_shows_on_click);
@@ -347,16 +314,10 @@ fn register_tests() -> HashMap<&'static str, BoxedBuilderFn> {
     register_test!(test_closed_panes_cleared_on_rearrangement);
     register_test!(test_tab_closes_when_last_visible_pane_closed);
 
-    register_test!(test_notebook_pane_tracking);
-    register_test!(test_close_notebook_tab);
     register_test!(test_open_in_warp_banner);
-    register_test!(test_close_notebook_window);
-    register_test!(test_backspace_inside_rendered_mermaid_block_is_atomic);
 
     // Workflow tests
-    register_test!(test_open_workflow_in_pane);
     register_test!(test_create_personal_workflow_pane_from_command_palette);
-    register_test!(test_create_team_workflow_pane_from_command_palette);
 
     register_test!(test_block_filtering_keybinding);
     register_test!(test_block_filtering_keybinding_with_long_running_command);
@@ -413,9 +374,6 @@ fn register_tests() -> HashMap<&'static str, BoxedBuilderFn> {
     register_test!(test_with_long_line);
     register_test!(make_1000_blocks_memory_benchmark);
 
-    register_test!(test_rule_creation);
-    register_test!(test_rule_update);
-    register_test!(test_rule_pane_opening);
     register_test!(test_undo_close_stack_timeout_cleanup);
 
     // File tree tests

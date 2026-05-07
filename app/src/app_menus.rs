@@ -3,11 +3,10 @@ use std::fs::File;
 use std::path::PathBuf;
 
 use crate::ai::persisted_workspace::PersistedWorkspace;
-use crate::auth::AuthStateProvider;
 use crate::default_terminal::DefaultTerminal;
 use crate::features::{runtime_flags_menu_items, FeatureFlag};
+use crate::report_if_error;
 use crate::root_view::OpenLaunchConfigArg;
-use crate::server::telemetry::LaunchConfigUiLocation;
 use crate::settings::{
     AISettings, BlockVisibilitySettings, DebugSettings, DefaultSessionMode, SelectionSettings,
 };
@@ -18,8 +17,8 @@ use crate::undo_close::UndoCloseStack;
 use crate::user_config::WarpConfig;
 use crate::util::bindings::{self, trigger_to_keystroke, CustomAction};
 use crate::util::links;
+use crate::workspace::metadata::LaunchConfigUiLocation;
 use crate::workspace::sync_inputs::SyncedInputState;
-use crate::{auth, report_if_error};
 use ai::workspace::WorkspaceMetadata;
 use csv::Writer;
 use enclose::enclose;
@@ -69,7 +68,6 @@ pub fn menu_bar(ctx: &mut AppContext) -> MenuBar {
         make_new_tab_menu(ctx),
         make_new_blocks_menu(ctx),
         make_new_ai_menu(ctx),
-        make_new_drive_menu(ctx),
         make_new_window_menu(),
         make_new_help_menu(),
     ])
@@ -149,11 +147,7 @@ fn make_new_app_menu(ctx: &AppContext) -> Menu {
         ))
     }
 
-    menu_items.extend([
-        MenuItem::Separator,
-        updateable_custom_item_without_checkmark(CustomAction::ReferAFriend, ctx),
-        MenuItem::Separator,
-    ]);
+    menu_items.push(MenuItem::Separator);
 
     let preferences_menu_items = vec![
         updateable_custom_item_without_checkmark(CustomAction::ShowSettings, ctx),
@@ -173,23 +167,10 @@ fn make_new_app_menu(ctx: &AppContext) -> Menu {
         preferences_menu_items,
     )));
 
-    if FeatureFlag::Changelog.is_enabled() {
-        menu_items.push(updateable_custom_item_without_checkmark(
-            CustomAction::ViewChangelog,
-            ctx,
-        ));
-    }
-
     #[cfg(target_os = "macos")]
     {
         menu_items.push(MenuItem::Services);
     }
-
-    menu_items.push(MenuItem::Separator);
-    menu_items.push(link_menu_item(
-        "Privacy Policy...",
-        links::PRIVACY_POLICY_URL.into(),
-    ));
 
     let debug_menu_items = debug_menu_items();
     if !debug_menu_items.is_empty() {
@@ -221,22 +202,6 @@ fn make_new_app_menu(ctx: &AppContext) -> Menu {
                     !DefaultTerminal::can_warp_become_default()
                         || default_terminal.is_warp_default(),
                 ),
-                ..Default::default()
-            }
-        },
-        None,
-    )));
-    menu_items.push(MenuItem::Separator);
-    menu_items.push(MenuItem::Custom(CustomMenuItem::new(
-        "Log out",
-        auth::maybe_log_out,
-        move |_, ctx| {
-            let is_anonymous = AuthStateProvider::handle(ctx)
-                .as_ref(ctx)
-                .get()
-                .is_anonymous_or_logged_out();
-            MenuItemPropertyChanges {
-                disabled: Some(is_anonymous),
                 ..Default::default()
             }
         },
@@ -375,13 +340,10 @@ fn make_new_edit_menu(ctx: &AppContext) -> Menu {
 
 fn make_new_view_menu(ctx: &AppContext) -> Menu {
     let mut items = vec![
-        updateable_custom_item_without_checkmark(CustomAction::ToggleWarpDrive, ctx),
-        MenuItem::Separator,
         updateable_custom_item_without_checkmark(CustomAction::CommandPalette, ctx),
         updateable_custom_item_without_checkmark(CustomAction::NavigationPalette, ctx),
         updateable_custom_item_without_checkmark(CustomAction::LaunchConfigPalette, ctx),
         updateable_custom_item_without_checkmark(CustomAction::FilesPalette, ctx),
-        updateable_custom_item_without_checkmark(CustomAction::ToggleConversationListView, ctx),
         updateable_custom_item_without_checkmark(CustomAction::ToggleProjectExplorer, ctx),
         updateable_custom_item_without_checkmark(CustomAction::ToggleGlobalSearch, ctx),
         MenuItem::Separator,
@@ -564,8 +526,6 @@ fn make_new_blocks_menu(ctx: &AppContext) -> Menu {
     ));
     items.push(MenuItem::Separator);
     items.extend([
-        updateable_custom_item_without_checkmark(CustomAction::CreateBlockPermalink, ctx),
-        non_updateable_custom_item(CustomAction::ViewSharedBlocks, ctx),
         updateable_custom_item_without_checkmark(CustomAction::ToggleBookmarkBlock, ctx),
         updateable_custom_item_without_checkmark(CustomAction::FindWithinBlock, ctx),
         MenuItem::Separator,
@@ -581,50 +541,6 @@ fn make_new_blocks_menu(ctx: &AppContext) -> Menu {
     }
 
     Menu::new("Blocks", items)
-}
-
-fn make_new_drive_menu(ctx: &AppContext) -> Menu {
-    let mut items = vec![
-        updateable_custom_item_without_checkmark(CustomAction::NewPersonalWorkflow, ctx),
-        updateable_custom_item_without_checkmark(CustomAction::NewPersonalNotebook, ctx),
-        updateable_custom_item_without_checkmark(CustomAction::NewPersonalAIPrompt, ctx),
-    ];
-    items.push(updateable_custom_item_without_checkmark(
-        CustomAction::NewPersonalEnvVars,
-        ctx,
-    ));
-    items.extend([
-        MenuItem::Separator,
-        updateable_custom_item_without_checkmark(CustomAction::NewTeamWorkflow, ctx),
-        updateable_custom_item_without_checkmark(CustomAction::NewTeamNotebook, ctx),
-        updateable_custom_item_without_checkmark(CustomAction::NewTeamAIPrompt, ctx),
-    ]);
-    items.push(updateable_custom_item_without_checkmark(
-        CustomAction::NewTeamEnvVars,
-        ctx,
-    ));
-    items.extend([
-        MenuItem::Separator,
-        updateable_custom_item_without_checkmark(CustomAction::ToggleWarpDrive, ctx),
-        updateable_custom_item_without_checkmark(CustomAction::SearchDrive, ctx),
-        updateable_custom_item_without_checkmark(CustomAction::OpenTeamSettings, ctx),
-        updateable_custom_item_without_checkmark(CustomAction::OpenAIFactCollection, ctx),
-        updateable_custom_item_without_checkmark(CustomAction::OpenMCPServerCollection, ctx),
-    ]);
-
-    items.push(updateable_custom_item_without_checkmark(
-        CustomAction::SharePaneContents,
-        ctx,
-    ));
-
-    if FeatureFlag::CreatingSharedSessions.is_enabled() {
-        items.extend([
-            MenuItem::Separator,
-            updateable_custom_item_without_checkmark(CustomAction::ShareCurrentSession, ctx),
-        ])
-    }
-
-    Menu::new("Drive", items)
 }
 
 /// Returns [`MenuItem`]s that aid debugging to be included in the Block menu.
@@ -875,13 +791,6 @@ fn debug_menu_items() -> Vec<MenuItem> {
                 }
                 let _ = writer.flush();
             },
-            no_updates,
-            None,
-        )));
-
-        debug_menu_items.push(MenuItem::Custom(CustomMenuItem::new(
-            "Create anonymous user",
-            move |ctx| ctx.dispatch_global_action("workspace:debug_create_anonymous_user", &()),
             no_updates,
             None,
         )));

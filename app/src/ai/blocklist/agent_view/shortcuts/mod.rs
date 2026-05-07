@@ -5,7 +5,7 @@ use pathfinder_color::ColorU;
 
 use std::borrow::Cow;
 
-use warp_core::{features::FeatureFlag, ui::appearance::Appearance};
+use warp_core::ui::appearance::Appearance;
 use warpui::{
     elements::{Border, Container, CrossAxisAlignment, Expanded, Flex, ParentElement, Text},
     keymap::Keystroke,
@@ -13,24 +13,17 @@ use warpui::{
     AppContext, Element, SingletonEntity,
 };
 
-use crate::ai::blocklist::agent_view::ENTER_CLOUD_AGENT_VIEW_NEW_CONVERSATION_KEYSTROKE;
 use crate::{
     ai::blocklist::agent_view::ENTER_AGENT_VIEW_NEW_CONVERSATION_KEYSTROKE,
     cmd_or_ctrl_shift,
     terminal::{self, TOGGLE_AUTOEXECUTE_MODE_KEYBINDING},
     ui_components::blended_colors,
     util::bindings::keybinding_name_to_keystroke,
-    workspace::view::{
-        TOGGLE_CONVERSATION_LIST_VIEW_BINDING_NAME, TOGGLE_RIGHT_PANEL_BINDING_NAME,
-    },
+    workspace::view::TOGGLE_RIGHT_PANEL_BINDING_NAME,
 };
 
 #[derive(Copy, Clone, Debug, Default)]
-pub struct AgentShortcutsViewContext {
-    pub is_cloud_agent: bool,
-    /// True once the user has submitted the first prompt.
-    pub has_submitted_first_prompt: bool,
-}
+pub struct AgentShortcutsViewContext;
 
 #[derive(Default)]
 pub struct ShortcutProps {
@@ -107,28 +100,24 @@ pub fn render_keystroke_with_color_overrides(
 }
 
 pub fn render_agent_shortcuts_view(
-    context: AgentShortcutsViewContext,
+    _context: AgentShortcutsViewContext,
     app: &AppContext,
 ) -> Box<dyn Element> {
     let appearance = Appearance::as_ref(app);
 
-    let hide_cloud_zero_state_items = context.is_cloud_agent && !context.has_submitted_first_prompt;
-
     let mut shortcuts = vec![];
 
-    if !hide_cloud_zero_state_items {
-        shortcuts.push(render_shortcut(
-            ShortcutProps {
-                keystroke: Keystroke {
-                    key: "!".to_owned(),
-                    ..Default::default()
-                },
-                text: "input shell command".into(),
+    shortcuts.push(render_shortcut(
+        ShortcutProps {
+            keystroke: Keystroke {
+                key: "!".to_owned(),
                 ..Default::default()
             },
-            app,
-        ));
-    }
+            text: "input shell command".into(),
+            ..Default::default()
+        },
+        app,
+    ));
 
     shortcuts.push(render_shortcut(
         ShortcutProps {
@@ -154,34 +143,15 @@ pub fn render_agent_shortcuts_view(
         app,
     ));
 
-    // Code review is not available for cloud agents.
-    if !context.is_cloud_agent {
-        if let Some(keystroke) = keybinding_name_to_keystroke(TOGGLE_RIGHT_PANEL_BINDING_NAME, app)
-        {
-            shortcuts.push(render_shortcut(
-                ShortcutProps {
-                    keystroke,
-                    text: "open code review".into(),
-                    ..Default::default()
-                },
-                app,
-            ));
-        }
-    }
-
-    if FeatureFlag::AgentViewConversationListView.is_enabled() {
-        if let Some(keystroke) =
-            keybinding_name_to_keystroke(TOGGLE_CONVERSATION_LIST_VIEW_BINDING_NAME, app)
-        {
-            shortcuts.push(render_shortcut(
-                ShortcutProps {
-                    keystroke,
-                    text: "toggle conversation list".into(),
-                    ..Default::default()
-                },
-                app,
-            ));
-        }
+    if let Some(keystroke) = keybinding_name_to_keystroke(TOGGLE_RIGHT_PANEL_BINDING_NAME, app) {
+        shortcuts.push(render_shortcut(
+            ShortcutProps {
+                keystroke,
+                text: "open code review".into(),
+                ..Default::default()
+            },
+            app,
+        ));
     }
 
     shortcuts.push(render_shortcut(
@@ -193,35 +163,24 @@ pub fn render_agent_shortcuts_view(
         app,
     ));
 
-    // Use cloud keystroke (cmd+opt+enter) for cloud mode, regular keystroke (cmd+enter) otherwise.
-    let new_conversation_keystroke = if context.is_cloud_agent {
-        ENTER_CLOUD_AGENT_VIEW_NEW_CONVERSATION_KEYSTROKE.clone()
-    } else {
-        ENTER_AGENT_VIEW_NEW_CONVERSATION_KEYSTROKE.clone()
-    };
-
     shortcuts.push(render_shortcut(
         ShortcutProps {
-            keystroke: new_conversation_keystroke.clone(),
+            keystroke: ENTER_AGENT_VIEW_NEW_CONVERSATION_KEYSTROKE.clone(),
             text: "start a new conversation".into(),
             ..Default::default()
         },
         app,
     ));
 
-    if !hide_cloud_zero_state_items {
-        if let Some(keystroke) =
-            keybinding_name_to_keystroke(TOGGLE_AUTOEXECUTE_MODE_KEYBINDING, app)
-        {
-            shortcuts.push(render_shortcut(
-                ShortcutProps {
-                    keystroke,
-                    text: "toggle auto-accept".into(),
-                    ..Default::default()
-                },
-                app,
-            ));
-        }
+    if let Some(keystroke) = keybinding_name_to_keystroke(TOGGLE_AUTOEXECUTE_MODE_KEYBINDING, app) {
+        shortcuts.push(render_shortcut(
+            ShortcutProps {
+                keystroke,
+                text: "toggle auto-accept".into(),
+                ..Default::default()
+            },
+            app,
+        ));
     }
 
     shortcuts.push(render_shortcut(

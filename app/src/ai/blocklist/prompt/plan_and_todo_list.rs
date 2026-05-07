@@ -92,7 +92,6 @@ impl PlanAndTodoListView {
                         ctx.notify();
                     }
                 }
-                AIDocumentModelEvent::DocumentSaveStatusUpdated { .. } => {}
                 AIDocumentModelEvent::DocumentUpdated { .. } => {}
                 AIDocumentModelEvent::StreamingDocumentsCleared(..) => {}
                 AIDocumentModelEvent::DocumentVisibilityChanged(_) => {}

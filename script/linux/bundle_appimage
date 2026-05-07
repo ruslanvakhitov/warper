@@ -7,8 +7,8 @@
 #   - DIST_DIR: A temporary directory we can use for staging files as we build the package.
 #   - OUT_DIR: The directory into which we should place the final package.
 #   - CARGO_TARGET_OUTPUT_DIR: The cargo target directory containing build output.
-#   - RELEASE_CHANNEL: The release channel we're bundling (e.g.: "dev").
-#   - BUNDLE_ID: The app ID for the bundle (e.g.: "dev.warp.WarpDev").
+#   - RELEASE_CHANNEL: The release channel we're bundling.
+#   - BUNDLE_ID: The app ID for the bundle.
 #   - EXECUTABLE_PATH: The path to the compiled executable we want to install.
 #   - BINARY_NAME: The name that the compiled executable should have on the target machine.
 #   - APPIMAGE_NAME: The name of the AppImage file to produce.
@@ -17,12 +17,13 @@ STAGE_DIR="$DIST_DIR/appimagepkg"
 APP_DIR="$DIST_DIR/AppDir"
 
 # Extract channel suffix from BINARY_NAME
-if [ "$ARTIFACT" = "cli" ]; then
-  CHANNEL_SUFFIX="${BINARY_NAME#oz}"
+CHANNEL_SUFFIX="${BINARY_NAME#warp}"
+if [ "$RELEASE_CHANNEL" = "oss" ]; then
+  CHANNEL_SUFFIX=""
+  PACKAGE_NAME="warper"
 else
-  CHANNEL_SUFFIX="${BINARY_NAME#warp}"
+  PACKAGE_NAME="warp-terminal$CHANNEL_SUFFIX"
 fi
-PACKAGE_NAME="warp-terminal$CHANNEL_SUFFIX"
 
 
 # Adding NO_STRIP to stop linuxdeploy from attempting to strip symbols
@@ -52,7 +53,7 @@ mkdir -p "$STAGE_DIR"
 
 # Populate the directory with the package contents, in the appropriate
 # locations.
-OPT_DIR="/opt/warpdotdev/$PACKAGE_NAME"
+OPT_DIR="/opt/warper/$PACKAGE_NAME"
 source "$WORKSPACE_ROOT_DIR/script/linux/bundle_install" "$STAGE_DIR"
 
 # Modify the "Exec=" line in the .desktop file to use the name of the installed

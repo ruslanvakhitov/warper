@@ -3,13 +3,13 @@ pub(crate) mod conversation_yaml;
 pub(crate) mod todos;
 
 pub(crate) mod api;
+pub(super) mod citation_metadata;
 pub(crate) mod comment;
 pub(crate) mod icons;
 pub(crate) mod linearization;
 pub(crate) mod redaction;
 pub(crate) mod task;
 mod task_store;
-pub(super) mod telemetry;
 pub(super) mod util;
 
 // Re-export types that were moved to the ai crate.
@@ -18,6 +18,7 @@ use warp_core::features::FeatureFlag;
 
 #[cfg(test)]
 mod suggestion_test;
+use crate::ai::api_errors::AIApiError;
 use crate::ai::block_context::BlockContext;
 use crate::ai::blocklist::block::view_impl::output::are_all_text_sections_empty;
 use crate::ai::skills::SkillDescriptor;
@@ -26,12 +27,11 @@ use crate::code_review::comments::{
     AttachedReviewComment as CodeReviewComment, ReviewCommentBatch,
 };
 use crate::search::slash_command_menu::static_commands::commands;
-use crate::server::server_api::AIApiError;
 use ai::skills::ParsedSkill;
 use chrono::{DateTime, Local, TimeDelta};
+pub use citation_metadata::AIIdentifiers;
 use comment::ReviewComment;
 use task::TaskId;
-pub use telemetry::AIIdentifiers;
 
 use warp_editor::render::model::LineCount;
 
@@ -45,15 +45,13 @@ use uuid::Uuid;
 use warp_multi_agent_api::{diff_hunk as diff_hunk_api, AgentEvent, AgentType};
 
 pub use self::api::{MaybeAIAgentOutputMessage, MessageToAIAgentOutputMessageError};
-use crate::ai_assistant::execution_context::WarpAiExecutionContext;
+use crate::ai::execution_context::WarpAiExecutionContext;
 use crate::terminal::model::block::BlockId;
 use crate::terminal::shell::ShellType;
 use crate::terminal::view::block_onboarding::onboarding_agentic_suggestions_block::OnboardingChipType;
-use crate::TelemetryEvent;
 use derivative::Derivative;
 use markdown_parser::{parse_markdown, FormattedTable, FormattedText, FormattedTextInline};
 use serde::{Deserialize, Serialize};
-use session_sharing_protocol::common::ParticipantId;
 
 use super::llms::LLMId;
 
@@ -387,11 +385,6 @@ pub struct AIAgentOutput {
     /// Information about the model that generated this output.
     pub model_info: Option<OutputModelInfo>,
 
-    /// Telemetry events related to the AI Agent Output that we want to send after completion.
-    #[derivative(Debug = "ignore")]
-    #[derivative(PartialEq = "ignore")]
-    pub telemetry_events: Vec<TelemetryEvent>,
-
     /// The number of requests that the request cost.
     pub request_cost: Option<RequestCost>,
 }
@@ -617,8 +610,6 @@ impl AIAgentOutput {
 /// Represents user visible errors.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum RenderableAIError {
-    QuotaLimit,
-    ServerOverloaded,
     InternalWarpError,
     ContextWindowExceeded(String),
     InvalidApiKey {
@@ -660,14 +651,10 @@ impl RenderableAIError {
 
 impl From<&AIApiError> for RenderableAIError {
     fn from(value: &AIApiError) -> Self {
-        match value {
-            AIApiError::QuotaLimit => Self::QuotaLimit,
-            AIApiError::ServerOverloaded => Self::ServerOverloaded,
-            _ => Self::Other {
-                error_message: format!("Request failed with error: {value:?}"),
-                will_attempt_resume: false,
-                waiting_for_network: false,
-            },
+        Self::Other {
+            error_message: format!("Request failed with error: {value:?}"),
+            will_attempt_resume: false,
+            waiting_for_network: false,
         }
     }
 }
@@ -675,10 +662,6 @@ impl From<&AIApiError> for RenderableAIError {
 impl Display for RenderableAIError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::QuotaLimit => write!(f, "Quota limit reached."),
-            Self::ServerOverloaded => {
-                write!(f, "Warp is currently overloaded. Please try again later.")
-            }
             Self::InternalWarpError => write!(f, "Internal Warp error."),
             Self::ContextWindowExceeded(message) => {
                 write!(f, "Context window exceeded: {message}")
@@ -2061,12 +2044,6 @@ pub enum AIAgentAttachment {
         source: DocumentContentAttachmentSource,
         line_range: Option<Range<LineCount>>,
     },
-    DriveObject {
-        /// The UID of the drive object.
-        uid: String,
-        /// The payload of the drive object (e.g., workflow content).
-        payload: Option<DriveObjectPayload>,
-    },
     DiffHunk {
         file_path: String,
         line_range: Range<LineCount>,
@@ -2202,23 +2179,6 @@ impl DiffSetHunk {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum DriveObjectPayload {
-    Workflow {
-        name: String,
-        description: String,
-        command: String,
-    },
-    Notebook {
-        title: String,
-        content: String,
-    },
-    GenericStringObject {
-        payload: String,
-        object_type: String,
-    },
-}
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum StaticQueryType {
     Install,
@@ -2246,7 +2206,6 @@ pub enum EntrypointType {
     },
     UserInitiated,
     AgentInitiated,
-    SharedSession,
     CloneRepository,
     ResumeConversation,
 }
@@ -2381,12 +2340,6 @@ pub enum AIAgentInput {
     InitProjectRules {
         context: Arc<[AIAgentContext]>,
         display_query: Option<String>,
-    },
-
-    CreateEnvironment {
-        context: Arc<[AIAgentContext]>,
-        display_query: Option<String>,
-        repo_paths: Vec<String>,
     },
 
     TriggerPassiveSuggestion {
@@ -2529,7 +2482,6 @@ impl Display for AIAgentInput {
             Self::ActionResult { result, .. } => write!(f, "ActionResult: {result}"),
             Self::ResumeConversation { .. } => write!(f, "ResumeConversation"),
             Self::InitProjectRules { .. } => write!(f, "InitProjectRules"),
-            Self::CreateEnvironment { .. } => write!(f, "CreateEnvironment"),
             Self::TriggerPassiveSuggestion { .. } => write!(f, "TriggerSuggestPrompt"),
             Self::CreateNewProject { .. } => write!(f, "CreateNewProject"),
             Self::CloneRepository { .. } => write!(f, "CloneRepository"),
@@ -2580,8 +2532,7 @@ impl AIAgentInput {
                 clone_repo_url: url,
                 ..
             } => Some(url.query.clone()),
-            Self::InitProjectRules { display_query, .. }
-            | Self::CreateEnvironment { display_query, .. } => display_query.clone(),
+            Self::InitProjectRules { display_query, .. } => display_query.clone(),
             Self::CodeReview { .. } => Some("Address these comments".to_string()),
             Self::FetchReviewComments { .. } => Some(commands::PR_COMMENTS.name.to_string()),
             Self::InvokeSkill {
@@ -2706,7 +2657,6 @@ impl AIAgentInput {
             | Self::AutoCodeDiffQuery { context, .. }
             | Self::ResumeConversation { context, .. }
             | Self::InitProjectRules { context, .. }
-            | Self::CreateEnvironment { context, .. }
             | Self::TriggerPassiveSuggestion { context, .. }
             | Self::CreateNewProject { context, .. }
             | Self::CloneRepository { context, .. }
@@ -2738,7 +2688,6 @@ impl AIAgentInput {
             | Self::AutoCodeDiffQuery { .. }
             | Self::ResumeConversation { .. }
             | Self::InitProjectRules { .. }
-            | Self::CreateEnvironment { .. }
             | Self::CreateNewProject { .. }
             | Self::CloneRepository { .. }
             | Self::CodeReview { .. }
@@ -2762,7 +2711,6 @@ impl AIAgentInput {
         matches!(
             self,
             AIAgentInput::InitProjectRules { .. }
-                | AIAgentInput::CreateEnvironment { .. }
                 | AIAgentInput::FetchReviewComments { .. }
                 | AIAgentInput::InvokeSkill { .. }
         )
@@ -2842,10 +2790,6 @@ pub struct AIAgentExchange {
 
     /// The computer use model to which the request was sent.
     pub computer_use_model_id: LLMId,
-
-    /// The participant who initiated this exchange (for shared sessions)
-    /// For non-shared sessions, we just leave this as None.
-    pub response_initiator: Option<ParticipantId>,
 }
 
 impl AIAgentExchange {

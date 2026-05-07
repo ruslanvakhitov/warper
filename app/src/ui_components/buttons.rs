@@ -11,13 +11,6 @@ use warpui::ui_components::components::{Coords, UiComponent, UiComponentStyles};
 const ICON_BUTTON_PADDING: f32 = 4.;
 
 #[derive(Copy, Clone)]
-enum ButtonMode {
-    Base,
-    #[allow(dead_code)]
-    Accent,
-}
-
-#[derive(Copy, Clone)]
 enum ButtonState {
     Default,
     Disabled,
@@ -33,40 +26,24 @@ pub struct AllButtonStyles {
     disabled_styles: Option<UiComponentStyles>,
 }
 
-fn all_icon_button_styles(warp_theme: &WarpTheme, mode: ButtonMode) -> AllButtonStyles {
+fn all_icon_button_styles(warp_theme: &WarpTheme) -> AllButtonStyles {
     AllButtonStyles {
-        default_styles: icon_button_styles(warp_theme, mode, ButtonState::Default),
-        hovered_styles: Some(icon_button_styles(warp_theme, mode, ButtonState::Hover)),
-        clicked_styles: Some(icon_button_styles(warp_theme, mode, ButtonState::Pressed)),
-        disabled_styles: Some(icon_button_styles(warp_theme, mode, ButtonState::Disabled)),
+        default_styles: icon_button_styles(warp_theme, ButtonState::Default),
+        hovered_styles: Some(icon_button_styles(warp_theme, ButtonState::Hover)),
+        clicked_styles: Some(icon_button_styles(warp_theme, ButtonState::Pressed)),
+        disabled_styles: Some(icon_button_styles(warp_theme, ButtonState::Disabled)),
     }
 }
 
-fn icon_button_styles(
-    warp_theme: &WarpTheme,
-    mode: ButtonMode,
-    state: ButtonState,
-) -> UiComponentStyles {
-    let icon_color = icon_color(warp_theme, mode);
+fn icon_button_styles(warp_theme: &WarpTheme, state: ButtonState) -> UiComponentStyles {
+    let icon_color = icon_color(warp_theme);
 
-    let (background_color, border_color): (Option<Fill>, Option<Fill>) = match (mode, state) {
-        (ButtonMode::Base, ButtonState::Default) => (None, None),
-        (ButtonMode::Base, ButtonState::Hover) => {
-            (Some(warp_theme.surface_2()), Some(warp_theme.surface_3()))
-        }
-        (ButtonMode::Base, ButtonState::Pressed) | (ButtonMode::Base, ButtonState::Disabled) => {
+    let (background_color, border_color): (Option<Fill>, Option<Fill>) = match state {
+        ButtonState::Default => (None, None),
+        ButtonState::Hover => (Some(warp_theme.surface_2()), Some(warp_theme.surface_3())),
+        ButtonState::Pressed | ButtonState::Disabled => {
             (Some(warp_theme.background()), Some(warp_theme.surface_3()))
         }
-        (ButtonMode::Accent, ButtonState::Default) => (None, None),
-        (ButtonMode::Accent, ButtonState::Hover) => (
-            Some(warp_theme.surface_3()),
-            Some(blended_colors::accent(warp_theme)),
-        ),
-        (ButtonMode::Accent, ButtonState::Pressed)
-        | (ButtonMode::Accent, ButtonState::Disabled) => (
-            Some(warp_theme.background()),
-            Some(blended_colors::accent_pressed(warp_theme)),
-        ),
     };
 
     let mut styles = UiComponentStyles::default()
@@ -138,11 +115,8 @@ pub fn combo_inner_button(
     button
 }
 
-fn icon_color(warp_theme: &WarpTheme, mode: ButtonMode) -> Fill {
-    match mode {
-        ButtonMode::Base => warp_theme.foreground(),
-        ButtonMode::Accent => blended_colors::accent(warp_theme),
-    }
+fn icon_color(warp_theme: &WarpTheme) -> Fill {
+    warp_theme.foreground()
 }
 
 fn icon_button_internal(
@@ -150,12 +124,11 @@ fn icon_button_internal(
     icon: Icon,
     active: bool,
     mouse_state_handle: MouseStateHandle,
-    mode: ButtonMode,
     mut color: Option<Fill>,
 ) -> Button {
     let theme = appearance.theme();
 
-    let button_styles = all_icon_button_styles(theme, mode);
+    let button_styles = all_icon_button_styles(theme);
     let mut button = Button::new(
         mouse_state_handle,
         button_styles.default_styles,
@@ -163,7 +136,7 @@ fn icon_button_internal(
         button_styles.clicked_styles,
         button_styles.disabled_styles,
     )
-    .with_icon_label(icon.to_warpui_icon(color.unwrap_or(icon_color(theme, mode))));
+    .with_icon_label(icon.to_warpui_icon(color.unwrap_or(icon_color(theme))));
 
     if let Some(color) = color.take() {
         // We also need to set the font color here to get the button to be colored correctly.
@@ -183,14 +156,7 @@ pub fn icon_button_with_color(
     mouse_state_handle: MouseStateHandle,
     color: Fill,
 ) -> Button {
-    icon_button_internal(
-        appearance,
-        icon,
-        active,
-        mouse_state_handle,
-        ButtonMode::Base,
-        Some(color),
-    )
+    icon_button_internal(appearance, icon, active, mouse_state_handle, Some(color))
 }
 
 pub fn icon_button(
@@ -199,52 +165,9 @@ pub fn icon_button(
     active: bool,
     mouse_state_handle: MouseStateHandle,
 ) -> Button {
-    icon_button_internal(
-        appearance,
-        icon,
-        active,
-        mouse_state_handle,
-        ButtonMode::Base,
-        None,
-    )
-}
-
-pub fn accent_icon_button(
-    appearance: &Appearance,
-    icon: Icon,
-    active: bool,
-    mouse_state_handle: MouseStateHandle,
-) -> Button {
-    icon_button_internal(
-        appearance,
-        icon,
-        active,
-        mouse_state_handle,
-        ButtonMode::Accent,
-        None,
-    )
+    icon_button_internal(appearance, icon, active, mouse_state_handle, None)
 }
 
 pub fn close_button(appearance: &Appearance, mouse_state_handle: MouseStateHandle) -> Button {
     icon_button(appearance, Icon::X, false, mouse_state_handle)
-}
-
-pub fn highlight(button: Button, appearance: &Appearance) -> Button {
-    button
-        .with_style(UiComponentStyles::default().set_font_color(
-            crate::ui_components::blended_colors::text_main(
-                appearance.theme(),
-                appearance.theme().background(),
-            ),
-        ))
-        .with_hovered_styles(
-            UiComponentStyles::default()
-                .set_background(appearance.theme().surface_3().into())
-                .set_font_color(appearance.theme().foreground().into()),
-        )
-        .with_clicked_styles(
-            UiComponentStyles::default()
-                .set_background(appearance.theme().background().into())
-                .set_font_color(appearance.theme().foreground().into()),
-        )
 }

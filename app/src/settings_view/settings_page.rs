@@ -9,33 +9,24 @@ use super::{
     about_page::AboutPageView,
     ai_page::{AISettingsPageAction, AISettingsPageView},
     appearance_page::AppearanceSettingsPageView,
-    billing_and_usage_page::BillingAndUsagePageView,
     code_page::CodeSettingsPageView,
-    environments_page::EnvironmentsPageView,
     features_page::FeaturesPageView,
     keybindings::KeybindingsView,
     main_page::MainSettingsPageView,
     mcp_servers_page::MCPServersSettingsPageView,
     privacy_page::PrivacyPageView,
-    referrals_page::ReferralsPageView,
-    show_blocks_view::ShowBlocksView,
-    teams_page::TeamsPageView,
-    warp_drive_page::WarpDriveSettingsPageView,
     warpify_page::WarpifyPageView,
     SettingsSection,
 };
 use crate::{
     appearance::Appearance,
-    settings::CloudPreferencesSettings,
+    settings::LocalPreferencesSettings,
     themes::theme::Fill,
     ui_components::icons::Icon,
     view_components::{Dropdown, SubmittableTextInput},
 };
 use settings::Setting;
-use warp_core::{
-    settings::SyncToCloud,
-    ui::{color::blend::Blend, theme::color::internal_colors},
-};
+use warp_core::{settings::SyncToCloud, ui::theme::color::internal_colors};
 use warpui::{
     elements::{
         new_scrollable::{ClippedAxisConfiguration, DualAxisConfig, SingleAxisConfig},
@@ -65,7 +56,6 @@ pub(super) const HEADER_FONT_SIZE: f32 = 23.;
 pub const SUBHEADER_FONT_SIZE: f32 = 16.;
 const ALTERNATING_LIST_CLOSE_BUTTON_DIAMETER: f32 = 20.0;
 const ALTERNATING_LIST_ITEM_PADDING: f32 = 8.0;
-const GREY_TEXT_OPACITY: u8 = 60;
 const MIN_PAGE_WIDTH: f32 = 520.;
 const MAX_PAGE_WIDTH: f32 = 800.;
 
@@ -106,20 +96,13 @@ pub enum SettingsPageViewHandle {
     Main(ViewHandle<MainSettingsPageView>),
     Appearance(ViewHandle<AppearanceSettingsPageView>),
     Features(ViewHandle<FeaturesPageView>),
-    SharedBlocks(ViewHandle<ShowBlocksView>),
     Keybindings(ViewHandle<KeybindingsView>),
     About(ViewHandle<AboutPageView>),
     Code(ViewHandle<CodeSettingsPageView>),
-    Teams(ViewHandle<TeamsPageView>),
-    OzCloudAPIKeys(ViewHandle<super::platform_page::PlatformPageView>),
     Privacy(ViewHandle<PrivacyPageView>),
     Warpify(ViewHandle<WarpifyPageView>),
-    Referrals(ViewHandle<ReferralsPageView>),
     AI(ViewHandle<AISettingsPageView>),
-    CloudEnvironments(ViewHandle<EnvironmentsPageView>),
-    BillingAndUsage(ViewHandle<BillingAndUsagePageView>),
     MCPServers(ViewHandle<MCPServersSettingsPageView>),
-    WarpDrive(ViewHandle<WarpDriveSettingsPageView>),
 }
 
 impl SettingsPageViewHandle {
@@ -129,20 +112,13 @@ impl SettingsPageViewHandle {
             Main(view_handle) => ChildView::new(view_handle).finish(),
             Appearance(view_handle) => ChildView::new(view_handle).finish(),
             Features(view_handle) => ChildView::new(view_handle).finish(),
-            SharedBlocks(view_handle) => ChildView::new(view_handle).finish(),
             Keybindings(view_handle) => ChildView::new(view_handle).finish(),
             About(view_handle) => ChildView::new(view_handle).finish(),
             Code(view_handle) => ChildView::new(view_handle).finish(),
-            Teams(view_handle) => ChildView::new(view_handle).finish(),
-            OzCloudAPIKeys(view_handle) => ChildView::new(view_handle).finish(),
             Privacy(view_handle) => ChildView::new(view_handle).finish(),
             Warpify(view_handle) => ChildView::new(view_handle).finish(),
-            Referrals(view_handle) => ChildView::new(view_handle).finish(),
             AI(view_handle) => ChildView::new(view_handle).finish(),
-            CloudEnvironments(view_handle) => ChildView::new(view_handle).finish(),
-            BillingAndUsage(view_handle) => ChildView::new(view_handle).finish(),
             MCPServers(view_handle) => ChildView::new(view_handle).finish(),
-            WarpDrive(view_handle) => ChildView::new(view_handle).finish(),
         }
     }
 }
@@ -196,46 +172,6 @@ impl SettingsPage {
 #[derive(PartialEq, Eq)]
 pub enum SettingsPageEvent {
     FocusModal,
-    Pane(PaneEventWrapper),
-    EnvironmentSetupModeSelectorToggled { is_open: bool },
-    AgentAssistedEnvironmentModalToggled { is_open: bool },
-}
-
-/// Wrapper for pane events to avoid circular dependency with pane module.
-/// The actual handling converts this to the real PaneEvent.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PaneEventWrapper {
-    Close,
-}
-
-pub fn render_customer_type_badge(appearance: &Appearance, text: String) -> Box<dyn Element> {
-    Container::new(
-        Text::new_inline(text, appearance.ui_font_family(), appearance.ui_font_size())
-            .with_color(
-                appearance
-                    .theme()
-                    .background()
-                    .blend(
-                        &appearance
-                            .theme()
-                            .foreground()
-                            .with_opacity(GREY_TEXT_OPACITY),
-                    )
-                    .into(),
-            )
-            .with_style(Properties::default().weight(Weight::Medium))
-            .finish(),
-    )
-    .with_uniform_padding(4.)
-    .with_background(
-        appearance
-            .theme()
-            .background()
-            .blend(&appearance.theme().foreground().with_opacity(25)),
-    )
-    .with_corner_radius(CornerRadius::with_all(Radius::Pixels(3.)))
-    .with_margin_left(10.)
-    .finish()
 }
 
 /// Adds padding to the sub header
@@ -524,7 +460,7 @@ impl LocalOnlyIconState {
         mouse_states: &mut HashMap<String, MouseStateHandle>,
         app: &AppContext,
     ) -> Self {
-        if !*CloudPreferencesSettings::as_ref(app).settings_sync_enabled {
+        if !*LocalPreferencesSettings::as_ref(app).settings_sync_enabled {
             // Only show the local-only icon if settings sync is enabled.
             return Self::Hidden;
         }
@@ -1434,17 +1370,6 @@ impl<V: warpui::View> PageType<V> {
                 ..
             } => {
                 *highlighted_widget_id = None;
-            }
-        }
-    }
-
-    /// Set the minimum page width for narrow panes.
-    pub fn set_min_page_width(&mut self, width: f32) {
-        match self {
-            Self::Monolith { min_page_width, .. }
-            | Self::Uncategorized { min_page_width, .. }
-            | Self::Categorized { min_page_width, .. } => {
-                *min_page_width = width;
             }
         }
     }

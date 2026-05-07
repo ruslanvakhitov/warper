@@ -10,16 +10,10 @@ use warp_core::ui::appearance::Appearance;
 use warp_files::FileModel;
 use warpui::{platform::WindowStyle, App, SingletonEntity, View};
 
-use crate::server::server_api::team::MockTeamClient;
-use crate::server::server_api::workspace::MockWorkspaceClient;
-use crate::server::telemetry::context_provider::AppTelemetryContextProvider;
 use crate::terminal::keys::TerminalKeybindings;
 use crate::{
-    auth::{auth_manager::AuthManager, AuthStateProvider},
-    cloud_object::model::persistence::CloudModel,
     notebooks::{editor::keys::NotebookKeybindings, file::is_markdown_file},
     search::files::model::FileSearchModel,
-    server::server_api::ServerApiProvider,
     settings_view::keybindings::KeybindingChangedNotifier,
     terminal::model::session::Session,
     test_util::settings::initialize_settings_for_tests,
@@ -48,21 +42,7 @@ fn init_app(app: &mut App) {
     app.add_singleton_model(FileModel::new);
     app.add_singleton_model(NotebookKeybindings::new);
     app.add_singleton_model(TerminalKeybindings::new);
-    app.add_singleton_model(CloudModel::mock);
-    app.add_singleton_model(|_| ServerApiProvider::new_for_test());
-    app.add_singleton_model(|_| AuthStateProvider::new_for_test());
-    app.add_singleton_model(AppTelemetryContextProvider::new_context_provider);
-    app.add_singleton_model(AuthManager::new_for_test);
-    let team_client_mock = Arc::new(MockTeamClient::new());
-    let workspace_client_mock = Arc::new(MockWorkspaceClient::new());
-    app.add_singleton_model(|ctx| {
-        UserWorkspaces::mock(
-            team_client_mock.clone(),
-            workspace_client_mock.clone(),
-            vec![],
-            ctx,
-        )
-    });
+    app.add_singleton_model(|ctx| UserWorkspaces::mock(vec![], ctx));
     #[cfg(feature = "voice_input")]
     app.add_singleton_model(voice_input::VoiceInput::new);
 }

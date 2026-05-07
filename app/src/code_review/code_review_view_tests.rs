@@ -1,8 +1,5 @@
 use super::*;
 use crate::ai::persisted_workspace::PersistedWorkspace;
-use crate::ai::request_usage_model::AIRequestUsageModel;
-use crate::auth::AuthStateProvider;
-use crate::cloud_object::model::persistence::CloudModel;
 use crate::code::editor::view::{CodeEditorRenderOptions, CodeEditorView};
 use crate::code::local_code_editor::LocalCodeEditorView;
 use crate::code_review::comments::{
@@ -15,10 +12,6 @@ use crate::code_review::diff_state::{DiffStateModel, FileDiff, GitFileStatus};
 use crate::code_review::editor_state::CodeReviewEditorState;
 use crate::code_review::GlobalCodeReviewModel;
 use crate::pane_group::WorkingDirectoriesModel;
-use crate::server::server_api::{
-    team::MockTeamClient, workspace::MockWorkspaceClient, ServerApiProvider,
-};
-use crate::server::telemetry::context_provider::AppTelemetryContextProvider;
 use crate::settings_view::keybindings::KeybindingChangedNotifier;
 use crate::terminal::local_shell::LocalShellState;
 use crate::test_util::settings::initialize_settings_for_tests;
@@ -66,8 +59,6 @@ impl warpui::TypedActionView for TestView {
 /// Initialize required singletons for testing
 fn initialize_test_app(app: &mut App) {
     initialize_settings_for_tests(app);
-    app.add_singleton_model(|_| AuthStateProvider::new_for_test());
-    app.add_singleton_model(AppTelemetryContextProvider::new_context_provider);
     app.add_singleton_model(|_| Appearance::mock());
     app.add_singleton_model(|_| SyncedInputState::mock());
     app.add_singleton_model(|_| VimRegisters::new());
@@ -77,23 +68,10 @@ fn initialize_test_app(app: &mut App) {
     app.add_singleton_model(|_| LocalShellState::NotLoaded);
     app.add_singleton_model(PersistedWorkspace::new_for_test);
     app.add_singleton_model(|_| GlobalCodeReviewModel);
-    app.add_singleton_model(|ctx| {
-        UserWorkspaces::mock(
-            Arc::new(MockTeamClient::new()),
-            Arc::new(MockWorkspaceClient::new()),
-            vec![],
-            ctx,
-        )
-    });
+    app.add_singleton_model(|ctx| UserWorkspaces::mock(vec![], ctx));
 
-    // Add mocks required by rich text editor (used in the CommentEditor)
-    app.add_singleton_model(CloudModel::mock);
     app.add_singleton_model(|_| ActiveSession::default());
     app.add_singleton_model(NotebookKeybindings::new);
-    app.add_singleton_model(|_| ServerApiProvider::new_for_test());
-    app.add_singleton_model(|ctx| {
-        AIRequestUsageModel::new_for_test(ServerApiProvider::as_ref(ctx).get_ai_client(), ctx)
-    });
 }
 
 /// Creates a LocalCodeEditorView with the given content
@@ -346,16 +324,13 @@ fn test_relocate_comments_empty_input() {
         );
 
         ctx.code_review_view.update(&mut app, |_view, view_ctx| {
-            let RelocateCommentsResult {
-                comments: relocated,
-                fallback_count: fallbacks,
-            } = CodeReviewView::relocate_comments(vec![], &ctx.state, &ctx.repo_path, view_ctx);
+            let relocated =
+                CodeReviewView::relocate_comments(vec![], &ctx.state, &ctx.repo_path, view_ctx);
 
             assert!(
                 relocated.is_empty(),
                 "Empty input should return empty output"
             );
-            assert_eq!(fallbacks, 0, "Empty input should have no fallbacks");
         });
     });
 }
@@ -373,10 +348,7 @@ fn test_relocate_comments_general_comment_passes_through() {
         let original_id = general_comment.id;
 
         ctx.code_review_view.update(&mut app, |_view, view_ctx| {
-            let RelocateCommentsResult {
-                comments: relocated,
-                fallback_count: fallbacks,
-            } = CodeReviewView::relocate_comments(
+            let relocated = CodeReviewView::relocate_comments(
                 vec![general_comment],
                 &ctx.state,
                 &ctx.repo_path,
@@ -388,10 +360,6 @@ fn test_relocate_comments_general_comment_passes_through() {
             assert!(
                 matches!(relocated[0].target, AttachedReviewCommentTarget::General),
                 "General comment should remain General"
-            );
-            assert_eq!(
-                fallbacks, 0,
-                "General comments should not count as fallbacks"
             );
         });
     });
@@ -408,10 +376,7 @@ fn test_relocate_comments_file_comment_passes_through() {
         let original_id = file_comment.id;
 
         ctx.code_review_view.update(&mut app, |_view, view_ctx| {
-            let RelocateCommentsResult {
-                comments: relocated,
-                fallback_count: fallbacks,
-            } = CodeReviewView::relocate_comments(
+            let relocated = CodeReviewView::relocate_comments(
                 vec![file_comment],
                 &ctx.state,
                 &ctx.repo_path,
@@ -427,7 +392,6 @@ fn test_relocate_comments_file_comment_passes_through() {
                 ),
                 "File comment should remain File"
             );
-            assert_eq!(fallbacks, 0, "File comments should not count as fallbacks");
         });
     });
 }
@@ -449,10 +413,7 @@ fn test_relocate_comments_line_comment_no_matching_editor_marked_outdated() {
         let original_id = line_comment.id;
 
         ctx.code_review_view.update(&mut app, |_view, view_ctx| {
-            let RelocateCommentsResult {
-                comments: relocated,
-                fallback_count: fallbacks,
-            } = CodeReviewView::relocate_comments(
+            let relocated = CodeReviewView::relocate_comments(
                 vec![line_comment],
                 &ctx.state,
                 &ctx.repo_path,
@@ -468,10 +429,6 @@ fn test_relocate_comments_line_comment_no_matching_editor_marked_outdated() {
             assert!(
                 relocated[0].outdated,
                 "Comment should be marked as outdated"
-            );
-            assert_eq!(
-                fallbacks, 0,
-                "Outdated comments should not count as fallbacks"
             );
         });
     });
@@ -493,10 +450,8 @@ fn test_relocate_comments_multiple_comment_types() {
 
         ctx.code_review_view.update(&mut app, |_view, view_ctx| {
             let comments = vec![general_comment, file_comment, line_comment];
-            let RelocateCommentsResult {
-                comments: relocated,
-                fallback_count: _,
-            } = CodeReviewView::relocate_comments(comments, &ctx.state, &ctx.repo_path, view_ctx);
+            let relocated =
+                CodeReviewView::relocate_comments(comments, &ctx.state, &ctx.repo_path, view_ctx);
 
             assert_eq!(
                 relocated.len(),
@@ -536,10 +491,7 @@ fn test_relocate_comments_line_comment_with_absolute_path() {
         let original_id = line_comment.id;
 
         ctx.code_review_view.update(&mut app, |_view, view_ctx| {
-            let RelocateCommentsResult {
-                comments: relocated,
-                fallback_count: _,
-            } = CodeReviewView::relocate_comments(
+            let relocated = CodeReviewView::relocate_comments(
                 vec![line_comment],
                 &ctx.state,
                 &ctx.repo_path,
@@ -705,10 +657,7 @@ fn test_relocate_comments_file_comment_no_matching_editor_marked_outdated() {
         let original_id = file_comment.id;
 
         ctx.code_review_view.update(&mut app, |_view, view_ctx| {
-            let RelocateCommentsResult {
-                comments: relocated,
-                fallback_count: fallbacks,
-            } = CodeReviewView::relocate_comments(
+            let relocated = CodeReviewView::relocate_comments(
                 vec![file_comment],
                 &ctx.state,
                 &ctx.repo_path,
@@ -724,10 +673,6 @@ fn test_relocate_comments_file_comment_no_matching_editor_marked_outdated() {
             assert!(
                 relocated[0].outdated,
                 "Comment should be marked as outdated"
-            );
-            assert_eq!(
-                fallbacks, 0,
-                "Outdated file comments should not count as fallbacks"
             );
         });
     });
@@ -749,10 +694,7 @@ fn test_relocate_comments_line_removed_marked_outdated() {
         let original_id = line_comment.id;
 
         ctx.code_review_view.update(&mut app, |_view, view_ctx| {
-            let RelocateCommentsResult {
-                comments: relocated,
-                fallback_count: fallbacks,
-            } = CodeReviewView::relocate_comments(
+            let relocated = CodeReviewView::relocate_comments(
                 vec![line_comment],
                 &ctx.state,
                 &ctx.repo_path,
@@ -768,10 +710,6 @@ fn test_relocate_comments_line_removed_marked_outdated() {
             assert!(
                 relocated[0].outdated,
                 "Comment should be marked as outdated when line content cannot be found"
-            );
-            assert_eq!(
-                fallbacks, 1,
-                "Should count as a fallback when line content cannot be matched"
             );
         });
     });
@@ -953,10 +891,7 @@ fn test_active_comments_not_marked_outdated() {
         let original_id = line_comment.id;
 
         ctx.code_review_view.update(&mut app, |_view, view_ctx| {
-            let RelocateCommentsResult {
-                comments: relocated,
-                fallback_count: fallbacks,
-            } = CodeReviewView::relocate_comments(
+            let relocated = CodeReviewView::relocate_comments(
                 vec![line_comment],
                 &ctx.state,
                 &ctx.repo_path,
@@ -968,10 +903,6 @@ fn test_active_comments_not_marked_outdated() {
             assert!(
                 !relocated[0].outdated,
                 "Comment should NOT be marked as outdated when line content is found"
-            );
-            assert_eq!(
-                fallbacks, 0,
-                "Should have no fallbacks when content matches"
             );
         });
     });

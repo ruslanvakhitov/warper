@@ -1,14 +1,10 @@
 use super::*;
-use crate::auth::AuthStateProvider;
-use crate::cloud_object::model::persistence::CloudModel;
 use crate::code::editor::view::{CodeEditorRenderOptions, CodeEditorView};
 use crate::code::local_code_editor::LocalCodeEditorView;
 use crate::code_review::code_review_view::CodeReviewView;
 use crate::code_review::diff_state::DiffStateModel;
 use crate::code_review::GlobalCodeReviewModel;
 use crate::pane_group::WorkingDirectoriesModel;
-use crate::server::server_api::{team::MockTeamClient, workspace::MockWorkspaceClient};
-use crate::server::telemetry::context_provider::AppTelemetryContextProvider;
 use crate::settings_view::keybindings::KeybindingChangedNotifier;
 use crate::test_util::settings::initialize_settings_for_tests;
 use crate::vim_registers::VimRegisters;
@@ -18,7 +14,6 @@ use crate::workspaces::user_workspaces::UserWorkspaces;
 use crate::NotebookKeybindings;
 use repo_metadata::repositories::DetectedRepositories;
 use std::path::PathBuf;
-use std::sync::Arc;
 use string_offset::CharOffset;
 use warp_core::ui::appearance::Appearance;
 use warp_editor::content::buffer::InitialBufferState;
@@ -145,25 +140,14 @@ fn test_regex_search() {
 /// Initialize required singletons for testing LocalCodeEditorView
 fn initialize_test_app(app: &mut App) {
     initialize_settings_for_tests(app);
-    app.add_singleton_model(|_| AuthStateProvider::new_for_test());
-    app.add_singleton_model(AppTelemetryContextProvider::new_context_provider);
     app.add_singleton_model(|_| Appearance::mock());
     app.add_singleton_model(|_| SyncedInputState::mock());
     app.add_singleton_model(|_| VimRegisters::new());
     app.add_singleton_model(|_| KeybindingChangedNotifier::mock());
     app.add_singleton_model(|_| DetectedRepositories::default());
     app.add_singleton_model(|_| GlobalCodeReviewModel);
-    app.add_singleton_model(|ctx| {
-        UserWorkspaces::mock(
-            Arc::new(MockTeamClient::new()),
-            Arc::new(MockWorkspaceClient::new()),
-            vec![],
-            ctx,
-        )
-    });
+    app.add_singleton_model(|ctx| UserWorkspaces::mock(vec![], ctx));
 
-    // Add mocks required by rich text editor (used in the CommentEditor)
-    app.add_singleton_model(CloudModel::mock);
     app.add_singleton_model(|_| ActiveSession::default());
     app.add_singleton_model(NotebookKeybindings::new);
 }

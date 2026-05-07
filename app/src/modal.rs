@@ -1,5 +1,5 @@
+use crate::appearance::Appearance;
 use crate::ui_components::blended_colors;
-use crate::{appearance::Appearance, themes::theme::Fill, ui_components::icons};
 use pathfinder_geometry::vector::vec2f;
 use warpui::{
     color::ColorU,
@@ -23,8 +23,6 @@ pub const MODAL_PADDING: f32 = 28.;
 #[derive(Clone)]
 pub struct Modal<T> {
     title: Option<String>,
-    header_icon: Option<icons::Icon>,
-    header_icon_color: Option<Fill>,
     body: ViewHandle<T>,
     show_close_modal_button: bool,
     dismiss_on_click: bool,
@@ -117,8 +115,6 @@ impl<T: View> Modal<T> {
         let theme = appearance.theme();
         Self {
             title,
-            header_icon: None,
-            header_icon_color: None,
             body,
             show_close_modal_button: true,
             dismiss_on_click: false,
@@ -196,22 +192,6 @@ impl<T: View> Modal<T> {
         self
     }
 
-    pub fn set_title(&mut self, title: Option<String>) {
-        self.title = title;
-    }
-
-    pub fn set_header_icon(&mut self, icon: Option<icons::Icon>) {
-        self.header_icon = icon;
-    }
-
-    pub fn set_header_icon_color(&mut self, color: Option<Fill>) {
-        self.header_icon_color = color;
-    }
-
-    pub fn set_offset_positioning(&mut self, offset_positioning: OffsetPositioning) {
-        self.offset_positioning = offset_positioning;
-    }
-
     fn handle_appearance_update(
         &mut self,
         handle: ModelHandle<Appearance>,
@@ -245,45 +225,9 @@ impl<T: View> Modal<T> {
             .finish()
     }
 
-    fn render_header_icon(&self, appearance: &Appearance) -> Option<Box<dyn Element>> {
-        if let Some(icon) = self.header_icon {
-            let icon_size = self
-                .header_styles
-                .font_size
-                .unwrap_or(appearance.header_font_size());
-            // first check if there's an icon color override, otherwise fall back to the
-            // header font color, otherwise fall back to the theme's active_ui_text_color
-            let icon_color = self.header_icon_color.unwrap_or(
-                self.header_styles
-                    .font_color
-                    .unwrap_or(appearance.theme().active_ui_text_color().into())
-                    .into(),
-            );
-            Some(
-                Align::new(
-                    Container::new(
-                        ConstrainedBox::new(icon.to_warpui_icon(icon_color).finish())
-                            .with_width(icon_size)
-                            .with_height(icon_size)
-                            .finish(),
-                    )
-                    .with_margin_right(icon_size / 2.)
-                    .finish(),
-                )
-                .finish(),
-            )
-        } else {
-            None
-        }
-    }
-
     fn render_header(&self, appearance: &Appearance) -> Option<Box<dyn Element>> {
         if let Some(title) = &self.title {
             let mut header = Flex::row().with_cross_axis_alignment(CrossAxisAlignment::Center);
-
-            if let Some(icon) = self.render_header_icon(appearance) {
-                header.add_child(icon);
-            }
 
             header.add_child(
                 Shrinkable::new(

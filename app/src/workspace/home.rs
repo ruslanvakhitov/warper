@@ -8,15 +8,11 @@ use warpui::ViewContext;
 use super::view::Workspace;
 use crate::pane_group::{AnyPaneContent, FilePane};
 
-const WARP_HOME_TITLE: &str = "Welcome to Warp on Web";
+const WARP_HOME_TITLE: &str = "Welcome to Warper";
 const WARP_HOME_CONTENT: &str = r#"
-Welcome to Warp on Web - your browser-based home for Warp! 
-Use Warp on Web to:
-* Join Shared Sessions
-* Create, View, and Edit Warp Drive Objects
-* Manage your Warp Settings
+Warper is running in local-only mode.
 
-Warp on Web can also be used by your teammates and peers who don't have Warp downloaded yet to view your shared sessions, notebooks, and workflows."#;
+Use this window for local terminal sessions, local files, settings, keybindings, launch configs, and local workflows."#;
 
 /// Create a static "home page" pane.
 pub fn create_home_pane(ctx: &mut ViewContext<Workspace>) -> Box<dyn AnyPaneContent> {

@@ -1,6 +1,5 @@
-//! Commit mode for [`GitDialog`]. Drafts a commit message via AI on open,
-//! then on confirm runs `run_commit` and optionally chains `run_push` /
-//! `create_pr` per the selected intent.
+//! Commit mode for [`GitDialog`]. Runs `run_commit` and optionally chains
+//! `run_push` / `create_pr` per the selected intent.
 
 use std::path::Path;
 
@@ -18,18 +17,15 @@ use warpui::{
 };
 
 use crate::{
-    ai::generate_code_review_content::api::{GenerateCodeReviewContentRequest, OutputType},
     code_review::git_dialog::{
-        interactive_path_future,
-        pr::{create_pr_with_ai_content, show_pr_created_toast},
-        render_branch_section, render_file_changes_box, should_send_git_ops_ai_request, show_toast,
-        user_facing_git_error, GitDialog, GitDialogAction, GitDialogEvent, GitDialogMode,
+        interactive_path_future, pr::show_pr_created_toast, render_branch_section,
+        render_file_changes_box, show_toast, user_facing_git_error, GitDialog, GitDialogAction,
+        GitDialogEvent, GitDialogMode,
     },
     editor::{
         EditorOptions, EditorView, Event as EditorEvent, InteractionState,
         PropagateAndNoOpNavigationKeys, TextOptions,
     },
-    server::server_api::ServerApiProvider,
     ui_components::icons::Icon,
     util::git::{FileChangeEntry, PrInfo},
     view_components::action_button::{ActionButton, ButtonSize, SecondaryTheme},
@@ -63,12 +59,6 @@ pub enum CommitSubAction {
 
 const EDITOR_FONT_SIZE: f32 = 12.;
 const EDITOR_MIN_HEIGHT: f32 = 72.;
-/// Placeholder shown while the open-time AI commit-message autogen is in
-/// flight.
-const GENERATING_PLACEHOLDER_TEXT: &str = "Generating commit message\u{2026}";
-/// Placeholder shown once the open-time autogen resolves — either as a
-/// nudge if the user later clears the generated draft, or as guidance when
-/// autogen failed and the editor is blank. Also used when autogen is off.
 const FALLBACK_PLACEHOLDER_TEXT: &str = "Type a commit message";
 /// Loading-state label while the commit / chain runs. Static regardless of
 /// which chain is in flight — the success toast communicates what actually
@@ -110,15 +100,7 @@ pub(super) fn new_state(
     } else {
         ("Commit and publish", Icon::UploadCloud)
     };
-    // If AI autogen is on, the dialog opens with "Generating\u{2026}" and a
-    // background request fills the editor when it resolves. Otherwise, we
-    // land on the manual-type prompt immediately.
-    let ai_autogen_enabled = should_send_git_ops_ai_request(ctx);
-    let initial_placeholder = if ai_autogen_enabled {
-        GENERATING_PLACEHOLDER_TEXT
-    } else {
-        FALLBACK_PLACEHOLDER_TEXT
-    };
+    let initial_placeholder = FALLBACK_PLACEHOLDER_TEXT;
     let message_editor = ctx.add_typed_action_view(|ctx| {
         let appearance = Appearance::as_ref(ctx);
         let options = EditorOptions {
@@ -193,22 +175,16 @@ pub(super) fn new_state(
             let GitDialogMode::Commit(state) = &mut me.mode else {
                 return;
             };
-            let has_changes = match result {
+            match result {
                 Ok(entries) => {
-                    let has_changes = !entries.is_empty();
                     state.file_changes = entries;
-                    has_changes
                 }
                 Err(err) => {
                     log::warn!("Failed to load file changes: {err}");
-                    false
                 }
             };
             me.refresh_confirm_enabled(ctx);
             ctx.notify();
-            if ai_autogen_enabled && has_changes {
-                generate_commit_message(me.repo_path(), me.branch_name(), include_unstaged, ctx);
-            }
         },
     );
 
@@ -249,73 +225,6 @@ pub(super) fn confirm_tooltip(state: &CommitState, app: &AppContext) -> Option<&
     } else {
         None
     }
-}
-
-/// Kicks off an open-time AI commit-message generation. On success, writes
-/// the result into the message editor (unless the user has already typed
-/// something). On failure, silently swaps the placeholder to the manual
-/// prompt so the user can type their own — no toast because the failure
-/// isn't retryable and the empty editor already tells the story.
-fn generate_commit_message(
-    repo_path: &Path,
-    branch_name: &str,
-    include_unstaged: bool,
-    ctx: &mut ViewContext<GitDialog>,
-) {
-    let repo_path = repo_path.to_path_buf();
-    let branch_name = branch_name.to_string();
-    let code_review_ai = ServerApiProvider::handle(ctx).read(ctx, |p, _| p.get_ai_client());
-
-    ctx.spawn(
-        async move {
-            let diff =
-                crate::util::git::get_diff_for_commit_message(&repo_path, include_unstaged).await?;
-            let generated = code_review_ai
-                .generate_code_review_content(GenerateCodeReviewContentRequest {
-                    output_type: OutputType::CommitMessage,
-                    diff,
-                    branch_name,
-                    commit_messages: Vec::new(),
-                })
-                .await?
-                .content;
-            if generated.trim().is_empty() {
-                anyhow::bail!("AI returned an empty commit message");
-            }
-            anyhow::Ok(generated)
-        },
-        |me, result, ctx| {
-            let editor_handle = match &me.mode {
-                GitDialogMode::Commit(state) => state.message_editor.clone(),
-                _ => return,
-            };
-            match result {
-                Ok(generated) => {
-                    let user_typed = !editor_handle.as_ref(ctx).buffer_text(ctx).trim().is_empty();
-                    editor_handle.update(ctx, |editor, ctx| {
-                        // Swap "Generating\u{2026}" for the manual-type
-                        // prompt so it shows if the user later clears the
-                        // generated draft.
-                        editor.set_placeholder_text(FALLBACK_PLACEHOLDER_TEXT, ctx);
-                        // User input wins — don't clobber their text.
-                        if !user_typed {
-                            editor.system_reset_buffer_text(generated.trim(), ctx);
-                        }
-                    });
-                    me.refresh_confirm_enabled(ctx);
-                    ctx.notify();
-                }
-                Err(err) => {
-                    log::warn!("Failed to autogenerate commit message: {err}");
-                    editor_handle.update(ctx, |editor, ctx| {
-                        editor.set_placeholder_text(FALLBACK_PLACEHOLDER_TEXT, ctx);
-                    });
-                    me.refresh_confirm_enabled(ctx);
-                    ctx.notify();
-                }
-            }
-        },
-    );
 }
 
 pub(super) fn handle_sub_action(
@@ -365,7 +274,6 @@ pub(super) fn start_confirm(me: &mut GitDialog, ctx: &mut ViewContext<GitDialog>
     };
     let intent = state.intent;
     let include_unstaged = state.include_unstaged;
-    let ai_autogen_enabled = should_send_git_ops_ai_request(ctx);
     let message_editor = state.message_editor.clone();
     let repo_path = me.repo_path().clone();
     let branch_name = me.branch_name().to_string();
@@ -378,11 +286,6 @@ pub(super) fn start_confirm(me: &mut GitDialog, ctx: &mut ViewContext<GitDialog>
         editor.set_interaction_state(InteractionState::Disabled, ctx);
     });
 
-    let code_review_ai = if ai_autogen_enabled {
-        Some(ServerApiProvider::handle(ctx).read(ctx, |p, _| p.get_ai_client()))
-    } else {
-        None
-    };
     let path_future = interactive_path_future(ctx);
 
     ctx.spawn(
@@ -399,34 +302,14 @@ pub(super) fn start_confirm(me: &mut GitDialog, ctx: &mut ViewContext<GitDialog>
                 }
                 CommitIntent::CommitAndCreatePr => {
                     crate::util::git::run_push(&repo_path, &branch_name, path_env_ref).await?;
-                    let pr = match code_review_ai {
-                        Some(ai) => {
-                            // Reuse pr.rs's AI-title/body-with-fallback helper so
-                            // the standalone PR flow and this chain always produce
-                            // PRs the same way.
-                            create_pr_with_ai_content(
-                                &repo_path,
-                                &branch_name,
-                                parent_branch.as_deref(),
-                                ai.as_ref(),
-                                path_env_ref,
-                            )
-                            .await?
-                        }
-                        None => {
-                            // AI autogen disabled (global toggle, per-feature
-                            // toggle, or enterprise) — skip AI entirely and use
-                            // `gh pr create --fill`
-                            crate::util::git::create_pr(
-                                &repo_path,
-                                None,
-                                None,
-                                parent_branch.as_deref(),
-                                path_env_ref,
-                            )
-                            .await?
-                        }
-                    };
+                    let pr = crate::util::git::create_pr(
+                        &repo_path,
+                        None,
+                        None,
+                        parent_branch.as_deref(),
+                        path_env_ref,
+                    )
+                    .await?;
                     CommitOutcome::PrCreated(pr)
                 }
             };

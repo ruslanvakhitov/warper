@@ -15,8 +15,6 @@ use crate::view_components::{
     action_button::{ActionButton, DangerSecondaryTheme},
     Dropdown, DropdownItem, FilterableDropdown, SubmittableTextInput, SubmittableTextInputEvent,
 };
-use crate::workspace::WorkspaceAction;
-use crate::workspaces::user_workspaces::UserWorkspacesEvent;
 use crate::TemplatableMCPServerManager;
 use crate::UserWorkspaces;
 use crate::{
@@ -84,9 +82,7 @@ fn render_upgrade_footer(
         Some(Cursor::PointingHand),
         |_is_hovered, _ctx, _app| {},
     )
-    .with_clickable_char_range(upgrade_start..label.len(), move |_modifiers, ctx, _app| {
-        ctx.dispatch_typed_action(WorkspaceAction::ShowUpgrade);
-    })
+    .with_clickable_char_range(upgrade_start..label.len(), move |_modifiers, _ctx, _app| {})
     .finish();
 
     let inner = Container::new(
@@ -208,9 +204,6 @@ pub enum ExecutionProfileEditorViewAction {
         id: uuid::Uuid,
     },
     DeleteProfile,
-    SetPlanAutoSync {
-        enabled: bool,
-    },
     SetWebSearchEnabled {
         enabled: bool,
     },
@@ -246,7 +239,6 @@ pub struct ExecutionProfileEditorView {
     profile_name_editor: ViewHandle<EditorView>,
     delete_button: ViewHandle<ActionButton>,
     tooltip_mouse_state_handles: TooltipMouseStateHandles,
-    plan_auto_sync_switch: SwitchStateHandle,
     web_search_switch: SwitchStateHandle,
     upgrade_footer_mouse_state: MouseStateHandle,
 }
@@ -597,7 +589,6 @@ impl ExecutionProfileEditorView {
             profile_name_editor,
             delete_button,
             tooltip_mouse_state_handles: Default::default(),
-            plan_auto_sync_switch: Default::default(),
             web_search_switch: Default::default(),
             upgrade_footer_mouse_state: Default::default(),
         };
@@ -754,13 +745,6 @@ impl ExecutionProfileEditorView {
         );
 
         let workspace = UserWorkspaces::handle(ctx);
-        ctx.subscribe_to_model(&workspace, |me, workspace, event, ctx| {
-            if let UserWorkspacesEvent::TeamsChanged = event {
-                Self::update_all_editor_interaction_states(me, workspace, ctx);
-                ctx.notify();
-            }
-        });
-
         Self::update_all_editor_interaction_states(&view, workspace, ctx);
 
         view.refresh_profile_state(ctx);
@@ -1135,7 +1119,7 @@ impl ExecutionProfileEditorView {
     ) where
         F: Fn(uuid::Uuid) -> ExecutionProfileEditorViewAction,
     {
-        let all_mcp_servers = TemplatableMCPServerManager::get_all_cloud_synced_mcp_servers(ctx);
+        let all_mcp_servers = TemplatableMCPServerManager::get_all_runnable_mcp_servers(ctx);
         dropdown.update(ctx, |dropdown, ctx| {
             let mcps_in_dropdown: Vec<(uuid::Uuid, String)> = all_mcp_servers
                 .into_iter()
@@ -1449,12 +1433,6 @@ impl TypedActionView for ExecutionProfileEditorView {
                     profiles_model.delete_profile(self.profile_id, ctx);
                 });
                 ctx.emit(ExecutionProfileEditorViewEvent::Pane(PaneEvent::Close));
-            }
-            ExecutionProfileEditorViewAction::SetPlanAutoSync { enabled } => {
-                AIExecutionProfilesModel::handle(ctx).update(ctx, |profiles_model, ctx| {
-                    profiles_model.set_autosync_plans_to_warp_drive(self.profile_id, *enabled, ctx);
-                });
-                ctx.notify();
             }
             ExecutionProfileEditorViewAction::SetWebSearchEnabled { enabled } => {
                 AIExecutionProfilesModel::handle(ctx).update(ctx, |profiles_model, ctx| {

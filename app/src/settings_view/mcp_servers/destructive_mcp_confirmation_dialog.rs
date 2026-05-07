@@ -49,8 +49,6 @@ impl DestructiveMCPConfirmationDialogDisplayOptions {
 #[derive(Debug, Clone)]
 pub enum DestructiveMCPConfirmationDialogVariant {
     DeleteLocal,
-    DeleteShared,
-    Unshare,
 }
 
 impl From<&DestructiveMCPConfirmationDialogVariant>
@@ -58,24 +56,14 @@ impl From<&DestructiveMCPConfirmationDialogVariant>
 {
     fn from(variant: &DestructiveMCPConfirmationDialogVariant) -> Self {
         match *variant {
-            DestructiveMCPConfirmationDialogVariant::DeleteLocal => DestructiveMCPConfirmationDialogDisplayOptions::new(
-                "Delete MCP server?".to_string(),
-                "This will uninstall and remove this MCP server from all your devices.".to_string(),
-                "Delete MCP".to_string(),
-                "Cancel".to_string(),
-            ),
-            DestructiveMCPConfirmationDialogVariant::DeleteShared => DestructiveMCPConfirmationDialogDisplayOptions::new(
-                "Delete shared MCP server?".to_string(),
-                "This will not only delete this MCP server for yourself, but also uninstall and remove this MCP server from Warp and across all of your teammates' devices.".to_string(),
-                "Delete MCP".to_string(),
-                "Cancel".to_string(),
-            ),
-            DestructiveMCPConfirmationDialogVariant::Unshare => DestructiveMCPConfirmationDialogDisplayOptions::new(
-                "Remove shared MCP server from team?".to_string(),
-                "This will uninstall and remove this MCP server from Warp and across all of your teammates' devices.".to_string(),
-                "Remove from team".to_string(),
-                "Cancel".to_string(),
-            ),
+            DestructiveMCPConfirmationDialogVariant::DeleteLocal => {
+                DestructiveMCPConfirmationDialogDisplayOptions::new(
+                    "Delete MCP server?".to_string(),
+                    "This will remove this MCP server from local settings.".to_string(),
+                    "Delete MCP".to_string(),
+                    "Cancel".to_string(),
+                )
+            }
         }
     }
 }

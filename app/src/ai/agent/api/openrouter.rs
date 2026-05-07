@@ -507,7 +507,7 @@ fn add_messages_event(
         id: Uuid::new_v4().to_string(),
         task_id: task_id.clone(),
         request_id: request_id.clone(),
-        timestamp: timestamp.clone(),
+        timestamp,
         server_message_data: String::new(),
         citations: vec![],
         message: Some(message::Message::ModelUsed(message::ModelUsed {
@@ -523,7 +523,7 @@ fn add_messages_event(
             id: Uuid::new_v4().to_string(),
             task_id: task_id.clone(),
             request_id: request_id.clone(),
-            timestamp: timestamp.clone(),
+            timestamp,
             server_message_data: String::new(),
             citations: vec![],
             message: Some(message::Message::AgentOutput(message::AgentOutput { text })),
@@ -531,7 +531,7 @@ fn add_messages_event(
     }
 
     messages.extend(tool_calls.into_iter().filter_map(|tool_call| {
-        openrouter_tool_call_to_message(&task_id, &request_id, tool_call, timestamp.clone())
+        openrouter_tool_call_to_message(&task_id, &request_id, tool_call, timestamp)
     }));
 
     api::ResponseEvent {
@@ -609,7 +609,7 @@ mod tests {
             primary_task_id: "test-task".to_owned(),
             conversation_token: None,
             forked_from_conversation_token: None,
-            ambient_agent_task_id: None,
+            local_agent_run_id: None,
             tasks: vec![],
             existing_suggestions: None,
             metadata: None,
@@ -619,7 +619,6 @@ mod tests {
             cli_agent_model: model.clone(),
             computer_use_model: model,
             is_memory_enabled: false,
-            warp_drive_context_enabled: false,
             mcp_context: None,
             planning_enabled: true,
             should_redact_secrets: false,

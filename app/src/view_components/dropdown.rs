@@ -33,28 +33,18 @@ pub type MenuHeaderTextFormatter = Box<dyn Fn(&str) -> String>;
 pub enum DropdownStyle {
     #[default]
     Secondary,
-    /// No border, smaller text, smaller padding
-    #[allow(dead_code)]
-    Naked,
-    /// Similar to Secondary but with ActionButton-like hover behavior:
-    /// background fill on hover instead of border color change.
-    /// TODO this should probably replace the default `Secondary` theme
-    ActionButtonSecondary,
 }
 
 impl DropdownStyle {
     fn ui_component_styles(&self) -> UiComponentStyles {
         match self {
-            DropdownStyle::Secondary | DropdownStyle::ActionButtonSecondary => UiComponentStyles {
+            DropdownStyle::Secondary => UiComponentStyles {
                 padding: Some(Coords {
                     top: 5.,
                     bottom: 5.,
                     left: 8.,
                     right: 8.,
                 }),
-                ..Default::default()
-            },
-            DropdownStyle::Naked => UiComponentStyles {
                 ..Default::default()
             },
         }
@@ -196,11 +186,6 @@ where
         }
     }
 
-    pub fn with_drop_shadow(mut self) -> Self {
-        self.use_drop_shadow = true;
-        self
-    }
-
     pub fn set_font_color(&mut self, color: ColorU, ctx: &mut ViewContext<Self>) {
         self.font_color = Some(color);
         ctx.notify();
@@ -221,17 +206,6 @@ where
         ctx.notify();
     }
 
-    pub fn set_padding(&mut self, padding: Coords, ctx: &mut ViewContext<Self>) {
-        self.padding = Some(padding);
-        ctx.notify();
-    }
-
-    #[allow(dead_code)]
-    pub fn set_style(&mut self, style: DropdownStyle, ctx: &mut ViewContext<Self>) {
-        self.style = style;
-        ctx.notify();
-    }
-
     /// Set the main_axis_size behavior for the dropdown header button.
     ///
     /// Default is MainAxisSize::Max, set to MainAxisSize::Min if you want to wrap the dropdown to
@@ -242,6 +216,11 @@ where
         ctx: &mut ViewContext<Self>,
     ) {
         self.main_axis_size = main_axis_size;
+        ctx.notify();
+    }
+
+    pub fn set_padding(&mut self, padding: Coords, ctx: &mut ViewContext<Self>) {
+        self.padding = Some(padding);
         ctx.notify();
     }
 
@@ -357,11 +336,6 @@ where
         ctx.notify();
     }
 
-    pub fn set_selected_to_none(&mut self, ctx: &mut ViewContext<Self>) {
-        self.selected_item = None;
-        ctx.notify();
-    }
-
     pub fn set_top_bar_max_width(&mut self, max_width: f32) {
         self.top_bar_max_width = max_width;
     }
@@ -430,8 +404,6 @@ where
             .button(
                 match self.style {
                     DropdownStyle::Secondary => ButtonVariant::Outlined,
-                    DropdownStyle::Naked => ButtonVariant::Text,
-                    DropdownStyle::ActionButtonSecondary => ButtonVariant::Secondary,
                 },
                 self.top_bar_mouse_state.clone(),
             )
@@ -449,8 +421,7 @@ where
                     vec2f(15., 15.),
                 )
                 .with_inner_padding(match self.style {
-                    DropdownStyle::Secondary | DropdownStyle::ActionButtonSecondary => 10.,
-                    DropdownStyle::Naked => 6.,
+                    DropdownStyle::Secondary => 10.,
                 }),
             )
             .with_style(self.style.ui_component_styles())

@@ -6,7 +6,6 @@ use warpui::elements::{ConstrainedBox, Container, CornerRadius, Radius};
 use warpui::Element;
 
 use crate::ai::agent::conversation::ConversationStatus;
-use crate::ai::agent_conversations_model::AgentRunDisplayStatus;
 use crate::ui_components::icons::Icon;
 
 /// Padding around the status icon
@@ -19,12 +18,6 @@ pub trait StatusElementStyle {
 impl StatusElementStyle for ConversationStatus {
     fn status_icon_and_color(&self, theme: &WarpTheme) -> (Icon, ColorU) {
         ConversationStatus::status_icon_and_color(self, theme)
-    }
-}
-
-impl StatusElementStyle for AgentRunDisplayStatus {
-    fn status_icon_and_color(&self, theme: &WarpTheme) -> (Icon, ColorU) {
-        AgentRunDisplayStatus::status_icon_and_color(self, theme)
     }
 }
 

@@ -32,11 +32,9 @@ pub mod block_list_viewport;
 pub mod blockgrid_element;
 mod blockgrid_renderer;
 mod bootstrap;
-mod buy_credits_banner;
 pub mod color;
 mod command_corrections_denylist;
 pub mod dynamic_enum_suggestions;
-pub mod enable_auto_reload_modal;
 pub mod event;
 pub mod event_listener;
 pub mod find;
@@ -55,6 +53,7 @@ pub mod local_shell;
 #[cfg(feature = "local_tty")]
 pub mod local_tty;
 mod meta_shortcuts;
+pub mod metadata;
 pub mod mock_terminal_manager;
 pub mod model;
 pub mod model_events;
@@ -70,8 +69,6 @@ pub mod safe_mode_settings;
 mod secret_regex_updater;
 pub mod session_settings;
 pub mod settings;
-mod share_block_modal;
-pub mod shared_session;
 mod shell_launch_state;
 pub mod universal_developer_input;
 
@@ -91,7 +88,6 @@ pub(crate) mod cli_agent_sessions;
 
 pub use mock_terminal_manager::MockTerminalManager;
 use model_events::{ModelEvent, ModelEventDispatcher};
-pub use share_block_modal::{ShareBlockModal, ShareBlockModalEvent, ShareBlockType};
 pub use terminal_manager::TerminalManager;
 
 pub use block_list_settings::*;
@@ -122,7 +118,6 @@ const MIN_COLUMNS: usize = 2;
 pub const PTY_READS_BROADCAST_CHANNEL_SIZE: usize = 1024;
 
 pub fn init(app: &mut AppContext) {
-    share_block_modal::init(app);
     view::init(app);
 }
 
@@ -191,20 +186,6 @@ pub enum SizeUpdateReason {
     /// Updated after the temrinal has been laid out, so some of the element
     /// sizes that drive terminal size may have changed.
     AfterLayout,
-
-    /// The shared session sharer's size changed.
-    /// This is only applicable for shared session viewers.
-    ///
-    /// The resultant [`SizeUpdate`] will use the larger of the
-    /// sharer's and viewer's size.
-    SharerSizeChanged { num_rows: usize, num_cols: usize },
-
-    /// A viewer reported its terminal size to the sharer.
-    /// This is only applicable for shared session sharers.
-    ///
-    /// The resultant [`SizeUpdate`] will use the viewer's reported
-    /// size directly (floored at 1 row and 1 column).
-    ViewerSizeReported { num_rows: usize, num_cols: usize },
 }
 
 /// Encapsulates info for updating the size of the terminal.
@@ -264,22 +245,14 @@ impl SizeUpdate {
         self.new_gap_height.is_some()
     }
 
-    /// The pane-computed natural rows before shared session adjustments.
+    /// The pane-computed natural rows.
     pub fn natural_rows(&self) -> usize {
         self.natural_rows
     }
 
-    /// The pane-computed natural columns before shared session adjustments.
+    /// The pane-computed natural columns.
     pub fn natural_cols(&self) -> usize {
         self.natural_cols
-    }
-
-    /// Returns true if this resize was caused by a sharer size change.
-    pub fn is_sharer_size_change(&self) -> bool {
-        matches!(
-            self.update_reason,
-            SizeUpdateReason::SharerSizeChanged { .. }
-        )
     }
 }
 

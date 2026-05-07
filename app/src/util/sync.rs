@@ -16,7 +16,7 @@ mod tests;
 ///
 /// Generally, a [condition variable](http://www.cs.cornell.edu/courses/cs3110/2012fa/recitations/rec16.html)
 /// lets tasks wait until some condition becomes true (for example, we might want to wait for the
-/// user to have logged in, or for the initial load of Warp Drive objects to have finished). When
+/// user to have completed a local initial load). When
 /// the condition becomes true, one or all of the waiting tasks can wake up and do their work.
 ///
 /// This [`Condition`] implementation models the simpler case where a condition becomes true and
@@ -24,7 +24,7 @@ mod tests;
 /// starts waiting before the condition is met, it will block, but if the condition is already true,
 /// it continues immediately.
 ///
-/// We use this in Warp Drive to wait for the initial load of changed objects to finish. Regular UI
+/// We use this to wait for the initial load of changed local objects to finish. Regular UI
 /// framework events aren't suitable, because they don't tell us if the load had *already*
 /// finished - a task that subscribed too late would block forever!
 ///

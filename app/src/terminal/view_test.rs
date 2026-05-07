@@ -33,8 +33,8 @@ use crate::terminal::cli_agent_sessions::event::{
 };
 use crate::terminal::cli_agent_sessions::listener::CLIAgentSessionListener;
 use crate::terminal::cli_agent_sessions::{
-    CLIAgentInputEntrypoint, CLIAgentInputState, CLIAgentRichInputCloseReason, CLIAgentSession,
-    CLIAgentSessionContext, CLIAgentSessionStatus, CLIAgentSessionsModel,
+    CLIAgentInputEntrypoint, CLIAgentInputState, CLIAgentSession, CLIAgentSessionContext,
+    CLIAgentSessionStatus, CLIAgentSessionsModel,
 };
 use crate::terminal::CLIAgent;
 
@@ -327,81 +327,6 @@ fn command_first_word_and_suffix_handles_alias_without_args() {
     );
 }
 
-#[test]
-fn root_cloud_mode_pane_sets_root_cloud_mode_context_key() {
-    use crate::settings::import::model::ImportedConfigModel;
-    App::test((), |mut app| async move {
-        initialize_app_for_terminal_view(&mut app);
-        app.add_singleton_model(ImportedConfigModel::new);
-        FeatureFlag::AgentView.set_enabled(true);
-        FeatureFlag::CloudMode.set_enabled(true);
-
-        let terminal = add_window_with_terminal(&mut app, None);
-
-        terminal.read(&app, |view, ctx| {
-            assert!(!view
-                .keymap_context(ctx)
-                .set
-                .contains(init::ROOT_CLOUD_MODE_PANE_KEY));
-        });
-
-        terminal.update(&mut app, |view, ctx| {
-            view.ambient_agent_view_model().update(ctx, |model, ctx| {
-                model.enter_setup(ctx);
-            });
-        });
-
-        terminal.read(&app, |view, ctx| {
-            assert!(view
-                .keymap_context(ctx)
-                .set
-                .contains(init::ROOT_CLOUD_MODE_PANE_KEY));
-        });
-
-        terminal.update(&mut app, |view, ctx| {
-            view.ambient_agent_view_model().update(ctx, |model, _| {
-                model.set_has_parent_terminal(true);
-            });
-        });
-
-        terminal.read(&app, |view, ctx| {
-            assert!(!view
-                .keymap_context(ctx)
-                .set
-                .contains(init::ROOT_CLOUD_MODE_PANE_KEY));
-        });
-    });
-}
-
-#[test]
-fn set_input_mode_agent_does_not_enter_local_agent_from_root_cloud_mode_pane() {
-    use crate::terminal::shared_session::SharedSessionStatus;
-
-    App::test((), |mut app| async move {
-        initialize_app_for_terminal_view(&mut app);
-        FeatureFlag::AgentView.set_enabled(true);
-        FeatureFlag::CloudMode.set_enabled(true);
-
-        let terminal = add_window_with_terminal(&mut app, None);
-
-        terminal.update(&mut app, |view, ctx| {
-            view.ambient_agent_view_model().update(ctx, |model, ctx| {
-                model.enter_setup(ctx);
-            });
-            view.model
-                .lock()
-                .set_shared_session_status(SharedSessionStatus::FinishedViewer);
-        });
-
-        terminal.update(&mut app, |view, ctx| {
-            assert!(!view.agent_view_controller().as_ref(ctx).is_active());
-            view.handle_action(&TerminalAction::SetInputModeAgent, ctx);
-            assert!(!view.agent_view_controller().as_ref(ctx).is_active());
-        });
-    });
-}
-
-/// Test clearing of session flag state when terminal is cleared
 #[test]
 fn test_clear_session_flag_state() {
     use warp_terminal::shell::ShellType;
@@ -2321,289 +2246,6 @@ fn test_banner_for_incompatible_plugins() {
 }
 
 #[test]
-fn test_bash_vim_banner_already_shown() {
-    App::test((), |mut app| async move {
-        initialize_app_for_terminal_view(&mut app);
-        let terminal =
-            MockTerminalManager::create_new_terminal_view_window_for_test(&mut app, None);
-
-        // Ensure the terminal is the active session.
-        terminal.update(&mut app, |view, ctx| {
-            let terminal_pane_id = TerminalPaneId::dummy_terminal_pane_id();
-            let focus_state = ctx.add_model(|_| {
-                PaneGroupFocusState::new(terminal_pane_id.into(), Some(terminal_pane_id), false)
-            });
-            let focus_handle = PaneFocusHandle::new(terminal_pane_id.into(), focus_state);
-            view.set_focus_handle(focus_handle, ctx);
-        });
-
-        // The banner has already been shown and dismissed.
-        VimBannerSettings::handle(&app).update(&mut app, |banner_settings, ctx| {
-            let _ = banner_settings
-                .vim_keybindings_banner_state
-                .set_value(BannerState::Dismissed, ctx);
-        });
-
-        // Ensure Warp's vim keybindings are off.
-        AppEditorSettings::handle(&app).update(&mut app, |editor_settings, ctx| {
-            let _ = editor_settings.vim_mode.set_value(false, ctx);
-        });
-
-        // Bootstrap a bash session with vi mode enabled.
-        terminal.update(&mut app, |view, _ctx| {
-            let mut model = view.model.lock();
-            model.init_shell(InitShellValue {
-                session_id: 0.into(),
-                shell: "bash".to_owned(),
-                ..Default::default()
-            });
-            model.bootstrapped(BootstrappedValue {
-                shell: "bash".to_owned(),
-                shell_options: Some(HashSet::from(["vi_mode".to_string()])),
-                ..Default::default()
-            });
-        });
-
-        // This is asynchronous because we're waiting for the bootstrap event
-        // to be sent from the terminal model to the terminal view.
-        assert_eventually!(
-            // Since the user already dismissed the banner, it should not
-            // be shown again.
-            terminal.read(&app, |terminal, _terminal_ctx| {
-                terminal.inline_banners_state.vim_banner_state.is_none()
-            }),
-            "Banner should not have opened"
-        );
-    })
-}
-
-#[test]
-fn test_bash_vim_banner_on() {
-    App::test((), |mut app| async move {
-        initialize_app_for_terminal_view(&mut app);
-        let terminal =
-            MockTerminalManager::create_new_terminal_view_window_for_test(&mut app, None);
-
-        // Ensure the terminal is the active session.
-        terminal.update(&mut app, |view, ctx| {
-            let terminal_pane_id = TerminalPaneId::dummy_terminal_pane_id();
-            let focus_state = ctx.add_model(|_| {
-                PaneGroupFocusState::new(terminal_pane_id.into(), Some(terminal_pane_id), false)
-            });
-            let focus_handle = PaneFocusHandle::new(terminal_pane_id.into(), focus_state);
-            view.set_focus_handle(focus_handle, ctx);
-        });
-
-        // Ensure the banner has never been shown.
-        VimBannerSettings::handle(&app).update(&mut app, |banner_settings, ctx| {
-            let _ = banner_settings
-                .vim_keybindings_banner_state
-                .set_value(BannerState::NotDismissed, ctx);
-        });
-
-        // Ensure Warp's vim keybindings are off.
-        AppEditorSettings::handle(&app).update(&mut app, |editor_settings, ctx| {
-            let _ = editor_settings.vim_mode.set_value(false, ctx);
-        });
-
-        // Bootstrap a bash session with vi mode enabled.
-        terminal.update(&mut app, |view, _ctx| {
-            let mut model = view.model.lock();
-            model.init_shell(InitShellValue {
-                session_id: 0.into(),
-                shell: "bash".to_owned(),
-                ..Default::default()
-            });
-            model.bootstrapped(BootstrappedValue {
-                shell: "bash".to_owned(),
-                shell_options: Some(HashSet::from(["vi_mode".to_string()])),
-                ..Default::default()
-            });
-        });
-
-        // This is asynchronous because we're waiting for the bootstrap event
-        // to be sent from the terminal model to the terminal view.
-        assert_eventually!(
-            // The vim keybinding banner should display.
-            200 => terminal.read(&app, |terminal, _terminal_ctx| {
-                terminal.inline_banners_state.vim_banner_state.is_some()
-            }),
-            "Banner did not open in time"
-        );
-    })
-}
-
-#[test]
-fn test_bash_vim_banner_off() {
-    App::test((), |mut app| async move {
-        initialize_app_for_terminal_view(&mut app);
-        let terminal =
-            MockTerminalManager::create_new_terminal_view_window_for_test(&mut app, None);
-
-        // Ensure the terminal is the active session.
-        terminal.update(&mut app, |view, ctx| {
-            let terminal_pane_id = TerminalPaneId::dummy_terminal_pane_id();
-            let focus_state = ctx.add_model(|_| {
-                PaneGroupFocusState::new(terminal_pane_id.into(), Some(terminal_pane_id), false)
-            });
-            let focus_handle = PaneFocusHandle::new(terminal_pane_id.into(), focus_state);
-            view.set_focus_handle(focus_handle, ctx);
-        });
-
-        // Ensure the banner has never been shown.
-        VimBannerSettings::handle(&app).update(&mut app, |banner_settings, ctx| {
-            let _ = banner_settings
-                .vim_keybindings_banner_state
-                .set_value(BannerState::NotDismissed, ctx);
-        });
-
-        // Ensure Warp's vim keybindings are on.
-        AppEditorSettings::handle(&app).update(&mut app, |editor_settings, ctx| {
-            let _ = editor_settings.vim_mode.set_value(true, ctx);
-        });
-
-        // Bootstrap a bash session with vi mode enabled.
-        terminal.update(&mut app, |view, _ctx| {
-            let mut model = view.model.lock();
-            model.init_shell(InitShellValue {
-                session_id: 0.into(),
-                shell: "bash".to_owned(),
-                ..Default::default()
-            });
-            model.bootstrapped(BootstrappedValue {
-                shell: "bash".to_owned(),
-                shell_options: Some(HashSet::from(["vi_mode".to_string()])),
-                ..Default::default()
-            });
-        });
-
-        // This is asynchronous because we're waiting for the bootstrap event
-        // to be sent from the terminal model to the terminal view.
-        assert_eventually!(
-            // The vim keybinding banner should NOT display
-            // because the user already has vim keybindings turned on.
-            terminal.read(&app, |terminal, _terminal_ctx| {
-                terminal.inline_banners_state.vim_banner_state.is_none()
-            }),
-            "Banner should not have opened"
-        );
-    })
-}
-
-#[test]
-fn test_zsh_vim_banner_on() {
-    App::test((), |mut app| async move {
-        initialize_app_for_terminal_view(&mut app);
-        let terminal =
-            MockTerminalManager::create_new_terminal_view_window_for_test(&mut app, None);
-
-        // Ensure the terminal is the active session.
-        terminal.update(&mut app, |view, ctx| {
-            let terminal_pane_id = TerminalPaneId::dummy_terminal_pane_id();
-            let focus_state = ctx.add_model(|_| {
-                PaneGroupFocusState::new(terminal_pane_id.into(), Some(terminal_pane_id), false)
-            });
-            let focus_handle = PaneFocusHandle::new(terminal_pane_id.into(), focus_state);
-            view.set_focus_handle(focus_handle, ctx);
-        });
-
-        // Ensure the banner has never been shown.
-        VimBannerSettings::handle(&app).update(&mut app, |banner_settings, ctx| {
-            let _ = banner_settings
-                .vim_keybindings_banner_state
-                .set_value(BannerState::NotDismissed, ctx);
-        });
-
-        // Ensure Warp's vim keybindings are off.
-        AppEditorSettings::handle(&app).update(&mut app, |editor_settings, ctx| {
-            let _ = editor_settings.vim_mode.set_value(false, ctx);
-        });
-
-        // Bootstrap a zsh session with vi mode enabled.
-        terminal.update(&mut app, |view, _ctx| {
-            let mut model = view.model.lock();
-            model.init_shell(InitShellValue {
-                session_id: 0.into(),
-                shell: "zsh".to_owned(),
-                ..Default::default()
-            });
-            model.bootstrapped(BootstrappedValue {
-                shell: "zsh".to_owned(),
-                shell_plugins: Some(HashSet::from(["vi".to_string()])),
-                ..Default::default()
-            });
-        });
-
-        // This is asynchronous because we're waiting for the bootstrap event
-        // to be sent from the terminal model to the terminal view.
-        assert_eventually!(
-            // The vim keybinding banner should display.
-            200 => terminal.read(&app, |terminal, _terminal_ctx| {
-                terminal.inline_banners_state.vim_banner_state.is_some()
-            }),
-            "Banner did not open in time"
-        );
-    })
-}
-
-#[test]
-fn test_zsh_vim_banner_off() {
-    App::test((), |mut app| async move {
-        initialize_app_for_terminal_view(&mut app);
-        let terminal =
-            MockTerminalManager::create_new_terminal_view_window_for_test(&mut app, None);
-
-        // Ensure the terminal is the active session.
-        terminal.update(&mut app, |view, ctx| {
-            let terminal_pane_id = TerminalPaneId::dummy_terminal_pane_id();
-            let focus_state = ctx.add_model(|_| {
-                PaneGroupFocusState::new(terminal_pane_id.into(), Some(terminal_pane_id), false)
-            });
-            let focus_handle = PaneFocusHandle::new(terminal_pane_id.into(), focus_state);
-            view.set_focus_handle(focus_handle, ctx);
-        });
-
-        // Ensure the banner has never been shown.
-        VimBannerSettings::handle(&app).update(&mut app, |banner_settings, ctx| {
-            let _ = banner_settings
-                .vim_keybindings_banner_state
-                .set_value(BannerState::NotDismissed, ctx);
-        });
-
-        // Ensure Warp's vim keybindings are on.
-        AppEditorSettings::handle(&app).update(&mut app, |editor_settings, ctx| {
-            let _ = editor_settings.vim_mode.set_value(true, ctx);
-        });
-
-        // Bootstrap a zsh session with vi mode enabled.
-        terminal.update(&mut app, |view, _ctx| {
-            let mut model = view.model.lock();
-            model.init_shell(InitShellValue {
-                session_id: 0.into(),
-                shell: "zsh".to_owned(),
-                ..Default::default()
-            });
-            model.bootstrapped(BootstrappedValue {
-                shell: "zsh".to_owned(),
-                shell_plugins: Some(HashSet::from(["vi".to_string()])),
-                ..Default::default()
-            });
-        });
-
-        // This is asynchronous because we're waiting for the bootstrap event
-        // to be sent from the terminal model to the terminal view.
-        assert_eventually!(
-            // The vim keybinding banner should NOT display
-            // because the user already has vim keybindings turned on.
-            terminal.read(&app, |terminal, _terminal_ctx| {
-                terminal.inline_banners_state.vim_banner_state.is_none()
-            }),
-            "Banner should not have opened"
-        );
-    })
-}
-
-#[test]
 fn test_fish_vim_banner_on() {
     App::test((), |mut app| async move {
         initialize_app_for_terminal_view(&mut app);
@@ -4020,9 +3662,9 @@ fn cli_session_status_updates_active_child_conversation() {
         let terminal = add_window_with_terminal(&mut app, None);
 
         let child_conversation_id = terminal.update(&mut app, |view, ctx| {
-            let parent_conversation_id =
-                BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, ctx| {
-                    history_model.start_new_conversation(view.view_id, false, false, ctx)
+            let parent_conversation_id = BlocklistAIHistoryModel::handle(ctx)
+                .update(ctx, |history_model, ctx| {
+                    history_model.start_new_conversation(view.view_id, false, ctx)
                 });
             let child_conversation_id =
                 BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, ctx| {
@@ -4272,7 +3914,7 @@ fn close_cli_agent_rich_input_saves_draft_and_reopen_restores_it() {
 
         // Close the composer — the buffer text should be saved as a draft.
         terminal.update(&mut app, |view, ctx| {
-            view.close_cli_agent_rich_input(CLIAgentRichInputCloseReason::Manual, ctx);
+            view.close_cli_agent_rich_input(ctx);
             assert!(!view.has_active_cli_agent_input_session(ctx));
         });
 
@@ -4358,7 +4000,7 @@ fn close_cli_agent_rich_input_with_empty_buffer_stores_no_draft() {
 
         // Close immediately without typing anything.
         terminal.update(&mut app, |view, ctx| {
-            view.close_cli_agent_rich_input(CLIAgentRichInputCloseReason::Manual, ctx);
+            view.close_cli_agent_rich_input(ctx);
             assert!(!view.has_active_cli_agent_input_session(ctx));
         });
 
@@ -4403,8 +4045,6 @@ fn ctrl_c_does_not_accept_prompt_suggestion_banner() {
                     should_start_new_conversation: false,
                 }),
                 block_id.clone(),
-                "ls".to_owned(),
-                0,
                 ctx,
             );
 

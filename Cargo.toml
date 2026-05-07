@@ -13,7 +13,6 @@ default-members = [
   "crates/channel_versions",
   "crates/command",
   "crates/editor",
-  "crates/graphql",
   "crates/markdown_parser",
   "crates/sum_tree",
   "crates/warpui",
@@ -38,7 +37,6 @@ command = { path = "crates/command" }
 command-signatures-v2 = { path = "crates/command-signatures-v2" }
 computer_use = { path = "crates/computer_use" }
 field_mask = { path = "crates/field_mask" }
-firebase = { path = "crates/firebase" }
 fuzzy_match = { path = "crates/fuzzy_match" }
 handlebars = { path = "crates/handlebars" }
 http_client = { path = "crates/http_client" }
@@ -73,10 +71,7 @@ warp_completer = { path = "crates/warp_completer" }
 warp_core = { path = "crates/warp_core" }
 warp_editor = { path = "crates/editor" }
 warp_features = { path = "crates/warp_features" }
-remote_server = { path = "crates/remote_server" }
 warp_files = { path = "crates/warp_files" }
-warp_graphql = { path = "crates/graphql" }
-warp_graphql_schema = { path = "crates/warp_graphql_schema" }
 warp_isolation_platform = { path = "crates/isolation_platform" }
 warp_js = { path = "crates/warp_js" }
 warp_logging = { path = "crates/warp_logging" }
@@ -453,10 +448,9 @@ debug-assertions = true
 [profile.rltoda]
 inherits = "release-lto-debug_assertions"
 
-# A profile tuned for the `oz` CLI tarball. The CLI is shipped over the network
-# and run headlessly, so we trade some compile time and a small amount of
-# runtime perf for a smaller binary by mirroring the size-leaning settings used
-# by `release-wasm`.
+# A profile tuned for CLI tarballs. We trade some compile time and a small
+# amount of runtime perf for a smaller binary by mirroring the size-leaning
+# settings used by `release-wasm`.
 [profile.release-cli]
 inherits = "release-lto"
 opt-level = "s"
@@ -478,8 +472,8 @@ codegen-units = 1
 inherits = "release-wasm"
 debug-assertions = true
 
-# A dev profile optimized for remote server deployment. Strips symbols to
-# reduce binary size and improve rsync delta transfer efficiency.
+# A dev profile optimized for remote-session helper deployment. Strips symbols
+# to reduce binary size and improve rsync delta transfer efficiency.
 [profile.dev-remote]
 inherits = "dev"
 strip = "symbols"

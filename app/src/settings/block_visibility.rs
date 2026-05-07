@@ -1,6 +1,4 @@
-use settings::{
-    macros::define_settings_group, RespectUserSyncSetting, SupportedPlatforms, SyncToCloud,
-};
+use settings::{macros::define_settings_group, SupportedPlatforms, SyncToCloud};
 
 // Settings for visibility of non-user command blocks like the bootstrap block
 // and in-band command blocks.
@@ -9,7 +7,7 @@ define_settings_group!(BlockVisibilitySettings, settings: [
        type: bool,
        default: false,
        supported_platforms: SupportedPlatforms::ALL,
-       sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+       sync_to_cloud: SyncToCloud::Never,
        private: false,
        toml_path: "appearance.blocks.should_show_bootstrap_block",
        description: "Whether the bootstrap block is visible in the terminal.",
@@ -18,7 +16,7 @@ define_settings_group!(BlockVisibilitySettings, settings: [
        type: bool,
        default: false,
        supported_platforms: SupportedPlatforms::ALL,
-       sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+       sync_to_cloud: SyncToCloud::Never,
        private: false,
        toml_path: "appearance.blocks.should_show_in_band_command_blocks",
        description: "Whether in-band command blocks are visible in the terminal.",
@@ -27,7 +25,7 @@ define_settings_group!(BlockVisibilitySettings, settings: [
         type: bool,
         default: false,
         supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        sync_to_cloud: SyncToCloud::Never,
         private: false,
         toml_path: "appearance.blocks.should_show_ssh_block",
         description: "Whether the SSH connection block is visible in the terminal.",

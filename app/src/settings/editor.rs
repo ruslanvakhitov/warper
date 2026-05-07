@@ -2,10 +2,7 @@ use std::fmt::{Display, Formatter};
 
 use enum_iterator::{all, Sequence};
 use serde::{Deserialize, Serialize};
-use settings::{
-    macros::define_settings_group, RespectUserSyncSetting, Setting as _, SupportedPlatforms,
-    SyncToCloud,
-};
+use settings::{macros::define_settings_group, Setting as _, SupportedPlatforms, SyncToCloud};
 use warpui::ModelContext;
 
 #[derive(
@@ -153,7 +150,7 @@ define_settings_group!(AppEditorSettings, settings: [
         type: CursorBlink,
         default: CursorBlink::default(),
         supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        sync_to_cloud: SyncToCloud::Never,
         private: false,
         storage_key: "CursorBlink",
         toml_path: "appearance.cursor.cursor_blink",
@@ -163,7 +160,7 @@ define_settings_group!(AppEditorSettings, settings: [
         type: CursorDisplayType,
         default: CursorDisplayType::default(),
         supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        sync_to_cloud: SyncToCloud::Never,
         private: false,
         storage_key: "CursorDisplayType",
         toml_path: "appearance.cursor.cursor_display_type",
@@ -173,7 +170,7 @@ define_settings_group!(AppEditorSettings, settings: [
         type: bool,
         default: false,
         supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        sync_to_cloud: SyncToCloud::Never,
         private: false,
         toml_path: "text_editing.vim_mode_enabled",
         description: "Whether Vim keybindings are enabled.",
@@ -182,7 +179,7 @@ define_settings_group!(AppEditorSettings, settings: [
         type: bool,
         default: false,
         supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        sync_to_cloud: SyncToCloud::Never,
         private: false,
         toml_path: "text_editing.vim_unnamed_system_clipboard",
         description: "Whether the Vim unnamed register uses the system clipboard.",
@@ -191,7 +188,7 @@ define_settings_group!(AppEditorSettings, settings: [
         type: bool,
         default: true,
         supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        sync_to_cloud: SyncToCloud::Never,
         private: false,
         toml_path: "text_editing.vim_status_bar",
         description: "Whether the Vim status bar is displayed.",
@@ -200,7 +197,7 @@ define_settings_group!(AppEditorSettings, settings: [
         type: bool,
         default: true,
         supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        sync_to_cloud: SyncToCloud::Never,
         private: false,
         toml_path: "text_editing.autocomplete_symbols",
         description: "Whether matching symbols like brackets and quotes are auto-completed.",
@@ -209,7 +206,7 @@ define_settings_group!(AppEditorSettings, settings: [
         type: bool,
         default: true,
         supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        sync_to_cloud: SyncToCloud::Never,
         private: false,
         storage_key: "Autosuggestions",
         toml_path: "terminal.input.autosuggestions.enabled",
@@ -219,7 +216,7 @@ define_settings_group!(AppEditorSettings, settings: [
         type: bool,
         default: true,
         supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        sync_to_cloud: SyncToCloud::Never,
         private: false,
         toml_path: "terminal.input.autosuggestions.keybinding_hint",
         description: "Whether autosuggestion keybinding hints are displayed.",
@@ -228,7 +225,7 @@ define_settings_group!(AppEditorSettings, settings: [
         type: bool,
         default: false,
         supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        sync_to_cloud: SyncToCloud::Never,
         private: false,
         toml_path: "terminal.input.autosuggestions.show_ignore_button",
         description: "Whether the ignore button is shown for autosuggestions.",

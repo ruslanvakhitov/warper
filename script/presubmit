@@ -6,6 +6,23 @@
 set -e
 cd "$(dirname "$0")/.."
 
+export CARGO_INCREMENTAL="${CARGO_INCREMENTAL:-0}"
+
+cleanup_presubmit_artifacts() {
+    echo "Pruning disposable presubmit target artifacts..."
+    ./script/prune_target_artifacts --presubmit
+    echo "Target artifact pruning complete..."
+}
+
+trap cleanup_presubmit_artifacts EXIT
+
+if [ "$(uname -s)" = "Darwin" ]; then
+    echo "Checking Xcode Metal tools..."
+    xcrun --find metal >/dev/null
+    xcrun --find metallib >/dev/null
+    echo "Xcode Metal tools found..."
+fi
+
 FMT_COMMAND="cargo fmt"
 echo "Running $FMT_COMMAND..."
 set -e
@@ -17,6 +34,10 @@ if [[ $EXIT_CODE -ne 0 ]]; then
 fi
 
 echo "Cargo fmt succeeded..."
+
+echo "Running WARPER-001 static denylist..."
+./script/check_warper_static_denylist
+echo "WARPER-001 static denylist succeeded..."
 
 echo "Running clippy..."
 # Exclude warp_completer because we run clippy on it with default features (rather than all features) below.

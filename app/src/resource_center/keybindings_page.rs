@@ -66,7 +66,7 @@ pub struct KeybindingsView {
 
 /// Keybindings are sorted into these sections,
 /// where "Fundamentals" is the default for any remaining non-categorized ones.
-/// This should always align with documentation: https://docs.warp.dev/getting-started/keyboard-shortcuts
+/// This should stay aligned with the resource center keybinding categories.
 #[derive(Clone, Eq, PartialEq, Sequence)]
 pub enum KeybindingSection {
     Essentials,

@@ -230,11 +230,11 @@ begin
     { Determine the channel-specific script name.  These values must match
       `Channel::cli_command_name` in the Rust source. }
 #if ReleaseChannel == "stable"
-    CmdScriptName := 'oz.cmd'
+    CmdScriptName := 'warp.cmd'
 #elif ReleaseChannel == "oss"
     CmdScriptName := 'warp-oss.cmd';
 #else
-    CmdScriptName := 'oz-{#ReleaseChannel}.cmd';
+    CmdScriptName := 'warp-{#ReleaseChannel}.cmd';
 #endif
 
     { Create the helper CMD script }
@@ -242,7 +242,7 @@ begin
     CmdScriptContent := '@echo off' + #13#10 +
                        'set "WARP_CLI_MODE=1"' + #13#10 +
                        '"' + ExpandConstant('{app}\{#MyAppExeName}') + '" %*' + #13#10;
-    
+
     SaveStringToFile(CmdScriptPath, CmdScriptContent, False);
   end;
 end;

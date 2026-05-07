@@ -3,7 +3,6 @@ use std::marker::PhantomData;
 use anyhow::{anyhow, Result};
 use chrono::{Local, TimeDelta};
 use history_model::{BlocklistAIHistoryEvent, BlocklistAIHistoryModel};
-use session_sharing_protocol::common::ParticipantId;
 use warpui::{AppContext, SingletonEntity, View, ViewContext};
 
 use crate::ai::{
@@ -173,12 +172,6 @@ where
 
     fn exchange_id(&self, _app: &AppContext) -> Option<AIAgentExchangeId> {
         Some(self.exchange_id)
-    }
-
-    fn response_initiator(&self, app: &AppContext) -> Option<ParticipantId> {
-        self.exchange(app)
-            .ok()
-            .and_then(|ex| ex.response_initiator.clone())
     }
 
     fn server_output_id(&self, app: &AppContext) -> Option<ServerOutputId> {

@@ -5,38 +5,32 @@ pub mod block;
 pub mod code_block;
 mod context_model;
 mod controller;
-pub(crate) mod orchestration_event_poller;
 pub(crate) mod orchestration_events;
 mod passive_suggestions;
-pub(crate) mod task_status_sync_model;
 pub(super) use controller::RequestInput;
 pub mod history_model;
 pub mod inline_action;
 mod input_model;
+pub mod metadata;
 mod permissions;
 mod persistence;
 pub mod prompt;
-pub mod suggested_agent_mode_workflow_modal;
-pub mod suggested_rule_modal;
-mod suggestion_chip_view;
 pub mod summarization_cancel_dialog;
-pub(crate) mod telemetry;
 pub mod usage;
 
 pub(crate) mod codebase_index_speedbump_banner;
-pub(crate) mod telemetry_banner;
 pub(super) mod view_util;
 
 #[cfg_attr(target_family = "wasm", allow(unused_imports))]
 pub(crate) use action_model::{
     apply_edits, read_local_file_context, BlocklistAIActionEvent, BlocklistAIActionModel,
-    FileReadResult, ReadFileContextResult, RequestFileEditsFormatKind, ShellCommandExecutor,
-    ShellCommandExecutorEvent, StartAgentExecutor, StartAgentExecutorEvent, StartAgentRequest,
+    FileReadResult, RequestFileEditsFormatKind, ShellCommandExecutor, ShellCommandExecutorEvent,
+    StartAgentExecutor, StartAgentExecutorEvent, StartAgentRequest,
 };
 
 #[cfg(any(test, feature = "integration_tests"))]
 pub(crate) use block::model::testing::FakeAIBlockModel;
-pub(crate) use block::{init, model, AIBlock, AIBlockEvent, RequestedEditResolution};
+pub(crate) use block::{init, model, AIBlock, AIBlockEvent};
 
 pub(crate) use context_model::{
     block_context_from_terminal_model, AttachmentType, BlocklistAIContextEvent,
@@ -67,14 +61,13 @@ pub(crate) use view_util::{
     NEW_AGENT_PANE_LABEL,
 };
 
-pub(crate) use view_util::format_credits;
-
 pub use crate::ai::blocklist::block::{secret_redaction, AIBlockResponseRating, TextLocation};
 pub use block::keyboard_navigable_buttons;
 pub use block::toggleable_items;
 pub use controller::input_context::{
     BLOCK_CONTEXT_ATTACHMENT_REGEX, DIFF_HUNK_ATTACHMENT_REGEX, DRIVE_OBJECT_ATTACHMENT_REGEX,
 };
-pub use permissions::{BlocklistAIPermissions, CommandExecutionPermissionAllowedReason};
-pub use suggestion_chip_view::*;
+pub use permissions::BlocklistAIPermissions;
+#[cfg(any(test, feature = "integration_tests"))]
+pub(crate) use permissions::CommandExecutionPermissionAllowedReason;
 pub use view_util::error_color;

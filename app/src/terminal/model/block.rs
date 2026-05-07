@@ -23,7 +23,6 @@ use crate::ai::blocklist::agent_view::{AgentViewDisplayMode, AgentViewState};
 use crate::{
     ai::agent::redaction::redact_secrets,
     context_chips::prompt_snapshot::PromptSnapshot,
-    server::{block::DisplaySetting, ids::SyncId},
     terminal::{
         block_filter::BlockFilterQuery,
         block_list_element::GridType,
@@ -54,10 +53,20 @@ use hex;
 use instant::Instant;
 use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::Vector2F;
+use serde::{Deserialize, Serialize};
 use warp_core::command::ExitCode;
+use warp_server_client::ids::SyncId;
 use warp_terminal::model::grid::Dimensions as _;
 use warp_util::path::user_friendly_path;
 use warpui::units::{IntoLines, Lines};
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub enum DisplaySetting {
+    Command,
+    Output,
+    CommandAndOutput,
+    Other(String),
+}
 use warpui::{r#async::executor::Background, record_trace_event};
 
 use enum_iterator::all;
@@ -345,9 +354,8 @@ pub struct Block {
     /// model because they may be shown for debugging purposes.
     pub(super) is_for_in_band_command: bool,
 
-    /// `true` if this command block corresponds to a startup command in an oz environment executed
-    /// in cloud mode.
-    is_oz_environment_startup_command: bool,
+    /// `true` if this command block corresponds to a local agent-environment startup command.
+    is_agent_environment_startup_command: bool,
 
     /// Blocklist Env var metadata associated with this block, if any.
     env_var_metadata: Option<BlocklistEnvVarMetadata>,
@@ -404,8 +412,8 @@ pub struct Block {
     /// track the count of discarded newlines here in order to correct the row number.
     leading_linefeeds_ignored: usize,
 
-    /// `true` if client-side telemetry for user-generated AI data is enabled.
-    pub(super) is_ai_ugc_telemetry_enabled: bool,
+    /// `true` if local AI UGC collection is enabled.
+    pub(super) should_collect_ai_ugc: bool,
 
     /// Only set on restored blocks. Indicates whether the block was local or from a remote session.
     restored_block_was_local: Option<bool>,
@@ -543,9 +551,9 @@ impl From<&Block> for BlockType {
                         block.command_with_secrets_obfuscated(false);
 
                     let (output_truncated, mut output_truncated_with_obfuscated_secrets) =
-                        if block.is_ai_ugc_telemetry_enabled {
-                            // If telemetry is enabled, we collect the full output but are limiting it to
-                            // the first and last 2500 lines in case the block is very large.
+                        if block.should_collect_ai_ugc {
+                            // Collect the full output with first/last line limits for very large
+                            // blocks.
                             (
                                 block.output_grid().content_summary(2500, 2500, false),
                                 block.output_grid().content_summary(2500, 2500, true),
@@ -930,7 +938,7 @@ impl Block {
         block_index: BlockIndex,
         honor_ps1: bool,
         should_scan_for_secrets: ObfuscateSecrets,
-        is_ai_ugc_telemetry_enabled: bool,
+        should_collect_ai_ugc: bool,
         conversation_id: Option<AIConversationId>,
     ) -> Self {
         let perform_reset_grid_checks = if cfg!(windows) && bootstrap_stage.is_done() {
@@ -1008,14 +1016,14 @@ impl Block {
             hidden: false,
             should_hide_output_grid: false,
             leading_linefeeds_ignored: 0,
-            is_ai_ugc_telemetry_enabled,
+            should_collect_ai_ugc,
             restored_block_was_local: None,
             agent_view_visibility: match conversation_id {
                 Some(id) => AgentViewVisibility::new_from_conversation(id),
                 None => AgentViewVisibility::new_from_terminal(),
             },
             nld_overridden: false,
-            is_oz_environment_startup_command: false,
+            is_agent_environment_startup_command: false,
         }
     }
 
@@ -1459,12 +1467,12 @@ impl Block {
         self.hidden = true;
     }
 
-    pub fn is_oz_environment_startup_command(&self) -> bool {
-        self.is_oz_environment_startup_command
+    pub fn is_agent_environment_startup_command(&self) -> bool {
+        self.is_agent_environment_startup_command
     }
 
-    pub(super) fn set_is_oz_environment_startup_command(&mut self, is_startup_command: bool) {
-        self.is_oz_environment_startup_command = is_startup_command;
+    pub(super) fn set_is_agent_environment_startup_command(&mut self, is_startup_command: bool) {
+        self.is_agent_environment_startup_command = is_startup_command;
     }
 
     /// Reset the block so it's no longer hidden. Undoes the effects of Self::hide().
@@ -1483,15 +1491,6 @@ impl Block {
 
     pub fn set_should_hide_output_grid(&mut self, should_hide: bool) {
         self.should_hide_output_grid = should_hide;
-    }
-
-    /// Returns true iff this block should be used as a scrollback block
-    /// in a shared session context. Note the active block is included in scrollback to get the active prompt.
-    pub fn is_scrollback_block_for_shared_session(
-        &self,
-        agent_view_state: &AgentViewState,
-    ) -> bool {
-        !self.should_hide_block(agent_view_state) && !self.is_restored()
     }
 
     pub fn index(&self) -> BlockIndex {

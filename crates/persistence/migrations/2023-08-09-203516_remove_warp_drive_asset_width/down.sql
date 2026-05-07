@@ -1,1 +1,1 @@
-ALTER TABLE windows ADD warp_drive_asset_width FLOAT CHECK (warp_drive_asset_width >= 0);
+-- WARPER-001: hosted Drive window state is not part of the local schema.

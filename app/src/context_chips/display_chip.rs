@@ -12,18 +12,16 @@ use crate::code_review::code_review_view::CODE_REVIEW_TOOLTIP_TEXT;
 use crate::code_review::diff_state::DiffStats;
 use crate::context_chips::node_version_popup::{NodeVersionPopupEvent, NodeVersionPopupView};
 use crate::context_chips::spacing;
-use crate::settings::{AISettings, AISettingsChangedEvent, InputSettings};
 use crate::settings_view::keybindings::{KeybindingChangedEvent, KeybindingChangedNotifier};
 use crate::terminal::cli_agent_sessions::CLIAgentSessionsModel;
 use crate::terminal::input::{MenuPositioning, MenuPositioningProvider};
 use crate::terminal::model_events::ModelEventDispatcher;
-use crate::terminal::view::ambient_agent::AmbientAgentViewModel;
+use crate::terminal::view::local_agent::AmbientAgentViewModel;
 use crate::ui_components::blended_colors;
 use crate::ui_components::icons::Icon;
 use crate::util::bindings::keybinding_name_to_display_string;
 use crate::util::truncation::truncate_from_beginning;
 use crate::view_components::action_button::{ActionButtonTheme, NakedTheme};
-use crate::view_components::{FeaturePopup, NewFeaturePopupEvent, NewFeaturePopupLabel};
 use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::{vec2f, Vector2F};
 use std::path::PathBuf;
@@ -47,7 +45,6 @@ use warpui::{
 
 use crate::appearance::Appearance;
 use crate::completer::SessionContext;
-use crate::{send_telemetry_from_ctx, TelemetryEvent};
 
 use super::{
     agent_view_chip_color,
@@ -288,11 +285,9 @@ pub struct DisplayChip {
     display_chip_kind: DisplayChipKind,
     next_chip_kind: Option<ContextChipKind>,
     first_on_click_value: Option<String>,
-    quota_reset_popup: ViewHandle<FeaturePopup>,
     session_context: Option<SessionContext>,
     menu_positioning_provider: Arc<dyn MenuPositioningProvider>,
     agent_view_controller: ModelHandle<AgentViewController>,
-    is_shared_session_viewer: bool,
     is_in_agent_view: bool,
     /// Optional because `DisplayChip` sometimes should be disabled, depending on if it is in an ambient agent view.
     ambient_agent_view_model: Option<ModelHandle<AmbientAgentViewModel>>,
@@ -434,7 +429,6 @@ pub struct DisplayChipConfig {
     pub session_context: Option<SessionContext>,
     pub current_repo_path: Option<PathBuf>,
     pub model_events: ModelHandle<ModelEventDispatcher>,
-    pub is_shared_session_viewer: bool,
     pub agent_view_controller: ModelHandle<AgentViewController>,
     /// Optional because `DisplayChip` sometimes should be disabled, depending on if it is in an ambient agent view.
     pub ambient_agent_view_model: Option<ModelHandle<AmbientAgentViewModel>>,
@@ -740,31 +734,6 @@ impl DisplayChip {
             _ => DisplayChipKind::Text,
         };
 
-        let quota_reset_popup = ctx.add_typed_action_view(|_| {
-            FeaturePopup::alert_icon(NewFeaturePopupLabel::FromString(
-                "Monthly AI credits reset!".to_string(),
-            ))
-        });
-
-        ctx.subscribe_to_view(&quota_reset_popup, |_, _, event, ctx| match event {
-            NewFeaturePopupEvent::Dismissed => {
-                AISettings::handle(ctx).update(ctx, |ai_settings, ctx| {
-                    ai_settings.mark_quota_banner_as_dismissed(ctx);
-                    ctx.notify();
-                });
-                ctx.notify();
-            }
-        });
-
-        ctx.subscribe_to_model(&AISettings::handle(ctx), |_, _, event, ctx| {
-            if matches!(
-                event,
-                AISettingsChangedEvent::AIRequestQuotaInfoSetting { .. }
-            ) {
-                ctx.notify();
-            }
-        });
-
         // Subscribe to ambient agent model changes to re-render when the state changes
         if let Some(ref ambient_agent_model) = config.ambient_agent_view_model {
             ctx.subscribe_to_model(ambient_agent_model, |_, _, _, ctx| {
@@ -797,10 +766,8 @@ impl DisplayChip {
             display_chip_kind,
             next_chip_kind,
             first_on_click_value: chip_result.on_click_values.first().cloned(),
-            quota_reset_popup,
             session_context: config.session_context,
             menu_positioning_provider: config.menu_positioning_provider,
-            is_shared_session_viewer: config.is_shared_session_viewer,
             agent_view_controller: config.agent_view_controller.clone(),
             is_in_agent_view,
             ambient_agent_view_model: config.ambient_agent_view_model,
@@ -1005,8 +972,7 @@ impl DisplayChip {
             appearance.theme().ansi_fg_green()
         };
 
-        let is_interactive =
-            !self.is_shared_session_viewer && !self.is_cli_agent_session_active(app);
+        let is_interactive = !self.is_cli_agent_session_active(app);
         let is_in_agent_view = self.is_in_agent_view;
         let chip_text = self.text.clone();
         let hover = Hoverable::new(self.mouse_state.clone(), move |state| {
@@ -1118,10 +1084,6 @@ impl DisplayChip {
         let Some(line_changes_info) = line_changes_info else {
             return None;
         };
-
-        if self.is_shared_session_viewer {
-            return None;
-        }
 
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
@@ -1606,19 +1568,6 @@ impl TypedActionView for DisplayChip {
                             });
                         }
                         ctx.emit(PromptDisplayChipEvent::ToggleMenu { open: is_menu_open });
-                        if is_menu_open {
-                            let is_udi_enabled = InputSettings::as_ref(ctx)
-                                .is_universal_developer_input_enabled(ctx);
-
-                            send_telemetry_from_ctx!(
-                                TelemetryEvent::ContextChipInteracted {
-                                    chip_type: "git_branch".to_string(),
-                                    action: "opened".to_string(),
-                                    is_udi_enabled,
-                                },
-                                ctx
-                            );
-                        }
                         ctx.notify();
                     }
                     DisplayChipKind::WorkingDirectory {
@@ -1641,19 +1590,6 @@ impl TypedActionView for DisplayChip {
                             });
                         }
                         ctx.emit(PromptDisplayChipEvent::ToggleMenu { open: is_menu_open });
-                        if is_menu_open {
-                            let is_udi_enabled = InputSettings::as_ref(ctx)
-                                .is_universal_developer_input_enabled(ctx);
-
-                            send_telemetry_from_ctx!(
-                                TelemetryEvent::ContextChipInteracted {
-                                    chip_type: "working_directory".to_string(),
-                                    action: "opened".to_string(),
-                                    is_udi_enabled,
-                                },
-                                ctx
-                            );
-                        }
                         ctx.notify();
                     }
                     DisplayChipKind::NodeVersion { popup, popup_open } => {

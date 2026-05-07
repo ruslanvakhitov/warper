@@ -8,8 +8,8 @@ use crate::ai::blocklist::prompt::prompt_alert::{
 };
 use crate::ai::blocklist::BlocklistAIInputModel;
 use crate::ai::predict::prompt_suggestions::ACCEPT_PROMPT_SUGGESTION_KEYBINDING;
-use crate::server::telemetry::InteractionSource;
 use crate::settings::InputSettings;
+use crate::terminal::metadata::InteractionSource;
 use crate::terminal::view::passive_suggestions::PromptSuggestionResolution;
 use crate::util::bindings::keybinding_name_to_keystroke;
 use pathfinder_geometry::vector::vec2f;
@@ -37,13 +37,10 @@ use warp_core::ui::theme::color::internal_colors::{neutral_2, neutral_3};
 use crate::ui_components::icons::Icon as WarpUIIcon;
 
 use crate::ai::agent::{PassiveSuggestionTrigger, StaticQueryType};
-use crate::server::ids::ServerId;
+use warp_server_client::ids::ServerId;
 
 const INLINE_BANNER_SPACING: f32 = 8.;
 const INLINE_BANNER_BUTTON_PADDING: f32 = 8.;
-
-const DELINQUENT_DUE_TO_PAYMENT_ISSUE_TOOLTIP_MESSAGE: &str = "Restricted due to payment issue";
-const OUT_OF_REQUESTS_TOOLTIP_MESSAGE: &str = "Out of credits";
 
 /// Types of zero-state prompt suggestions.
 #[derive(Debug, Copy, Clone, Serialize)]
@@ -135,15 +132,7 @@ fn render_button(
     app: &AppContext,
 ) -> Box<dyn Element> {
     let theme = appearance.theme();
-    let is_button_disabled = matches!(
-        prompt_alert_state,
-        PromptAlertState::NoConnection
-            | PromptAlertState::AnonymousUserRequestLimitHardGate
-            | PromptAlertState::DelinquentDueToPaymentIssue
-            | PromptAlertState::OveragesToggleableButNotEnabled
-            | PromptAlertState::MonthlyOveragesSpendLimitReached
-            | PromptAlertState::RequestLimitReached
-    );
+    let is_button_disabled = matches!(prompt_alert_state, PromptAlertState::NoConnection);
     let opacity: f32 = if is_button_disabled { 0.5 } else { 1.0 };
     let opacity_u8 = (opacity * 255.0).round() as u8;
     let hoverable = Hoverable::new(mouse_state.clone(), |mouse_state| {
@@ -294,26 +283,14 @@ fn render_button(
 }
 
 fn get_tooltip_text_for_alert_state(alert_state: &PromptAlertState) -> Option<String> {
-    // This is not an exhaustive list; the actual prompt alert component will have more information,
-    // so we can keep the tooltip's text relatively minimal and just capture broad groups.
     match alert_state {
-        PromptAlertState::DelinquentDueToPaymentIssue => {
-            Some(DELINQUENT_DUE_TO_PAYMENT_ISSUE_TOOLTIP_MESSAGE.to_string())
-        }
-        PromptAlertState::RequestLimitReached
-        | PromptAlertState::AnonymousUserRequestLimitHardGate
-        | PromptAlertState::AnonymousUserRequestLimitSoftGate
-        | PromptAlertState::OveragesToggleableButNotEnabled
-        | PromptAlertState::MonthlyOveragesSpendLimitReached => {
-            Some(OUT_OF_REQUESTS_TOOLTIP_MESSAGE.to_string())
-        }
-        _ => None,
+        PromptAlertState::NoConnection => None,
+        PromptAlertState::NoAlert => None,
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PromptSuggestionsEvent {
-    SignupAnonymousUser,
     OpenBillingAndUsagePage,
     OpenPrivacyPage,
     OpenBillingPortal { team_uid: ServerId },
@@ -352,9 +329,7 @@ impl PromptSuggestionsView {
 
     fn handle_prompt_alert_event(&mut self, event: &PromptAlertEvent, ctx: &mut ViewContext<Self>) {
         match event {
-            PromptAlertEvent::SignupAnonymousUser => {
-                ctx.emit(PromptSuggestionsEvent::SignupAnonymousUser);
-            }
+            PromptAlertEvent::SignupAnonymousUser => {}
             PromptAlertEvent::OpenBillingAndUsagePage => {
                 ctx.emit(PromptSuggestionsEvent::OpenBillingAndUsagePage);
             }
@@ -408,7 +383,7 @@ impl View for PromptSuggestionsView {
                 1.0,
                 render_button(
                     prompt_suggestion.label().clone(),
-                    WarpUIIcon::Oz,
+                    WarpUIIcon::Warp,
                     0,
                     keybinding_name_to_keystroke(ACCEPT_PROMPT_SUGGESTION_KEYBINDING, app),
                     banner_state.accept_button_mouse_state.clone(),
@@ -458,9 +433,6 @@ impl TypedActionView for PromptSuggestionsView {
 
     fn handle_action(&mut self, action: &PromptSuggestionsEvent, ctx: &mut ViewContext<Self>) {
         match action {
-            PromptSuggestionsEvent::SignupAnonymousUser => {
-                ctx.emit(PromptSuggestionsEvent::SignupAnonymousUser);
-            }
             PromptSuggestionsEvent::OpenBillingAndUsagePage => {
                 ctx.emit(PromptSuggestionsEvent::OpenBillingAndUsagePage);
             }

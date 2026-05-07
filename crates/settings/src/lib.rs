@@ -168,22 +168,22 @@ pub enum SupportedPlatforms {
     OR(Box<SupportedPlatforms>, Box<SupportedPlatforms>),
 }
 
-/// An enum representing the different ways a setting can be synced to the cloud.
+/// An enum representing the different ways a setting can participate in settings sync.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SyncToCloud {
-    /// The setting is synced to the cloud as a single global value that applies to on all supported platforms.
+    /// The setting is synced as a single global value that applies to on all supported platforms.
     Globally(RespectUserSyncSetting),
 
-    /// The setting is synced to the cloud as a value that is unique to each platform.
+    /// The setting is synced as a value that is unique to each platform.
     PerPlatform(RespectUserSyncSetting),
 
-    /// The setting is not synced to the cloud.
+    /// The setting is not synced.
     Never,
 }
 
 /// Whether for this setting we respect the user toggle for settings sync.
 /// There are some cases we want to sync settings regardless of the user setting,
-/// such as for the value of whether cloud syncing is enabled, whether telemetry is enabled, etc.
+/// such as settings that must be treated consistently across storage backends.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RespectUserSyncSetting {
     /// Only sync if the user has settings sync enabled
@@ -222,7 +222,7 @@ impl SupportedPlatforms {
 /// An enum representing the reason for a change event.
 #[derive(Debug, Clone, Copy)]
 pub enum ChangeEventReason {
-    /// The change was initiated from a cloud sync
+    /// The change was initiated from settings sync.
     CloudSync,
 
     /// The change was initiated from a local setting change
@@ -298,7 +298,7 @@ pub trait Setting {
     /// Returns the platforms that this setting is supported on.
     fn supported_platforms() -> SupportedPlatforms;
 
-    /// Returns whether and how this setting is synced to the cloud via Warp Drive.
+    /// Returns whether and how this setting participates in settings sync.
     fn sync_to_cloud() -> SyncToCloud;
 
     /// Returns whether this setting is private (not shown in the user-visible settings file).
@@ -366,7 +366,7 @@ pub trait Setting {
     ) -> anyhow::Result<()>;
 
     /// Sets the value of the setting persisting it to storage. The change event indicates
-    /// that the update was initiated from a cloud sync.
+    /// that the update was initiated from settings sync.
     fn set_value_from_cloud_sync(
         &mut self,
         new_value: Self::Value,
