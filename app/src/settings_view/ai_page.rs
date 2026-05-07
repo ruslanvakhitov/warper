@@ -27,6 +27,7 @@ use crate::settings::{
 };
 use crate::terminal::session_settings::{SessionSettings, SessionSettingsChangedEvent};
 use crate::terminal::CLIAgent;
+use crate::util::links;
 use crate::view_components::{
     action_button::{ActionButton, ButtonSize, SecondaryTheme},
     FilterableDropdown, SubmittableTextInput, SubmittableTextInputEvent,
@@ -3944,10 +3945,7 @@ impl AIInputWidget {
                 LazyLock::new(|| {
                     vec![
                         FormattedTextFragment::plain_text("Encountered an incorrect detection? "),
-                        FormattedTextFragment::hyperlink(
-                            "Let us know",
-                            "https://warpdotdev.typeform.com/to/offrTIpq",
-                        ),
+                        FormattedTextFragment::hyperlink("Let us know", links::GITHUB_ISSUES_URL),
                     ]
                 });
 
@@ -4005,7 +4003,7 @@ impl AIInputWidget {
                     ),
                     FormattedTextFragment::hyperlink(
                         "Let us know",
-                        "https://warpdotdev.typeform.com/to/offrTIpq",
+                        links::GITHUB_ISSUES_URL,
                     ),
                 ]
             });
