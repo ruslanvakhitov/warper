@@ -3,7 +3,6 @@
 //! to be run.
 
 mod agent_mode;
-mod ai_assistant;
 mod block_filtering;
 mod bootstrapping;
 mod code_review;
@@ -18,7 +17,6 @@ mod notebooks;
 mod pane_restoration;
 #[cfg(target_os = "macos")]
 mod preview_config_migration;
-mod rules;
 mod secrets;
 mod session_restoration;
 mod settings_file_errors;
@@ -29,12 +27,10 @@ mod subshell;
 mod sync_inputs;
 mod typeahead;
 mod video_recording;
-mod websockets;
 mod workflows;
 mod workspace;
 
 pub use agent_mode::*;
-pub use ai_assistant::*;
 pub use block_filtering::*;
 pub use bootstrapping::*;
 pub use code_review::*;
@@ -50,7 +46,6 @@ pub use notebooks::*;
 pub use pane_restoration::*;
 #[cfg(target_os = "macos")]
 pub use preview_config_migration::*;
-pub use rules::*;
 pub use secrets::*;
 pub use session_restoration::*;
 pub use settings_file_errors::*;
@@ -61,7 +56,6 @@ pub use subshell::*;
 pub use sync_inputs::*;
 pub use typeahead::*;
 pub use video_recording::*;
-pub use websockets::*;
 pub use workflows::*;
 pub use workspace::*;
 
@@ -166,6 +160,7 @@ use warp::{
     },
 };
 
+use warp::settings::CompletionsOpenWhileTyping;
 use warp::terminal::view::ALIAS_EXPANSION_BANNER_SEEN_KEY;
 use warp::{
     features::FeatureFlag,
@@ -179,10 +174,7 @@ use warp::{
     },
 };
 use warp::{
-    integration_testing::warp_drive::{
-        assert_is_left_panel_open, assert_warp_drive_is_closed, assert_warp_drive_is_open,
-    },
-    settings::CompletionsOpenWhileTyping,
+    integration_testing::view_getters::single_terminal_view, terminal::view::TerminalAction,
 };
 use warp::{
     integration_testing::{
@@ -193,10 +185,6 @@ use warp::{
         },
     },
     settings::MonospaceFontSize,
-};
-use warp::{
-    integration_testing::{assertions::join_a_workspace, view_getters::single_terminal_view},
-    terminal::view::TerminalAction,
 };
 use warp::{
     integration_testing::{
@@ -622,9 +610,17 @@ pub fn test_suggestions_menu_positioning() -> Builder {
                 ),
         )
         .with_step(
-            new_step_with_default_assertions("Open Warp Drive")
+            new_step_with_default_assertions("Open left panel")
                 .with_click_on_saved_position("workspace:toggle_left_panel")
-                .add_assertion(assert_is_left_panel_open()),
+                .add_assertion(Box::new(|app, window_id| {
+                    let workspace = workspace_view(app, window_id);
+                    workspace.read(app, |workspace, ctx| {
+                        async_assert!(
+                            workspace.is_left_panel_open(ctx),
+                            "Expected left panel to be open, but it was closed"
+                        )
+                    })
+                })),
         )
         .with_step(
             new_step_with_default_assertions("Assert that suggestions menu updated")
@@ -6657,32 +6653,6 @@ pub fn test_agent_mode_pane_minimum_size() -> Builder {
                         })
                     },
                 ),
-        )
-}
-
-// cheating a little bit in this test; it's hard to tell if the create folder dialog is open from
-// the workspace view, but we DO force warp drive open to show the dialog, so we can look for that
-pub fn test_create_folder_from_command_palette() -> Builder {
-    new_builder()
-        .with_step(wait_until_bootstrapped_single_pane_for_tab(0))
-        .with_step(join_a_workspace())
-        .with_step(go_offline())
-        .with_steps(
-            open_command_palette_and_run_action("Create a New Team Folder")
-                .add_assertion(assert_warp_drive_is_closed()),
-        )
-        .with_steps(
-            open_command_palette_and_run_action("Create a New Personal Folder")
-                .add_assertion(assert_warp_drive_is_closed()),
-        )
-        .with_step(go_online())
-        .with_steps(
-            open_command_palette_and_run_action("Create a New Team Folder")
-                .add_assertion(assert_warp_drive_is_open()),
-        )
-        .with_steps(
-            open_command_palette_and_run_action("Create a New Personal Folder")
-                .add_assertion(assert_warp_drive_is_open()),
         )
 }
 

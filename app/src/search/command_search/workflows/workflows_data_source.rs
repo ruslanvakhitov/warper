@@ -24,7 +24,7 @@ pub struct WorkflowsDataSource {
 }
 
 impl WorkflowsDataSource {
-    /// Creates a new WorkflowsDataSource containing team, project, local, and global workflows.
+    /// Creates a new WorkflowsDataSource containing project, local, app, and global workflows.
     pub fn new(session_context: Option<&SessionContext>, app: &mut AppContext) -> Self {
         let mut workflows_by_source: HashMap<WorkflowSource, Vec<Workflow>> = HashMap::new();
 

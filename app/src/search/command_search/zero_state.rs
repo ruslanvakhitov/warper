@@ -13,7 +13,6 @@ use warpui::{
 };
 
 use crate::appearance::Appearance;
-use crate::drive::settings::{WarpDriveSettings, WarpDriveSettingsChangedEvent};
 use crate::search::FilterChipRenderer;
 use crate::search::QueryFilter;
 use crate::settings::{AISettings, AISettingsChangedEvent};
@@ -28,10 +27,6 @@ lazy_static! {
         (
             "# find \"foo\" in files",
             QueryFilter::NaturalLanguage
-        ),
-        (
-            "notebooks: deploy production server",
-            QueryFilter::Notebooks
         ),
     ]);
 }
@@ -56,12 +51,6 @@ impl CommandSearchZeroStateView {
     pub fn new(ctx: &mut ViewContext<Self>) -> Self {
         ctx.subscribe_to_model(&AISettings::handle(ctx), |_, _, event, ctx| {
             if let AISettingsChangedEvent::IsAnyAIEnabled { .. } = event {
-                ctx.notify();
-            }
-        });
-
-        ctx.subscribe_to_model(&WarpDriveSettings::handle(ctx), |_, _, event, ctx| {
-            if let WarpDriveSettingsChangedEvent::EnableWarpDrive { .. } = event {
                 ctx.notify();
             }
         });
@@ -287,8 +276,7 @@ impl TypedActionView for CommandSearchZeroStateView {
     }
 }
 
-/// Returns list of valid query filters that may be applied. This does not include notebooks if the
-/// notebooks feature flag is disabled.
+/// Returns list of valid query filters that may be applied.
 fn valid_query_filters(app: &AppContext) -> Vec<QueryFilter> {
     let mut filters = vec![QueryFilter::History];
 
@@ -299,11 +287,7 @@ fn valid_query_filters(app: &AppContext) -> Vec<QueryFilter> {
         filters.push(QueryFilter::PromptHistory);
     }
 
-    if WarpDriveSettings::is_warp_drive_enabled(app) {
-        filters.extend([QueryFilter::Workflows, QueryFilter::Notebooks]);
-
-        filters.push(QueryFilter::EnvironmentVariables);
-    }
+    filters.push(QueryFilter::Workflows);
 
     filters
 }

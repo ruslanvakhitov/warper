@@ -1,8 +1,6 @@
 use std::collections::HashMap;
 
-use crate::interval_timer::IntervalTimer;
 use crate::settings::import::config::{Config, ConfigError};
-use crate::{send_telemetry_from_ctx, TelemetryEvent};
 
 use serde::Serialize;
 use strum::IntoEnumIterator;
@@ -12,8 +10,6 @@ use warpui::Entity;
 use warpui::ModelContext;
 use warpui::SingletonEntity;
 
-#[cfg(target_os = "macos")]
-use super::config::HotkeyError;
 use super::config::SettingType;
 use super::config::ThemeType;
 
@@ -67,7 +63,9 @@ impl ImportedConfigModel {
                 let fonts_ref_clone = Arc::clone(&fonts_ref);
                 ctx.spawn(
                     async move {
-                        Config::create_from_terminal_type(terminal_type, fonts_ref_clone).await
+                        Config::create_from_terminal_type(terminal_type, fonts_ref_clone)
+                            .await
+                            .0
                     },
                     move |model, output, ctx| {
                         model.write_parse_results(terminal_type, output, ctx);
@@ -81,47 +79,12 @@ impl ImportedConfigModel {
         self.started
     }
 
-    #[cfg(target_os = "macos")]
-    fn maybe_send_multiple_hotkeys_telemetry_event(
-        &self,
-        terminal_type: &TerminalType,
-        configs: &Result<Vec<Config>, ConfigError>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        if let TerminalType::ITerm = terminal_type {
-            if let Ok(configs) = configs {
-                if configs.iter().any(|config| {
-                    matches!(
-                        config.hotkey_mode.setting,
-                        Err(HotkeyError::MultipleHotkeys)
-                    )
-                }) {
-                    send_telemetry_from_ctx!(TelemetryEvent::ITermMultipleHotkeys, ctx);
-                }
-            }
-        }
-    }
-
     pub fn write_parse_results(
         &mut self,
         terminal_type: TerminalType,
-        (configs, timer): (Result<Vec<Config>, ConfigError>, IntervalTimer),
+        configs: Result<Vec<Config>, ConfigError>,
         ctx: &mut ModelContext<Self>,
     ) {
-        send_telemetry_from_ctx!(
-            TelemetryEvent::SettingsImportConfigParsed {
-                timing_data: timer.compute_stats(),
-                terminal_type,
-                settings_shown_to_user: configs
-                    .as_ref()
-                    .ok()
-                    .and_then(|configs| configs.first())
-                    .map(|config| config.valid_setting_types())
-            },
-            ctx
-        );
-        #[cfg(target_os = "macos")]
-        self.maybe_send_multiple_hotkeys_telemetry_event(&terminal_type, &configs, ctx);
         self.parsed_terminals.insert(terminal_type, configs);
         ctx.emit(CompletedParseEvent {
             terminal: terminal_type,

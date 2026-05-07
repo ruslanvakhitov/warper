@@ -8,7 +8,6 @@ use warpui::{
     WindowId,
 };
 
-use super::OneTimeModalModel;
 use crate::window_settings::WindowSettings;
 use crate::{
     appearance::Appearance, pane_group::PaneId, terminal::TerminalView, workspace::Workspace,
@@ -28,23 +27,17 @@ pub(super) struct WorkspaceMouseStates {
     pub(super) new_tab_button: MouseStateHandle,
     pub(super) new_tab_menu: MouseStateHandle,
     pub(super) new_tab: MouseStateHandle,
-    pub(super) overflow_button: MouseStateHandle,
     pub(super) banner_button: MouseStateHandle,
     pub(super) banner_secondary_button: MouseStateHandle,
     pub(super) more_info_banner_button: MouseStateHandle,
     pub(super) resource_center_icon: MouseStateHandle,
-    pub(super) ai_tab_bar_button: MouseStateHandle,
-    pub(super) agent_management_view_button: MouseStateHandle,
     pub(super) left_panel_icon: MouseStateHandle,
     pub(super) settings_icon: MouseStateHandle,
     pub(super) dismiss_banner_button: MouseStateHandle,
-    pub(super) sign_in_button: MouseStateHandle,
-    pub(super) sign_up_button: MouseStateHandle,
     pub(super) offline_icon: MouseStateHandle,
     pub(super) avatar_icon: MouseStateHandle,
     pub(super) header_dimming: MouseStateHandle,
     pub(super) right_panel_icon: MouseStateHandle,
-    pub(super) notifications_mailbox: MouseStateHandle,
     pub(super) session_config_tab_config_chip_close: MouseStateHandle,
     pub(super) tools_panel_icon: MouseStateHandle,
     pub(super) title_bar_search_bar: MouseStateHandle,
@@ -98,89 +91,55 @@ pub struct WorkspaceState {
     pub is_theme_chooser_open: bool,
     pub is_theme_creator_modal_open: bool,
     pub is_theme_deletion_modal_open: bool,
-    pub is_changelog_modal_open: bool,
     pub is_tab_being_dragged: bool,
-    pub is_reward_modal_open: bool,
     pub is_launch_config_save_modal_open: bool,
     pub is_resource_center_open: bool,
     pub is_command_search_open: bool,
-    pub is_warp_drive_open: bool,
-    pub is_ai_assistant_panel_open: bool,
-    pub is_agent_management_popup_open: bool,
-    pub is_auth_override_modal_open: bool,
-    pub is_require_login_modal_open: bool,
     pub is_workflow_modal_open: bool,
     pub is_prompt_editor_open: bool,
     pub is_agent_toolbar_editor_open: bool,
     pub is_header_toolbar_editor_open: bool,
     pub is_import_modal_open: bool,
-    pub is_close_session_confirmation_dialog_open: bool,
     pub is_rewind_confirmation_dialog_open: bool,
     pub is_delete_conversation_confirmation_dialog_open: bool,
     pub is_native_quit_modal_open: bool,
     pub is_shared_objects_creation_denied_modal_open: bool,
-    pub is_suggested_agent_mode_workflow_modal_open: bool,
-    pub is_suggested_rule_modal_open: bool,
-    pub is_enable_auto_reload_modal_open: bool,
-    pub is_notification_mailbox_open: bool,
-    pub is_agent_management_view_open: bool,
     pub is_codex_modal_open: bool,
-    pub is_cloud_agent_capacity_modal_open: bool,
-    pub is_free_tier_limit_hit_modal_open: bool,
     pub is_tab_config_params_modal_open: bool,
     pub is_session_config_modal_open: bool,
     pub is_new_worktree_modal_open: bool,
     pub is_remove_tab_config_dialog_open: bool,
-    /// Whether the transcript details panel is open (WASM only, for conversation transcript viewing).
-    pub is_transcript_details_panel_open: bool,
     tab_being_renamed: Option<usize>, // The index of the tab being renamed
     pane_being_renamed: Option<PaneViewLocator>,
 }
 
 impl WorkspaceState {
-    pub fn is_any_non_terminal_view_open(&self, app: &AppContext) -> bool {
-        self.is_any_modal_open(app)
-            || self.is_theme_chooser_open
-            || self.is_ai_assistant_panel_open
-            || self.is_workflow_modal_open
-            || self.is_warp_drive_open
+    pub fn is_any_non_terminal_view_open(&self) -> bool {
+        self.is_any_modal_open() || self.is_theme_chooser_open || self.is_workflow_modal_open
     }
 
-    pub fn is_any_non_palette_modal_open(&self, app: &AppContext) -> bool {
+    pub fn is_any_non_palette_modal_open(&self) -> bool {
         self.is_theme_creator_modal_open
             || self.is_theme_deletion_modal_open
-            || self.is_changelog_modal_open
             || self.tab_being_renamed.is_some()
             || self.pane_being_renamed.is_some()
-            || self.is_reward_modal_open
             || self.is_launch_config_save_modal_open
             || self.is_command_search_open
             || self.is_prompt_editor_open
             || self.is_agent_toolbar_editor_open
             || self.is_header_toolbar_editor_open
-            || self.is_agent_management_popup_open
             || self.is_import_modal_open
             || self.is_shared_objects_creation_denied_modal_open
-            || self.is_suggested_rule_modal_open
-            || self.is_suggested_agent_mode_workflow_modal_open
-            || self.is_enable_auto_reload_modal_open
             || self.is_codex_modal_open
-            || self.is_cloud_agent_capacity_modal_open
-            || self.is_free_tier_limit_hit_modal_open
             || self.is_tab_config_params_modal_open
             || self.is_session_config_modal_open
             || self.is_new_worktree_modal_open
             || self.is_remove_tab_config_dialog_open
-            || {
-                let one_time_modal = OneTimeModalModel::as_ref(app);
-                one_time_modal.is_oz_launch_modal_open()
-                    || one_time_modal.is_build_plan_migration_modal_open()
-            }
     }
 
     /// Returns whether any modal (sitting over terminal views) is open.
-    pub fn is_any_modal_open(&self, app: &AppContext) -> bool {
-        self.is_any_non_palette_modal_open(app)
+    pub fn is_any_modal_open(&self) -> bool {
+        self.is_any_non_palette_modal_open()
             || self.is_palette_open
             || self.is_ctrl_tab_palette_open
     }
@@ -190,10 +149,8 @@ impl WorkspaceState {
         self.is_ctrl_tab_palette_open = false;
         self.is_theme_creator_modal_open = false;
         self.is_theme_deletion_modal_open = false;
-        self.is_changelog_modal_open = false;
         self.tab_being_renamed = None;
         self.pane_being_renamed = None;
-        self.is_reward_modal_open = false;
         self.is_launch_config_save_modal_open = false;
         self.is_command_search_open = false;
         self.is_workflow_modal_open = false;
@@ -202,14 +159,7 @@ impl WorkspaceState {
         self.is_header_toolbar_editor_open = false;
         self.is_import_modal_open = false;
         self.is_shared_objects_creation_denied_modal_open = false;
-        self.is_auth_override_modal_open = false;
-        self.is_require_login_modal_open = false;
-        self.is_suggested_rule_modal_open = false;
-        self.is_suggested_agent_mode_workflow_modal_open = false;
-        self.is_enable_auto_reload_modal_open = false;
         self.is_codex_modal_open = false;
-        self.is_cloud_agent_capacity_modal_open = false;
-        self.is_free_tier_limit_hit_modal_open = false;
         self.is_tab_config_params_modal_open = false;
         self.is_session_config_modal_open = false;
         self.is_new_worktree_modal_open = false;
@@ -217,7 +167,7 @@ impl WorkspaceState {
     }
 
     pub fn is_right_panel_open(&self) -> bool {
-        self.is_resource_center_open || self.is_ai_assistant_panel_open
+        self.is_resource_center_open
     }
 
     pub fn is_left_panel_open(&self) -> bool {
@@ -225,7 +175,6 @@ impl WorkspaceState {
     }
 
     pub fn close_all_left_panels(&mut self) {
-        self.is_warp_drive_open = false;
         self.is_theme_chooser_open = false;
     }
 

@@ -57,7 +57,6 @@ use crate::appearance::Appearance;
 use crate::settings::{AISettings, InputModeSettings, InputSettings};
 use crate::terminal::model::blocks::{BlockHeightItem, RemovableBlocklistItem, RichContentItem};
 use crate::terminal::model::rich_content::RichContentType;
-use crate::terminal::TerminalView;
 use crate::util::truncation::truncate_from_end;
 
 use super::secret_redaction::SecretRedactionState;
@@ -70,7 +69,6 @@ use super::TextLocation;
 use crate::ai::blocklist::block::view_impl::comments::address_comment_chips;
 use crate::ai::blocklist::block::{DetectedLinksState, RICH_CONTENT_LINK_FIRST_CHAR_POSITION_ID};
 use crate::ai::blocklist::history_model::BlocklistAIHistoryModel;
-use crate::cloud_object::model::persistence::CloudModel;
 
 use crate::settings_view::SettingsSection;
 use crate::terminal::block_list_element::BlockListMenuSource;
@@ -152,27 +150,6 @@ fn add_slash_command_highlight(
             .with_foreground_color(slash_command_foreground_color)
             .with_properties(default_properties)
     }
-}
-
-/// In shared ambient sessions, the first prompt is already shown by
-/// `InitialUserQuery` during live startup/streaming.
-///
-/// To avoid duplicate UI, we suppress the first AI block's header/query only while the viewer is
-/// live (not replaying historical conversation events).
-///
-/// That first prompt is rendered in the ambient-agent query block UI, so this helper only gates
-/// duplicate rendering in the AI block path when that optimistic block was actually inserted.
-fn should_hide_first_ai_block_query_and_header(
-    has_inserted_cloud_mode_user_query_block: bool,
-    is_shared_ambient_agent_session: bool,
-    is_first_exchange: bool,
-    is_receiving_agent_conversation_replay: bool,
-) -> bool {
-    FeatureFlag::CloudModeSetupV2.is_enabled()
-        && has_inserted_cloud_mode_user_query_block
-        && is_shared_ambient_agent_session
-        && is_first_exchange
-        && !is_receiving_agent_conversation_replay
 }
 
 /// Adds the appropriate highlighting for secrets and links to the given text element.
@@ -683,15 +660,6 @@ pub fn render_citation(
     let theme = appearance.theme();
 
     let (icon, name) = match citation {
-        AIAgentCitation::WarpDriveObject { uid } => {
-            let item = CloudModel::as_ref(app)
-                .get_by_uid(uid)?
-                .to_warp_drive_item(appearance)?;
-            (
-                item.icon(appearance, Some(theme.active_ui_text_color())),
-                item.display_name().unwrap_or(String::from("Untitled")),
-            )
-        }
         AIAgentCitation::WarpDocumentation { .. } => {
             let icon = Icon::Warp.to_warpui_icon(theme.foreground()).finish();
             let name = String::from("Warp Docs");
@@ -845,26 +813,7 @@ impl View for AIBlock {
         };
         let addressed_comment_ids = conversation.addressed_comment_ids();
         let mut contents = Flex::column();
-        let (is_shared_ambient_agent_session, is_receiving_agent_conversation_replay) = {
-            let terminal_model = self.terminal_model.lock();
-            (
-                terminal_model.is_shared_ambient_agent_session(),
-                terminal_model.is_receiving_agent_conversation_replay(),
-            )
-        };
-        let is_first_exchange = conversation
-            .first_exchange()
-            .is_some_and(|exchange| exchange.id == self.client_ids.client_exchange_id);
-        let has_inserted_cloud_mode_user_query_block = self
-            .ambient_agent_view_model
-            .as_ref(app)
-            .has_inserted_cloud_mode_user_query_block();
-        let should_hide_first_block_query_and_header = should_hide_first_ai_block_query_and_header(
-            has_inserted_cloud_mode_user_query_block,
-            is_shared_ambient_agent_session,
-            is_first_exchange,
-            is_receiving_agent_conversation_replay,
-        );
+        let should_hide_first_block_query_and_header = false;
 
         let input_props = input::Props {
             comments: &self.comment_states,
@@ -936,43 +885,11 @@ impl View for AIBlock {
                     contents.add_child(header.with_content_item_spacing().finish());
                     did_render_header = true;
                 }
-                // Derive the display info for the participant who initiated this exchange.
-                // For non-shared sessions, this is just the current user.
-                // For shared sessions, this is the user who initiated the request.
-                let (avatar_display_name, profile_image_path, avatar_color) = self
-                    .model
-                    .response_initiator(app)
-                    .and_then(|participant_id| {
-                        app.view_with_id::<TerminalView>(self.window_id, self.terminal_view_id)
-                            .and_then(|terminal_view| {
-                                terminal_view.read(app, |view, app| {
-                                    view.shared_session_presence_manager().and_then(move |pm| {
-                                        pm.as_ref(app).get_participant(&participant_id).map(
-                                            |participant| {
-                                                // Get the display info from the participant
-                                                // who sent this query.
-                                                (
-                                                    participant
-                                                        .info
-                                                        .profile_data
-                                                        .display_name
-                                                        .clone(),
-                                                    participant.info.profile_data.photo_url.clone(),
-                                                    Some(participant.color),
-                                                )
-                                            },
-                                        )
-                                    })
-                                })
-                            })
-                    })
-                    // Fallback to the current user's info if this is not a shared session
-                    // or the participant is not found.
-                    .unwrap_or((
-                        self.user_display_name.clone(),
-                        self.profile_image_path.clone(),
-                        None,
-                    ));
+                let (avatar_display_name, profile_image_path, avatar_color) = (
+                    self.user_display_name.clone(),
+                    self.profile_image_path.clone(),
+                    None,
+                );
                 if let Some(rendered_query) = query::maybe_render(
                     query::Props {
                         user_display_name: &avatar_display_name,
@@ -1033,10 +950,10 @@ impl View for AIBlock {
         }
 
         let has_accepted_edits = self.has_accepted_file_edits_since_last_query(app);
-        let terminal_model = self.terminal_model.lock();
-        let shared_session_status = terminal_model.shared_session_status().clone();
-        let is_conversation_transcript_viewer = terminal_model.is_conversation_transcript_viewer();
-        drop(terminal_model);
+        let is_conversation_transcript_viewer = self
+            .terminal_model
+            .lock()
+            .is_conversation_transcript_viewer();
 
         contents.add_child(output::render(
             output::Props {
@@ -1070,9 +987,6 @@ impl View for AIBlock {
                 ),
                 is_references_section_open: self.is_references_section_open,
                 autonomy_setting_speedbump: &self.autonomy_setting_speedbump,
-                suggested_rules: &self.suggested_rules,
-                suggested_agent_mode_workflow: &self.suggested_agent_mode_workflow,
-                manage_rules_button: &self.manage_rules_button,
                 keyboard_navigable_buttons: self.keyboard_navigable_buttons.as_ref(),
                 response_rating: &self.response_rating,
                 request_refunded_count: self.request_refunded_count,
@@ -1081,13 +995,10 @@ impl View for AIBlock {
                 web_fetch_views: &self.web_fetch_views,
                 review_changes_button: &self.review_changes_button,
                 open_all_comments_button: &self.open_all_comments_button,
-                dismiss_suggestion_button: &self.dismiss_suggestion_button,
-                disable_rule_suggestions_button: &self.disable_rule_suggestions_button,
                 has_accepted_edits,
                 current_todo_list: self.current_todo_list(app),
                 finish_reason: self.finish_reason.as_ref(),
                 is_usage_footer_expanded: self.is_usage_footer_expanded,
-                shared_session_status: &shared_session_status,
                 terminal_view_id: self.terminal_view_id,
                 is_conversation_transcript_viewer,
                 aws_bedrock_credentials_error_view: self
@@ -1331,7 +1242,6 @@ impl AIAgentInput {
             | AIAgentInput::AutoCodeDiffQuery { .. }
             | AIAgentInput::ResumeConversation { .. }
             | AIAgentInput::InitProjectRules { .. }
-            | AIAgentInput::CreateEnvironment { .. }
             | AIAgentInput::TriggerPassiveSuggestion { .. }
             | AIAgentInput::CreateNewProject { .. }
             | AIAgentInput::CloneRepository { .. }

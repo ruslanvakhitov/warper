@@ -72,18 +72,24 @@ impl TryFrom<&AIAgentInput> for PersistedAIInputType {
                 context: context.clone(),
                 referenced_attachments: Default::default(),
             }),
-            AIAgentInput::PassiveSuggestionResult { suggestion: PassiveSuggestionResultType::Prompt { prompt }, context, .. } => Ok(Self::Query {
+            AIAgentInput::PassiveSuggestionResult {
+                suggestion: PassiveSuggestionResultType::Prompt { prompt },
+                context,
+                ..
+            } => Ok(Self::Query {
                 text: prompt.clone(),
                 context: context.clone(),
                 referenced_attachments: Default::default(),
             }),
-            AIAgentInput::PassiveSuggestionResult { suggestion: PassiveSuggestionResultType::CodeDiff { .. }, .. } => Err(anyhow!(
+            AIAgentInput::PassiveSuggestionResult {
+                suggestion: PassiveSuggestionResultType::CodeDiff { .. },
+                ..
+            } => Err(anyhow!(
                 "PassiveSuggestionResult::CodeDiff is not persisted as a query."
             )),
             AIAgentInput::ActionResult { .. }
             | AIAgentInput::ResumeConversation { .. }
             | AIAgentInput::InitProjectRules { .. }
-            | AIAgentInput::CreateEnvironment { .. }
             | AIAgentInput::TriggerPassiveSuggestion { .. }
             | AIAgentInput::CreateNewProject { .. }
             | AIAgentInput::CloneRepository { .. }

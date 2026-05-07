@@ -225,10 +225,6 @@ impl DataSourceRunError for CodeSearchError {
         "Code search failed".to_string()
     }
 
-    fn telemetry_payload(&self) -> serde_json::Value {
-        serde_json::json!({ "error": "model_dropped" })
-    }
-
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }

@@ -8,7 +8,7 @@ use warp_util::standardized_path::StandardizedPath;
 pub enum RepositoryIdentifier {
     /// A repository on the local filesystem, identified by its standardized path.
     Local(StandardizedPath),
-    /// A repository on a remote server, identified by session + path.
+    /// A repository on a remote session, identified by session + path.
     Remote(RemoteRepositoryIdentifier),
 }
 
@@ -43,7 +43,7 @@ impl RepositoryIdentifier {
     }
 }
 
-/// Identifies a repository on a remote server.
+/// Identifies a repository on a remote session.
 ///
 /// Pairs a [`HostId`] (to deduplicate across multiple SSH sessions to the
 /// same host) with the server-side [`StandardizedPath`]. The path lives on

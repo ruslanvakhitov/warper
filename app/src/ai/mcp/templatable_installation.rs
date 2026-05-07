@@ -154,18 +154,4 @@ impl TemplatableMCPServerInstallation {
             }
         }
     }
-
-    pub fn gallery_uuid(&self) -> Option<Uuid> {
-        self.templatable_mcp_server
-            .gallery_data
-            .as_ref()
-            .map(|g| g.gallery_item_id)
-    }
-
-    pub fn gallery_version(&self) -> Option<i32> {
-        self.templatable_mcp_server
-            .gallery_data
-            .as_ref()
-            .map(|g| g.version)
-    }
 }

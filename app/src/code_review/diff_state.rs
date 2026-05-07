@@ -36,10 +36,9 @@ use crate::util::git::{
 
 use super::diff_size_limits::compute_diff_size;
 
-use crate::code_review::CodeReviewTelemetryEvent;
 #[cfg(not(target_family = "wasm"))]
 use warp_core::channel::ChannelState;
-use warp_core::{safe_warn, send_telemetry_from_ctx};
+use warp_core::safe_warn;
 
 cfg_if::cfg_if! {
     if #[cfg(feature = "local_fs")] {
@@ -1508,13 +1507,7 @@ impl DiffStateModel {
                 }
                 self.metadata = Some(metadata);
             }
-            Err(e) => {
-                send_telemetry_from_ctx!(
-                    CodeReviewTelemetryEvent::CalculateDiffMetadataFailed {
-                        error: e.to_string()
-                    },
-                    ctx
-                );
+            Err(_) => {
                 self.metadata = None;
             }
         }
@@ -1557,15 +1550,6 @@ impl DiffStateModel {
                 ctx,
             );
             return;
-        }
-
-        if let Err(e) = &diffs.changes {
-            send_telemetry_from_ctx!(
-                CodeReviewTelemetryEvent::LoadDiffFailed {
-                    error: e.to_string(),
-                },
-                ctx
-            );
         }
 
         self.state = InternalDiffState::Loaded((&diffs).into());

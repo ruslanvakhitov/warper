@@ -1,72 +1,43 @@
 mod docker;
-pub mod parse_url_paths;
 pub mod web_intent_parser;
 
 #[cfg(target_family = "wasm")]
 pub mod browser_url_handler;
 
-use crate::ai::active_agent_views_model::{ActiveAgentViewsModel, ConversationOrTaskId};
-use crate::ai::agent::api::ServerConversationToken;
-use crate::drive::OpenWarpDriveObjectSettings;
 use crate::launch_configs::launch_config::LaunchConfig;
 use crate::linear::{LinearAction, LinearIssueWork};
 use crate::root_view::{open_new_window_get_handles, OpenLaunchConfigArg};
-use crate::server::ids::ServerId;
-use crate::server::telemetry::{LaunchConfigUiLocation, TelemetryEvent};
 use crate::util::openable_file_type::{is_file_openable_in_warp, is_markdown_file};
+use crate::workspace::active_terminal_in_window;
+use crate::workspace::metadata::LaunchConfigUiLocation;
 use crate::workspace::{Workspace, WorkspaceAction, WorkspaceRegistry};
-use crate::{cloud_object::ObjectType, workspace::ToastStack};
-use crate::{drive::OpenWarpDriveObjectArgs, view_components::DismissibleToast};
-use crate::{features::FeatureFlag, workspace::active_terminal_in_window};
+use crate::{view_components::DismissibleToast, workspace::ToastStack};
 
-use crate::ai::ambient_agents::github_auth_notifier::GitHubAuthNotifier;
-use crate::settings_view::{OpenTeamsSettingsModalArgs, SettingsSection};
+use crate::settings_view::SettingsSection;
 use crate::user_config::load_launch_configs;
-use crate::{
-    quake_mode_window_id, quake_mode_window_is_open, safe_info, send_telemetry_from_app_ctx,
-    ChannelState, OpenPath,
-};
+use crate::{quake_mode_window_id, quake_mode_window_is_open, safe_info, ChannelState, OpenPath};
 use anyhow::{anyhow, ensure, Result};
-use itertools::Itertools;
-use session_sharing_protocol::common::SessionId;
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::str::FromStr;
 use url::Url;
 use warpui::notification::UserNotification;
 use warpui::{platform::TerminationMode, SingletonEntity as _, TypedActionView};
 
-use warpui::{AppContext, EntityId, ViewHandle, WindowId};
+use warpui::{AppContext, WindowId};
 
 use self::docker::open_docker_container;
 
 const DESKTOP_REDIRECT_URI_PATH: &str = "/desktop_redirect";
 
-/// Args for opening the MCP settings page via deeplink, with optional auto-install.
-/// The `autoinstall` value is the raw query param string; it is matched case-insensitively
-/// against gallery titles in `autoinstall_from_gallery`.
-pub struct OpenMCPSettingsArgs {
-    pub autoinstall: Option<String>,
-}
-
-/// Source query parameter value indicating auth was initiated from cloud agent setup.
-/// Used to skip opening settings page after GitHub auth completes.
-pub const CLOUD_SETUP_SOURCE: &str = "cloud_setup";
+/// Args for opening the MCP settings page via deeplink.
+pub struct OpenMCPSettingsArgs;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum UriHost {
-    Auth,
-    Team,
     /// A host prefix for all actions (e.g.: new tab, new window).
     Action,
     /// A host prefix for all actions that involve launch configurations
     Launch,
-    /// Supports joining shared sessions via a warp:// URI.
-    SharedSession,
-    /// Supports viewing AI conversations via a warp:// URI.
-    Conversation,
-    /// Supports WD object actions
-    Drive,
     /// Supports opening warp's settings panel via URI
     Settings,
     /// A host prefix for a general-purpose home/landing page. Unlike other intent URIs, the home
@@ -74,8 +45,6 @@ pub enum UriHost {
     Home,
     /// Actions related to MCP servers (e.g.: oauth callbacks).
     Mcp,
-    /// Opens a new tab with the Codex model and starts a conversation.
-    Codex,
     /// Actions triggered from Linear integrations (e.g. work on issue).
     Linear,
 }
@@ -85,19 +54,11 @@ impl FromStr for UriHost {
 
     fn from_str(s: &str) -> Result<Self> {
         match s {
-            "auth" => Ok(Self::Auth),
-            "team" => Ok(Self::Team),
             "action" => Ok(Self::Action),
             "launch" => Ok(Self::Launch),
-            "shared_session" if FeatureFlag::ViewingSharedSessions.is_enabled() => {
-                Ok(Self::SharedSession)
-            }
-            "conversation" => Ok(Self::Conversation),
-            "drive" => Ok(Self::Drive),
             "settings" => Ok(Self::Settings),
             "home" => Ok(Self::Home),
             "mcp" => Ok(Self::Mcp),
-            "codex" => Ok(Self::Codex),
             "linear" => Ok(Self::Linear),
             _ => Err(anyhow!("Received url with unexpected host: {}", s)),
         }
@@ -108,50 +69,6 @@ impl UriHost {
     fn handle(&self, primary_window_id: Option<WindowId>, url: &Url, ctx: &mut AppContext) {
         // Handle host
         match self {
-            UriHost::Auth => {
-                ctx.window_ids()
-                    .collect_vec()
-                    .into_iter()
-                    .for_each(|window_id| {
-                        let Some(root_view_id) = ctx.root_view_id(window_id) else {
-                            return;
-                        };
-                        safe_info!(
-                            safe: ("Dispatched auth url to window {window_id}"),
-                            full: ("Dispatched auth url {url} to window {window_id}")
-                        );
-                        ctx.dispatch_action(
-                            window_id,
-                            &[root_view_id],
-                            "root_view:handle_incoming_auth_url",
-                            &url.clone(),
-                            log::Level::Info,
-                        );
-                    });
-            }
-            UriHost::Team => {
-                match url.path_segments().into_iter().flatten().last() {
-                    // If the last segment of the URL is "settings", open the team settings page.
-                    Some("settings") => {
-                        open_window_with_action(
-                            primary_window_id,
-                            "root_view:open_team_settings_page",
-                            ctx,
-                        );
-                    }
-                    // Otherwise default to previous behavior.
-                    _ => {
-                        // TODO: Parse URL to ensure the user is logged into the right account
-                        // Shows the user the settings view of their newly joined team within the app.
-                        open_window_with_action(
-                            primary_window_id,
-                            "root_view:handle_team_intent_link_action",
-                            ctx,
-                        );
-                    }
-                };
-                send_telemetry_from_app_ctx!(TelemetryEvent::OpenTeamFromURI, ctx);
-            }
             UriHost::Action => {
                 match Action::parse(url) {
                     Ok(action) => action.handle(primary_window_id, url, ctx),
@@ -184,144 +101,9 @@ impl UriHost {
                     log::warn!("couldn't turn launch link '{}' into path", url.path());
                 }
             }
-            UriHost::SharedSession => {
-                // We expect the uri to have the ID of the session to join as the last segment.
-                // e.g. warp://shared_session/{id}
-                let session_id = url
-                    .path_segments()
-                    .into_iter()
-                    .flatten()
-                    .last()
-                    .and_then(|id| SessionId::from_str(id).ok());
-                if let Some(session_id) = session_id {
-                    // If there's an existing window, join the session inc a new tab. Otherwise, open a new window.
-                    match primary_window_id.and_then(|window_id| {
-                        ctx.root_view_id(window_id)
-                            .map(|view_id| (window_id, view_id))
-                    }) {
-                        Some((primary_window_id, root_view_id)) => {
-                            ctx.dispatch_action(
-                                primary_window_id,
-                                &[root_view_id],
-                                "root_view:join_shared_session_in_existing_window",
-                                &session_id,
-                                log::Level::Info,
-                            );
-                        }
-                        None => {
-                            ctx.dispatch_global_action("root_view:join_shared_session", &session_id)
-                        }
-                    }
-                } else {
-                    log::warn!("Failed to join shared session with uri={url}");
-                }
-            }
-            UriHost::Conversation => {
-                // We expect the uri to have the conversation ID as the last segment.
-                // e.g. warp://conversation/{conversation_id}
-                let conversation_id: Option<ServerConversationToken> = url
-                    .path_segments()
-                    .into_iter()
-                    .flatten()
-                    .last()
-                    .map(|s| ServerConversationToken::new(s.to_owned()));
-
-                if let Some(conversation_id) = conversation_id {
-                    // If there's an existing window, open the conversation in a new tab. Otherwise, open a new window.
-                    match primary_window_id.and_then(|window_id| {
-                        ctx.root_view_id(window_id)
-                            .map(|view_id| (window_id, view_id))
-                    }) {
-                        Some((primary_window_id, root_view_id)) => {
-                            ctx.dispatch_action(
-                                primary_window_id,
-                                &[root_view_id],
-                                "root_view:open_cloud_conversation_in_existing_window",
-                                &conversation_id,
-                                log::Level::Info,
-                            );
-                        }
-                        None => ctx.dispatch_global_action(
-                            "root_view:open_conversation_viewer",
-                            &conversation_id,
-                        ),
-                    }
-                } else {
-                    log::warn!("Failed to open conversation with uri={url}");
-                }
-            }
-            UriHost::Drive => {
-                // We expect the uri to have the ID of the object we are trying to open and the object_type.
-                // e.g. warp://drive/{object_type}?id={UID}
-                // For folder links, we expect an additional query parameter primary_object_id which refers to the id object
-                // that should be opened
-                // When the user is directed here via the request access flow, we expect an additional query parameter invitee_email
-                // If this paramter is present, we will open the sharing dialog with the email filled in.
-                let object_type = url
-                    .path_segments()
-                    .into_iter()
-                    .flatten()
-                    .last()
-                    .and_then(|object_type| ObjectType::from_str(object_type).ok());
-
-                let query_string: HashMap<_, _> = url.query_pairs().collect();
-                let object_server_id: Option<ServerId> =
-                    query_string.get("id").map(ServerId::from_string_lossy);
-
-                let focused_folder_id: Option<ServerId> = query_string
-                    .get("focused_folder_id")
-                    .map(ServerId::from_string_lossy);
-
-                let invitee_email: Option<String> =
-                    query_string.get("invitee_email").map(|s| s.to_string());
-
-                if let Some((object_type, server_id)) = object_type.zip(object_server_id) {
-                    let primary_window_and_view = primary_window_id.and_then(|window_id| {
-                        ctx.root_view_id(window_id)
-                            .map(|view_id| (window_id, view_id))
-                    });
-                    let args = OpenWarpDriveObjectArgs {
-                        object_type,
-                        server_id,
-                        settings: OpenWarpDriveObjectSettings {
-                            focused_folder_id,
-                            invitee_email,
-                        },
-                    };
-                    // If there's an existing window, open the object in that window, otherwise open a new window
-                    if let Some((primary_window_id, root_view_id)) = primary_window_and_view {
-                        // `args` may contain user-identifiable fields
-                        // (e.g. `invitee_email`), so avoid writing the full
-                        // debug representation to `warp.log` on non-dogfood
-                        // release channels.
-                        safe_info!(
-                            safe: (
-                                "Opening drive object in existing window: object_type={:?} server_id={}",
-                                args.object_type, args.server_id,
-                            ),
-                            full: ("Opening drive object in existing window: {args:?}")
-                        );
-                        ctx.dispatch_action(
-                            primary_window_id,
-                            &[root_view_id],
-                            "root_view:open_drive_object_existing_window",
-                            &args,
-                            log::Level::Info,
-                        );
-                    } else {
-                        ctx.dispatch_global_action("root_view:open_drive_object_new_window", &args)
-                    }
-                } else {
-                    log::warn!("Failed to open drive object with uri={url}");
-                }
-            }
             UriHost::Settings => {
                 // We support opening different settings pages through URI:
-                // - warp://settings/teams?invite={email} - opens team settings with invite modal
-                // - warp://settings/billing_and_usage - opens billing and usage settings page
-                // - warp://settings/environments - opens environments settings page
                 // - warp://settings/mcp - opens MCP servers settings page
-                // - warp://settings/platform - opens platform settings page
                 // - warp://settings/appearance - opens appearance settings page (themes, fonts, etc.)
                 let settings_sub_page: Option<String> = url
                     .path_segments()
@@ -329,70 +111,15 @@ impl UriHost {
                     .flatten()
                     .last()
                     .map(|s| s.to_string());
-                let query_string: HashMap<_, _> = url.query_pairs().collect();
-
                 if let Some(settings_sub_page) = settings_sub_page {
                     match settings_sub_page.as_str() {
-                        "teams" => {
-                            let invite_email = query_string.get("invite").map(|s| s.to_string());
-                            let args = OpenTeamsSettingsModalArgs { invite_email };
-                            dispatch_action_in_new_or_existing_window(
-                                primary_window_id,
-                                "root_view:open_team_settings_with_email_invite_in_existing_window",
-                                "root_view:open_team_settings_with_email_invite_in_new_window",
-                                &args,
-                                ctx,
-                            );
-                        }
-                        "billing_and_usage" => {
-                            dispatch_action_in_new_or_existing_window(
-                                primary_window_id,
-                                "root_view:open_settings_page_in_existing_window",
-                                "root_view:open_settings_page_in_new_window",
-                                &SettingsSection::BillingAndUsage,
-                                ctx,
-                            );
-                        }
-                        "environments" => {
-                            // Notify that GitHub auth completed so views can refresh
-                            GitHubAuthNotifier::handle(ctx).update(ctx, |notifier, ctx| {
-                                notifier.notify_auth_completed(ctx);
-                            });
-
-                            // Open settings page unless auth was initiated from cloud setup
-                            // (cloud setup users should stay on their current page)
-                            let source = query_string.get("source").map(|s| s.as_ref());
-                            let skip_settings = source == Some(CLOUD_SETUP_SOURCE);
-                            if !skip_settings {
-                                dispatch_action_in_new_or_existing_window(
-                                    primary_window_id,
-                                    "root_view:open_settings_page_in_existing_window",
-                                    "root_view:open_settings_page_in_new_window",
-                                    &SettingsSection::CloudEnvironments,
-                                    ctx,
-                                );
-                            }
-                        }
                         "mcp" => {
-                            // warp://settings/mcp?autoinstall=<name> auto-installs a gallery MCP server.
-                            // The value is matched case-insensitively against gallery titles.
-                            let autoinstall =
-                                query_string.get("autoinstall").map(|v| v.to_string());
-                            let args = OpenMCPSettingsArgs { autoinstall };
+                            let args = OpenMCPSettingsArgs;
                             dispatch_action_in_new_or_existing_window(
                                 primary_window_id,
                                 "root_view:open_mcp_settings_in_existing_window",
                                 "root_view:open_mcp_settings_in_new_window",
                                 &args,
-                                ctx,
-                            );
-                        }
-                        "platform" => {
-                            dispatch_action_in_new_or_existing_window(
-                                primary_window_id,
-                                "root_view:open_settings_page_in_existing_window",
-                                "root_view:open_settings_page_in_new_window",
-                                &SettingsSection::OzCloudAPIKeys,
                                 ctx,
                             );
                         }
@@ -406,7 +133,9 @@ impl UriHost {
                             );
                         }
                         _ => {
-                            log::warn!("Failed to open settings pane with uri={url}");
+                            log::warn!(
+                                "Rejected unsupported local-only settings pane with uri={url}"
+                            );
                         }
                     }
                 } else {
@@ -425,15 +154,6 @@ impl UriHost {
                         log::error!("Failed to handle MCP OAuth callback: {e:?}");
                     }
                 }
-            }
-            UriHost::Codex => {
-                dispatch_action_in_new_or_existing_window(
-                    primary_window_id,
-                    "root_view:open_codex_in_existing_window",
-                    "root_view:open_codex_in_new_window",
-                    &(),
-                    ctx,
-                );
             }
             UriHost::Linear => match LinearAction::parse(url) {
                 Ok(LinearAction::WorkOnIssue) => {
@@ -458,18 +178,13 @@ impl UriHost {
     fn window_behavior_hint(&self) -> WindowBehaviorHint {
         use WindowBehaviorHint as W;
         match self {
-            Self::Auth => W::ShowPrimaryWindow(WindowActivationFallbackBehavior::NewWindow {
-                replace_existing: true,
-            }),
-            Self::Team | Self::Drive | Self::Settings => W::default(),
+            Self::Settings => W::default(),
             // These URLs always open new windows.
-            Self::Launch | Self::SharedSession | Self::Conversation | Self::Home => W::Nothing,
+            Self::Launch | Self::Home => W::Nothing,
             // This will actually be handled by [`Action::window_behavior_hint`].
             Self::Action => W::Nothing,
             // TODO(vorporeal): probably want to focus the window with the MCP pane open
             Self::Mcp => W::Nothing,
-            // Codex opens a new tab with AI mode, use default behavior
-            Self::Codex => W::default(),
             // Linear deeplink opens a new tab with agent view
             Self::Linear => W::default(),
         }
@@ -537,8 +252,7 @@ enum WindowActivationFallbackBehavior {
     NewWindow {
         /// Close the former "primary window" as determined by [`get_primary_window`]. This should
         /// generally default to `false` to avoid closing a window with information that the user
-        /// may still want. One exception is the Auth route where the old window just showed the
-        /// auth page.
+        /// may still want.
         replace_existing: bool,
     },
 }
@@ -670,11 +384,7 @@ enum Action {
     NewWindow,
     Docker,
     OpenRepo,
-    CloudAgentSetup,
-    NewCloudAgentConversation,
     NewAgentConversation,
-    CreateEnvironment { repos: Vec<String> },
-    FocusCloudMode,
 }
 
 impl Action {
@@ -684,18 +394,7 @@ impl Action {
             "/new_window" => Ok(Self::NewWindow),
             "/docker/open_subshell" => Ok(Self::Docker),
             "/open-repo" => Ok(Self::OpenRepo),
-            "/cloud_agent_setup" => Ok(Self::CloudAgentSetup),
-            "/new_cloud_agent_conversation" => Ok(Self::NewCloudAgentConversation),
             "/new_agent_conversation" => Ok(Self::NewAgentConversation),
-            "/create_environment" => {
-                let repos = url
-                    .query_pairs()
-                    .filter_map(|(k, v)| (k == "repo").then(|| v.into_owned()))
-                    .collect::<Vec<_>>();
-
-                Ok(Self::CreateEnvironment { repos })
-            }
-            "/focus_cloud_mode" => Ok(Self::FocusCloudMode),
             _ => Err(anyhow!(
                 "Received \"action\" intent with unexpected action: {}",
                 url.path()
@@ -755,60 +454,6 @@ impl Action {
                     log::warn!("no workspace views in window {window_id} for open repo action");
                 }
             }
-            Action::CloudAgentSetup => {
-                let window_id =
-                    primary_window_id.or_else(|| Some(open_new_window_get_handles(None, ctx).0));
-
-                let Some(window_id) = window_id else {
-                    log::warn!("unable to determine window for cloud agent setup action");
-                    return;
-                };
-
-                let Some(mut workspaces) = ctx.views_of_type::<Workspace>(window_id) else {
-                    log::warn!(
-                        "no workspace found in window {window_id} for cloud agent setup action"
-                    );
-                    return;
-                };
-
-                if let Some(workspace) = workspaces.pop() {
-                    workspace.update(ctx, |workspace, ctx| {
-                        workspace.handle_action(&WorkspaceAction::OpenCloudAgentSetupGuide, ctx);
-                    });
-                } else {
-                    log::warn!(
-                        "no workspace views in window {window_id} for cloud agent setup action"
-                    );
-                }
-            }
-            Action::NewCloudAgentConversation => {
-                let window_id =
-                    primary_window_id.or_else(|| Some(open_new_window_get_handles(None, ctx).0));
-
-                let Some(window_id) = window_id else {
-                    log::warn!(
-                        "unable to determine window for new cloud agent conversation action"
-                    );
-                    return;
-                };
-
-                let Some(mut workspaces) = ctx.views_of_type::<Workspace>(window_id) else {
-                    log::warn!(
-                        "no workspace found in window {window_id} for new cloud agent conversation action"
-                    );
-                    return;
-                };
-
-                if let Some(workspace) = workspaces.pop() {
-                    workspace.update(ctx, |workspace, ctx| {
-                        workspace.handle_action(&WorkspaceAction::AddAmbientAgentTab, ctx);
-                    });
-                } else {
-                    log::warn!(
-                        "no workspace views in window {window_id} for new cloud agent conversation action"
-                    );
-                }
-            }
             Action::NewAgentConversation => {
                 let window_id =
                     primary_window_id.or_else(|| Some(open_new_window_get_handles(None, ctx).0));
@@ -829,83 +474,6 @@ impl Action {
                     workspace.handle_action(&WorkspaceAction::AddAgentTab, ctx);
                 });
             }
-            Action::CreateEnvironment { repos } => {
-                use crate::root_view::CreateEnvironmentArg;
-
-                let arg = CreateEnvironmentArg {
-                    repos: repos.clone(),
-                };
-
-                let primary_window_and_view = primary_window_id.and_then(|window_id| {
-                    ctx.root_view_id(window_id)
-                        .map(|view_id| (window_id, view_id))
-                });
-
-                if let Some((primary_window_id, root_view_id)) = primary_window_and_view {
-                    ctx.dispatch_action(
-                        primary_window_id,
-                        &[root_view_id],
-                        "root_view:create_environment_in_existing_window",
-                        &arg,
-                        log::Level::Info,
-                    );
-                } else {
-                    ctx.dispatch_global_action("root_view:create_environment", &arg);
-                }
-            }
-            Action::FocusCloudMode => {
-                // Notify that GitHub auth completed so views can refresh
-                GitHubAuthNotifier::handle(ctx).update(ctx, |notifier, ctx| {
-                    notifier.notify_auth_completed(ctx);
-                });
-
-                let active_agent_views = ActiveAgentViewsModel::as_ref(ctx);
-                let focused_conversation = primary_window_id
-                    .and_then(|wid| active_agent_views.get_focused_conversation(wid));
-                let mut terminal_view_id = match focused_conversation {
-                    Some(ConversationOrTaskId::TaskId(task_id)) => {
-                        active_agent_views.get_terminal_view_id_for_ambient_task(task_id)
-                    }
-                    Some(ConversationOrTaskId::ConversationId(conversation_id)) => {
-                        active_agent_views
-                            .get_terminal_view_id_for_conversation(conversation_id, ctx)
-                    }
-                    None => None,
-                };
-                if terminal_view_id.is_none() {
-                    terminal_view_id = find_cloud_mode_terminal_view_id(primary_window_id, ctx);
-                }
-                if terminal_view_id.is_none() {
-                    terminal_view_id = active_agent_views.get_last_focused_terminal_id();
-                }
-                if terminal_view_id.is_none() {
-                    terminal_view_id = primary_window_id
-                        .and_then(|window_id| active_terminal_view_id_in_window(window_id, ctx));
-                }
-
-                if let Some(terminal_view_id) = terminal_view_id {
-                    if let Some((window_id, workspace)) =
-                        find_workspace_for_terminal_view(terminal_view_id, ctx)
-                    {
-                        ctx.windows().show_window_and_focus_app(window_id);
-                        workspace.update(ctx, |workspace, ctx| {
-                            workspace.handle_action(
-                                &WorkspaceAction::FocusTerminalViewInWorkspace { terminal_view_id },
-                                ctx,
-                            );
-                        });
-                        return;
-                    }
-                }
-
-                dispatch_action_in_new_or_existing_window(
-                    primary_window_id,
-                    "root_view:open_settings_page_in_existing_window",
-                    "root_view:open_settings_page_in_new_window",
-                    &SettingsSection::CloudEnvironments,
-                    ctx,
-                );
-            }
         }
     }
 
@@ -914,13 +482,7 @@ impl Action {
     fn window_behavior_hint(&self) -> WindowBehaviorHint {
         use WindowBehaviorHint as W;
         match self {
-            Self::Docker
-            | Self::CreateEnvironment { .. }
-            | Self::OpenRepo
-            | Self::CloudAgentSetup
-            | Self::NewCloudAgentConversation
-            | Self::NewAgentConversation
-            | Self::FocusCloudMode => W::default(),
+            Self::Docker | Self::OpenRepo | Self::NewAgentConversation => W::default(),
             Self::NewTab => W::ShowPrimaryWindow(WindowActivationFallbackBehavior::Notify {
                 title: "New tab created".to_owned(),
                 description: "Go to Warp to see your new tab.".to_owned(),
@@ -930,14 +492,12 @@ impl Action {
     }
 }
 
-/// Handles all incoming urls. These urls are file urls, auth urls for login,
-/// and team urls for opening team settings.
+/// Handles all incoming file and local-only custom URLs.
 pub fn handle_incoming_uri(url: &Url, ctx: &mut AppContext) {
     // Non-dogfood builds must never log the full URL here: URLs routed to this
-    // handler can carry secrets in their query string (for example, the
-    // Firebase `refresh_token` on `warp://auth/desktop_redirect?...`). Log
-    // only the non-sensitive components (scheme, host, path) on release
-    // channels; dogfood builds retain the full URL for local debugging.
+    // handler can carry secrets in their query string. Log only the
+    // non-sensitive components (scheme, host, path) on release channels;
+    // dogfood builds retain the full URL for local debugging.
     safe_info!(
         safe: ("received url {}", safe_url_log_fields(url)),
         full: ("received url {:?}", &url)
@@ -1105,8 +665,6 @@ fn open_file(window_id: Option<WindowId>, path: PathBuf, ctx: &mut AppContext) {
                 }
             }
         }
-
-        send_telemetry_from_app_ctx!(TelemetryEvent::OpenNewSessionFromFilePath, ctx);
     }
 }
 
@@ -1117,140 +675,8 @@ fn execute_file(window_id: WindowId, path_str: &str, ctx: &mut AppContext) {
             input.set_pending_command(&path_str, i_ctx);
         })
     });
-
-    send_telemetry_from_app_ctx!(TelemetryEvent::CommandFileRun, ctx);
 }
 
-fn open_window_with_action(active_window_id: Option<WindowId>, action: &str, ctx: &mut AppContext) {
-    if let Some(primary_window_id) = active_window_id {
-        // Dispatch action to primary window
-        if let Some(root_view_id) = ctx.root_view_id(primary_window_id) {
-            ctx.dispatch_action(
-                primary_window_id,
-                &[root_view_id],
-                action,
-                &(),
-                log::Level::Info,
-            );
-        }
-    } else {
-        log::warn!("no primary window id to dispatch action to");
-
-        // Open a new window and dispatch action there
-        ctx.dispatch_global_action("root_view:open_new", &());
-        // TODO: Note we cannot just dispatch here as it will be a no-op.
-        // Need to send a callback once window is fully open.
-    }
-}
-
-fn find_workspace_for_terminal_view(
-    terminal_view_id: EntityId,
-    ctx: &mut AppContext,
-) -> Option<(WindowId, ViewHandle<Workspace>)> {
-    for window_id in ctx.window_ids() {
-        let Some(workspaces) = ctx.views_of_type::<Workspace>(window_id) else {
-            continue;
-        };
-        for workspace in workspaces {
-            let contains_terminal = workspace
-                .as_ref(ctx)
-                .list_tab_pane_groups(ctx)
-                .iter()
-                .any(|group| group.terminal_ids.contains(&terminal_view_id));
-            if contains_terminal {
-                return Some((window_id, workspace));
-            }
-        }
-    }
-
-    None
-}
-
-fn active_terminal_view_id_in_window(window_id: WindowId, ctx: &AppContext) -> Option<EntityId> {
-    let workspaces = ctx.views_of_type::<Workspace>(window_id)?;
-    let workspace = workspaces.first()?;
-    workspace.read(ctx, |workspace, w_ctx| {
-        let pane_group = workspace.active_tab_pane_group().as_ref(w_ctx);
-        pane_group
-            .active_session_view(w_ctx)
-            .map(|terminal_view| terminal_view.id())
-            .or_else(|| {
-                pane_group
-                    .terminal_views(w_ctx)
-                    .first()
-                    .map(|view| view.id())
-            })
-    })
-}
-
-fn find_cloud_mode_terminal_view_id(
-    primary_window_id: Option<WindowId>,
-    ctx: &AppContext,
-) -> Option<EntityId> {
-    let mut window_ids = Vec::new();
-    if let Some(primary_window_id) = primary_window_id {
-        window_ids.push(primary_window_id);
-    }
-    window_ids.extend(
-        ctx.window_ids()
-            .filter(|window_id| Some(*window_id) != primary_window_id),
-    );
-
-    for window_id in window_ids {
-        let Some(workspaces) = ctx.views_of_type::<Workspace>(window_id) else {
-            continue;
-        };
-        for workspace in workspaces {
-            if let Some(terminal_view_id) = workspace.read(ctx, |workspace, w_ctx| {
-                find_cloud_mode_terminal_in_workspace(workspace, w_ctx)
-            }) {
-                return Some(terminal_view_id);
-            }
-        }
-    }
-
-    None
-}
-
-fn find_cloud_mode_terminal_in_workspace(
-    workspace: &Workspace,
-    ctx: &AppContext,
-) -> Option<EntityId> {
-    let mut fallback_ambient_terminal_id = None;
-
-    for pane_group_handle in workspace.tab_views() {
-        let pane_group = pane_group_handle.as_ref(ctx);
-        let ambient_terminal_id =
-            pane_group
-                .terminal_views(ctx)
-                .into_iter()
-                .find_map(|terminal_view| {
-                    terminal_view
-                        .as_ref(ctx)
-                        .ambient_agent_view_model()
-                        .as_ref(ctx)
-                        .is_ambient_agent()
-                        .then_some(terminal_view.id())
-                });
-
-        let Some(ambient_terminal_id) = ambient_terminal_id else {
-            continue;
-        };
-
-        let has_environment_management_pane = pane_group
-            .pane_ids()
-            .any(|pane_id| pane_id.is_environment_management_pane());
-        if has_environment_management_pane {
-            return Some(ambient_terminal_id);
-        }
-
-        if fallback_ambient_terminal_id.is_none() {
-            fallback_ambient_terminal_id = Some(ambient_terminal_id);
-        }
-    }
-
-    fallback_ambient_terminal_id
-}
 /// Helper function to dispatch an action to an existing window
 /// or create new window if none exist.
 fn dispatch_action_in_new_or_existing_window<T: 'static>(
@@ -1294,21 +720,20 @@ fn validate_custom_uri(url: &Url) -> Result<UriHost> {
         .ok_or_else(|| anyhow!("Received url with no host str"))?;
 
     let host = UriHost::from_str(host_str)?;
+    if matches!(host, UriHost::Settings) && !settings_uri_is_supported_local_page(url) {
+        return Err(anyhow!(
+            "Received unsupported local-only settings url: {}",
+            url.path()
+        ));
+    }
 
     // Check if this host is allowed to have arbitrary paths.
     let host_allows_arbitrary_path = match host {
-        UriHost::Action
-        | UriHost::Launch
-        | UriHost::SharedSession
-        | UriHost::Conversation
-        | UriHost::Drive
-        | UriHost::Team
-        | UriHost::Settings
-        | UriHost::Mcp
-        | UriHost::Codex
-        | UriHost::Linear => true,
-        // Auth and Home only allow the desktop redirect path
-        UriHost::Auth | UriHost::Home => false,
+        UriHost::Action | UriHost::Launch | UriHost::Settings | UriHost::Mcp | UriHost::Linear => {
+            true
+        }
+        // Home only allows the desktop redirect path
+        UriHost::Home => false,
     };
 
     ensure!(
@@ -1320,14 +745,21 @@ fn validate_custom_uri(url: &Url) -> Result<UriHost> {
     Ok(host)
 }
 
+fn settings_uri_is_supported_local_page(url: &Url) -> bool {
+    let Some(settings_sub_page) = url.path_segments().into_iter().flatten().last() else {
+        return false;
+    };
+
+    matches!(settings_sub_page, "appearance" | "mcp")
+}
+
 /// Formats the non-sensitive components of an incoming URL for logging on
 /// release channels.
 ///
 /// The returned string contains only the URL's scheme, host, and path — never
 /// its query string, fragment, or userinfo component. URLs that reach
-/// [`handle_incoming_uri`] can carry secrets in their query (for example, the
-/// Firebase refresh token in `warp://auth/desktop_redirect?refresh_token=...`),
-/// so this helper exists to give [`safe_info!`] a redacted representation that
+/// [`handle_incoming_uri`] can carry secrets in their query, so this helper
+/// exists to give [`safe_info!`] a redacted representation that
 /// still preserves enough signal for triage.
 ///
 /// `url.host_str()` can return `None` for schemes that don't require a host

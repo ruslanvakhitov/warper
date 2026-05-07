@@ -2,7 +2,7 @@ use std::sync::Arc;
 use warpui::{AppContext, Entity, ModelContext, ModelHandle};
 
 use crate::{
-    ai_assistant::execution_context::WarpAiExecutionContext,
+    ai::execution_context::WarpAiExecutionContext,
     terminal::{
         model::session::SessionsEvent,
         model_events::{ModelEvent, ModelEventDispatcher},

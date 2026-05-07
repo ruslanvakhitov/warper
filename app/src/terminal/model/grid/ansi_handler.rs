@@ -21,9 +21,9 @@ use warp_terminal::model::grid::cell;
 use warp_terminal::model::{KeyboardModes, KeyboardModesApplyBehavior};
 use warpui::image_cache::{resize_dimensions, FitType};
 
-use crate::server::telemetry::ImageProtocol;
 use crate::terminal::event::Event;
 use crate::terminal::event_listener::ChannelEventListener;
+use crate::terminal::metadata::ImageProtocol;
 use crate::terminal::model::ansi::{
     self, Attr, Color, CursorStyle, Handler as _, NamedColor, PrecmdValue, PreexecValue,
 };

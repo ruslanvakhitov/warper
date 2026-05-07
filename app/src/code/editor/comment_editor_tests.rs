@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use warpui::{
     platform::WindowStyle, presenter::ChildView, App, Element, Entity, TypedActionView, View,
     ViewHandle, WindowId,
@@ -12,14 +10,11 @@ use repo_metadata::RepoMetadataModel;
 
 use crate::{
     appearance::Appearance,
-    auth::AuthStateProvider,
-    cloud_object::model::persistence::CloudModel,
     notebooks::{
         editor::keys::NotebookKeybindings,
         link::{NotebookLinks, SessionSource},
     },
     search::files::model::FileSearchModel,
-    server::server_api::{team::MockTeamClient, workspace::MockWorkspaceClient},
     settings_view::keybindings::KeybindingChangedNotifier,
     terminal::keys::TerminalKeybindings,
     test_util::settings::initialize_settings_for_tests,
@@ -74,19 +69,8 @@ fn initialize_editor(
     app.add_singleton_model(FileSearchModel::new);
     app.add_singleton_model(NotebookKeybindings::new);
     app.add_singleton_model(TerminalKeybindings::new);
-    app.add_singleton_model(CloudModel::mock);
-    app.add_singleton_model(|_| AuthStateProvider::new_for_test());
 
-    let team_client_mock = Arc::new(MockTeamClient::new());
-    let workspace_client_mock = Arc::new(MockWorkspaceClient::new());
-    app.add_singleton_model(|ctx| {
-        UserWorkspaces::mock(
-            team_client_mock.clone(),
-            workspace_client_mock.clone(),
-            vec![],
-            ctx,
-        )
-    });
+    app.add_singleton_model(|ctx| UserWorkspaces::mock(vec![], ctx));
 
     let (window, test_view) = app.add_window(WindowStyle::NotStealFocus, |ctx| {
         let window_id = ctx.window_id();

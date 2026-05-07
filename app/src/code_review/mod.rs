@@ -9,9 +9,7 @@ pub(crate) mod find_model;
 pub(crate) mod git_dialog;
 pub mod git_status_update;
 mod hidden_lines;
-pub mod telemetry_event;
-#[cfg_attr(not(feature = "local_fs"), allow(unused_imports))]
-pub use telemetry_event::CodeReviewTelemetryEvent;
+pub mod metadata;
 
 pub(crate) mod code_review_header;
 pub(crate) mod comment_rendering;
@@ -28,7 +26,7 @@ use warpui::{
     AppContext, Entity, EntityId, ModelContext, SingletonEntity, WeakViewHandle, WindowId,
 };
 
-use crate::code_review::telemetry_event::CodeReviewPaneEntrypoint;
+use crate::code_review::metadata::CodeReviewPaneEntrypoint;
 use crate::terminal::{view::TerminalView, CLIAgent};
 use crate::util::bindings::CustomAction;
 

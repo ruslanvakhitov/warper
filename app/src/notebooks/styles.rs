@@ -8,7 +8,6 @@ use warpui::{
     fonts,
     platform::Cursor,
     ui_components::components::UiComponent as _,
-    units::{IntoPixels, Pixels},
     Element,
 };
 
@@ -22,8 +21,6 @@ use crate::{
 /// Multiplier of the notebook font size for the title. At the default size, this
 /// is 20px.
 const TITLE_FONT_MULTIPLIER: f32 = 1.4;
-
-const EDITOR_MAX_WIDTH: f32 = 640.;
 
 const TITLE_MARGIN: f32 = 16.;
 const EDITOR_PADDING_LEFT: f32 = 4.;
@@ -92,9 +89,4 @@ pub(super) fn block_footer_action_button(
         .build()
         // Revert to the default cursor instead of the editor I-beam
         .with_cursor(Cursor::Arrow)
-}
-
-// Maximum notebook editor width.
-pub fn notebook_editor_max_width() -> Pixels {
-    EDITOR_MAX_WIDTH.into_pixels()
 }

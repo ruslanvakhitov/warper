@@ -9,7 +9,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use warp_core::{safe_warn, send_telemetry_from_ctx};
+use warp_core::safe_warn;
 use warpui::ModelHandle;
 
 /// Represents either a file or directory in a repository.
@@ -25,7 +25,6 @@ use crate::{
     entry::{Entry, FileId, IgnoredPathStrategy},
     gitignores_for_directory, matches_gitignores,
     repository::Repository,
-    telemetry::RepoMetadataTelemetryEvent,
     RepoMetadataError,
 };
 use std::sync::Arc;
@@ -116,7 +115,7 @@ pub struct LocalRepoMetadataModel {
     #[cfg(feature = "local_fs")]
     watcher: Option<ModelHandle<BulkFilesystemWatcher>>,
     /// When true, emit [`RepositoryMetadataEvent::IncrementalUpdateReady`]
-    /// events after applying watcher mutations. Only the remote server
+    /// events after applying watcher mutations. Only the remote session
     /// variant enables this.
     emit_incremental_updates: bool,
 }
@@ -232,7 +231,7 @@ impl LocalRepoMetadataModel {
 
     /// Enables or disables emission of
     /// [`RepositoryMetadataEvent::IncrementalUpdateReady`] events after
-    /// applying watcher mutations. Only the remote server variant should
+    /// applying watcher mutations. Only the remote session variant should
     /// enable this.
     pub fn set_emit_incremental_updates(&mut self, enabled: bool) {
         self.emit_incremental_updates = enabled;
@@ -943,8 +942,7 @@ impl LocalRepoMetadataModel {
                             safe: ("Failed to build file tree for repository: {e:?}"),
                             full: ("Failed to build file tree for repository {repo_path_str}: {e:?}")
                         );
-                        send_telemetry_from_ctx!(RepoMetadataTelemetryEvent::BuildTreeFailed { error: format!("{e:#}") }, ctx);
-                        ctx.emit(RepositoryMetadataEvent::UpdatingRepositoryFailed { path: std_repo_path.clone() });
+                                                ctx.emit(RepositoryMetadataEvent::UpdatingRepositoryFailed { path: std_repo_path.clone() });
                         model.repositories.insert(
                             std_repo_path,
                             IndexedRepoState::Failed(RepoMetadataError::BuildTree(e)),

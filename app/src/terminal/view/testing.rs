@@ -1,11 +1,11 @@
 //! Module for test-only convenience methods on `TerminalView`.
+use std::sync::Arc;
+
 use warpui::ModelHandle;
 
 use crate::terminal::find::TerminalFindModel;
 cfg_if::cfg_if! {
     if #[cfg(test)] {
-        use std::sync::Arc;
-
         use parking_lot::FairMutex;
         use warpui::{ViewContext};
 
@@ -36,7 +36,6 @@ impl TerminalView {
         use warpui::units::{IntoPixels as _, Pixels};
 
         use crate::{
-            server::server_api::ServerApiProvider,
             terminal::{
                 event_listener::ChannelEventListener, model::block::BlockSize, BlockPadding,
             },
@@ -72,10 +71,8 @@ impl TerminalView {
             warp_prompt_height_lines: WARP_PROMPT_HEIGHT_LINES,
         };
 
-        let server_api = ServerApiProvider::new_for_test().get();
         let terminal_view_resources = TerminalViewResources {
             tips_completed: tips_model,
-            server_api: server_api.clone(),
             model_event_sender: None,
         };
 

@@ -10,7 +10,7 @@ use crate::ai::blocklist::agent_view::{
     AgentViewEntryBlockParams, AgentViewEntryOrigin, DismissalStrategy, EphemeralMessage,
 };
 use crate::ai::blocklist::block::cli_controller::CLISubagentController;
-use crate::ai::blocklist::history_model::{CLIAgentConversation, CloudConversationData};
+use crate::ai::blocklist::history_model::{CLIAgentConversation, LocalConversationData};
 use crate::ai::blocklist::BlocklistAIContextModel;
 use crate::terminal::input::message_bar::Message as InputMessage;
 use crate::terminal::input::message_bar::MessageItem;
@@ -20,9 +20,6 @@ use crate::terminal::model_events::ModelEventDispatcher;
 use crate::terminal::TerminalModel;
 use crate::util::bindings::keybinding_name_to_keystroke;
 use chrono::{DateTime, Local};
-use itertools::Itertools;
-use prost::Message;
-use std::ops::Not;
 
 use super::DEFAULT_AI_BLOCK_HEIGHT;
 
@@ -62,7 +59,6 @@ use crate::{
         },
     },
 };
-use warp_core::channel::ChannelState;
 use warp_multi_agent_api as api;
 use warpui::units::IntoPixels;
 use warpui::{ModelHandle, SingletonEntity};
@@ -91,14 +87,11 @@ pub enum ConversationRestorationInNewPaneType {
         active_conversation_id: Option<AIConversationId>,
     },
 
-    /// Load a conversation for the cloud conversation viewer or CLI.
+    /// Load a conversation for the local conversation viewer or CLI.
     /// The conversation has already been converted from ConversationData.
     Historical {
         conversation: AIConversation,
         should_use_live_appearance: bool,
-        /// The ambient agent task ID, if this is an ambient agent conversation.
-        /// Used to display the session ended tombstone.
-        ambient_agent_task_id: Option<crate::ai::ambient_agents::AmbientAgentTaskId>,
     },
 
     /// Fork an existing conversation into this new pane.
@@ -182,7 +175,7 @@ pub struct AIBlockCreationParams {
     /// The exchange data used to process outputs for restoring code diffs, and dummy requested command blocks if command_block_index is None.
     pub exchange: AIAgentExchange,
     /// When true, uses the live (non-restored) appearance even though the block is restored.
-    /// Used for forked conversations and cloud conversation viewer.
+    /// Used for forked and read-only historical conversations.
     pub use_live_appearance: bool,
 
     /// Whether this block is being restored as part of conversation restoration on app startup.
@@ -208,17 +201,11 @@ impl TerminalView {
     /// already in the right directory, or we need to cd.
     fn resolve_dir_restoration_state(
         &self,
-        cloud_conversation: &CloudConversationData,
+        conversation_data: &LocalConversationData,
     ) -> RestorationDirState {
-        let target_dir = match cloud_conversation {
-            CloudConversationData::Oz(conversation) => {
-                conversation.initial_working_directory().or_else(|| {
-                    conversation
-                        .server_metadata()
-                        .and_then(|metadata| metadata.working_directory.clone())
-                })
-            }
-            CloudConversationData::CLIAgent(cli_conversation) => {
+        let target_dir = match conversation_data {
+            LocalConversationData::AI(conversation) => conversation.initial_working_directory(),
+            LocalConversationData::CLIAgent(cli_conversation) => {
                 cli_conversation.metadata.working_directory.clone()
             }
         };
@@ -241,14 +228,14 @@ impl TerminalView {
 
     pub(crate) fn restore_conversation_and_directory_context<F>(
         &mut self,
-        cloud_conversation: CloudConversationData,
+        conversation_data: LocalConversationData,
         use_live_appearance: bool,
         on_restored: F,
         ctx: &mut ViewContext<Self>,
     ) where
         F: FnOnce(&mut Self, &mut ViewContext<Self>) + 'static,
     {
-        let restore_context_state = self.resolve_dir_restoration_state(&cloud_conversation);
+        let restore_context_state = self.resolve_dir_restoration_state(&conversation_data);
 
         let restore_and_continue =
             move |me: &mut TerminalView,
@@ -256,15 +243,15 @@ impl TerminalView {
                   ctx: &mut ViewContext<TerminalView>| {
                 me.maybe_show_restore_context_hint(restore_dir_state, ctx);
 
-                match cloud_conversation {
-                    CloudConversationData::Oz(conversation) => {
+                match conversation_data {
+                    LocalConversationData::AI(conversation) => {
                         me.restore_conversation_after_view_creation(
                             RestoredAIConversation::new(*conversation),
                             use_live_appearance,
                             ctx,
                         );
                     }
-                    CloudConversationData::CLIAgent(cli_conversation) => {
+                    LocalConversationData::CLIAgent(cli_conversation) => {
                         if FeatureFlag::AgentHarness.is_enabled() {
                             me.restore_cli_agent_block_snapshot(cli_conversation.block);
                         } else {
@@ -613,7 +600,7 @@ impl TerminalView {
         ctx: &mut ViewContext<Self>,
     ) {
         // We don't want blocks to appear as restored for forked conversations
-        // and conversations in the cloud conversation viewer.
+        // and read-only historical conversations.
         let use_live_appearance = conversation_restoration.should_use_live_appearance();
         let is_fork_conversation_in_new_pane = conversation_restoration.is_forked();
         let is_startup = conversation_restoration.is_startup();
@@ -993,7 +980,7 @@ impl TerminalView {
 
         match AIConversation::new_restored(conversation_id, tasks, Some(conversation_data)) {
             Ok(conversation) => {
-                // Use live appearance for cloud conversation viewer
+                // Use live appearance for read-only historical conversation viewer.
                 self.restore_conversation_after_view_creation(
                     RestoredAIConversation::new(conversation),
                     true,
@@ -1051,7 +1038,6 @@ impl TerminalView {
                 params.ai_context_model,
                 params.find_model,
                 params.active_session,
-                self.ambient_agent_view_model.clone(),
                 &params.cli_subagent_controller,
                 &params.model_events_handle,
                 self.agent_view_controller.clone(),
@@ -1131,94 +1117,6 @@ impl TerminalView {
                 ctx,
             );
         });
-    }
-
-    /// Loads an agent mode conversation from a debug link in the clipboard.
-    /// This is used for debugging purposes only when in dogfood channel state.
-    pub fn load_agent_mode_conversation(&mut self, ctx: &mut ViewContext<Self>) {
-        if !ChannelState::channel().is_dogfood() {
-            return;
-        }
-
-        let content = ctx.clipboard().read();
-        let Some(debug_link) = content
-            .paths
-            .and_then(|paths| paths.into_iter().exactly_one().ok())
-            .or(content
-                .plain_text
-                .is_empty()
-                .not()
-                .then_some(content.plain_text))
-        else {
-            log::error!("Clipboard contents are not a conversation debug link");
-            return;
-        };
-
-        // Parse the debug link and construct the protobuf URL
-        let proto_url = if debug_link.contains("/debug/maa/") {
-            // Split URL into base and query params
-            let mut parts = debug_link.splitn(2, '?');
-            let base_url = parts.next().unwrap_or(&debug_link);
-            let query_params = parts.next();
-
-            let clean_url = base_url.trim_end_matches('/');
-            let mut url = format!("{clean_url}/raw/final_tasks.pb");
-
-            // Preserve all query parameters if present
-            if let Some(params) = query_params {
-                url.push_str(&format!("?{params}"));
-            }
-
-            url
-        } else {
-            log::error!(
-                "Invalid debug link format. Expected format: http://host/debug/maa/conversation-id"
-            );
-            return;
-        };
-
-        log::info!("Downloading conversation data from: {proto_url}");
-
-        // Download the protobuf data
-        ctx.spawn(
-            async move {
-                let client = http_client::Client::new();
-                let response = client
-                    .get(&proto_url)
-                    .header("Accept", "application/protobuf")
-                    .send()
-                    .await?;
-
-                if !response.status().is_success() {
-                    return Err(anyhow::anyhow!("HTTP {}", response.status()));
-                }
-
-                let proto_bytes = response.bytes().await?;
-                log::debug!("Downloaded {} bytes from debug link", proto_bytes.len());
-                let task_list =
-                    api::ConversationData::decode(proto_bytes.as_ref()).map_err(|e| {
-                        anyhow::anyhow!(
-                            "Failed to decode protobuf (size: {} bytes): {}",
-                            proto_bytes.len(),
-                            e
-                        )
-                    })?;
-
-                Ok(task_list)
-            },
-            |terminal_view, task_list_result, ctx| match task_list_result {
-                Ok(task_list) => {
-                    log::info!(
-                        "Successfully downloaded and parsed conversation data with {} tasks",
-                        task_list.tasks.len()
-                    );
-                    terminal_view.load_conversation_from_tasks(task_list, ctx);
-                }
-                Err(err) => {
-                    log::warn!("Failed to download conversation data from debug link: {err}");
-                }
-            },
-        );
     }
 }
 

@@ -1,6 +1,5 @@
 use crate::ai::execution_profiles::profiles::AIExecutionProfilesModel;
 use crate::ai::execution_profiles::{ActionPermission, WriteToPtyPermission};
-use crate::drive::settings::WarpDriveSettings;
 use crate::report_if_error;
 use crate::settings::ai::DefaultSessionMode;
 use crate::settings::{AISettings, CodeSettings};
@@ -21,7 +20,7 @@ pub fn apply_onboarding_settings(selected_settings: &SelectedSettings, app: &mut
             ..
         } => {
             apply_agent_settings(agent_settings, app);
-            let is_ai_enabled = !agent_settings.disable_oz;
+            let is_ai_enabled = !agent_settings.disable_agent;
             if let Some(ui) = ui_customization {
                 apply_ui_customization_settings(ui, true, app);
             }
@@ -79,12 +78,6 @@ fn apply_ui_customization_settings(
             .set_value(ui.show_code_review_button, ctx));
     });
 
-    WarpDriveSettings::handle(app).update(app, |settings, ctx| {
-        report_if_error!(settings
-            .enable_warp_drive
-            .set_value(ui.show_warp_drive, ctx));
-    });
-
     CodeSettings::handle(app).update(app, |settings, ctx| {
         report_if_error!(settings
             .show_project_explorer
@@ -130,26 +123,7 @@ fn apply_agent_settings(agent_settings: &AgentDevelopmentSettings, app: &mut App
     });
 
     AIExecutionProfilesModel::handle(app).update(app, |profiles, ctx| {
-        let default_profile_info = profiles.default_profile(ctx);
-        let default_profile_id = *default_profile_info.id();
-
-        // Preserve the existing cloud default profile for users who are
-        // already logged in (or who log in at the end of onboarding). A
-        // `Some` sync_id means the profile is backed by a cloud object that
-        // was either loaded at startup or reconciled during the post-login
-        // initial load, and its values represent what the user has stored
-        // previously. Overwriting those with the onboarding-selected
-        // base_model / autonomy would silently discard their prior
-        // customizations. Fresh `Unsynced` default profiles (brand-new
-        // users, or users without any cloud default yet) still receive the
-        // onboarding values.
-        if default_profile_info.sync_id().is_some() {
-            log::info!(
-                "Preserving existing cloud default execution profile; skipping \
-                 onboarding-driven overrides for profile {default_profile_id:?}"
-            );
-            return;
-        }
+        let default_profile_id = profiles.default_profile_id();
 
         profiles.set_base_model(
             default_profile_id,
@@ -225,7 +199,3 @@ fn action_permissions_for_onboarding_autonomy(
         },
     }
 }
-
-#[cfg(test)]
-#[path = "onboarding_tests.rs"]
-mod tests;

@@ -2,7 +2,7 @@ use crate::context_chips::{
     display_chip::{DisplayChip, GitLineChanges, PromptDisplayChipEvent},
     git_line_changes_from_chips,
     prompt_type::PromptType,
-    ChipResult,
+    ChipResult, ContextChipKind,
 };
 use warpui::{ModelHandle, ViewContext, ViewHandle};
 
@@ -126,18 +126,25 @@ impl AgentInputFooter {
             .agent_view_left_chips(ctx)
             .into_iter()
             .filter(|chip_result| chip_result.value().is_some())
+            .filter(|chip_result| {
+                !matches!(chip_result.kind(), ContextChipKind::AgentPlanAndTodoList)
+            })
             .collect::<Vec<ChipResult>>();
         let new_right_chips = model
             .as_ref(ctx)
             .agent_view_right_chips(ctx)
             .into_iter()
             .filter(|chip_result| chip_result.value().is_some())
+            .filter(|chip_result| {
+                !matches!(chip_result.kind(), ContextChipKind::AgentPlanAndTodoList)
+            })
             .collect::<Vec<ChipResult>>();
         let new_chips = model
             .as_ref(ctx)
             .agent_view_chips(ctx)
             .into_iter()
             .filter(|chip| chip.value().is_some())
+            .filter(|chip| !matches!(chip.kind(), ContextChipKind::AgentPlanAndTodoList))
             .collect::<Vec<ChipResult>>();
         let git_line_changes_info = git_line_changes_from_chips(&new_chips);
 
@@ -178,6 +185,9 @@ impl AgentInputFooter {
             .cli_agent_chips(ctx)
             .into_iter()
             .filter(|chip_result| chip_result.value().is_some())
+            .filter(|chip_result| {
+                !matches!(chip_result.kind(), ContextChipKind::AgentPlanAndTodoList)
+            })
             .collect::<Vec<ChipResult>>();
         let should_update_cli =
             Self::check_if_chip_values_have_changed(&self.cli_display_chips, &new_cli_chips, ctx);

@@ -1,6 +1,6 @@
-use crate::server::telemetry::AddTabWithShellSource;
 use crate::terminal::available_shells::AvailableShell;
 use crate::terminal::view::TerminalAction;
+use crate::workspace::metadata::AddTabWithShellSource;
 use crate::WorkspaceAction;
 use std::borrow::Cow;
 use std::fmt;

@@ -5,9 +5,6 @@ use std::sync::Arc;
 use super::super::rich_text_styles;
 use super::NotebooksEditorModel;
 use crate::appearance::Appearance;
-use crate::auth::AuthStateProvider;
-use crate::cloud_object::model::persistence::CloudModel;
-use crate::cloud_object::{Owner, Revision, ServerMetadata, ServerPermissions, ServerWorkflow};
 use crate::editor::InteractionState;
 use crate::notebooks::editor::keys::NotebookKeybindings;
 use crate::notebooks::editor::model::DEBOUNCED_RESIZE_PERIOD;
@@ -15,19 +12,14 @@ use crate::notebooks::editor::notebook_command::NotebookCommand;
 use crate::notebooks::editor::view::{RichTextEditorConfig, RichTextEditorView};
 use crate::notebooks::link::{NotebookLinks, SessionSource};
 use crate::search::files::model::FileSearchModel;
-use crate::server::ids::{ServerId, SyncId};
-use crate::server::server_api::team::MockTeamClient;
-use crate::server::server_api::workspace::MockWorkspaceClient;
 use crate::settings::FontSettings;
 use crate::settings_view::keybindings::KeybindingChangedNotifier;
 use crate::terminal::keys::TerminalKeybindings;
 use crate::test_util::settings::initialize_settings_for_tests;
 use crate::workflows::workflow::Workflow;
-use crate::workflows::{CloudWorkflow, CloudWorkflowModel, WorkflowId};
 use crate::workspace::ActiveSession;
 use crate::UserWorkspaces;
 use crate::{GlobalResourceHandles, GlobalResourceHandlesProvider};
-use chrono::Utc;
 use futures::prelude::*;
 use itertools::Itertools;
 use markdown_parser::markdown_parser::RUNNABLE_BLOCK_MARKDOWN_LANG;
@@ -81,7 +73,7 @@ impl TypedActionView for TestView {
 fn model_from_markdown(
     markdown: &str,
     app: &mut App,
-    should_initialize_cloud_model: bool,
+    _initialize_legacy_models: bool,
 ) -> ModelHandle<NotebooksEditorModel> {
     let global_resources = GlobalResourceHandles::mock(app);
     app.add_singleton_model(|_| GlobalResourceHandlesProvider::new(global_resources));
@@ -93,11 +85,6 @@ fn model_from_markdown(
     app.add_singleton_model(FileSearchModel::new);
     app.add_singleton_model(NotebookKeybindings::new);
     app.add_singleton_model(TerminalKeybindings::new);
-
-    // In some tests, we need to initialize CloudModel first to mock some server data. In those cases, avoid mocking it a second time.
-    if should_initialize_cloud_model {
-        app.add_singleton_model(CloudModel::mock);
-    }
 
     let (window, _) = app.add_window(WindowStyle::NotStealFocus, |ctx| {
         let window_id = ctx.window_id();
@@ -128,17 +115,7 @@ fn model_from_markdown(
 
 fn initialize_deps(app: &mut App) {
     app.add_singleton_model(|_| Appearance::mock());
-    let team_client_mock = Arc::new(MockTeamClient::new());
-    let workspace_client_mock = Arc::new(MockWorkspaceClient::new());
-    app.add_singleton_model(|ctx| {
-        UserWorkspaces::mock(
-            team_client_mock.clone(),
-            workspace_client_mock.clone(),
-            vec![],
-            ctx,
-        )
-    });
-    app.add_singleton_model(|_| AuthStateProvider::new_for_test());
+    app.add_singleton_model(|ctx| UserWorkspaces::mock(vec![], ctx));
     #[cfg(feature = "voice_input")]
     app.add_singleton_model(voice_input::VoiceInput::new);
     initialize_settings_for_tests(app);
@@ -1652,139 +1629,6 @@ Second command
             assert_eq!(selected_commands(model, ctx), vec![CharOffset::from(5)]);
         });
     });
-}
-
-// Mock out a server workflow with the given i64 ID.
-fn mock_server_workflow(id: i64, app: &mut App) {
-    let server_id: ServerId = id.into();
-    let workflow_id: WorkflowId = server_id.into();
-    let sync_id = SyncId::ServerId(workflow_id.into());
-    let ts = Utc::now();
-
-    let server_metadata = ServerMetadata {
-        uid: server_id,
-        revision: Revision::now(),
-        metadata_last_updated_ts: ts.into(),
-        trashed_ts: None,
-        folder_id: None,
-        is_welcome_object: false,
-        creator_uid: None,
-        last_editor_uid: None,
-        current_editor_uid: None,
-    };
-
-    let workflow = ServerWorkflow {
-        id: SyncId::ServerId(workflow_id.into()),
-        metadata: server_metadata,
-        permissions: ServerPermissions {
-            space: Owner::mock_current_user(),
-            guests: Vec::new(),
-            permissions_last_updated_ts: ts.into(),
-            anyone_link_sharing: None,
-        },
-        model: CloudWorkflowModel::new(Workflow::new(format!("w{id}"), format!("c{id}"))),
-    };
-
-    CloudModel::handle(app).update(app, |cloud_model, _| {
-        cloud_model.add_object(sync_id, CloudWorkflow::new_from_server(workflow));
-    });
-}
-
-#[test]
-fn test_interleaving_command_and_embedding() {
-    App::test((), |mut app| async move {
-        initialize_deps(&mut app);
-        app.add_singleton_model(CloudModel::mock);
-
-        // IDs are padded to be length 22.
-        mock_server_workflow(123, &mut app);
-        mock_server_workflow(245, &mut app);
-
-        let model_handle = model_from_markdown(
-            r#"Text
-```warp-embedded-object
-id: Workflow-test_uid00000000000123
-```
-More text
-```warp-embedded-object
-id: Workflow-test_uid00000000000245
-```
-```Python
-def
-```
-```
-First command
-```"#,
-            &mut app,
-            false,
-        );
-        layout_model(&mut app, &model_handle).await;
-
-        // From the first line of text, we can't select a command above, but we can select a command below.
-        model_handle.update(&mut app, |model, ctx| {
-            model.cursor_at(CharOffset::from(2), ctx);
-
-            model.select_command_up(ctx);
-            assert!(!model.has_command_selection(ctx));
-
-            // Embedded workflows should be selectable.
-            model.select_command_down(ctx);
-            assert_eq!(selected_commands(model, ctx), vec![CharOffset::from(5)]);
-
-            // Should jump to the next embedded workflow.
-            model.select_command_down(ctx);
-            assert_eq!(selected_commands(model, ctx), vec![CharOffset::from(16)]);
-
-            // Should do the python block next
-            model.select_command_down(ctx);
-            assert_eq!(selected_commands(model, ctx), vec![CharOffset::from(17)]);
-
-            // Now the last block
-            model.select_command_down(ctx);
-            assert_eq!(selected_commands(model, ctx), vec![CharOffset::from(21)]);
-        });
-
-        model_handle.update(&mut app, |model, ctx| {
-            model.clear_command_selections(ctx);
-            model.cursor_at(CharOffset::from(25), ctx);
-
-            model.select_command_up(ctx);
-            assert_eq!(selected_commands(model, ctx), vec![CharOffset::from(21)]);
-
-            model.select_command_up(ctx);
-            assert_eq!(selected_commands(model, ctx), vec![CharOffset::from(17)]);
-
-            model.select_command_up(ctx);
-            assert_eq!(selected_commands(model, ctx), vec![CharOffset::from(16)]);
-
-            model.select_command_up(ctx);
-            assert_eq!(selected_commands(model, ctx), vec![CharOffset::from(5)]);
-        });
-
-        // Test command selection behavior on edge of block offsets.
-        model_handle.update(&mut app, |model, ctx| {
-            model.clear_command_selections(ctx);
-            // Place the cursor right before an embedded block.
-            model.cursor_at(CharOffset::from(5), ctx);
-
-            // Visually the cursor position is before the embedded block, this operaton should be a no-op.
-            model.select_command_up(ctx);
-            assert!(!model.has_command_selection(ctx));
-
-            // Visually the cursor position is before the embedded block, this should select embedded block at offset.
-            model.select_command_down(ctx);
-            assert_eq!(selected_commands(model, ctx), vec![CharOffset::from(5)]);
-        });
-
-        model_handle.update(&mut app, |model, ctx| {
-            model.clear_command_selections(ctx);
-            model.cursor_at(CharOffset::from(6), ctx);
-
-            // Visually the cursor position is after the embedded block, this operaton should select the embedded block.
-            model.select_command_up(ctx);
-            assert_eq!(selected_commands(model, ctx), vec![CharOffset::from(5)]);
-        });
-    })
 }
 
 #[test]

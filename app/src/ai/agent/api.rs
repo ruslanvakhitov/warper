@@ -1,6 +1,5 @@
 pub(crate) mod convert_conversation;
 mod convert_from;
-mod convert_to;
 mod r#impl;
 mod openrouter;
 
@@ -18,16 +17,13 @@ use serde::Serialize;
 use std::path::Path;
 use std::pin::Pin;
 use std::sync::Arc;
-use warp_core::channel::ChannelState;
 use warp_core::execution_mode::AppExecutionMode;
 use warp_core::features::FeatureFlag;
 
 use crate::ai::agent::conversation::AIConversationId;
-use crate::ai::ambient_agents::AmbientAgentTaskId;
-use crate::{
-    ai::{blocklist::SessionContext, llms::LLMId},
-    server::server_api::AIApiError,
-};
+use crate::ai::agent::conversation::LocalAgentRunId;
+use crate::ai::api_errors::AIApiError;
+use crate::ai::{blocklist::SessionContext, llms::LLMId};
 
 use super::{AIAgentInput, MCPContext, MCPServer, RequestMetadata, Suggestions};
 use crate::ai::blocklist::{BlocklistAIPermissions, RequestInput};
@@ -54,19 +50,11 @@ impl ServerConversationToken {
     }
 
     pub fn debug_link(&self) -> String {
-        format!(
-            "{}/debug/maa/{}",
-            ChannelState::server_root_url(),
-            self.as_str()
-        )
+        format!("local-only-conversation-debug:{}", self.as_str())
     }
 
     pub fn conversation_link(&self) -> String {
-        format!(
-            "{}/conversation/{}",
-            ChannelState::server_root_url(),
-            self.as_str()
-        )
+        format!("local-only-conversation:{}", self.as_str())
     }
 }
 
@@ -99,7 +87,7 @@ pub struct RequestParams {
     pub primary_task_id: String,
     pub conversation_token: Option<ServerConversationToken>,
     pub forked_from_conversation_token: Option<ServerConversationToken>,
-    pub ambient_agent_task_id: Option<AmbientAgentTaskId>,
+    pub local_agent_run_id: Option<LocalAgentRunId>,
     pub tasks: Vec<warp_multi_agent_api::Task>,
     pub existing_suggestions: Option<Suggestions>,
     pub metadata: Option<RequestMetadata>,
@@ -110,7 +98,6 @@ pub struct RequestParams {
     pub cli_agent_model: LLMId,
     pub computer_use_model: LLMId,
     pub is_memory_enabled: bool,
-    pub warp_drive_context_enabled: bool,
     pub mcp_context: Option<MCPContext>,
     pub planning_enabled: bool,
     should_redact_secrets: bool,
@@ -150,7 +137,7 @@ pub struct ConversationData {
     pub tasks: Vec<warp_multi_agent_api::Task>,
     pub server_conversation_token: Option<ServerConversationToken>,
     pub forked_from_conversation_token: Option<ServerConversationToken>,
-    pub ambient_agent_task_id: Option<AmbientAgentTaskId>,
+    pub local_agent_run_id: Option<LocalAgentRunId>,
     pub existing_suggestions: Option<Suggestions>,
 }
 
@@ -165,7 +152,6 @@ impl RequestParams {
     ) -> Self {
         let ai_settings = AISettings::as_ref(app);
         let is_memory_enabled = ai_settings.is_memory_enabled(app);
-        let warp_drive_context_enabled = ai_settings.is_warp_drive_context_enabled(app);
 
         // Build MCP context - either grouped by server or flat lists based on feature flag
         let mcp_context = if FeatureFlag::MCPGroupedServerContext.is_enabled() {
@@ -187,13 +173,6 @@ impl RequestParams {
                         .values(),
                 );
             }
-
-            // Include any ephemeral MCP servers started via the Oz CLI.
-            active_servers.extend(
-                templatable_manager
-                    .get_active_cli_spawned_servers()
-                    .values(),
-            );
 
             let servers: Vec<MCPServer> = active_servers
                 .into_iter()
@@ -247,8 +226,7 @@ impl RequestParams {
             .as_ref()
             .map(|model| model.trim().to_owned())
             .filter(|model| !model.is_empty());
-        let allow_use_of_warp_credits_with_byok =
-            *AISettings::as_ref(app).can_use_warp_credits_with_byok;
+        let allow_use_of_warp_credits_with_byok = false;
 
         let app_execution_mode = AppExecutionMode::as_ref(app);
         let autonomy_level = if app_execution_mode.is_autonomous() {
@@ -272,13 +250,13 @@ impl RequestParams {
             .flatten()
             .and_then(|s| s.parse().ok())
             .unwrap_or_default();
-        let is_ambient_agent = conversation.ambient_agent_task_id.is_some();
+        let has_local_agent_run = conversation.local_agent_run_id.is_some();
         let computer_use_enabled = FeatureFlag::AgentModeComputerUse.is_enabled()
             && BlocklistAIPermissions::as_ref(app)
                 .get_computer_use_setting(app, terminal_view_id)
                 .is_enabled()
             && computer_use::is_supported_on_current_platform()
-            && (FeatureFlag::LocalComputerUse.is_enabled() || is_ambient_agent);
+            && (FeatureFlag::LocalComputerUse.is_enabled() || has_local_agent_run);
         let ask_user_question_enabled = BlocklistAIPermissions::as_ref(app)
             .get_ask_user_question_setting(app, terminal_view_id)
             != crate::ai::execution_profiles::AskUserQuestionPermission::Never;
@@ -302,7 +280,7 @@ impl RequestParams {
             primary_task_id,
             conversation_token: conversation.server_conversation_token,
             forked_from_conversation_token: conversation.forked_from_conversation_token,
-            ambient_agent_task_id: conversation.ambient_agent_task_id,
+            local_agent_run_id: conversation.local_agent_run_id,
             tasks: conversation.tasks,
             existing_suggestions: conversation.existing_suggestions,
             metadata,
@@ -312,7 +290,6 @@ impl RequestParams {
             cli_agent_model: request_input.cli_agent_model_id.clone(),
             computer_use_model: request_input.computer_use_model_id.clone(),
             is_memory_enabled,
-            warp_drive_context_enabled,
             mcp_context,
             planning_enabled: true,
             should_redact_secrets,

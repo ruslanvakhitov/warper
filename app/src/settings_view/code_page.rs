@@ -14,8 +14,6 @@ use crate::{
         EnablementState, LspRepoStatus, PersistedWorkspace, PersistedWorkspaceEvent,
     },
     appearance::Appearance,
-    code::lsp_telemetry::{LspControlActionType, LspEnablementSource, LspTelemetryEvent},
-    send_telemetry_from_ctx,
     settings::{AISettings, CodeSettings},
     terminal::general_settings::GeneralSettings,
     ui_components::{
@@ -29,11 +27,6 @@ use crate::{
     },
     workspace::tab_settings::TabSettings,
     workspace::ToastStack,
-    workspaces::{
-        update_manager::TeamUpdateManager, user_workspaces::UserWorkspaces,
-        workspace::AdminEnablementSetting,
-    },
-    TelemetryEvent,
 };
 use ai::index::full_source_code_embedding::manager::{
     CodebaseIndexFinishedStatus, CodebaseIndexManager, CodebaseIndexManagerEvent,
@@ -86,8 +79,6 @@ const CODEBASE_INDEX_DESCRIPTION: &str = "Warp can automatically index code repo
 const WARP_INDEXING_IGNORE_DESCRIPTION: &str = "To exclude specific files or directories from indexing, add them to the .warpindexingignore file in your repository directory. These files will still be accessible to AI features, but they won't be included in codebase embeddings.";
 const AUTO_INDEX_FEATURE_NAME: &str = "Index new folders by default";
 const AUTO_INDEX_DESCRIPTION: &str = "When set to true, Warp will automatically index code repositories as you navigate them - helping agents quickly understand context and provide targeted solutions.";
-const INDEXING_DISABLED_ADMIN_TEXT: &str = "Team admins have disabled codebase indexing.";
-const INDEXING_WORKSPACE_ENABLED_ADMIN_TEXT: &str = "Team admins have enabled codebase indexing.";
 const INDEXING_DISABLED_GLOBAL_AI_TEXT: &str =
     "AI Features must be enabled to use codebase indexing.";
 const CODEBASE_INDEX_LIMIT_REACHED: &str = "You have reached the maximum number of codebase indices for your plan. Delete existing indices to auto-index new codebases.";
@@ -511,7 +502,6 @@ impl View for CodeSettingsPageView {
 
 #[derive(Debug, Clone)]
 pub enum CodeSettingsPageEvent {
-    SignupAnonymousUser,
     OpenLspLogs { log_path: PathBuf },
     OpenProjectRules { rule_paths: Vec<PathBuf> },
 }
@@ -524,7 +514,6 @@ pub enum CodeSettingsPageAction {
     ManualResync(PathBuf),
     DeleteIndex(PathBuf),
     ManualAddDirectory,
-    SignupAnonymousUser,
     /// Toggle an LSP server on/off for a workspace.
     ToggleLspServer {
         workspace_path: PathBuf,
@@ -563,30 +552,9 @@ impl TypedActionView for CodeSettingsPageView {
     fn handle_action(&mut self, action: &Self::Action, ctx: &mut ViewContext<Self>) {
         match action {
             CodeSettingsPageAction::ToggleCodebaseContext => {
-                // If the organization has an explicit setting (on or off), ignore user toggles.
-                let setting = UserWorkspaces::as_ref(ctx).team_allows_codebase_context();
-                match setting {
-                    AdminEnablementSetting::Enable | AdminEnablementSetting::Disable => {
-                        return;
-                    }
-                    AdminEnablementSetting::RespectUserSetting => {
-                        // Allow user to toggle
-                    }
-                }
-
                 CodeSettings::handle(ctx).update(ctx, |settings, ctx| {
-                    match settings.codebase_context_enabled.toggle_and_save_value(ctx) {
-                        Ok(new_value) => {
-                            send_telemetry_from_ctx!(
-                                TelemetryEvent::ToggleCodebaseContext {
-                                    is_codebase_context_enabled: new_value
-                                },
-                                ctx
-                            );
-                        }
-                        Err(e) => {
-                            log::warn!("Failed to set value for Codebase Context: {e:?}");
-                        }
+                    if let Err(e) = settings.codebase_context_enabled.toggle_and_save_value(ctx) {
+                        log::warn!("Failed to set value for Codebase Context: {e:?}");
                     }
                 });
 
@@ -594,18 +562,8 @@ impl TypedActionView for CodeSettingsPageView {
             }
             CodeSettingsPageAction::ToggleAutoIndexing => {
                 CodeSettings::handle(ctx).update(ctx, |settings, ctx| {
-                    match settings.auto_indexing_enabled.toggle_and_save_value(ctx) {
-                        Ok(new_value) => {
-                            send_telemetry_from_ctx!(
-                                TelemetryEvent::ToggleAutoIndexing {
-                                    is_autoindexing_enabled: new_value
-                                },
-                                ctx
-                            );
-                        }
-                        Err(e) => {
-                            log::warn!("Failed to set value for auto indexing: {e:?}");
-                        }
+                    if let Err(e) = settings.auto_indexing_enabled.toggle_and_save_value(ctx) {
+                        log::warn!("Failed to set value for auto indexing: {e:?}");
                     }
                 });
 
@@ -624,9 +582,6 @@ impl TypedActionView for CodeSettingsPageView {
             CodeSettingsPageAction::ManualAddDirectory => {
                 self.open_directory_picker(ctx);
             }
-            CodeSettingsPageAction::SignupAnonymousUser => {
-                ctx.emit(CodeSettingsPageEvent::SignupAnonymousUser);
-            }
             CodeSettingsPageAction::ToggleLspServer {
                 workspace_path,
                 server_type,
@@ -634,13 +589,6 @@ impl TypedActionView for CodeSettingsPageView {
             } => {
                 if *currently_enabled {
                     // Toggling OFF: stop and disable
-                    send_telemetry_from_ctx!(
-                        LspTelemetryEvent::ServerRemoved {
-                            server_type: server_type.binary_name().to_string(),
-                            source: LspEnablementSource::Settings,
-                        },
-                        ctx
-                    );
                     LspManagerModel::handle(ctx).update(ctx, |manager, ctx| {
                         manager.remove_server(workspace_path, *server_type, ctx);
                     });
@@ -649,14 +597,6 @@ impl TypedActionView for CodeSettingsPageView {
                     });
                 } else {
                     // Toggling ON: enable and spawn
-                    send_telemetry_from_ctx!(
-                        LspTelemetryEvent::ServerEnabled {
-                            server_type: server_type.binary_name().to_string(),
-                            source: LspEnablementSource::Settings,
-                            needed_install: false,
-                        },
-                        ctx
-                    );
                     let workspace_path = workspace_path.clone();
                     PersistedWorkspace::handle(ctx).update(ctx, |workspace, _ctx| {
                         workspace.enable_lsp_server_for_path(&workspace_path, *server_type);
@@ -672,26 +612,11 @@ impl TypedActionView for CodeSettingsPageView {
                 ctx.notify();
             }
             CodeSettingsPageAction::RestartLspServer { server } => {
-                let server_name = server.as_ref(ctx).server_name();
-                send_telemetry_from_ctx!(
-                    LspTelemetryEvent::ControlAction {
-                        action: LspControlActionType::Restart,
-                        server_type: Some(server_name),
-                    },
-                    ctx
-                );
                 server.update(ctx, |server, ctx| {
                     server.restart(ctx);
                 });
             }
             CodeSettingsPageAction::OpenLspLogs { log_path } => {
-                send_telemetry_from_ctx!(
-                    LspTelemetryEvent::ControlAction {
-                        action: LspControlActionType::OpenLogs,
-                        server_type: None,
-                    },
-                    ctx
-                );
                 ctx.emit(CodeSettingsPageEvent::OpenLspLogs {
                     log_path: log_path.clone(),
                 });
@@ -733,31 +658,12 @@ impl TypedActionView for CodeSettingsPageView {
                         .auto_open_code_review_pane_on_first_agent_change
                         .toggle_and_save_value(ctx));
                 });
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::FeaturesPageAction {
-                        action: "ToggleAutoOpenCodeReviewPane".to_string(),
-                        value: format!(
-                            "{}",
-                            *GeneralSettings::as_ref(ctx)
-                                .auto_open_code_review_pane_on_first_agent_change
-                        )
-                    },
-                    ctx
-                );
                 ctx.notify();
             }
             CodeSettingsPageAction::InstallAndEnableLspServer {
                 workspace_path,
                 server_type,
             } => {
-                send_telemetry_from_ctx!(
-                    LspTelemetryEvent::ServerEnabled {
-                        server_type: server_type.binary_name().to_string(),
-                        source: LspEnablementSource::Settings,
-                        needed_install: true,
-                    },
-                    ctx
-                );
                 #[cfg(feature = "local_fs")]
                 {
                     let workspace_path = workspace_path.clone();
@@ -781,14 +687,6 @@ impl TypedActionView for CodeSettingsPageView {
                 workspace_path,
                 server_type,
             } => {
-                send_telemetry_from_ctx!(
-                    LspTelemetryEvent::ServerEnabled {
-                        server_type: server_type.binary_name().to_string(),
-                        source: LspEnablementSource::Settings,
-                        needed_install: false,
-                    },
-                    ctx
-                );
                 let workspace_path = workspace_path.clone();
                 let server_type = *server_type;
                 PersistedWorkspace::handle(ctx).update(ctx, |workspace, _ctx| {
@@ -884,7 +782,7 @@ impl SettingsWidget for CodePageWidget {
             appearance,
         ));
 
-        let codebase_context_enabled = UserWorkspaces::as_ref(app).is_codebase_context_enabled(app);
+        let codebase_context_enabled = *CodeSettings::as_ref(app).codebase_context_enabled;
         if global_ai_enabled && codebase_context_enabled {
             content.add_children(self.render_autoindexing_rows(appearance, app));
         }
@@ -918,8 +816,7 @@ impl CodePageWidget {
         app: &AppContext,
     ) -> Vec<Box<dyn Element>> {
         let auto_indexing_enabled = *CodeSettings::as_ref(app).auto_indexing_enabled;
-        let codebase_indexing_enabled =
-            UserWorkspaces::as_ref(app).is_codebase_context_enabled(app);
+        let codebase_indexing_enabled = *CodeSettings::as_ref(app).codebase_context_enabled;
 
         let mut rows = vec![
             self.render_autoindex_row(auto_indexing_enabled, appearance),
@@ -1068,8 +965,6 @@ impl CodePageWidget {
     ) -> Box<dyn Element> {
         let ui_builder = appearance.ui_builder();
         let theme = appearance.theme();
-        let admin_setting = UserWorkspaces::as_ref(app).team_allows_codebase_context();
-
         let label = ui_builder
             .span(CODEBASE_INDEXING_LABEL)
             .with_style(UiComponentStyles {
@@ -1083,16 +978,10 @@ impl CodePageWidget {
 
         let switch = ui_builder
             .switch(self.switch_state.clone())
-            .check(UserWorkspaces::as_ref(app).is_codebase_context_enabled(app));
+            .check(*CodeSettings::as_ref(app).codebase_context_enabled);
 
-        let disabled_tooltip_text = match admin_setting {
-            AdminEnablementSetting::Enable => Some(INDEXING_WORKSPACE_ENABLED_ADMIN_TEXT),
-            AdminEnablementSetting::Disable => Some(INDEXING_DISABLED_ADMIN_TEXT),
-            AdminEnablementSetting::RespectUserSetting if !global_ai_enabled => {
-                Some(INDEXING_DISABLED_GLOBAL_AI_TEXT)
-            }
-            AdminEnablementSetting::RespectUserSetting => None,
-        };
+        let disabled_tooltip_text =
+            (!global_ai_enabled).then_some(INDEXING_DISABLED_GLOBAL_AI_TEXT);
 
         let toggle_element = if let Some(tooltip_text) = disabled_tooltip_text {
             switch
@@ -2091,24 +1980,17 @@ impl SettingsWidget for CodebaseIndexingCategorizedWidget {
     ) -> Box<dyn Element> {
         let ui_builder = appearance.ui_builder();
         let global_ai_enabled = AISettings::as_ref(app).is_any_ai_enabled(app);
-        let codebase_context_enabled = UserWorkspaces::as_ref(app).is_codebase_context_enabled(app);
+        let codebase_context_enabled = *CodeSettings::as_ref(app).codebase_context_enabled;
 
         let mut content = Flex::column();
 
         // Codebase indexing toggle using render_body_item for consistent styling
-        let admin_setting = UserWorkspaces::as_ref(app).team_allows_codebase_context();
         let switch = ui_builder
             .switch(self.inner.switch_state.clone())
             .check(codebase_context_enabled);
 
-        let disabled_tooltip_text = match admin_setting {
-            AdminEnablementSetting::Enable => Some(INDEXING_WORKSPACE_ENABLED_ADMIN_TEXT),
-            AdminEnablementSetting::Disable => Some(INDEXING_DISABLED_ADMIN_TEXT),
-            AdminEnablementSetting::RespectUserSetting if !global_ai_enabled => {
-                Some(INDEXING_DISABLED_GLOBAL_AI_TEXT)
-            }
-            AdminEnablementSetting::RespectUserSetting => None,
-        };
+        let disabled_tooltip_text =
+            (!global_ai_enabled).then_some(INDEXING_DISABLED_GLOBAL_AI_TEXT);
 
         let toggle_element = if let Some(tooltip_text) = disabled_tooltip_text {
             switch
@@ -2226,7 +2108,7 @@ impl SettingsWidget for AutoOpenCodeReviewPaneCodeWidget {
     type View = CodeSettingsPageView;
 
     fn search_terms(&self) -> &str {
-        "oz auto open code review pane panel agent mode change first time accepted diff view conversation"
+        "agent auto open code review pane panel agent mode change first time accepted diff view conversation"
     }
 
     fn render(
@@ -2270,13 +2152,7 @@ impl SettingsPageMeta for CodeSettingsPageView {
             || FeatureFlag::OpenWarpNewSettingsModes.is_enabled()
     }
 
-    fn on_page_selected(&mut self, _: bool, ctx: &mut ViewContext<Self>) {
-        // We want to immediately see if the user is part of a workspace rather than wait for the next poll.
-        std::mem::drop(
-            TeamUpdateManager::handle(ctx)
-                .update(ctx, |manager, ctx| manager.refresh_workspace_metadata(ctx)),
-        );
-    }
+    fn on_page_selected(&mut self, _: bool, _ctx: &mut ViewContext<Self>) {}
 
     fn scroll_to_widget(&mut self, widget_id: &'static str) {
         self.page.scroll_to_widget(widget_id)

@@ -22,7 +22,6 @@ tink-hybrid = "0.3"
 zeroize = "1.8"
 warpui.workspace = true
 warp_core.workspace = true
-warp_graphql.workspace = true
 vec1.workspace = true
 warp_isolation_platform.workspace = true
 

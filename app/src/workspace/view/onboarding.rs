@@ -10,7 +10,6 @@ use onboarding::{ProjectOnboardingSettings, SelectedSettings};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use warp_core::channel::{Channel, ChannelState};
 use warpui::{SingletonEntity as _, ViewContext};
 
 /// Configuration for starting the agent onboarding tutorial.
@@ -28,17 +27,6 @@ pub enum OnboardingTutorial {
         path: PathBuf,
         intention: OnboardingIntention,
     },
-}
-
-impl OnboardingTutorial {
-    /// Extracts the onboarding intention from any tutorial variant.
-    pub(crate) fn intention(&self) -> OnboardingIntention {
-        match self {
-            OnboardingTutorial::NoProject { intention }
-            | OnboardingTutorial::Project { intention, .. }
-            | OnboardingTutorial::InitProject { intention, .. } => *intention,
-        }
-    }
 }
 
 impl From<SelectedSettings> for OnboardingTutorial {
@@ -236,9 +224,5 @@ impl Workspace {
                 }
             },
         );
-    }
-
-    pub(crate) fn should_show_agent_onboarding(&self, _ctx: &mut ViewContext<Self>) -> bool {
-        ChannelState::channel() != Channel::Oss && FeatureFlag::AgentOnboarding.is_enabled()
     }
 }

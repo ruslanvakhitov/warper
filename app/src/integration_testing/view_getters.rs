@@ -8,7 +8,6 @@
 use crate::view_components::find::FindEvent;
 use crate::view_components::find::FindModel;
 use crate::{
-    ai_assistant::panel::AIAssistantPanelView,
     input_suggestions::InputSuggestions,
     notebooks::notebook::NotebookView,
     pane_group::{PaneGroup, PaneView},
@@ -213,11 +212,6 @@ pub fn workflow_categories_view(app: &App, window_id: WindowId) -> ViewHandle<Ca
     singleton_view_of_type(app, window_id)
 }
 
-/// Panics if there isn't a single ai assistant panel view in the view hierarchy.
-pub fn ai_assistant_panel_view(app: &App, window_id: WindowId) -> ViewHandle<AIAssistantPanelView> {
-    singleton_view_of_type(app, window_id)
-}
-
 /// Panics if there isn't a single workspace view in the view hierarchy.
 pub fn workspace_view(app: &App, window_id: WindowId) -> ViewHandle<Workspace> {
     root_view(app, window_id).read(app, |root_view, _ctx| {
@@ -260,6 +254,9 @@ fn singleton_view_of_type<T: View>(app: &App, window_id: WindowId) -> ViewHandle
         .views_of_type(window_id)
         .expect("there's at least one view of type");
     let num_views_of_type = views_of_type.len();
-    assert_eq!(num_views_of_type, 1, "window_id={window_id} doesn't have a single view of type T. Has {num_views_of_type} views instead");
+    assert_eq!(
+        num_views_of_type, 1,
+        "window_id={window_id} doesn't have a single view of type T. Has {num_views_of_type} views instead"
+    );
     views_of_type.first().unwrap().clone()
 }

@@ -1,9 +1,8 @@
 use super::{EditorAction, EditorView, VoiceTranscriptionOptions};
+use crate::ai::api_errors::TranscribeError;
 use crate::ai::blocklist::InputType;
 use crate::appearance::Appearance;
 use crate::editor::EditorElement;
-use crate::server::server_api::TranscribeError;
-use crate::server::telemetry::TelemetryEvent;
 use crate::settings::{AISettings, VoiceInputToggleKey};
 use crate::themes::theme::Fill;
 use crate::ui_components::buttons::{icon_button, icon_button_with_color};
@@ -13,7 +12,6 @@ use crate::workspace::ToastStack;
 use crate::workspaces::user_workspaces::UserWorkspaces;
 use settings::Setting as _;
 use voice_input::{StartListeningError, VoiceInput, VoiceSessionResult};
-use warp_core::send_telemetry_from_ctx;
 use warp_core::ui::theme::color::internal_colors;
 use warp_core::ui::theme::AnsiColorIdentifier;
 use warpui::elements;
@@ -262,14 +260,6 @@ impl EditorView {
                     return false;
                 }
 
-                if !crate::ai::AIRequestUsageModel::handle(ctx)
-                    .as_ref(ctx)
-                    .can_request_voice()
-                {
-                    self.voice_error_toast(super::VOICE_LIMIT_HIT_TOAST_TEXT, ctx);
-                    return false;
-                }
-
                 // We allow toggling voice input from a button click even if the editor is not focused.
                 if self.focused || matches!(*source, voice_input::VoiceInputToggledFrom::Button) {
                     // Try to start voice input and get the session
@@ -306,15 +296,6 @@ impl EditorView {
                     } else {
                         InputType::Shell
                     };
-                    send_telemetry_from_ctx!(
-                        TelemetryEvent::VoiceInputUsed {
-                            action: "start".to_string(),
-                            session_duration_ms: None,
-                            is_udi_enabled,
-                            current_input_mode,
-                        },
-                        ctx
-                    );
 
                     // Spawn future to await the session result
                     ctx.spawn(
@@ -429,16 +410,6 @@ impl EditorView {
                 wav_base64,
                 session_duration_ms,
             } => {
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::VoiceInputUsed {
-                        action: "stop".to_string(),
-                        session_duration_ms: Some(session_duration_ms),
-                        is_udi_enabled,
-                        current_input_mode,
-                    },
-                    ctx
-                );
-
                 // Start transcription
                 let voice_transcriber = VoiceTranscriber::handle(ctx).as_ref(ctx);
                 if let Some(transcriber) = voice_transcriber.transcriber() {
@@ -466,16 +437,6 @@ impl EditorView {
             } => {
                 log::info!("Aborted listening for voice input");
 
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::VoiceInputUsed {
-                        action: "cancel".to_string(),
-                        session_duration_ms,
-                        is_udi_enabled,
-                        current_input_mode,
-                    },
-                    ctx
-                );
-
                 self.set_voice_input_state(VoiceInputState::Stopped, ctx);
             }
         }
@@ -498,15 +459,10 @@ impl EditorView {
                 log::debug!("Transcribed voice input: {transcribe_response:?}");
                 self.user_insert(&transcribe_response, ctx);
             }
-            Err(e) => match e {
-                TranscribeError::QuotaLimit => {
-                    self.voice_error_toast(super::VOICE_LIMIT_HIT_TOAST_TEXT, ctx)
-                }
-                _ => {
-                    log::error!("Failed to transcribe voice input: {e:?}");
-                    self.voice_error_toast(super::VOICE_ERROR_TOAST_TEXT, ctx)
-                }
-            },
+            Err(e) => {
+                log::error!("Failed to transcribe voice input: {e:?}");
+                self.voice_error_toast(super::VOICE_ERROR_TOAST_TEXT, ctx)
+            }
         }
         ctx.notify();
     }

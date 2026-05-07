@@ -7,7 +7,9 @@ use super::{
     },
     SettingsSection,
 };
-use crate::send_telemetry_from_ctx;
+use crate::util::bindings::{
+    filter_bindings_including_keystroke, reset_keybinding_to_default, set_custom_keybinding,
+};
 use crate::{appearance::Appearance, themes};
 use crate::{
     editor::EditorView, keyboard::write_custom_keybinding, util::bindings::CommandBinding,
@@ -18,13 +20,7 @@ use crate::{
     },
     keyboard::UserDefinedKeybinding,
 };
-use crate::{search_bar::SearchBar, settings::CloudPreferencesSettings};
-use crate::{
-    util::bindings::{
-        filter_bindings_including_keystroke, reset_keybinding_to_default, set_custom_keybinding,
-    },
-    TelemetryEvent,
-};
+use crate::{search_bar::SearchBar, settings::LocalPreferencesSettings};
 use itertools::Itertools;
 
 use warp_core::ui::theme::color::internal_colors;
@@ -614,12 +610,6 @@ impl KeybindingsView {
             update_binding_list(&row.binding.name, None, &mut self.bindings);
             row.binding.trigger = None;
 
-            send_telemetry_from_ctx!(
-                TelemetryEvent::KeybindingRemoved {
-                    action: row.binding.name.clone(),
-                },
-                ctx
-            );
             self.modifying_row = None;
             row.editor_open = false;
             ctx.enable_key_bindings_dispatching();
@@ -638,13 +628,6 @@ impl KeybindingsView {
                 &mut self.bindings,
             );
             row.binding.trigger = default_trigger;
-
-            send_telemetry_from_ctx!(
-                TelemetryEvent::KeybindingResetToDefault {
-                    action: row.binding.name.clone(),
-                },
-                ctx
-            );
 
             self.modifying_row = None;
             row.editor_open = false;
@@ -691,13 +674,6 @@ impl KeybindingsView {
                             &mut self.bindings,
                         );
                         row.binding.trigger = Some(key.clone());
-                        send_telemetry_from_ctx!(
-                            TelemetryEvent::KeybindingChanged {
-                                action: row.binding.name.clone(),
-                                keystroke: key,
-                            },
-                            ctx
-                        );
                     }
 
                     row.editor_open = false;
@@ -1114,7 +1090,7 @@ impl SettingsWidget for KeybindingsWidget {
         appearance: &Appearance,
         app: &AppContext,
     ) -> Box<dyn Element> {
-        let local_only_icon_state = if *CloudPreferencesSettings::as_ref(app).settings_sync_enabled
+        let local_only_icon_state = if *LocalPreferencesSettings::as_ref(app).settings_sync_enabled
         {
             Some(LocalOnlyIconState::Visible {
                 mouse_state: self.local_only_icon_mouse_state.clone(),

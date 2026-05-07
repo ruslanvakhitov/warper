@@ -6,7 +6,7 @@ use crate::search::mixer::DataSourceRunErrorWrapper;
 use crate::search::slash_command_menu::static_commands::commands;
 use crate::search::SyncDataSource;
 use crate::terminal::input::slash_commands::{
-    AcceptSlashCommandOrSavedPrompt, InlineItem, SlashCommandDataSource,
+    AcceptSlashCommand, InlineItem, SlashCommandDataSource,
 };
 
 pub struct ZeroStateDataSource {
@@ -26,7 +26,7 @@ impl Entity for ZeroStateDataSource {
 }
 
 impl SyncDataSource for ZeroStateDataSource {
-    type Action = AcceptSlashCommandOrSavedPrompt;
+    type Action = AcceptSlashCommand;
 
     fn run_query(
         &self,
@@ -46,7 +46,6 @@ impl SyncDataSource for ZeroStateDataSource {
         // alphabetically, except for the commands in this vec, which are explicitly appended
         // to all the other alphabetically sorted commands, in this order.
         let prioritized_commands = vec![
-            &*commands::CREATE_ENVIRONMENT,
             &*commands::EDIT,
             &commands::CONVERSATIONS,
             &commands::PROMPTS,

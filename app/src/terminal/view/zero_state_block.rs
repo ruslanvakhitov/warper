@@ -1,9 +1,5 @@
 use settings::Setting;
-use warp_core::{
-    channel::{Channel, ChannelState},
-    report_if_error,
-    ui::Icon,
-};
+use warp_core::{report_if_error, ui::Icon};
 use warpui::{
     elements::{
         ChildAnchor, Container, CrossAxisAlignment, Flex, MainAxisSize, OffsetPositioning,
@@ -23,7 +19,6 @@ use warpui::{
 use crate::{
     ai::blocklist::agent_view::{
         AgentViewController, AgentViewControllerEvent, ENTER_AGENT_VIEW_NEW_CONVERSATION_KEYSTROKE,
-        ENTER_CLOUD_AGENT_VIEW_NEW_CONVERSATION_KEYSTROKE,
     },
     appearance::Appearance,
     settings::{AISettings, AISettingsChangedEvent, InputModeSettings},
@@ -53,7 +48,6 @@ pub enum TerminalViewZeroStateAction {
 struct StateHandles {
     dismiss_button: MouseStateHandle,
     start_new_conversation: MouseStateHandle,
-    start_cloud_conversation: MouseStateHandle,
     open_history_menu: MouseStateHandle,
     open_code_review: MouseStateHandle,
     nld_checkbox: MouseStateHandle,
@@ -189,7 +183,6 @@ impl View for TerminalViewZeroStateBlock {
                     .finish(),
             );
 
-        let is_oss = ChannelState::channel() == Channel::Oss;
         let mut items = vec![render_standard_message(
             Message::new(vec![MessageItem::clickable(
                 vec![
@@ -203,24 +196,6 @@ impl View for TerminalViewZeroStateBlock {
             )]),
             app,
         )];
-
-        if !is_oss {
-            items.push(render_standard_message(
-                Message::new(vec![MessageItem::clickable(
-                    vec![
-                        MessageItem::keystroke(
-                            ENTER_CLOUD_AGENT_VIEW_NEW_CONVERSATION_KEYSTROKE.clone(),
-                        ),
-                        MessageItem::text("start a new cloud agent conversation"),
-                    ],
-                    |ctx| {
-                        ctx.dispatch_typed_action(TerminalAction::EnterCloudAgentView);
-                    },
-                    self.state_handles.start_cloud_conversation.clone(),
-                )]),
-                app,
-            ));
-        }
 
         items.push(render_standard_message(
             Message::new(vec![MessageItem::clickable(

@@ -1,7 +1,8 @@
 use std::fmt;
 
 use serde::Serialize;
-use warp_graphql::managed_secrets::ManagedSecretType;
+
+use crate::ManagedSecretType;
 
 #[derive(Serialize)]
 #[serde(untagged)]

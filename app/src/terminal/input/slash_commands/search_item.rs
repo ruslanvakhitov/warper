@@ -12,7 +12,7 @@ use crate::search::{ItemHighlightState, SearchItem};
 use crate::terminal::input::inline_menu::styles as inline_styles;
 use crate::util::bindings::keybinding_name_to_keystroke;
 
-use super::{AcceptSlashCommandOrSavedPrompt, InlineItem};
+use super::{AcceptSlashCommand, InlineItem};
 
 fn inline_width_for_name_column(app: &AppContext) -> f32 {
     let appearance = Appearance::as_ref(app);
@@ -32,7 +32,7 @@ fn inline_width_for_name_column(app: &AppContext) -> f32 {
 }
 
 impl SearchItem for InlineItem {
-    type Action = AcceptSlashCommandOrSavedPrompt;
+    type Action = AcceptSlashCommand;
 
     fn render_icon(
         &self,
@@ -80,10 +80,8 @@ impl SearchItem for InlineItem {
         }
 
         let keystroke = if highlight_state.is_selected()
-            && matches!(
-                &self.action,
-                AcceptSlashCommandOrSavedPrompt::SlashCommand { .. }
-            ) {
+            && matches!(&self.action, AcceptSlashCommand::SlashCommand { .. })
+        {
             keybinding_name_to_keystroke(&self.name, app)
         } else {
             None

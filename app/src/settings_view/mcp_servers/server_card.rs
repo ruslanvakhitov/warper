@@ -27,11 +27,8 @@ use warpui::{
 };
 
 use crate::{
-    ai::mcp::{
-        templatable::CloudTemplatableMCPServer, MCPServerState, TemplatableMCPServerManager,
-    },
+    ai::mcp::{MCPServerState, TemplatableMCPServerManager},
     appearance::Appearance,
-    cloud_object::CloudObject,
     settings_view::mcp_servers::{style, ServerCardItemId},
     ui_components::{
         avatar::{Avatar, AvatarContent, StatusElementTypes},
@@ -69,7 +66,6 @@ pub enum ServerCardAction {
     ToggleToolsExpanded,
     ToggleRunningSwitch,
     Edit(ServerCardItemId),
-    Share(ServerCardItemId),
     Install(ServerCardItemId),
     InstallServerUpdate(ServerCardItemId),
     ViewLogs(ServerCardItemId),
@@ -80,7 +76,6 @@ pub enum ServerCardAction {
 #[derive(Debug, Clone)]
 pub enum ServerCardEvent {
     Edit(ServerCardItemId),
-    Share(ServerCardItemId),
     ToggleRunningSwitch(ServerCardItemId, bool),
     Install(ServerCardItemId),
     InstallServerUpdate(ServerCardItemId),
@@ -92,7 +87,6 @@ pub enum ServerCardEvent {
 pub struct ServerCardMouseHandles {
     show_logs_icon_button: MouseStateHandle,
     logout_icon_button: MouseStateHandle,
-    share_icon_button: MouseStateHandle,
     edit_icon_button: MouseStateHandle,
     update_icon_button: MouseStateHandle,
 
@@ -140,7 +134,6 @@ pub enum Background {
 pub struct ServerCardOptions {
     pub show_view_logs_icon_button: bool,
     pub show_log_out_icon_button: bool,
-    pub show_share_icon_button: bool,
     pub show_edit_config_icon_button: bool,
     pub show_update_available_icon_button: bool,
     pub show_view_logs_text_button: bool,
@@ -187,7 +180,6 @@ impl From<ServerCardStatus> for ServerCardOptions {
             ServerCardStatus::AvailableToSave => ServerCardOptions {
                 show_view_logs_icon_button: false,
                 show_log_out_icon_button: false,
-                show_share_icon_button: false,
                 show_edit_config_icon_button: false,
                 show_update_available_icon_button: false,
                 show_view_logs_text_button: false,
@@ -204,7 +196,6 @@ impl From<ServerCardStatus> for ServerCardOptions {
             ServerCardStatus::SavedToDrive => ServerCardOptions {
                 show_view_logs_icon_button: false,
                 show_log_out_icon_button: false,
-                show_share_icon_button: false,
                 show_edit_config_icon_button: true,
                 show_update_available_icon_button: false,
                 show_view_logs_text_button: false,
@@ -221,7 +212,6 @@ impl From<ServerCardStatus> for ServerCardOptions {
             ServerCardStatus::Installed => ServerCardOptions {
                 show_view_logs_icon_button: true,
                 show_log_out_icon_button: false,
-                show_share_icon_button: false,
                 show_edit_config_icon_button: true,
                 show_update_available_icon_button: false,
                 show_view_logs_text_button: false,
@@ -241,7 +231,6 @@ impl From<ServerCardStatus> for ServerCardOptions {
             ServerCardStatus::StartingServer => ServerCardOptions {
                 show_view_logs_icon_button: true,
                 show_log_out_icon_button: false,
-                show_share_icon_button: false,
                 show_edit_config_icon_button: true,
                 show_update_available_icon_button: false,
                 show_view_logs_text_button: false,
@@ -261,7 +250,6 @@ impl From<ServerCardStatus> for ServerCardOptions {
             ServerCardStatus::Authenticating => ServerCardOptions {
                 show_view_logs_icon_button: true,
                 show_log_out_icon_button: false,
-                show_share_icon_button: false,
                 show_edit_config_icon_button: true,
                 show_update_available_icon_button: false,
                 show_view_logs_text_button: false,
@@ -281,7 +269,6 @@ impl From<ServerCardStatus> for ServerCardOptions {
             ServerCardStatus::Running => ServerCardOptions {
                 show_view_logs_icon_button: true,
                 show_log_out_icon_button: false,
-                show_share_icon_button: false,
                 show_edit_config_icon_button: true,
                 show_update_available_icon_button: false,
                 show_view_logs_text_button: false,
@@ -301,7 +288,6 @@ impl From<ServerCardStatus> for ServerCardOptions {
             ServerCardStatus::ShuttingDown => ServerCardOptions {
                 show_view_logs_icon_button: true,
                 show_log_out_icon_button: false,
-                show_share_icon_button: false,
                 show_edit_config_icon_button: true,
                 show_update_available_icon_button: false,
                 show_view_logs_text_button: false,
@@ -321,7 +307,6 @@ impl From<ServerCardStatus> for ServerCardOptions {
             ServerCardStatus::Error => ServerCardOptions {
                 show_view_logs_icon_button: false,
                 show_log_out_icon_button: false,
-                show_share_icon_button: false,
                 show_edit_config_icon_button: false,
                 show_update_available_icon_button: false,
                 show_view_logs_text_button: true,
@@ -618,37 +603,19 @@ impl ServerCardView {
 
         match self.item_id {
             ServerCardItemId::TemplatableMCP(template_uuid) => {
-                let cloud_server = CloudTemplatableMCPServer::get_by_uuid(&template_uuid, app);
-                if let Some(cloud_server) = cloud_server {
-                    lines.push(format!("Template sync id: {}", cloud_server.sync_id()));
-                }
+                lines.push(format!("Template id: {template_uuid}"));
             }
             ServerCardItemId::TemplatableMCPInstallation(installation_uuid) => {
                 let installation = TemplatableMCPServerManager::as_ref(app)
                     .get_installed_server(&installation_uuid);
                 if let Some(installation) = installation {
                     let template_uuid = installation.template_uuid();
-                    let gallery_uuid = installation.gallery_uuid();
-                    let gallery_uuid_text = match gallery_uuid {
-                        Some(uuid) => format!("Gallery Id: {uuid}"),
-                        None => "Gallery Id: None".to_string(),
-                    };
-                    let cloud_server = CloudTemplatableMCPServer::get_by_uuid(&template_uuid, app);
-                    let template_sync_id_text = match cloud_server {
-                        Some(cloud_server) => {
-                            format!("Template sync id: {}", cloud_server.sync_id())
-                        }
-                        None => "Could not find cloud template".to_string(),
-                    };
                     lines.push(format!(
                         "{}",
                         ServerCardItemId::TemplatableMCP(template_uuid)
                     ));
-                    lines.push(gallery_uuid_text);
-                    lines.push(template_sync_id_text);
                 }
             }
-            ServerCardItemId::GalleryMCP(_) => {}
             ServerCardItemId::FileBasedMCP(_) => {}
         }
 
@@ -777,26 +744,11 @@ impl ServerCardView {
                     self.build_icon_button(
                         appearance,
                         Icon::LogOut,
-                        "Log out".to_string(),
+                        "Disconnect".to_string(),
                         self.mouse_handles.logout_icon_button.clone(),
                     )
                     .on_click(move |ctx, _, _| {
                         ctx.dispatch_typed_action(ServerCardAction::LogOut(item_id));
-                    })
-                    .finish(),
-                );
-            }
-
-            if self.render_options.show_share_icon_button {
-                actions_row = actions_row.with_child(
-                    self.build_icon_button(
-                        appearance,
-                        Icon::Share,
-                        "Share server".to_string(),
-                        self.mouse_handles.share_icon_button.clone(),
-                    )
-                    .on_click(move |ctx, _, _| {
-                        ctx.dispatch_typed_action(ServerCardAction::Share(item_id));
                     })
                     .finish(),
                 );
@@ -978,10 +930,6 @@ impl TypedActionView for ServerCardView {
                 } else {
                     log::error!("Server card: Tried to toggle a switch that does not exist.")
                 }
-                ctx.notify();
-            }
-            ServerCardAction::Share(item_id) => {
-                ctx.emit(ServerCardEvent::Share(*item_id));
                 ctx.notify();
             }
             ServerCardAction::Edit(item_id) => {

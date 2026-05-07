@@ -3,9 +3,7 @@
 use ai::LLMId;
 use anyhow::Result;
 use onboarding::slides::OnboardingModelInfo;
-use onboarding::{
-    AgentOnboardingEvent, AgentOnboardingView, MockTelemetryContextProvider, SelectedSettings,
-};
+use onboarding::{AgentOnboardingEvent, AgentOnboardingView, SelectedSettings};
 use pathfinder_color::ColorU;
 use rust_embed::RustEmbed;
 use std::borrow::Cow;
@@ -53,7 +51,6 @@ fn main() -> Result<()> {
         ctx.add_singleton_model(|ctx| build_appearance(phenomenon(), ctx));
 
         // Register telemetry context provider for logging telemetry events.
-        ctx.add_singleton_model(MockTelemetryContextProvider::new_context_provider);
 
         ctx.add_window(AddWindowOptions::default(), |ctx| {
             OnboardingMainView::new(ctx)
@@ -83,7 +80,7 @@ impl OnboardingMainView {
             OnboardingModelInfo {
                 id: LLMId::from("auto"),
                 title: "Auto".to_string(),
-                icon: Icon::Oz,
+                icon: Icon::AgentMode,
                 requires_upgrade: false,
                 is_default: true,
             },
@@ -98,7 +95,7 @@ impl OnboardingMainView {
                 id: LLMId::from("gpt-4o"),
                 title: "GPT-4o".to_string(),
                 icon: Icon::OpenAILogo,
-                requires_upgrade: true,
+                requires_upgrade: false,
                 is_default: false,
             },
         ];
@@ -113,7 +110,6 @@ impl OnboardingMainView {
                 false,
                 false,
                 None,
-                onboarding::OnboardingAuthState::LoggedOut,
                 ctx,
             )
         });
@@ -161,13 +157,7 @@ impl OnboardingMainView {
                 self.state = OnboardingMainState::Finished(finished_view);
                 ctx.notify();
             }
-            AgentOnboardingEvent::SyncWithOsToggled { .. }
-            | AgentOnboardingEvent::UpgradeRequested
-            | AgentOnboardingEvent::UpgradeCopyUrlRequested
-            | AgentOnboardingEvent::UpgradePasteTokenFromClipboardRequested
-            | AgentOnboardingEvent::LoginFromWelcomeRequested
-            | AgentOnboardingEvent::PrivacySettingsFromTerminalThemeSlideRequested
-            | AgentOnboardingEvent::AppBecameActive => {
+            AgentOnboardingEvent::SyncWithOsToggled { .. } => {
                 // No-op in the standalone demo binary
             }
         }

@@ -9,13 +9,10 @@ use std::path::PathBuf;
 use ai::api_keys::ApiKeyManager;
 use indexmap::IndexMap;
 
-use crate::ai::request_usage_model::RequestLimitInfo;
-use crate::auth::AuthStateProvider;
 use crate::report_if_error;
 use crate::terminal::CLIAgent;
 use crate::workspaces::user_workspaces::UserWorkspaces;
 use cfg_if::cfg_if;
-use chrono::{DateTime, Utc};
 use lazy_static::lazy_static;
 use regex::Regex;
 use warpui::platform::OperatingSystem;
@@ -23,9 +20,7 @@ use warpui::{
     platform::keyboard::KeyCode, AppContext, Entity, ModelContext, SingletonEntity, UpdateModel,
 };
 
-use settings::{
-    define_settings_group, RespectUserSyncSetting, Setting, SupportedPlatforms, SyncToCloud,
-};
+use settings::{define_settings_group, Setting, SupportedPlatforms, SyncToCloud};
 use warp_core::channel::{Channel, ChannelState};
 use warp_core::execution_mode::AppExecutionMode;
 use warp_core::features::FeatureFlag;
@@ -299,8 +294,6 @@ pub enum DefaultSessionMode {
     Terminal,
     /// New sessions start in agent view.
     Agent,
-    /// New sessions start in cloud (ambient) agent mode.
-    CloudAgent,
     /// New sessions open a user-defined tab config.
     /// The specific config is identified by the companion `default_tab_config_path` setting.
     TabConfig,
@@ -313,7 +306,7 @@ settings::macros::implement_setting_for_enum!(
     DefaultSessionMode,
     AISettings,
     SupportedPlatforms::ALL,
-    SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+    SyncToCloud::Never,
     private: false,
     toml_path: "general.default_session_mode",
     description: "The default mode for new terminal sessions.",
@@ -325,7 +318,6 @@ impl DefaultSessionMode {
         match self {
             DefaultSessionMode::Terminal => "Terminal",
             DefaultSessionMode::Agent => "Agent",
-            DefaultSessionMode::CloudAgent => "Cloud Oz",
             DefaultSessionMode::TabConfig => "Tab Config",
             DefaultSessionMode::DockerSandbox => "Local Docker Sandbox",
         }
@@ -363,7 +355,7 @@ settings::macros::implement_setting_for_enum!(
     ThinkingDisplayMode,
     AISettings,
     SupportedPlatforms::ALL,
-    SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+    SyncToCloud::Never,
     private: false,
     toml_path: "agents.warp_agent.other.thinking_display_mode",
     description: "Controls how agent thinking traces are displayed after streaming.",
@@ -394,67 +386,6 @@ impl ThinkingDisplayMode {
     pub fn should_keep_expanded(&self) -> bool {
         matches!(self, ThinkingDisplayMode::AlwaysShow)
     }
-}
-
-/// Tracks the state of the quota reset banner
-#[derive(
-    Debug,
-    Serialize,
-    Deserialize,
-    Clone,
-    PartialEq,
-    Default,
-    schemars::JsonSchema,
-    settings_value::SettingsValue,
-)]
-#[schemars(description = "State of the quota reset banner.")]
-pub struct BannerState {
-    #[serde(default)]
-    #[schemars(description = "Whether the banner has been dismissed.")]
-    pub dismissed: bool,
-}
-
-/// Tracks information about a single billing cycle for AI request usage
-#[derive(
-    Debug,
-    Serialize,
-    Deserialize,
-    Clone,
-    PartialEq,
-    schemars::JsonSchema,
-    settings_value::SettingsValue,
-)]
-#[schemars(description = "Information about a single billing cycle.")]
-pub struct CycleInfo {
-    /// End date of the billing cycle
-    #[schemars(description = "End date of the billing cycle.")]
-    pub end_date: DateTime<Utc>,
-    /// Whether the quota was exceeded in this cycle
-    #[schemars(description = "Whether the usage quota was exceeded in this cycle.")]
-    pub was_quota_exceeded: bool,
-    /// State of the quota reset banner
-    #[schemars(description = "State of the quota reset banner for this cycle.")]
-    pub banner_state: BannerState,
-}
-
-#[derive(
-    Debug,
-    Serialize,
-    Deserialize,
-    Clone,
-    Default,
-    PartialEq,
-    schemars::JsonSchema,
-    settings_value::SettingsValue,
-)]
-#[schemars(description = "AI usage quota information across billing cycles.")]
-pub struct AIRequestQuotaInfo {
-    /// History of billing cycles and their usage.
-    ///
-    /// Note that these are only populated going forward from when this setting
-    /// was introduced.
-    #[schemars(description = "History of billing cycles and their quota usage.")]
-    pub cycle_history: Vec<CycleInfo>,
 }
 
 #[derive(
@@ -715,7 +646,7 @@ define_settings_group!(AISettings, settings: [
         type: bool,
         default: true,
         supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::No),
+        sync_to_cloud: SyncToCloud::Never,
         private: false,
         toml_path: "agents.warp_agent.is_any_ai_enabled",
         description: "Controls whether all AI features are enabled.",
@@ -726,7 +657,7 @@ define_settings_group!(AISettings, settings: [
         type: bool,
         default: true,
         supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::No),
+        sync_to_cloud: SyncToCloud::Never,
         private: false,
         toml_path: "agents.warp_agent.active_ai.enabled",
         description: "Controls whether proactive AI features like suggestions are enabled.",
@@ -737,7 +668,7 @@ define_settings_group!(AISettings, settings: [
         type: bool,
         default: true,
         supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        sync_to_cloud: SyncToCloud::Never,
         private: false,
         toml_path: "agents.warp_agent.input.ai_auto_detection_enabled",
         description: "Controls whether AI automatically detects natural language input.",
@@ -751,7 +682,7 @@ define_settings_group!(AISettings, settings: [
         type: bool,
         default: false,
         supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        sync_to_cloud: SyncToCloud::Never,
         private: false,
         toml_path: "agents.warp_agent.input.nld_in_terminal_enabled",
         description: "Controls whether natural language detection is enabled in the terminal input.",
@@ -760,7 +691,7 @@ define_settings_group!(AISettings, settings: [
         type: String,
         default: String::new(),
         supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        sync_to_cloud: SyncToCloud::Never,
         private: false,
         toml_path: "agents.warp_agent.input.ai_command_denylist",
         description: "Commands to exclude from AI natural language autodetection.",
@@ -771,7 +702,7 @@ define_settings_group!(AISettings, settings: [
         type: bool,
         default: true, // TODO(roland): revisit this when launched to stable
         supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        sync_to_cloud: SyncToCloud::Never,
         private: false,
         toml_path: "agents.warp_agent.active_ai.intelligent_autosuggestions_enabled",
         description: "Controls whether AI-powered intelligent autosuggestions are enabled.",
@@ -785,7 +716,7 @@ define_settings_group!(AISettings, settings: [
         type: bool,
         default: true, // TODO(advait): revisit this when launched to stable
         supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        sync_to_cloud: SyncToCloud::Never,
         private: false,
         toml_path: "agents.warp_agent.active_ai.agent_mode_query_suggestions_enabled",
         description: "Controls whether prompt suggestions are shown in agent mode.",
@@ -797,7 +728,7 @@ define_settings_group!(AISettings, settings: [
         type: bool,
         default: true,
         supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        sync_to_cloud: SyncToCloud::Never,
         private: false,
         toml_path: "agents.warp_agent.active_ai.code_suggestions_enabled",
         description: "Controls whether AI code suggestions are enabled.",
@@ -809,11 +740,10 @@ define_settings_group!(AISettings, settings: [
         type: bool,
         default: true,
         supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        sync_to_cloud: SyncToCloud::Never,
         private: false,
         toml_path: "agents.warp_agent.active_ai.natural_language_autosuggestions_enabled",
         description: "Controls whether ghosted text autosuggestions are shown for AI input queries.",
-        feature_flag: FeatureFlag::PredictAMQueries,
     }
     // This field should not be referenced directly to lookup shared block title generations
     // enablement -- use the `is_shared_block_title_generation_enabled()` getter.
@@ -822,7 +752,7 @@ define_settings_group!(AISettings, settings: [
         type: bool,
         default: true,
         supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        sync_to_cloud: SyncToCloud::Never,
         private: false,
         toml_path: "agents.warp_agent.active_ai.shared_block_title_generation_enabled",
         description: "Controls whether titles are auto-generated when sharing blocks.",
@@ -833,7 +763,7 @@ define_settings_group!(AISettings, settings: [
         type: bool,
         default: true,
         supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        sync_to_cloud: SyncToCloud::Never,
         private: false,
         toml_path: "agents.warp_agent.active_ai.git_operations_autogen_enabled",
         description: "Controls whether AI auto-generates commit messages and PR title/body in the code review dialogs.",
@@ -844,7 +774,7 @@ define_settings_group!(AISettings, settings: [
         type: bool,
         default: true,
         supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        sync_to_cloud: SyncToCloud::Never,
         private: false,
         toml_path: "agents.warp_agent.active_ai.rule_suggestions_enabled",
         description: "Controls whether the agent suggests rules to save after responses.",
@@ -856,7 +786,7 @@ define_settings_group!(AISettings, settings: [
         type: bool,
         default: true,
         supported_platforms: SupportedPlatforms::DESKTOP,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        sync_to_cloud: SyncToCloud::Never,
         private: false,
         toml_path: "agents.voice.voice_input_enabled",
         description: "Controls whether voice input is enabled for AI interactions.",
@@ -868,7 +798,7 @@ define_settings_group!(AISettings, settings: [
         type: usize,
         default: 0,
         supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        sync_to_cloud: SyncToCloud::Never,
         private: true,
     },
     // Whether or not the user has manually dismissed the voice input new feature popup.
@@ -876,7 +806,7 @@ define_settings_group!(AISettings, settings: [
         type: bool,
         default: false,
         supported_platforms: SupportedPlatforms::DESKTOP,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        sync_to_cloud: SyncToCloud::Never,
         private: true,
     },
     // This field is used to store the key used for voice input toggling.
@@ -902,7 +832,7 @@ define_settings_group!(AISettings, settings: [
         type: Vec<AgentModeCommandExecutionPredicate>,
         default: DEFAULT_COMMAND_EXECUTION_ALLOWLIST.clone(),
         supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        sync_to_cloud: SyncToCloud::Never,
         private: false,
         toml_path: "agents.profiles.agent_mode_command_execution_allowlist",
         description: "Commands that the agent can execute without explicit permission.",
@@ -916,7 +846,7 @@ define_settings_group!(AISettings, settings: [
         type: Vec<AgentModeCommandExecutionPredicate>,
         default: DEFAULT_COMMAND_EXECUTION_DENYLIST.clone(),
         supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        sync_to_cloud: SyncToCloud::Never,
         private: false,
         toml_path: "agents.profiles.agent_mode_command_execution_denylist",
         description: "Commands that the agent must always ask before executing.",
@@ -929,7 +859,7 @@ define_settings_group!(AISettings, settings: [
         type: bool,
         default: false,
         supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        sync_to_cloud: SyncToCloud::Never,
         private: false,
         toml_path: "agents.profiles.agent_mode_execute_readonly_commands",
         description: "Whether the agent can auto-execute read-only commands without asking.",
@@ -944,7 +874,7 @@ define_settings_group!(AISettings, settings: [
         type: AgentModeCodingPermissionsType,
         default: AgentModeCodingPermissionsType::default(),
         supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        sync_to_cloud: SyncToCloud::Never,
         private: false,
         toml_path: "agents.profiles.agent_mode_coding_permissions",
         description: "The file read permission level for the agent.",
@@ -973,7 +903,7 @@ define_settings_group!(AISettings, settings: [
         type: bool,
         default: false,
         supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        sync_to_cloud: SyncToCloud::Never,
         private: true,
     }
     // Whether or not we should show the speedbump for auto-executing readonly cmds.
@@ -984,7 +914,7 @@ define_settings_group!(AISettings, settings: [
         type: bool,
         default: true,
         supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        sync_to_cloud: SyncToCloud::Never,
         private: true,
     }
     // Whether or not we should show the speedbump for auto-writing to the PTY.
@@ -995,7 +925,7 @@ define_settings_group!(AISettings, settings: [
         type: bool,
         default: true,
         supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        sync_to_cloud: SyncToCloud::Never,
         private: true,
     }
     // Whether or not we should show the speedbump for auto-reading files.
@@ -1006,7 +936,7 @@ define_settings_group!(AISettings, settings: [
         type: bool,
         default: true,
         supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        sync_to_cloud: SyncToCloud::Never,
         private: true,
     }
     // Whether to use locally loaded AWS credentials for Bedrock-enabled requests.
@@ -1014,7 +944,7 @@ define_settings_group!(AISettings, settings: [
         type: bool,
         default: false,
         supported_platforms: SupportedPlatforms::DESKTOP,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        sync_to_cloud: SyncToCloud::Never,
         private: false,
         toml_path: "cloud_platform.third_party_api_keys.aws_bedrock_credentials_enabled",
         description: "Whether Warp should use your local AWS credentials for Bedrock-enabled requests.",
@@ -1027,7 +957,7 @@ define_settings_group!(AISettings, settings: [
         type: bool,
         default: false,
         supported_platforms: SupportedPlatforms::DESKTOP,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        sync_to_cloud: SyncToCloud::Never,
         private: false,
         toml_path: "cloud_platform.third_party_api_keys.aws_bedrock_auto_login",
         description: "Whether to automatically run the AWS login command when Bedrock credentials expire.",
@@ -1037,7 +967,7 @@ define_settings_group!(AISettings, settings: [
         type: String,
         default: "aws login".to_string(),
         supported_platforms: SupportedPlatforms::DESKTOP,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        sync_to_cloud: SyncToCloud::Never,
         private: false,
         toml_path: "cloud_platform.third_party_api_keys.aws_bedrock_auth_refresh_command",
         description: "The command to run to refresh AWS credentials for Bedrock.",
@@ -1047,7 +977,7 @@ define_settings_group!(AISettings, settings: [
         type: String,
         default: "default".to_string(),
         supported_platforms: SupportedPlatforms::DESKTOP,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        sync_to_cloud: SyncToCloud::Never,
         private: false,
         toml_path: "cloud_platform.third_party_api_keys.aws_bedrock_profile",
         description: "The AWS profile name to use for Bedrock credentials.",
@@ -1059,7 +989,7 @@ define_settings_group!(AISettings, settings: [
         type: bool,
         default: false,
         supported_platforms: SupportedPlatforms::DESKTOP,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        sync_to_cloud: SyncToCloud::Never,
         private: true,
     }
     // Whether or not the user wants agent mode requests to use their saved rules.
@@ -1067,22 +997,11 @@ define_settings_group!(AISettings, settings: [
         type: bool,
         default: true,
         supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        sync_to_cloud: SyncToCloud::Never,
         private: false,
         toml_path: "agents.knowledge.rules_enabled",
         description: "Whether the agent uses your saved rules during requests.",
     }
-    // Whether warp drive context should be included in AI requests
-    warp_drive_context_enabled: WarpDriveContextEnabled {
-        type: bool,
-        default: true,
-        supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
-        private: false,
-        toml_path: "agents.knowledge.warp_drive_context_enabled",
-        description: "Whether Warp Drive context is included in AI requests.",
-    }
-
     // Whether the codebase speedbump banner has been permanently dismissed for a given repo path.
     //
     // Not a user-visible settings - we model it as a setting so we can track state.
@@ -1113,18 +1032,9 @@ define_settings_group!(AISettings, settings: [
         type: bool,
         default: false,
         supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        sync_to_cloud: SyncToCloud::Never,
         private: true,
     }
-
-    // Information about AI request quotas and usage across billing cycles
-    ai_request_quota_info: AIRequestQuotaInfoSetting {
-        type: AIRequestQuotaInfo,
-        default: AIRequestQuotaInfo::default(),
-        supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
-        private: true,
-    },
 
     // Whether or not we should show the speedbump for showing code suggestion banners.
     // This includes both passive code diffs and suggested prompts (passive unit tests).
@@ -1134,7 +1044,7 @@ define_settings_group!(AISettings, settings: [
         type: bool,
         default: true,
         supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        sync_to_cloud: SyncToCloud::Never,
         private: true,
     }
 
@@ -1155,26 +1065,16 @@ define_settings_group!(AISettings, settings: [
         type: bool,
         default: false,
         supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::No),
+        sync_to_cloud: SyncToCloud::Never,
         private: true,
     }
 
-    // This is not a user-visible setting - it's merely a one-time flag to track if the Oz launch modal
+    // This is not a user-visible setting - it's merely a one-time flag to track if the agent launch modal
     // has been shown to the user.
     //
     // We model it as a setting so it's only shown once to a given user regardless of the number of
     // devices they use.
-    did_check_to_trigger_oz_launch_modal: DidShowOzLaunchModal {
-        type: bool,
-        default: false,
-        supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::No),
-        private: true,
-    }
-
-    // Used to determine whether the "What's new in Oz" section of the agent view
-    // zero state is expanded or collapsed by default.
-    should_expand_oz_updates: ShouldExpandOzUpdates {
+    did_check_to_trigger_agent_launch_modal: DidShowAgentLaunchModal {
         type: bool,
         default: false,
         supported_platforms: SupportedPlatforms::ALL,
@@ -1182,35 +1082,33 @@ define_settings_group!(AISettings, settings: [
         private: true,
     }
 
-    // Used to determine whether the "What's new in Oz" section of the agent view
-    // zero state is shown or hidden.
-    should_show_oz_updates_in_zero_state: ShouldShowOzUpdatesInZeroState {
-        type: bool,
-        default: true,
-        supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
-        private: false,
-        toml_path: "agents.warp_agent.other.should_show_oz_updates_in_zero_state",
-        description: "Whether the \"What's new\" section is shown in the agent view.",
-    }
-
-    // Whether or not the user has enabled the ability to use Warp credits even when providing
-    // their own LLM provider API key.
-    can_use_warp_credits_with_byok: CanUseWarpCreditsWithByok {
+    // Used to determine whether the agent updates section of the agent view
+    // zero state is expanded or collapsed by default.
+    should_expand_agent_updates: ShouldExpandAgentUpdates {
         type: bool,
         default: false,
         supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        sync_to_cloud: SyncToCloud::Never,
+        private: true,
+    }
+
+    // Used to determine whether the agent updates section of the agent view
+    // zero state is shown or hidden.
+    should_show_agent_updates_in_zero_state: ShouldShowAgentUpdatesInZeroState {
+        type: bool,
+        default: true,
+        supported_platforms: SupportedPlatforms::ALL,
+        sync_to_cloud: SyncToCloud::Never,
         private: false,
-        toml_path: "cloud_platform.third_party_api_keys.can_use_warp_credits_with_byok",
-        description: "Whether Warp credits can be used even when providing your own API key.",
+        toml_path: "agents.warp_agent.other.should_show_agent_updates_in_zero_state",
+        description: "Whether the \"What's new\" section is shown in the agent view.",
     }
 
     should_render_use_agent_footer_for_user_commands: ShouldRenderUseAgentToolbarForUserCommands {
         type: bool,
         default: true,
         supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        sync_to_cloud: SyncToCloud::Never,
         private: false,
         toml_path: "agents.warp_agent.other.should_render_use_agent_toolbar_for_user_commands",
         description: "Whether to show the \"Use Agent\" footer for terminal commands.",
@@ -1222,7 +1120,7 @@ define_settings_group!(AISettings, settings: [
         type: bool,
         default: true,
         supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        sync_to_cloud: SyncToCloud::Never,
         private: false,
         toml_path: "agents.third_party.should_render_cli_agent_toolbar",
         description: "Whether to show the CLI agent footer for coding agent commands.",
@@ -1234,7 +1132,7 @@ define_settings_group!(AISettings, settings: [
         type: bool,
         default: true,
         supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        sync_to_cloud: SyncToCloud::Never,
         private: false,
         toml_path: "agents.third_party.auto_toggle_composer",
         description: "Whether CLI agent Rich Input automatically closes and reopens based on the agent's blocked state.",
@@ -1246,7 +1144,7 @@ define_settings_group!(AISettings, settings: [
         type: bool,
         default: false,
         supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        sync_to_cloud: SyncToCloud::Never,
         private: false,
         toml_path: "agents.third_party.auto_open_composer_on_cli_agent_start",
         description: "Whether CLI agent Rich Input automatically opens when a CLI agent session starts.",
@@ -1260,7 +1158,7 @@ define_settings_group!(AISettings, settings: [
         type: bool,
         default: false,
         supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        sync_to_cloud: SyncToCloud::Never,
         private: false,
         toml_path: "agents.third_party.auto_dismiss_composer_after_submit",
         description: "Whether CLI agent Rich Input automatically closes after the user submits a prompt.",
@@ -1274,25 +1172,11 @@ define_settings_group!(AISettings, settings: [
         type: ToolbarCommandMap,
         default: ToolbarCommandMap::default(),
         supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        sync_to_cloud: SyncToCloud::Never,
         private: false,
         toml_path: "agents.third_party.cli_agent_toolbar_enabled_commands",
         max_table_depth: 1,
         description: "Maps custom toolbar command patterns to specific CLI agents.",
-    }
-
-    // This is not a user-visible setting - it tracks whether a paid user has dismissed the
-    // agent management help page by clicking "View Agents".
-    //
-    // When false and user is on a paid plan, the help page is shown.
-    // When true, the help page is hidden (user dismissed it).
-    // Free users never see the help page by default regardless of this setting.
-    did_dismiss_cloud_setup_guide: DidDismissAgentManagementHelpPage {
-        type: bool,
-        default: false,
-        supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
-        private: true,
     }
 
     // This is not a user-visible setting - it tracks whether the FTU model picker callout
@@ -1306,7 +1190,7 @@ define_settings_group!(AISettings, settings: [
         type: bool,
         default: false,
         supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        sync_to_cloud: SyncToCloud::Never,
         private: true,
     }
 
@@ -1316,7 +1200,7 @@ define_settings_group!(AISettings, settings: [
         type: bool,
         default: false,
         supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        sync_to_cloud: SyncToCloud::Never,
         private: true,
     }
 
@@ -1327,7 +1211,7 @@ define_settings_group!(AISettings, settings: [
         type: bool,
         default: false,
         supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        sync_to_cloud: SyncToCloud::Never,
         private: true,
     }
 
@@ -1347,16 +1231,16 @@ define_settings_group!(AISettings, settings: [
         toml_path: "general.default_tab_config_path",
     }
 
-    // Whether computer use is enabled for cloud agent conversations started from the Warp app.
+    // Whether computer use is enabled for local agent conversations.
     // This setting is only used when the AI autonomy setting is AlwaysAsk or not set.
-    cloud_agent_computer_use_enabled: CloudAgentComputerUseEnabled {
+    agent_computer_use_enabled: AgentComputerUseEnabled {
         type: bool,
         default: warp_core::channel::ChannelState::channel().is_dogfood(),
         supported_platforms: SupportedPlatforms::DESKTOP,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        sync_to_cloud: SyncToCloud::Never,
         private: false,
-        toml_path: "agents.warp_agent.other.cloud_agent_computer_use_enabled",
-        description: "Whether computer use is enabled for cloud agent conversations.",
+        toml_path: "agents.warp_agent.other.agent_computer_use_enabled",
+        description: "Whether computer use is enabled for local agent conversations.",
     }
 
     // Whether multi-agent orchestration is enabled. When enabled, the agent can
@@ -1367,7 +1251,7 @@ define_settings_group!(AISettings, settings: [
         type: bool,
         default: true,
         supported_platforms: SupportedPlatforms::DESKTOP,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        sync_to_cloud: SyncToCloud::Never,
         private: false,
         toml_path: "agents.warp_agent.other.orchestration_enabled",
         description: "Whether multi-agent orchestration is enabled.",
@@ -1381,7 +1265,7 @@ define_settings_group!(AISettings, settings: [
         type: bool,
         default: false,
         supported_platforms: SupportedPlatforms::DESKTOP,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        sync_to_cloud: SyncToCloud::Never,
         private: false,
         toml_path: "agents.mcp_servers.file_based_mcp_enabled",
         description: "Whether third-party file-based MCP servers are automatically detected.",
@@ -1397,7 +1281,7 @@ define_settings_group!(AISettings, settings: [
         type: bool,
         default: false,
         supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        sync_to_cloud: SyncToCloud::Never,
         private: false,
         toml_path: "agents.warp_agent.input.include_agent_commands_in_history",
         description: "Whether agent-executed commands are included in command history.",
@@ -1408,7 +1292,7 @@ define_settings_group!(AISettings, settings: [
         type: bool,
         default: true,
         supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        sync_to_cloud: SyncToCloud::Never,
         private: false,
         toml_path: "agents.warp_agent.other.show_conversation_history",
         description: "Whether conversation history appears in the tools panel.",
@@ -1420,7 +1304,7 @@ define_settings_group!(AISettings, settings: [
         type: bool,
         default: true,
         supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        sync_to_cloud: SyncToCloud::Never,
         private: false,
         toml_path: "agents.warp_agent.other.show_agent_notifications",
         description: "Whether agent notifications are shown.",
@@ -1449,18 +1333,17 @@ define_settings_group!(AISettings, settings: [
         private: true,
     }
 
-    // Whether Oz should add attribution (co-author line) to commit messages and PRs.
-    // This is the user-level preference; it may be overridden by the team-level
-    // `enable_warp_attribution` AdminEnablementSetting (see
-    // `UserWorkspaces::get_agent_attribution_setting`).
+    // Whether the agent should add attribution (co-author line) to commit messages and PRs.
+    // This is the user-level preference; it may be overridden by the local
+    // `agent_attribution_policy` setting.
     agent_attribution_enabled: AgentAttributionEnabled {
         type: bool,
         default: true,
         supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::No),
+        sync_to_cloud: SyncToCloud::Never,
         private: false,
-        toml_path: "agents.oz.other.agent_attribution_enabled",
-        description: "Whether Oz adds an attribution co-author line to commit messages and pull requests it creates.",
+        toml_path: "agents.local.other.agent_attribution_enabled",
+        description: "Whether the agent adds an attribution co-author line to commit messages and pull requests it creates.",
     }
 ]);
 
@@ -1482,7 +1365,7 @@ impl AISettings {
         });
     }
 
-    pub fn is_ai_disabled_due_to_remote_session_org_policy(&self, app: &AppContext) -> bool {
+    pub fn is_ai_disabled_due_to_remote_session_local_policy(&self, app: &AppContext) -> bool {
         let contains_remote_blocks = FocusedTerminalInfo::as_ref(app).contains_any_remote_blocks();
 
         let contains_restored_remote_blocks =
@@ -1501,17 +1384,10 @@ impl AISettings {
     pub fn is_any_ai_enabled(&self, app: &AppContext) -> bool {
         if Self::is_oss_openrouter_configured(app) {
             return *self.is_any_ai_enabled
-                && !self.is_ai_disabled_due_to_remote_session_org_policy(app);
+                && !self.is_ai_disabled_due_to_remote_session_local_policy(app);
         }
 
-        // Disable AI for anonymous and logged-out users.
-        let is_anonymous_or_logged_out = AuthStateProvider::as_ref(app)
-            .get()
-            .is_anonymous_or_logged_out();
-
-        *self.is_any_ai_enabled
-            && !is_anonymous_or_logged_out
-            && !self.is_ai_disabled_due_to_remote_session_org_policy(app)
+        false
     }
 
     pub fn default_session_mode(&self, app: &AppContext) -> DefaultSessionMode {
@@ -1523,8 +1399,8 @@ impl AISettings {
         match mode {
             // Terminal and TabConfig don't require AI.
             DefaultSessionMode::Terminal | DefaultSessionMode::TabConfig => mode,
-            // Agent and CloudAgent require AI to be enabled.
-            DefaultSessionMode::Agent | DefaultSessionMode::CloudAgent => {
+            // Agent requires AI to be enabled.
+            DefaultSessionMode::Agent => {
                 if self.is_any_ai_enabled(app) {
                     mode
                 } else {
@@ -1638,10 +1514,6 @@ impl AISettings {
         self.is_any_ai_enabled(app) && *self.memory_enabled
     }
 
-    pub fn is_warp_drive_context_enabled(&self, app: &warpui::AppContext) -> bool {
-        self.is_any_ai_enabled(app) && *self.warp_drive_context_enabled
-    }
-
     pub fn is_file_based_mcp_enabled(&self, app: &warpui::AppContext) -> bool {
         if !FeatureFlag::FileBasedMcp.is_enabled() || !self.is_any_ai_enabled(app) {
             return false;
@@ -1649,8 +1521,8 @@ impl AISettings {
         // NOTE: we intentionally do not force-enable this in Cloud Mode. Previously
         // we auto-spawned file-based MCPs in autonomous execution, but that bypassed
         // the user's explicit opt-in and let any MCP config checked into a repo run
-        // arbitrary commands as part of a cloud agent run. Respecting the toggle
-        // closes that attack surface; cloud agents that need project-scoped MCP
+        // arbitrary commands as part of an agent run. Respecting the toggle
+        // closes that attack surface; agents that need project-scoped MCP
         // servers should surface an explicit, auditable opt-in. A more robust
         // solution (e.g. per-environment allowlisting, signed configs) should be
         // explored in the future.
@@ -1661,91 +1533,6 @@ impl AISettings {
         FeatureFlag::Orchestration.is_enabled()
             && self.is_any_ai_enabled(app)
             && *self.orchestration_enabled
-    }
-
-    /// Determines whether a quota reset banner should be displayed to the user.
-    ///
-    /// The banner should be shown if the most recent completed billing cycle had
-    /// quota exceeded and the banner was not manually dismissed.
-    pub fn should_display_quota_reset_banner(&self) -> bool {
-        let quota_info = &self.ai_request_quota_info;
-
-        let most_recent_completed_cycle = quota_info
-            .cycle_history
-            .iter()
-            .rev()
-            .find(|cycle| cycle.end_date < Utc::now());
-
-        if let Some(cycle) = most_recent_completed_cycle {
-            if cycle.was_quota_exceeded && !cycle.banner_state.dismissed {
-                return true;
-            }
-        }
-
-        false
-    }
-
-    /// Marks the banner as dismissed for all completed cycles.
-    pub fn mark_quota_banner_as_dismissed(&mut self, ctx: &mut ModelContext<Self>) {
-        let mut cycle_history = self.ai_request_quota_info.cycle_history.clone();
-
-        for cycle in cycle_history.iter_mut() {
-            if cycle.end_date < Utc::now() {
-                cycle.banner_state.dismissed = true;
-            }
-        }
-
-        report_if_error!(self
-            .ai_request_quota_info
-            .set_value(AIRequestQuotaInfo { cycle_history }, ctx));
-    }
-
-    /// Updates the quota info based on the latest RequestLimitInfo.
-    ///
-    /// This method finds or creates the appropriate CycleInfo based on the
-    /// request_limit_info's next refresh time and updates its fields accordingly.
-    pub fn update_quota_info(
-        &mut self,
-        request_limit_info: &RequestLimitInfo,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        // Convert ServerTimestamp to DateTime<Utc>
-        let next_refresh_time = request_limit_info.next_refresh_time.utc();
-        let now = Utc::now();
-
-        // Check if request_limit_info has unlimited requests
-        let is_quota_exceeded = !request_limit_info.is_unlimited
-            && request_limit_info.num_requests_used_since_refresh >= request_limit_info.limit;
-
-        let mut cycle_history = self.ai_request_quota_info.cycle_history.clone();
-
-        // Track if we updated an existing cycle
-        let mut updated_existing_cycle = false;
-
-        // Find or create a cycle that matches the current period
-        if let Some(current_cycle) = cycle_history.last_mut() {
-            if now <= current_cycle.end_date {
-                // Update existing cycle
-                current_cycle.was_quota_exceeded = is_quota_exceeded;
-                updated_existing_cycle = true;
-            }
-        }
-
-        // Only create a new cycle if we didn't update an existing one
-        if !updated_existing_cycle {
-            // Create a new cycle
-            let new_cycle = CycleInfo {
-                end_date: next_refresh_time,
-                was_quota_exceeded: is_quota_exceeded,
-                banner_state: BannerState::default(),
-            };
-
-            cycle_history.push(new_cycle);
-        }
-
-        report_if_error!(self
-            .ai_request_quota_info
-            .set_value(AIRequestQuotaInfo { cycle_history }, ctx));
     }
 
     pub fn is_command_denylist_editable(&self, app: &AppContext) -> bool {

@@ -1,27 +1,8 @@
 use std::collections::HashMap;
 
-use chrono::DateTime;
+use chrono::Utc;
 use handlebars::get_arguments;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
-use warp_core::ui::appearance::Appearance;
-use warpui::{AppContext, SingletonEntity as _};
-
-use crate::{
-    cloud_object::{
-        model::{
-            generic_string_model::{GenericStringModel, GenericStringObjectId, StringModel},
-            json_model::{JsonModel, JsonSerializer},
-            persistence::CloudModel,
-        },
-        GenericCloudObject, GenericStringObjectFormat, GenericStringObjectUniqueKey,
-        JsonObjectType, Revision, ServerCloudObject, UniquePer,
-    },
-    drive::items::WarpDriveItem,
-    server::{datetime_ext::DateTimeExt, ids::SyncId, sync_queue::QueueItem},
-};
-
-const UNIQUENESS_KEY_PREFIX: &str = "templatable_mcp_server";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default, Hash)]
 pub struct JsonTemplate {
@@ -38,12 +19,6 @@ pub struct TemplateVariable {
     pub allowed_values: Option<Vec<String>>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub struct GalleryData {
-    pub gallery_item_id: Uuid,
-    pub version: i32,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct TemplatableMCPServer {
     pub uuid: uuid::Uuid,
@@ -52,7 +27,6 @@ pub struct TemplatableMCPServer {
     pub template: JsonTemplate,
     #[serde(default)]
     pub version: i64, // This will default to 0 if stored objects have no version
-    pub gallery_data: Option<GalleryData>,
 }
 
 #[derive(Debug)]
@@ -193,115 +167,13 @@ impl TemplatableMCPServer {
                         json: normalized_json,
                         variables,
                     },
-                    version: DateTime::now().timestamp(),
-                    gallery_data: None,
+                    version: Utc::now().timestamp(),
                 }
             })
             .collect())
     }
-}
 
-pub type CloudTemplatableMCPServer =
-    GenericCloudObject<GenericStringObjectId, CloudTemplatableMCPServerModel>;
-pub type CloudTemplatableMCPServerModel = GenericStringModel<TemplatableMCPServer, JsonSerializer>;
-
-impl CloudTemplatableMCPServer {
-    pub fn get_all(app: &AppContext) -> Vec<CloudTemplatableMCPServer> {
-        CloudModel::as_ref(app)
-            .get_all_objects_of_type::<GenericStringObjectId, CloudTemplatableMCPServerModel>()
-            .cloned()
-            .collect()
-    }
-
-    pub fn get_by_id<'a>(
-        sync_id: &'a SyncId,
-        app: &'a AppContext,
-    ) -> Option<&'a CloudTemplatableMCPServer> {
-        CloudModel::as_ref(app)
-            .get_object_of_type::<GenericStringObjectId, CloudTemplatableMCPServerModel>(sync_id)
-    }
-
-    pub fn get_by_uuid<'a>(
-        uuid: &'a uuid::Uuid,
-        app: &'a AppContext,
-    ) -> Option<&'a CloudTemplatableMCPServer> {
-        CloudModel::as_ref(app)
-            .get_all_objects_of_type::<GenericStringObjectId, CloudTemplatableMCPServerModel>()
-            .find(|server| server.model().string_model.uuid == *uuid)
-    }
-}
-
-impl StringModel for TemplatableMCPServer {
-    type CloudObjectType = CloudTemplatableMCPServer;
-
-    fn model_type_name(&self) -> &'static str {
-        "MCP server"
-    }
-
-    fn should_enforce_revisions() -> bool {
-        true
-    }
-
-    fn model_format() -> GenericStringObjectFormat {
-        GenericStringObjectFormat::Json(JsonObjectType::TemplatableMCPServer)
-    }
-
-    fn should_show_activity_toasts() -> bool {
-        true
-    }
-
-    fn warn_if_unsaved_at_quit() -> bool {
-        true
-    }
-
-    fn display_name(&self) -> String {
+    pub fn display_name(&self) -> String {
         self.name.clone()
-    }
-
-    fn update_object_queue_item(
-        &self,
-        revision_ts: Option<Revision>,
-        object: &Self::CloudObjectType,
-    ) -> QueueItem {
-        QueueItem::UpdateTemplatableMCPServer {
-            model: object.model().clone().into(),
-            id: object.id,
-            revision: revision_ts.or_else(|| object.metadata.revision.clone()),
-        }
-    }
-
-    fn new_from_server_update(&self, server_cloud_object: &ServerCloudObject) -> Option<Self> {
-        if let ServerCloudObject::TemplatableMCPServer(server_templatable_mcp_server) =
-            server_cloud_object
-        {
-            return Some(server_templatable_mcp_server.model.clone().string_model);
-        }
-        None
-    }
-
-    fn uniqueness_key(&self) -> Option<GenericStringObjectUniqueKey> {
-        Some(GenericStringObjectUniqueKey {
-            key: format!("{UNIQUENESS_KEY_PREFIX}_{}", self.uuid),
-            unique_per: UniquePer::User,
-        })
-    }
-
-    fn renders_in_warp_drive(&self) -> bool {
-        false
-    }
-
-    fn to_warp_drive_item(
-        &self,
-        _id: SyncId,
-        _appearance: &Appearance,
-        _templatable_mcp_server: &CloudTemplatableMCPServer,
-    ) -> Option<Box<dyn WarpDriveItem>> {
-        None
-    }
-}
-
-impl JsonModel for TemplatableMCPServer {
-    fn json_object_type() -> JsonObjectType {
-        JsonObjectType::TemplatableMCPServer
     }
 }

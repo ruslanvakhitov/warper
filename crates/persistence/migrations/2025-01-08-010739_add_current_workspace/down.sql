@@ -1,2 +1,1 @@
--- This file should undo anything in `up.sql`
-ALTER TABLE workspaces DROP COLUMN is_selected;
+-- WARPER-001: hosted workspace selection state is not part of the local schema.

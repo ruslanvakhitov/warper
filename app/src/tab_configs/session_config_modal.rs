@@ -59,7 +59,7 @@ pub struct SessionConfigModal {
     enable_worktree: bool,
     autogenerate_worktree_branch_name: bool,
     /// When `false`, the session type pill row is hidden and the session type
-    /// defaults to Terminal behind the scenes (used when Oz is disabled).
+    /// defaults to Terminal behind the scenes when local Agent Mode is hidden.
     show_session_type_row: bool,
     session_pill_mouse_states: Vec<MouseStateHandle>,
     directory_button_mouse_state: MouseStateHandle,
@@ -122,13 +122,13 @@ impl SessionConfigModal {
         }
     }
 
-    /// Reconfigures the visible session types based on whether Oz is available.
+    /// Reconfigures the visible session types based on whether local Agent Mode is available.
     /// Resets the selection to index 0 (the first available type).
-    /// When Oz is disabled, hides the session type row entirely and defaults
+    /// When local Agent Mode is disabled, hides the session type row entirely and defaults
     /// to Terminal behind the scenes.
-    pub fn configure(&mut self, show_oz: bool) {
-        self.show_session_type_row = show_oz;
-        self.session_types = session_config_rendering::visible_session_types(show_oz);
+    pub fn configure(&mut self, show_agent: bool) {
+        self.show_session_type_row = show_agent;
+        self.session_types = session_config_rendering::visible_session_types(show_agent);
         self.selected_session_type_index = 0;
         self.session_pill_mouse_states = self
             .session_types

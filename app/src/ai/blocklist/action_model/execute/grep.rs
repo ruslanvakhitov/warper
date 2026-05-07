@@ -11,29 +11,21 @@ use futures::FutureExt;
 use warpui::r#async::FutureExt as AsyncFutureExt;
 use warpui::{AppContext, Entity, EntityId, ModelContext, ModelHandle, SingletonEntity};
 
-use crate::ai::agent::redaction::redact_secrets;
-use crate::ai::agent::{
-    conversation::AIConversationId, AIAgentAction, AIAgentActionType, GrepResult, ServerOutputId,
-};
-use crate::ai::blocklist::{
-    telemetry_banner::should_collect_ai_ugc_telemetry, BlocklistAIPermissions,
-};
+use crate::ai::agent::{AIAgentAction, AIAgentActionType, GrepResult};
+use crate::ai::blocklist::BlocklistAIPermissions;
 use crate::ai::paths::{host_native_absolute_path, shell_native_absolute_path};
 use crate::terminal::model::session::ExecuteCommandOptions;
-use crate::PrivacySettings;
 use crate::{
     ai::agent::{AIAgentActionResultType, GrepFileMatch, GrepLineMatch},
-    send_telemetry_from_app_ctx,
     terminal::{
         model::session::active_session::ActiveSession, model::session::Session, shell::ShellType,
         ShellLaunchData,
     },
-    TelemetryEvent,
 };
 
 use super::{
-    get_server_output_id, is_file_path, is_git_repository, ActionExecution, AnyActionExecution,
-    ExecuteActionInput, PreprocessActionInput,
+    is_file_path, is_git_repository, ActionExecution, AnyActionExecution, ExecuteActionInput,
+    PreprocessActionInput,
 };
 
 const GREP_TIMEOUT: Duration = Duration::from_secs(10);
@@ -120,75 +112,8 @@ impl GrepError {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn create_redacted_grep_error_event(
-    should_collect_ugc: bool,
-    server_output_id: Option<ServerOutputId>,
-    mut queries: Vec<String>,
-    mut path: String,
-    shell_type: Option<ShellType>,
-    mut working_directory: Option<String>,
-    mut absolute_path: String,
-    mut error: GrepError,
-) -> TelemetryEvent {
-    for query in queries.iter_mut() {
-        redact_secrets(query);
-    }
-    redact_secrets(&mut path);
-    if let Some(working_directory) = working_directory.as_mut() {
-        redact_secrets(working_directory);
-    }
-    redact_secrets(&mut absolute_path);
-    if let Some(command) = error.command.as_mut() {
-        redact_secrets(command);
-    }
-    if let Some(output) = error.output.as_mut() {
-        redact_secrets(output);
-    }
-
-    TelemetryEvent::GrepToolFailed {
-        queries: should_collect_ugc.then_some(queries),
-        path: should_collect_ugc.then_some(path),
-        shell_type,
-        working_directory: should_collect_ugc.then_some(working_directory).flatten(),
-        absolute_path: should_collect_ugc.then_some(absolute_path),
-        error: error.error_message().to_string(),
-        command: should_collect_ugc.then_some(error.command).flatten(),
-        output: should_collect_ugc.then_some(error.output).flatten(),
-        server_output_id,
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn log_grep_error(
-    conversation_id: AIConversationId,
-    queries: Vec<String>,
-    path: String,
-    shell_type: Option<ShellType>,
-    working_directory: Option<String>,
-    absolute_path: String,
-    error: GrepError,
-    ctx: &mut AppContext,
-) {
-    let should_collect_ugc = should_collect_ai_ugc_telemetry(
-        ctx,
-        PrivacySettings::handle(ctx)
-            .as_ref(ctx)
-            .is_telemetry_enabled,
-    );
-    let server_output_id = get_server_output_id(conversation_id, ctx);
-
-    let event = create_redacted_grep_error_event(
-        should_collect_ugc,
-        server_output_id,
-        queries,
-        path,
-        shell_type,
-        working_directory,
-        absolute_path,
-        error,
-    );
-    send_telemetry_from_app_ctx!(event, ctx);
+fn log_grep_error(error: &GrepError) {
+    log::debug!("grep tool failed: {}", error.error_message());
 }
 
 pub struct GrepExecutor {
@@ -254,7 +179,6 @@ impl GrepExecutor {
         };
 
         let shell_launch_data = self.active_session.as_ref(ctx).shell_launch_data(ctx);
-        let shell_type = self.active_session.as_ref(ctx).shell_type(ctx);
         let current_working_directory = self
             .active_session
             .as_ref(ctx)
@@ -268,12 +192,7 @@ impl GrepExecutor {
 
         let session = self.active_session.as_ref(ctx).session(ctx);
 
-        let path_clone = path.clone();
         let queries_clone = queries.clone();
-        let other_queries_clone = queries.clone();
-        let absolute_path_clone = absolute_path.clone();
-        let working_directory_clone = current_working_directory.clone();
-        let conversation_id_clone = input.conversation_id;
         ActionExecution::new_async(
             async move {
                 match run_grep(queries_clone, absolute_path, session, shell_launch_data)
@@ -284,25 +203,14 @@ impl GrepExecutor {
                     Err(_) => Err(GrepError::new("Grep operation timed out".to_string())),
                 }
             },
-            move |result, ctx| match result {
+            move |result, _ctx| match result {
                 Ok(grep_result) => {
                     match grep_result {
                         GrepResult::Error(ref e) => {
                             log::warn!("Executing grep resulted in error: {e:?}");
-                            log_grep_error(
-                                conversation_id_clone,
-                                other_queries_clone,
-                                path_clone,
-                                shell_type,
-                                working_directory_clone,
-                                absolute_path_clone,
-                                GrepError::new(e.to_string()),
-                                ctx,
-                            );
+                            log_grep_error(&GrepError::new(e.to_string()));
                         }
-                        GrepResult::Success { .. } => {
-                            send_telemetry_from_app_ctx!(TelemetryEvent::GrepToolSucceeded, ctx);
-                        }
+                        GrepResult::Success { .. } => {}
                         _ => {}
                     }
                     AIAgentActionResultType::Grep(grep_result)
@@ -310,16 +218,7 @@ impl GrepExecutor {
                 Err(e) => {
                     log::warn!("Failed to execute grep: {:?}", e.error_message());
                     let error_for_conversation = e.error_for_conversation();
-                    log_grep_error(
-                        conversation_id_clone,
-                        other_queries_clone,
-                        path_clone,
-                        shell_type,
-                        working_directory_clone,
-                        absolute_path_clone,
-                        e,
-                        ctx,
-                    );
+                    log_grep_error(&e);
                     AIAgentActionResultType::Grep(GrepResult::Error(error_for_conversation))
                 }
             },
@@ -689,7 +588,3 @@ fn parse_grep_output(
 impl Entity for GrepExecutor {
     type Event = ();
 }
-
-#[cfg(test)]
-#[path = "grep_tests.rs"]
-mod tests;

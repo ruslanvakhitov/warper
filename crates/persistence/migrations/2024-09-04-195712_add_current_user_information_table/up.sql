@@ -1,3 +1,1 @@
-CREATE TABLE current_user_information (
-    email TEXT PRIMARY KEY NOT NULL
-);
+-- WARPER-001: current hosted user persistence was removed.

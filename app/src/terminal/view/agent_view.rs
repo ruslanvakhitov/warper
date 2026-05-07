@@ -1,4 +1,4 @@
-use warp_core::{features::FeatureFlag, send_telemetry_from_ctx, ui::appearance::Appearance};
+use warp_core::{features::FeatureFlag, ui::appearance::Appearance};
 use warpui::{keymap::Keystroke, EntityId, SingletonEntity, ViewContext};
 
 use crate::{
@@ -10,13 +10,12 @@ use crate::{
                 AgentViewEntryOrigin, AutoTriggerBehavior, DismissalStrategy, EnterAgentViewError,
                 EphemeralMessage, ENTER_OR_EXIT_CONFIRMATION_WINDOW,
             },
-            history_model::CloudConversationData,
+            history_model::LocalConversationData,
             BlocklistAIHistoryModel,
         },
     },
     global_resource_handles::GlobalResourceHandlesProvider,
     persistence::ModelEvent,
-    server::telemetry::TelemetryAgentViewEntryOrigin,
     terminal::{
         input::message_bar::{Message, MessageItem},
         model::rich_content::RichContentType,
@@ -25,7 +24,6 @@ use crate::{
     },
     view_components::DismissibleToast,
     workspace::ToastStack,
-    TelemetryEvent,
 };
 
 pub const ENTER_AGAIN_TO_SEND_MESSAGE_ID: &str = "enter_again_to_send";
@@ -51,14 +49,11 @@ impl TerminalView {
         origin: AgentViewEntryOrigin,
         ctx: &mut ViewContext<Self>,
     ) {
-        // Don't allow starting a new conversation while the agent is in control. 3p cloud
-        // viewers enter agent view to wrap an existing run's content and are not starting a
-        // new conversation, so they are exempt from this guard.
-        if !matches!(origin, AgentViewEntryOrigin::ThirdPartyCloudAgent)
-            && !self
-                .ai_context_model
-                .as_ref(ctx)
-                .can_start_new_conversation()
+        // Don't allow starting a new conversation while the agent is in control.
+        if !self
+            .ai_context_model
+            .as_ref(ctx)
+            .can_start_new_conversation()
         {
             let window_id = ctx.window_id();
             ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
@@ -125,16 +120,16 @@ impl TerminalView {
                     );
                     return;
                 };
-                // For Oz conversations, restore data and then re-enter agent view (the
+                // For local AI conversations, restore data and then re-enter agent view (the
                 // conversation will be in memory after restoration).
                 // For CLI agent conversations, restore the block snapshot only. Because we
                 // don't update the in-memory model in this case, attempting to re-enter agent
                 // view will trigger an infinite loop of fetching and loading conversation data
-                // from the server.
+                // by token.
                 #[allow(clippy::type_complexity)]
                 let on_restored: Box<
                     dyn FnOnce(&mut Self, &mut ViewContext<Self>),
-                > = if matches!(&conversation, CloudConversationData::Oz(_)) {
+                > = if matches!(&conversation, LocalConversationData::AI(_)) {
                     Box::new(move |me, ctx| {
                         me.enter_agent_view_for_conversation(
                             initial_prompt,
@@ -213,7 +208,6 @@ impl TerminalView {
             }
         }
 
-        let mut did_auto_trigger_request = false;
         // Show ephemeral message when entering agent view via input with a prompt
         if let Some(initial_prompt) = initial_prompt {
             let should_auto_submit = match origin.should_autotrigger_request() {
@@ -237,11 +231,9 @@ impl TerminalView {
                     controller.send_user_query_in_conversation(
                         initial_prompt,
                         conversation_id,
-                        None,
                         ctx,
                     );
                 });
-                did_auto_trigger_request = true;
             } else {
                 let appearance = Appearance::handle(ctx).as_ref(ctx);
                 let message = Message::new(vec![
@@ -270,14 +262,6 @@ impl TerminalView {
                 });
             }
         }
-
-        send_telemetry_from_ctx!(
-            TelemetryEvent::AgentViewEntered {
-                origin: TelemetryAgentViewEntryOrigin::from(origin),
-                did_auto_trigger_request,
-            },
-            ctx
-        );
 
         // Mark all AgentViewEntry rich content as dirty so their heights get
         // re-measured. When the agent view is active, AgentViewEntryBlock renders

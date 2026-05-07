@@ -17,8 +17,6 @@ pub use pending_user_query_block::{PendingUserQueryBlock, PendingUserQueryBlockE
 
 #[cfg(feature = "agent_mode_debug")]
 use self::code_diff_view::FileDiff;
-use crate::ai::agent::redaction::redact_secrets;
-use crate::ai::agent::telemetry::ForTelemetry as _;
 use crate::ai::agent::CancellationReason;
 use crate::ai::agent::PassiveSuggestionTrigger;
 use crate::ai::agent::SuggestPromptRequest;
@@ -32,13 +30,11 @@ use crate::ai::blocklist::inline_action::suggested_unit_tests::SuggestedUnitTest
 use crate::ai::blocklist::inline_action::suggested_unit_tests::SuggestedUnitTestsView;
 use crate::ai::blocklist::BlocklistAIContextEvent;
 use crate::ai::blocklist::BlocklistAIContextModel;
-use crate::ai::blocklist::SuggestionDismissButtonTheme;
 #[cfg(not(target_family = "wasm"))]
 use repo_metadata::repositories::DetectedRepositories;
 
 #[cfg(feature = "local_fs")]
 use crate::ai::skills::SkillOpenOrigin;
-use crate::ai::skills::{SkillManager, SkillTelemetryEvent};
 use crate::code::editor::comment_editor::create_readonly_comment_markdown_editor;
 use crate::code::editor::view::CodeEditorRenderOptions;
 use crate::code::editor_management::CodeSource;
@@ -46,7 +42,6 @@ use crate::code_review::comment_rendering::{CommentViewCard, HeaderClickHandler}
 use crate::terminal::model::BlockId;
 use crate::terminal::model_events::ModelEvent;
 use crate::terminal::model_events::ModelEventDispatcher;
-use crate::terminal::view::ambient_agent::AmbientAgentViewModel;
 use crate::terminal::TerminalModel;
 use crate::view_components::action_button::{
     ActionButtonTheme, NakedTheme, PrimaryTheme, SecondaryTheme,
@@ -92,15 +87,8 @@ use crate::ai::blocklist::inline_action::search_codebase::{
 };
 use crate::ai::blocklist::inline_action::web_fetch::WebFetchView;
 use crate::ai::blocklist::inline_action::web_search::WebSearchView;
-use crate::ai::facts::{AIFact, AIMemory, CloudAIFactModel};
-use crate::ai::AIRequestUsageModel;
-use crate::ai::AIRequestUsageModelEvent;
-use crate::cloud_object::model::generic_string_model::GenericStringObjectId;
-use crate::cloud_object::model::persistence::CloudModel;
-use crate::code_review::telemetry_event::CodeReviewPaneEntrypoint;
-use crate::server::ids::SyncId;
-use crate::server::telemetry::AgentModeRewindEntrypoint;
-use crate::settings::InputSettings;
+use crate::ai::blocklist::metadata::AgentModeRewindEntrypoint;
+use crate::code_review::metadata::CodeReviewPaneEntrypoint;
 use crate::terminal::view::{CodeDiffAction, TerminalAction};
 use crate::ui_components::icons::Icon;
 #[cfg(feature = "local_fs")]
@@ -156,7 +144,7 @@ use crate::ai::agent::{
     AIAgentAction, AIAgentActionId, AIAgentActionType, AIAgentAttachment, AIAgentCitation,
     AIAgentContext, AIAgentOutputMessage, AIAgentOutputMessageType, CreateDocumentsRequest,
     CreateDocumentsResult, DocumentToCreate, EditDocumentsResult, ProgrammingLanguage,
-    RenderableAIError, RequestCommandOutputResult, SuggestedLoggingId, SummarizationType,
+    RenderableAIError, RequestCommandOutputResult, SummarizationType,
 };
 use crate::ai::blocklist::inline_action::code_diff_view;
 use crate::ai::blocklist::inline_action::requested_command::{
@@ -166,12 +154,10 @@ use crate::ai::blocklist::inline_action::requested_command::{
 use crate::ai::blocklist::permissions::{
     CommandExecutionPermission, CommandExecutionPermissionDeniedReason,
 };
-use crate::ai::blocklist::suggestion_chip_view::{SuggestedChipViewEvent, SuggestionChipView};
 use crate::ai::document::ai_document_model::{AIDocumentId, AIDocumentModel, AIDocumentVersion};
 use crate::ai::get_relevant_files::controller::{
     GetRelevantFilesController, GetRelevantFilesControllerEvent,
 };
-use crate::auth::AuthStateProvider;
 use crate::code::editor::view::{CodeEditorEvent, CodeEditorView};
 use crate::notebooks::editor::model::FileLinkResolutionContext;
 use crate::notebooks::editor::view::{EditorViewEvent, RichTextEditorView};
@@ -184,11 +170,11 @@ use crate::{report_error, report_if_error, ToastStack};
 use ai::agent::action::{AskUserQuestionItem, InsertReviewComment};
 
 use crate::editor::InteractionState;
-use crate::server::telemetry::{AutonomySettingToggleSource, InteractionSource};
 use crate::settings::{
     AISettingsChangedEvent, AgentModeCodingPermissionsType, FontSettings, InputModeSettings,
     InputModeSettingsChangedEvent,
 };
+use crate::terminal::metadata::InteractionSource;
 use crate::view_components::find::FindEvent;
 
 use crate::terminal::{
@@ -204,18 +190,12 @@ use self::model::AIBlockModel;
 use self::model::AIBlockModelHelper;
 use super::inline_action::requested_action::CTRL_C_KEYSTROKE;
 use super::inline_action::requested_action::ENTER_KEYSTROKE;
-use super::suggested_agent_mode_workflow_modal::SuggestedAgentModeWorkflowAndId;
-use super::suggested_rule_modal::SuggestedRuleAndId;
 use crate::code_review::comments::{
     attach_pending_imported_comments, convert_insert_review_comments, AttachedReviewComment,
     CommentId, CommentOrigin,
 };
-use crate::code_review::CodeReviewTelemetryEvent;
-use crate::PrivacySettings;
 use crate::{
     ai::agent::{AIAgentInput, ServerOutputId},
-    send_telemetry_from_ctx,
-    server::telemetry::TelemetryEvent,
     settings::AISettings,
 };
 
@@ -227,9 +207,7 @@ use super::{
     inline_action::code_diff_view::{
         CodeDiffState, CodeDiffView, CodeDiffViewAction, CodeDiffViewEvent,
     },
-    inline_action::requested_command_attribution::is_command_copied_from_document,
     permissions::is_agent_mode_autonomy_allowed,
-    telemetry_banner::should_collect_ai_ugc_telemetry,
     BlocklistAIActionModel, BlocklistAIController, BlocklistAIHistoryEvent,
     BlocklistAIHistoryModel, BlocklistAIPermissions,
 };
@@ -311,15 +289,6 @@ pub enum TextLocation {
 pub enum AIBlockResponseRating {
     Positive,
     Negative,
-}
-
-impl AIBlockResponseRating {
-    pub fn name(&self) -> &'static str {
-        match self {
-            AIBlockResponseRating::Positive => "positive",
-            AIBlockResponseRating::Negative => "negative",
-        }
-    }
 }
 
 #[derive(Clone)]
@@ -792,9 +761,7 @@ pub struct AIBlock {
     state_handles: AIBlockStateHandles,
     controller: ModelHandle<BlocklistAIController>,
     active_session: ModelHandle<ActiveSession>,
-    ambient_agent_view_model: ModelHandle<AmbientAgentViewModel>,
     terminal_view_id: EntityId,
-    window_id: warpui::WindowId,
 
     /// The current working directory at the time the AI block was created. Note that this
     /// is different from `directory_context`, which represents the directory-related contexts
@@ -879,14 +846,6 @@ pub struct AIBlock {
     /// Assumes we only have 1 action per AI block.
     autonomy_setting_speedbump: AutonomySettingSpeedbump,
 
-    /// The suggested rules to render in the block.
-    suggested_rules: Vec<ViewHandle<SuggestionChipView>>,
-
-    /// The suggested agent mode workflows to render in the block.
-    suggested_agent_mode_workflow: Option<ViewHandle<SuggestionChipView>>,
-
-    manage_rules_button: ViewHandle<ActionButton>,
-
     action_buttons: HashMap<AIAgentActionId, ActionButtons>,
 
     /// A user menu presenting an accept and reject choice.
@@ -907,9 +866,6 @@ pub struct AIBlock {
 
     review_changes_button: ViewHandle<ActionButton>,
     open_all_comments_button: ViewHandle<ActionButton>,
-
-    dismiss_suggestion_button: ViewHandle<ActionButton>,
-    disable_rule_suggestions_button: ViewHandle<ActionButton>,
 
     /// Rewind button to revert to before this block.
     rewind_button: ViewHandle<ActionButton>,
@@ -972,7 +928,6 @@ impl AIBlock {
         context_model: ModelHandle<BlocklistAIContextModel>,
         find_model: ModelHandle<TerminalFindModel>,
         active_session: ModelHandle<ActiveSession>,
-        ambient_agent_view_model: ModelHandle<AmbientAgentViewModel>,
         cli_subagent_controller: &ModelHandle<CLISubagentController>,
         model_event_dispatcher: &ModelHandle<ModelEventDispatcher>,
         agent_view_controller: ModelHandle<AgentViewController>,
@@ -980,10 +935,7 @@ impl AIBlock {
         terminal_view_id: EntityId,
         ctx: &mut ViewContext<Self>,
     ) -> Self {
-        let auth_state = AuthStateProvider::as_ref(ctx).get().clone();
-        let user_display_name = auth_state
-            .username_for_display()
-            .unwrap_or_else(|| DEFAULT_USER_DISPLAY_NAME.to_owned());
+        let user_display_name = DEFAULT_USER_DISPLAY_NAME.to_owned();
         let num_attached_context_blocks = num_attached_context_blocks(model.inputs_to_render(ctx));
         let has_attached_context_selected_text =
             has_attached_context_selected_text(model.inputs_to_render(ctx));
@@ -1097,38 +1049,6 @@ impl AIBlock {
             }
         });
 
-        let manage_rules_button = ctx.add_typed_action_view(|_| {
-            ActionButton::new("Manage rules", NakedTheme)
-                .on_click(|ctx| ctx.dispatch_typed_action(AIBlockAction::OpenAIFactCollection))
-        });
-
-        ctx.subscribe_to_model(&AIRequestUsageModel::handle(ctx), |me, _, event, ctx| {
-            if let AIRequestUsageModelEvent::RequestBonusRefunded {
-                requests_refunded,
-                server_conversation_id,
-                request_id,
-            } = event
-            {
-                let server_conversation_token = BlocklistAIHistoryModel::as_ref(ctx)
-                    .conversation(&me.client_ids.conversation_id)
-                    .and_then(|conversation| conversation.server_conversation_token())
-                    .cloned();
-
-                let server_output_id = me.model.server_output_id(ctx);
-
-                if let (Some(server_conversation_token), Some(server_output_id)) =
-                    (server_conversation_token, server_output_id)
-                {
-                    if request_id.eq(server_output_id.to_string().as_str())
-                        && server_conversation_id.eq(server_conversation_token.as_str())
-                    {
-                        me.request_refunded_count = Some(*requests_refunded);
-                        ctx.notify();
-                    }
-                }
-            }
-        });
-
         // Note: UpdatedStreamingExchange is handled by the dedicated on_updated_output()
         // callback in model_impl.rs, so we don't need to respond to it here.
         ctx.subscribe_to_model(
@@ -1228,23 +1148,6 @@ impl AIBlock {
                 })
         });
 
-        let dismiss_suggestion_button = ctx.add_typed_action_view(|_| {
-            ActionButton::new("Dismiss", SuggestionDismissButtonTheme)
-                .with_icon(Icon::X)
-                .with_size(ButtonSize::Small)
-                .on_click(|ctx| {
-                    ctx.dispatch_typed_action(AIBlockAction::DismissSuggestionsSection);
-                })
-        });
-
-        let disable_rule_suggestions_button = ctx.add_typed_action_view(|_| {
-            ActionButton::new("Don't show again", SuggestionDismissButtonTheme)
-                .with_size(ButtonSize::Small)
-                .on_click(|ctx| {
-                    ctx.dispatch_typed_action(AIBlockAction::DisableRuleSuggestions);
-                })
-        });
-
         let ai_block_view_id = ctx.view_id();
         let exchange_id = client_ids.client_exchange_id;
         let conversation_id = client_ids.conversation_id;
@@ -1294,7 +1197,7 @@ impl AIBlock {
             model,
             terminal_model,
             client_ids,
-            profile_image_path: auth_state.user_photo_url(),
+            profile_image_path: None,
             user_display_name,
             controller,
             action_model,
@@ -1304,7 +1207,6 @@ impl AIBlock {
             requested_action_ids: Default::default(),
             auto_expand_requested_command_timer_handle: None,
             selected_text: Arc::new(RwLock::new(None)),
-            window_id: ctx.window_id(),
             state_handles: Default::default(),
             time_to_first_token: OnceCell::new(),
             time_to_last_token: None,
@@ -1327,11 +1229,7 @@ impl AIBlock {
             find_model,
             is_references_section_open: false,
             active_session,
-            ambient_agent_view_model,
             autonomy_setting_speedbump: Default::default(),
-            suggested_rules: Default::default(),
-            suggested_agent_mode_workflow: Default::default(),
-            manage_rules_button,
             keyboard_navigable_buttons: None,
             response_rating: OnceCell::new(),
             terminal_view_id,
@@ -1343,8 +1241,6 @@ impl AIBlock {
             requested_commands_to_auto_collapse: Default::default(),
             review_changes_button,
             open_all_comments_button,
-            dismiss_suggestion_button,
-            disable_rule_suggestions_button,
             rewind_button,
             view_screenshot_buttons: Default::default(),
             last_right_clicked_command: None,
@@ -1675,18 +1571,7 @@ impl AIBlock {
             self.time_to_last_token = Some(latency);
         }
 
-        let was_autodetected_ai_query = self.model.was_autodetected_ai_query(ctx);
-        let client_exchange_id = self.client_ids.client_exchange_id.to_string();
-        let conversation_id = self.client_ids.conversation_id;
-        let time_to_first_token_ms = self
-            .time_to_first_token
-            .get()
-            .map(|duration| duration.num_milliseconds() as u128);
-        let time_to_last_token_ms = self
-            .time_to_last_token
-            .map(|duration| duration.num_milliseconds() as u128);
         let status = self.model.status(ctx);
-        let is_udi_enabled = InputSettings::as_ref(ctx).is_universal_developer_input_enabled(ctx);
 
         match status {
             AIBlockOutputStatus::Pending => {
@@ -1699,23 +1584,8 @@ impl AIBlock {
             }
             AIBlockOutputStatus::Complete { output } => {
                 let output = output.get();
-                let server_output_id = self.model.server_output_id(ctx);
                 self.handle_updated_output(&output, ctx);
                 self.handle_complete_output(&output, ctx);
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::AgentModeCreatedAIBlock {
-                        client_exchange_id,
-                        was_autodetected_ai_query,
-                        conversation_id,
-                        time_to_first_token_ms,
-                        time_to_last_token_ms,
-                        server_output_id,
-                        was_user_facing_error: false,
-                        cancelled: false,
-                        is_udi_enabled,
-                    },
-                    ctx
-                );
             }
             AIBlockOutputStatus::Cancelled { partial_output, .. } => {
                 if let Some(output) = partial_output.as_ref() {
@@ -1724,39 +1594,8 @@ impl AIBlock {
                 }
                 self.spawn_link_detection(ctx);
                 self.finish(FinishReason::Cancelled, ctx);
-
-                let server_output_id = self.model.server_output_id(ctx);
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::AgentModeCreatedAIBlock {
-                        client_exchange_id,
-                        conversation_id,
-                        was_autodetected_ai_query,
-                        time_to_first_token_ms,
-                        time_to_last_token_ms,
-                        server_output_id,
-                        was_user_facing_error: false,
-                        cancelled: true,
-                        is_udi_enabled,
-                    },
-                    ctx
-                );
             }
             AIBlockOutputStatus::Failed { error, .. } => {
-                let server_output_id = self.model.server_output_id(ctx);
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::AgentModeCreatedAIBlock {
-                        client_exchange_id,
-                        was_autodetected_ai_query,
-                        conversation_id,
-                        time_to_first_token_ms,
-                        time_to_last_token_ms,
-                        server_output_id,
-                        was_user_facing_error: true,
-                        cancelled: false,
-                        is_udi_enabled,
-                    },
-                    ctx
-                );
                 self.maybe_create_aws_bedrock_credentials_error_view(&error, ctx);
                 // There are no actions to be taken in this block, it is finished.
                 self.finish(FinishReason::Error, ctx);
@@ -2151,85 +1990,6 @@ impl AIBlock {
     }
 
     fn handle_complete_output(&mut self, output: &AIAgentOutput, ctx: &mut ViewContext<Self>) {
-        let mut suggestions = BlocklistAIHistoryModel::as_ref(ctx)
-            .existing_suggestions_for_conversation(self.client_ids.conversation_id)
-            .cloned()
-            .unwrap_or_default();
-        if let Some(output_suggestions) = &output.suggestions {
-            suggestions.extend(output_suggestions);
-        }
-
-        if FeatureFlag::SuggestedRules.is_enabled()
-            && AISettings::as_ref(ctx).is_rule_suggestions_enabled(ctx)
-        {
-            // Ensure we don't suggest rules that were already suggested and saved by checking the logging id.
-            let existing_suggestions = self
-                .suggested_rules
-                .iter()
-                .map(|rule| rule.read(ctx, |rule, _| rule.logging_id()))
-                .collect_vec();
-
-            let existing_rules: HashSet<SuggestedLoggingId> = {
-                CloudModel::as_ref(ctx)
-                    .get_all_objects_of_type::<GenericStringObjectId, CloudAIFactModel>()
-                    .filter_map(|fact| {
-                        let AIFact::Memory(AIMemory {
-                            suggested_logging_id,
-                            ..
-                        }) = fact.model().string_model.clone();
-                        suggested_logging_id
-                    })
-                    .collect()
-            };
-
-            for rule in suggestions.rules.into_iter() {
-                if existing_rules.contains(&rule.logging_id)
-                    || existing_suggestions.contains(&rule.logging_id)
-                {
-                    continue;
-                }
-
-                let rule_view =
-                    ctx.add_typed_action_view(|ctx| SuggestionChipView::new_rule_chip(rule, ctx));
-                ctx.subscribe_to_view(&rule_view, |_me, _view, event, ctx| match event {
-                    SuggestedChipViewEvent::OpenAIFactCollection { sync_id } => {
-                        ctx.emit(AIBlockEvent::OpenAIFactCollection { sync_id: *sync_id });
-                    }
-                    SuggestedChipViewEvent::ShowSuggestedRuleDialog { rule_and_id } => {
-                        ctx.emit(AIBlockEvent::OpenSuggestedRuleDialog {
-                            rule_and_id: rule_and_id.clone(),
-                        });
-                    }
-                    _ => {}
-                });
-                self.suggested_rules.push(rule_view);
-            }
-        }
-
-        // Only show the agent mode workflow if there are no rules.
-        if FeatureFlag::SuggestedAgentModeWorkflows.is_enabled() && self.suggested_rules.is_empty()
-        {
-            if let Some(workflow) = suggestions.agent_mode_workflows.first() {
-                let workflow_view = ctx.add_typed_action_view(|ctx| {
-                    SuggestionChipView::new_agent_mode_workflow_chip(workflow.clone(), ctx)
-                });
-                ctx.subscribe_to_view(&workflow_view, |_me, _view, event, ctx| match event {
-                    SuggestedChipViewEvent::OpenWorkflow { sync_id } => {
-                        ctx.emit(AIBlockEvent::OpenWorkflow { sync_id: *sync_id });
-                    }
-                    SuggestedChipViewEvent::ShowSuggestedAgentModeWorkflowModal {
-                        workflow_and_id,
-                    } => {
-                        ctx.emit(AIBlockEvent::OpenSuggestedAgentModeWorkflowModal {
-                            workflow_and_id: workflow_and_id.clone(),
-                        });
-                    }
-                    _ => {}
-                });
-                self.suggested_agent_mode_workflow = Some(workflow_view);
-            }
-        }
-
         for action in output.actions() {
             match action {
                 AIAgentAction {
@@ -2434,19 +2194,6 @@ impl AIBlock {
                     _ => (),
                 }
             }
-
-            for citation in &output.citations {
-                if is_command_copied_from_document(command, citation, shell_type, ctx) {
-                    if let Some(requested_command) =
-                        self.requested_commands.get(requested_command_action_id)
-                    {
-                        requested_command.view.update(ctx, |view, ctx| {
-                            view.update_copied_from_citation(citation);
-                            ctx.notify();
-                        });
-                    }
-                }
-            }
         }
 
         for action_id in output
@@ -2514,23 +2261,6 @@ impl AIBlock {
         if get_secret_obfuscation_mode(ctx).is_visually_obfuscated() {
             self.secret_redaction_state
                 .run_redaction_on_complete_output(output);
-        }
-
-        let surfaced_citations = output
-            .citations
-            .iter()
-            .filter_map(|citation| citation.for_telemetry(ctx))
-            .collect_vec();
-        if !surfaced_citations.is_empty() {
-            send_telemetry_from_ctx!(
-                TelemetryEvent::AgentModeSurfacedCitations {
-                    citations: surfaced_citations,
-                    block_id: self.client_ids.client_exchange_id.to_string(),
-                    conversation_id: self.client_ids.conversation_id,
-                    server_output_id: output.server_output_id.clone(),
-                },
-                ctx
-            );
         }
 
         // This is used to trigger the theme chooser opening when the theme chooser onboarding block is active.
@@ -3644,10 +3374,11 @@ impl AIBlock {
         interaction_source: InteractionSource,
         ctx: &mut ViewContext<Self>,
     ) -> bool {
+        let _ = interaction_source;
         let Some(suggested_prompt) = self.pending_unit_test_suggestion(ctx) else {
             return false;
         };
-        self.accept_unit_test_suggestion(suggested_prompt.clone(), interaction_source, ctx)
+        self.accept_unit_test_suggestion(suggested_prompt.clone(), ctx)
     }
 
     pub fn dismiss_pending_suggested_prompt(
@@ -3655,10 +3386,10 @@ impl AIBlock {
         interaction_source: InteractionSource,
         ctx: &mut ViewContext<Self>,
     ) -> bool {
+        let _ = interaction_source;
         let Some(suggested_prompt) = self.pending_unit_test_suggestion(ctx) else {
             return false;
         };
-        let identifiers = suggested_prompt.as_ref(ctx).identifiers().clone();
 
         // Complete the suggest prompt executor with Cancelled so the async action
         // finishes cleanly (the action auto-executes and is no longer in pending_actions).
@@ -3675,13 +3406,6 @@ impl AIBlock {
             view.set_is_hidden(true);
         });
 
-        send_telemetry_from_ctx!(
-            TelemetryEvent::UnitTestSuggestionCancelled {
-                identifiers,
-                interaction_source,
-            },
-            ctx
-        );
         ctx.emit(AIBlockEvent::DismissedPassiveBlock);
         true
     }
@@ -3689,7 +3413,6 @@ impl AIBlock {
     fn accept_unit_test_suggestion(
         &mut self,
         view: ViewHandle<SuggestedUnitTestsView>,
-        interaction_source: InteractionSource,
         ctx: &mut ViewContext<Self>,
     ) -> bool {
         let Some(query) = view.as_ref(ctx).query() else {
@@ -3725,26 +3448,6 @@ impl AIBlock {
             view.set_is_hidden(true);
         });
 
-        let identifiers = view.as_ref(ctx).identifiers().clone();
-        let query = view.as_ref(ctx).query().unwrap_or_default();
-
-        let should_collect_ugc =
-            should_collect_ai_ugc_telemetry(ctx, PrivacySettings::as_ref(ctx).is_telemetry_enabled);
-        let redacted_query = if should_collect_ugc {
-            let mut redacted_query = query.clone();
-            redact_secrets(&mut redacted_query);
-            Some(redacted_query)
-        } else {
-            None
-        };
-        send_telemetry_from_ctx!(
-            TelemetryEvent::UnitTestSuggestionAccepted {
-                identifiers,
-                query: redacted_query,
-                interaction_source,
-            },
-            ctx
-        );
         ctx.notify();
         true
     }
@@ -3822,8 +3525,6 @@ impl AIBlock {
             .block_list_mut()
             .mark_rich_content_dirty(ctx.view_id());
         ctx.notify();
-
-        send_telemetry_from_ctx!(TelemetryEvent::UnitTestSuggestionShown { identifiers }, ctx);
     }
 
     fn handle_suggested_prompt_view_event(
@@ -3840,7 +3541,7 @@ impl AIBlock {
 
         match event {
             SuggestedUnitTestsEvent::Accept => {
-                self.accept_unit_test_suggestion(view, InteractionSource::Button, ctx);
+                self.accept_unit_test_suggestion(view, ctx);
             }
             SuggestedUnitTestsEvent::Cancel => {
                 self.dismiss_pending_suggested_prompt(InteractionSource::Button, ctx);
@@ -4300,22 +4001,8 @@ impl AIBlock {
             dunce::canonicalize(repo_path).unwrap_or_else(|_| repo_path.to_path_buf());
         let repo_path = canonical_repo_path.as_path();
 
-        let raw_count = comments.len();
         let pending = convert_insert_review_comments(comments);
-        let converted_count = pending.len();
         let flattened = attach_pending_imported_comments(pending, repo_path);
-        let thread_count = flattened.len();
-
-        if !self.model.is_restored() {
-            send_telemetry_from_ctx!(
-                CodeReviewTelemetryEvent::CommentsReceived {
-                    raw_count,
-                    converted_count,
-                    thread_count,
-                },
-                ctx
-            );
-        }
 
         let cards: Vec<CommentViewCard> = flattened
             .into_iter()
@@ -5497,13 +5184,6 @@ pub enum AIBlockEvent {
     ShowSecretTooltip(RichContentSecretTooltipInfo),
     DismissSecretTooltip,
     OpenCitation(AIAgentCitation),
-    OpenAIFactCollection {
-        /// If set, open the fact collection to the specific rule.
-        sync_id: Option<SyncId>,
-    },
-    OpenWorkflow {
-        sync_id: SyncId,
-    },
     /// Emitted when the continue conversation button is clicked
     ContinueConversation {
         conversation_id: AIConversationId,
@@ -5515,12 +5195,6 @@ pub enum AIBlockEvent {
         /// this is the ID of that block.
         trigger_block_id: Option<BlockId>,
         auto_resume: bool,
-    },
-    OpenSuggestedAgentModeWorkflowModal {
-        workflow_and_id: SuggestedAgentModeWorkflowAndId,
-    },
-    OpenSuggestedRuleDialog {
-        rule_and_id: SuggestedRuleAndId,
     },
     FocusTerminal,
     OpenThemeChooser,
@@ -5579,13 +5253,6 @@ impl Entity for AIBlock {
     type Event = AIBlockEvent;
 }
 
-/// User's final response to an AI-suggested code edit.
-#[derive(Clone, Copy, Debug, Serialize)]
-pub enum RequestedEditResolution {
-    Accept,
-    Reject,
-}
-
 #[derive(Debug, Clone)]
 pub enum AIBlockAction {
     /// Only applies to text selections made at the `AIBlock` level. Child views of the `AIBlock`
@@ -5642,7 +5309,6 @@ pub enum AIBlockAction {
         location: TextLocation,
     },
     OpenCitation(AIAgentCitation),
-    OpenAIFactCollection,
     ToggleReferencesSection,
     ToggleAutoexecuteReadonlyCommandsSpeedbumpCheckbox,
     ToggleAutoreadFilesSpeedbumpCheckbox,
@@ -5693,8 +5359,6 @@ pub enum AIBlockAction {
         pinned_to_bottom: bool,
     },
     ToggleCodeReviewPane,
-    DismissSuggestionsSection,
-    DisableRuleSuggestions,
     /// Copy the debug ID to clipboard
     CopyDebugId(String),
     /// Open Warp feedback documentation
@@ -5874,25 +5538,6 @@ impl TypedActionView for AIBlock {
             }
             AIBlockAction::OpenCitation(citation) => {
                 ctx.emit(AIBlockEvent::OpenCitation(citation.clone()));
-                let server_output_id = self
-                    .model
-                    .status(ctx)
-                    .output_to_render()
-                    .and_then(|output| output.get().server_output_id.clone());
-                if let Some(citation) = citation.for_telemetry(ctx) {
-                    send_telemetry_from_ctx!(
-                        TelemetryEvent::AgentModeOpenedCitation {
-                            citation,
-                            block_id: self.client_ids.client_exchange_id.to_string(),
-                            conversation_id: self.client_ids.conversation_id,
-                            server_output_id,
-                        },
-                        ctx
-                    );
-                }
-            }
-            AIBlockAction::OpenAIFactCollection => {
-                ctx.emit(AIBlockEvent::OpenAIFactCollection { sync_id: None });
             }
             AIBlockAction::ToggleReferencesSection => {
                 self.is_references_section_open = !self.is_references_section_open;
@@ -5922,32 +5567,6 @@ impl TypedActionView for AIBlock {
 
                 ctx.notify()
             }
-            AIBlockAction::DismissSuggestionsSection => {
-                BlocklistAIHistoryModel::handle(ctx).update(ctx, |model, _| {
-                    if let Some(conversation) =
-                        model.conversation_mut(&self.client_ids.conversation_id)
-                    {
-                        conversation.dismiss_current_suggestions();
-                    }
-                });
-                ctx.notify();
-            }
-            AIBlockAction::DisableRuleSuggestions => {
-                // Dismiss the current suggestions and permanently disable future ones.
-                BlocklistAIHistoryModel::handle(ctx).update(ctx, |model, _| {
-                    if let Some(conversation) =
-                        model.conversation_mut(&self.client_ids.conversation_id)
-                    {
-                        conversation.dismiss_current_suggestions();
-                    }
-                });
-                AISettings::handle(ctx).update(ctx, |settings, ctx| {
-                    report_if_error!(settings
-                        .rule_suggestions_enabled_internal
-                        .set_value(false, ctx));
-                });
-                ctx.notify();
-            }
             AIBlockAction::ToggleAutoexecuteReadonlyCommandsSpeedbumpCheckbox => {
                 if let AutonomySettingSpeedbump::ShouldShowForAutoexecutingReadonlyCommands {
                     checked,
@@ -5956,18 +5575,11 @@ impl TypedActionView for AIBlock {
                 {
                     *checked = !*checked;
                     BlocklistAIPermissions::handle(ctx).update(ctx, |model, ctx| {
-                                match model.set_should_autoexecute_readonly_commands(*checked, ctx) {
-                                    Ok(_) => {
-                                        send_telemetry_from_ctx!(
-                                            TelemetryEvent::ToggledAgentModeAutoexecuteReadonlyCommandsSetting {
-                                                src: AutonomySettingToggleSource::Speedbump,
-                                                enabled: *checked,
-                                            },
-                                            ctx);
-                                    }
-                                    Err(e) => report_error!(e),
-                                }
-                            });
+                        match model.set_should_autoexecute_readonly_commands(*checked, ctx) {
+                            Ok(_) => {}
+                            Err(e) => report_error!(e),
+                        }
+                    });
                 }
             }
             AIBlockAction::ToggleAutoreadFilesSpeedbumpCheckbox => {
@@ -5982,15 +5594,7 @@ impl TypedActionView for AIBlock {
                     };
                     BlocklistAIPermissions::handle(ctx).update(ctx, |model, ctx| {
                         match model.set_coding_permissions(permission, ctx) {
-                            Ok(_) => {
-                                send_telemetry_from_ctx!(
-                                    TelemetryEvent::ChangedAgentModeCodingPermissions {
-                                        src: AutonomySettingToggleSource::Speedbump,
-                                        new: permission,
-                                    },
-                                    ctx
-                                );
-                            }
+                            Ok(_) => {}
                             Err(e) => report_error!(e),
                         }
                     });
@@ -6010,15 +5614,7 @@ impl TypedActionView for AIBlock {
                     };
                     BlocklistAIPermissions::handle(ctx).update(ctx, |model, ctx| {
                         match model.set_coding_permissions(permission, ctx) {
-                            Ok(_) => {
-                                send_telemetry_from_ctx!(
-                                    TelemetryEvent::ChangedAgentModeCodingPermissions {
-                                        src: AutonomySettingToggleSource::Speedbump,
-                                        new: permission,
-                                    },
-                                    ctx
-                                );
-                            }
+                            Ok(_) => {}
                             Err(e) => report_error!(e),
                         }
                     });
@@ -6057,7 +5653,6 @@ impl TypedActionView for AIBlock {
                 });
             }
             AIBlockAction::Rated { is_positive } => {
-                let output_id = self.model.server_output_id(ctx);
                 let rating = if *is_positive {
                     AIBlockResponseRating::Positive
                 } else {
@@ -6068,36 +5663,12 @@ impl TypedActionView for AIBlock {
                     return;
                 }
 
-                if matches!(rating, AIBlockResponseRating::Negative) {
-                    if let Some(output_id) = output_id.clone() {
-                        let request_usage_model = AIRequestUsageModel::handle(ctx);
-                        request_usage_model.update(ctx, |request_usage_model, ctx| {
-                            request_usage_model
-                                .provide_negative_feedback_response_for_ai_conversation(
-                                    self.client_ids.conversation_id,
-                                    output_id.to_string(),
-                                    self.client_ids.client_exchange_id,
-                                    ctx,
-                                );
-                        });
-                    }
-                }
-
                 let window_id = ctx.window_id();
                 ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
                     let toast =
                         DismissibleToast::default(String::from("Thank you for the feedback!"));
                     toast_stack.add_ephemeral_toast(toast, window_id, ctx);
                 });
-
-                send_telemetry_from_ctx!(
-                    TelemetryEvent::AgentModeRatedResponse {
-                        server_output_id: output_id,
-                        conversation_id: self.client_ids.conversation_id,
-                        rating,
-                    },
-                    ctx
-                );
             }
             AIBlockAction::ClearOtherSelections {
                 source_view_id,
@@ -6196,23 +5767,6 @@ impl TypedActionView for AIBlock {
                     if let Ok(mut state) = handle.lock() {
                         state.reset_interaction_state();
                     }
-                }
-
-                // Sends a telemetry event when a skill is opened from an 'open skill' button
-                if let CodeSource::Skill {
-                    reference, origin, ..
-                } = source
-                {
-                    send_telemetry_from_ctx!(
-                        SkillTelemetryEvent::Opened {
-                            reference: reference.clone(),
-                            name: SkillManager::as_ref(ctx)
-                                .skill_by_reference(reference)
-                                .map(|skill| skill.name.clone()),
-                            origin: *origin,
-                        },
-                        ctx
-                    );
                 }
 
                 #[cfg(feature = "local_fs")]

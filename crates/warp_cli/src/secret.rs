@@ -9,7 +9,7 @@ use crate::scope::ObjectScope;
 pub enum SecretCommand {
     /// Create a new secret.
     ///
-    /// Use `oz secret create anthropic api-key <NAME>` to create a Claude/Anthropic auth secret.
+    /// Use `warp secret create anthropic api-key <NAME>` to create a Claude/Anthropic auth secret.
     Create(CreateSecretArgs),
     /// Delete a secret.
     Delete(DeleteSecretArgs),

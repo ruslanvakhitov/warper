@@ -76,7 +76,7 @@ enum CodexServerEntry {
         /// Mapped to `working_directory` in Warp JSON.
         cwd: Option<String>,
     },
-    /// A remote server reached over streamable HTTP.
+    /// An MCP server reached over streamable HTTP.
     Http {
         /// The server URL. Acts as the discriminant.
         url: String,
@@ -330,7 +330,6 @@ impl ParsedTemplatableMCPServerResult {
                 variables,
             },
             version: DateTime::now().timestamp(),
-            gallery_data: None,
         };
 
         // Combine env and headers into a single map for variable lookup

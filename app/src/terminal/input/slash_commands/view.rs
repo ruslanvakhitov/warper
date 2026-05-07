@@ -8,16 +8,15 @@ use warpui::{Entity, ModelHandle, View, ViewHandle};
 
 use crate::ai::blocklist::agent_view::AgentViewController;
 use crate::search::data_source::{Query, QueryFilter};
-use crate::search::mixer::{AddAsyncSourceOptions, SearchMixer};
+use crate::search::mixer::SearchMixer;
 use crate::search::slash_command_menu::SlashCommandId;
-use crate::server::ids::SyncId;
 use crate::terminal::input::buffer_model::InputBufferModel;
 use crate::terminal::input::inline_menu::{InlineMenuEvent, InlineMenuPositioner, InlineMenuView};
 use crate::terminal::input::slash_command_model::SlashCommandEntryState;
 use crate::terminal::input::slash_command_model::SlashCommandModel;
 use crate::terminal::input::slash_commands::UpdatedActiveCommands;
 use crate::terminal::input::slash_commands::{
-    AcceptSlashCommandOrSavedPrompt, SlashCommandDataSource, ZeroStateDataSource,
+    AcceptSlashCommand, SlashCommandDataSource, ZeroStateDataSource,
 };
 use crate::terminal::input::suggestions_mode_model::{
     InputSuggestionsModeEvent, InputSuggestionsModeModel,
@@ -48,9 +47,6 @@ impl CloseReason {
 #[derive(Debug, Clone)]
 pub enum SlashCommandsEvent {
     Close(CloseReason),
-    SelectedSavedPrompt {
-        id: SyncId,
-    },
     /// `cmd_or_ctrl_enter` is true if accepted via Cmd/Ctrl+Enter (vs Enter/click).
     SelectedStaticCommand {
         id: SlashCommandId,
@@ -72,9 +68,9 @@ pub enum SlashCommandsEvent {
 /// - Maps `InlineMenuEvent<SelectItem>` to `SlashCommandsEvent`
 /// - Subscribes to `SlashCommandModel` for query updates
 pub struct InlineSlashCommandView {
-    menu_view: ViewHandle<InlineMenuView<AcceptSlashCommandOrSavedPrompt>>,
+    menu_view: ViewHandle<InlineMenuView<AcceptSlashCommand>>,
     suggestions_mode_model: ModelHandle<InputSuggestionsModeModel>,
-    mixer: ModelHandle<SearchMixer<AcceptSlashCommandOrSavedPrompt>>,
+    mixer: ModelHandle<SearchMixer<AcceptSlashCommand>>,
     input_buffer_model: ModelHandle<InputBufferModel>,
 }
 
@@ -101,26 +97,14 @@ impl InlineSlashCommandView {
             },
         );
         let zero_state_source = ctx.add_model(|_| ZeroStateDataSource::new(&slash_commands_source));
-        let saved_prompts_source = super::saved_prompts_data_source();
 
         let mixer = ctx.add_model(|ctx| {
-            let mut mixer = SearchMixer::<AcceptSlashCommandOrSavedPrompt>::new();
+            let mut mixer = SearchMixer::<AcceptSlashCommand>::new();
             // All sources share the StaticSlashCommands filter because the mixer only runs
             // async sources when the query's filters intersect with the source's filters.
             mixer.add_sync_source(
                 slash_commands_source.clone(),
                 [QueryFilter::StaticSlashCommands],
-            );
-            mixer.add_async_source(
-                saved_prompts_source,
-                [QueryFilter::StaticSlashCommands],
-                AddAsyncSourceOptions {
-                    // Any debounce makes the loading state flicker longer.
-                    debounce_interval: None,
-                    run_in_zero_state: false,
-                    run_when_unfiltered: false,
-                },
-                ctx,
             );
             mixer.add_sync_source(
                 zero_state_source.clone(),
@@ -222,21 +206,18 @@ impl InlineSlashCommandView {
 
     fn handle_selection(
         &mut self,
-        item: &AcceptSlashCommandOrSavedPrompt,
+        item: &AcceptSlashCommand,
         cmd_or_ctrl_enter: bool,
         ctx: &mut ViewContext<Self>,
     ) {
         match item {
-            AcceptSlashCommandOrSavedPrompt::SlashCommand { id } => {
+            AcceptSlashCommand::SlashCommand { id } => {
                 ctx.emit(SlashCommandsEvent::SelectedStaticCommand {
                     id: *id,
                     cmd_or_ctrl_enter,
                 });
             }
-            AcceptSlashCommandOrSavedPrompt::SavedPrompt { id } => {
-                ctx.emit(SlashCommandsEvent::SelectedSavedPrompt { id: *id });
-            }
-            AcceptSlashCommandOrSavedPrompt::Skill { name, reference } => {
+            AcceptSlashCommand::Skill { name, reference } => {
                 ctx.emit(SlashCommandsEvent::SelectedSkill {
                     reference: reference.clone(),
                     name: name.clone(),

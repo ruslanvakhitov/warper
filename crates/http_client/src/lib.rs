@@ -226,7 +226,7 @@ impl Client {
 
     /// Helper method to determine if the request should include warp-specific headers. The only case
     /// where we should include custom headers is if the request is same-origin and is targetted to our server.
-    /// For example, app.warp.dev --> app.warp.dev.
+    /// For example, localhost --> localhost.
     #[cfg(target_family = "wasm")]
     fn include_warp_http_headers<U: IntoUrl + Clone>(url: U) -> bool {
         url.into_url().is_ok_and(|url| {
@@ -236,8 +236,8 @@ impl Client {
                     .hostname()
                     .expect("Can't get window hostname");
 
-                // If the request is going to our server, the destination host should be "app.warp.dev" or
-                // "staging.warp.dev". The window hostname should also return the same.
+                // If the request is going to our server, the destination host and window
+                // hostname should be the same.
                 // Note that reqwest's host_str() method is described here: https://docs.rs/reqwest/latest/reqwest/struct.Url.html#method.domain and
                 // gloo's hostname() method refers to this mozilla definition: https://developer.mozilla.org/en-US/docs/Web/API/Location/hostname.
                 window_hostname == dest_host

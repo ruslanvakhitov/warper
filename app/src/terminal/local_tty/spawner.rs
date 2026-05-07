@@ -1,10 +1,9 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use warpui::{AppContext, Entity, SingletonEntity};
 
-use crate::{
-    send_telemetry_from_app_ctx,
-    server::telemetry::{PtySpawnMode, TelemetryEvent},
-    terminal::local_tty::{self},
+use crate::terminal::local_tty::{
+    self,
+    shell::{ShellStarter, ShellStarterSourceOrWslName},
 };
 
 #[cfg(target_os = "windows")]
@@ -12,9 +11,7 @@ use super::PseudoConsoleChild;
 use super::{PtyOptions, PtySpawnResult};
 #[cfg(unix)]
 use {
-    crate::report_error,
-    crate::terminal::local_tty::server::TerminalServer,
-    anyhow::{bail, Context},
+    crate::report_error, crate::terminal::local_tty::server::TerminalServer, anyhow::bail,
     std::process::Child,
 };
 /// A handle that can be used to interact with a pty process.
@@ -81,30 +78,6 @@ impl PtyHandle for DirectPtyHandle {
         Ok(())
     }
 }
-/// Invokes the provided callback function without crash reporting enabled.
-fn invoke_without_crash_reporting<T>(
-    is_crash_reporting_enabled: bool,
-    func: impl FnOnce() -> T,
-) -> T {
-    // Uninitialize cocoa-sentry before spawning the shell process to avoid passing any custom state
-    // (such as BSD signal handlers and mach exception handlers) into the shell process. This means
-    // we lose all Cocoa crash reports from now until when the session is successfully spawned,
-    // which is not ideal but allows us to fully ensure that we don't improperly leak any Sentry state
-    // into the child processes.
-    #[cfg(feature = "crash_reporting")]
-    crate::crash_reporting::uninit_cocoa_sentry();
-
-    let retval = func();
-
-    // Now that the child has spawned--reinitialize cocoa sentry.
-    if is_crash_reporting_enabled {
-        #[cfg(feature = "crash_reporting")]
-        crate::crash_reporting::init_cocoa_sentry();
-    }
-
-    retval
-}
-
 pub(super) struct PtySpawnInfo {
     pub result: PtySpawnResult,
     #[cfg(unix)]
@@ -122,6 +95,48 @@ pub(super) struct PtySpawnInfo {
 pub struct PtySpawner {
     #[cfg(unix)]
     server: Option<TerminalServer>,
+}
+
+#[cfg(unix)]
+pub fn run_local_terminal_smoke() -> Result<()> {
+    use crate::terminal::{available_shells::AvailableShell, SizeInfo};
+    use std::{collections::HashMap, ffi::OsString};
+
+    let mut spawner = PtySpawner::new().context("failed to create terminal server spawner")?;
+    let shell_starter: ShellStarter = ShellStarter::init(AvailableShell::default())
+        .and_then(|starter| match starter {
+            ShellStarterSourceOrWslName::Source(source) => Some(source.into()),
+            ShellStarterSourceOrWslName::WSLName { .. } => None,
+        })
+        .context("failed to resolve a local Unix shell starter")?;
+    let options = local_tty::PtyOptions {
+        size: SizeInfo::new_without_font_metrics(24, 80),
+        window_id: None,
+        shell_starter,
+        start_dir: Some(std::env::current_dir().context("failed to read current directory")?),
+        env_vars: HashMap::<OsString, OsString>::new(),
+        enable_ssh_wrapper: false,
+        shell_debug_mode: false,
+        honor_ps1: true,
+        close_fds: true,
+    };
+
+    let (spawn_result, mut handle) = spawner
+        .spawn_pty_without_app_context(options)
+        .context("failed to spawn local terminal session")?;
+    unsafe {
+        libc::close(spawn_result.leader_fd);
+    }
+    handle
+        .kill()
+        .context("failed to stop local terminal session")?;
+    spawner.prepare_for_app_termination();
+
+    println!(
+        "WARPER-001 local terminal smoke spawned and stopped pid {}",
+        spawn_result.pid
+    );
+    Ok(())
 }
 
 impl PtySpawner {
@@ -175,17 +190,11 @@ impl PtySpawner {
     pub(super) fn spawn_pty(
         &self,
         options: PtyOptions,
-        is_crash_reporting_enabled: bool,
         #[cfg(windows)] event_loop_tx: super::mio_channel::Sender<
             crate::terminal::writeable_pty::Message,
         >,
-        ctx: &mut AppContext,
+        _ctx: &mut AppContext,
     ) -> Result<(PtySpawnResult, Box<dyn PtyHandle>)> {
-        #[cfg(not(unix))]
-        let is_fallback = false;
-        #[cfg(unix)]
-        let mut is_fallback = false;
-
         #[cfg(unix)]
         if let Some(server) = &self.server {
             let result = Self::spawn_pty_via_server(server, options.clone()).context(
@@ -193,31 +202,28 @@ impl PtySpawner {
             );
             if let Err(err) = result {
                 report_error!(err);
-                is_fallback = true;
             } else {
-                send_telemetry_from_app_ctx!(
-                    TelemetryEvent::PtySpawned {
-                        mode: PtySpawnMode::TerminalServer
-                    },
-                    ctx
-                );
                 return result;
             }
         }
-
-        let mode = if is_fallback {
-            PtySpawnMode::FallbackToDirect
-        } else {
-            PtySpawnMode::Direct
-        };
-        send_telemetry_from_app_ctx!(TelemetryEvent::PtySpawned { mode }, ctx);
 
         Self::spawn_pty_directly(
             options,
             #[cfg(windows)]
             event_loop_tx,
-            is_crash_reporting_enabled,
         )
+    }
+
+    #[cfg(unix)]
+    fn spawn_pty_without_app_context(
+        &self,
+        options: PtyOptions,
+    ) -> Result<(PtySpawnResult, Box<dyn PtyHandle>)> {
+        if let Some(server) = &self.server {
+            return Self::spawn_pty_via_server(server, options);
+        }
+
+        Self::spawn_pty_directly(options)
     }
 
     fn spawn_pty_directly(
@@ -225,16 +231,12 @@ impl PtySpawner {
         #[cfg(windows)] event_loop_tx: super::mio_channel::Sender<
             crate::terminal::writeable_pty::Message,
         >,
-        is_crash_reporting_enabled: bool,
     ) -> Result<(PtySpawnResult, Box<dyn PtyHandle>)> {
-        let pty_spawn_info =
-            invoke_without_crash_reporting(is_crash_reporting_enabled, move || {
-                local_tty::spawn(
-                    options,
-                    #[cfg(windows)]
-                    event_loop_tx,
-                )
-            })?;
+        let pty_spawn_info = local_tty::spawn(
+            options,
+            #[cfg(windows)]
+            event_loop_tx,
+        )?;
         let direct_pty_handle = Box::new(DirectPtyHandle {
             child: pty_spawn_info.child,
         });

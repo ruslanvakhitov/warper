@@ -38,7 +38,7 @@ use pathfinder_color::ColorU;
 use settings::Setting as _;
 use snapshot::{EditorHeightShrinkDelay, ViewSnapshot};
 use vec1::{vec1, Vec1};
-use warp_core::{safe_error, send_telemetry_from_ctx};
+use warp_core::safe_error;
 use warp_util::{path::ShellFamily, user_input::UserInput};
 use warpui::platform::keyboard::KeyCode;
 use warpui::ui_components::button::ButtonTooltipPosition;
@@ -47,7 +47,6 @@ use warpui::{elements, ViewHandle};
 
 use crate::ai::agent::ImageContext;
 use crate::ai::blocklist::{BlocklistAIContextModel, PendingAttachment, PendingFile};
-use crate::ai::predict::next_command_model::{NextCommandModel, NextCommandSuggestionState};
 use crate::appearance::Appearance;
 use crate::channel::{Channel, ChannelState};
 use crate::editor::accept_autosuggestion_keybinding_view::AcceptAutosuggestionKeybinding;
@@ -56,9 +55,7 @@ use crate::search::ai_context_menu::mixer::AIContextMenuSearchableAction;
 use crate::search::ai_context_menu::view::{
     AIContextMenu, AIContextMenuCategory, AIContextMenuEvent,
 };
-use crate::server::telemetry::TelemetryEvent;
 use crate::settings_view::flags;
-use crate::suggestions::ignored_suggestions_model::{IgnoredSuggestionsModel, SuggestionType};
 use crate::ui_components::buttons::icon_button;
 use crate::ui_components::icons;
 use crate::view_components::DismissibleToast;
@@ -144,7 +141,6 @@ const CURSOR_BLINK_INTERVAL: Duration = Duration::from_millis(500);
 const DEFAULT_TAB_SIZE: usize = 4;
 
 pub const ACCEPT_AUTOSUGGESTION_KEYBINDING_NAME: &str = "editor_view:insert_autosuggestion";
-pub const VOICE_LIMIT_HIT_TOAST_TEXT: &str = "You have hit the limit for Voice requests. Your limit will be refreshed as a part of your next cycle.";
 pub const VOICE_ERROR_TOAST_TEXT: &str = "An error occurred while processing your voice input.";
 
 pub const MAX_IMAGES_PER_CONVERSATION: usize = 200;
@@ -1784,8 +1780,6 @@ pub struct EditorView {
     cursor_display_override: Option<CursorDisplayType>,
     window_id: WindowId,
     autosuggestion_state: Option<Arc<AutosuggestionState>>,
-    next_command_model: Option<ModelHandle<NextCommandModel>>,
-
     /// The height of the editor at the last render.
     /// This is needed because autosuggestions soft wrap and can increase the height of the editor.
     /// When the user types, the autosuggestion is cleared and recomputed. We don't want the editor height
@@ -2939,16 +2933,6 @@ impl EditorView {
         Self::new_internal("", options, ctx)
     }
 
-    pub fn with_next_command_model(
-        self,
-        next_command_model: ModelHandle<NextCommandModel>,
-    ) -> Self {
-        Self {
-            next_command_model: Some(next_command_model),
-            ..self
-        }
-    }
-
     pub fn with_context_model(self, context_model: ModelHandle<BlocklistAIContextModel>) -> Self {
         Self {
             context_model: Some(context_model),
@@ -3048,64 +3032,25 @@ impl EditorView {
 
         let ai_context_menu_state = if options.include_ai_context_menu {
             let ai_context_menu = ctx.add_typed_action_view(AIContextMenu::new);
-            ctx.subscribe_to_view(
-                &ai_context_menu,
-                |me, _, event: &AIContextMenuEvent, ctx| {
-                    let is_udi_enabled =
-                        InputSettings::as_ref(ctx).is_universal_developer_input_enabled(ctx);
-                    let current_input_mode = if me.is_ai_input {
-                        InputType::AI
-                    } else {
-                        InputType::Shell
-                    };
-                    match event {
-                        AIContextMenuEvent::Close {
-                            item_count,
-                            query_length,
-                        } => {
-                            send_telemetry_from_ctx!(
-                                TelemetryEvent::AtMenuInteracted {
-                                    action: "cancelled".to_string(),
-                                    item_count: *item_count,
-                                    query_length: Some(*query_length),
-                                    is_udi_enabled,
-                                    current_input_mode,
-                                },
-                                ctx
-                            );
-
-                            ctx.emit(Event::SetAIContextMenuOpen(false));
-                            ctx.focus_self();
-                            ctx.notify();
-                        }
-                        AIContextMenuEvent::ResultAccepted {
-                            action,
-                            item_count,
-                            query_length,
-                        } => {
-                            send_telemetry_from_ctx!(
-                                TelemetryEvent::AtMenuInteracted {
-                                    action: "item_selected".to_string(),
-                                    item_count: *item_count,
-                                    query_length: Some(*query_length),
-                                    is_udi_enabled,
-                                    current_input_mode,
-                                },
-                                ctx
-                            );
-
-                            ctx.emit(Event::AcceptAIContextMenuItem(action.clone()));
-                            ctx.focus_self();
-                            ctx.notify();
-                        }
-                        AIContextMenuEvent::CategorySelected { category } => {
-                            ctx.emit(Event::SelectAIContextMenuCategory(*category));
-                            ctx.focus_self();
-                            ctx.notify();
-                        }
+            ctx.subscribe_to_view(&ai_context_menu, |_, _, event: &AIContextMenuEvent, ctx| {
+                match event {
+                    AIContextMenuEvent::Close { .. } => {
+                        ctx.emit(Event::SetAIContextMenuOpen(false));
+                        ctx.focus_self();
+                        ctx.notify();
                     }
-                },
-            );
+                    AIContextMenuEvent::ResultAccepted { action, .. } => {
+                        ctx.emit(Event::AcceptAIContextMenuItem(action.clone()));
+                        ctx.focus_self();
+                        ctx.notify();
+                    }
+                    AIContextMenuEvent::CategorySelected { category } => {
+                        ctx.emit(Event::SelectAIContextMenuCategory(*category));
+                        ctx.focus_self();
+                        ctx.notify();
+                    }
+                }
+            });
 
             Some(AIContextMenuState {
                 at_context_menu_button_mouse_handle: Default::default(),
@@ -3138,7 +3083,6 @@ impl EditorView {
             autocomplete_symbols_setting: *editor_settings_handle.as_ref(ctx).autocomplete_symbols,
             cursor_display_override,
             autosuggestion_state: None,
-            next_command_model: None,
             editor_height_shrink_delay: Arc::new(Mutex::new(EditorHeightShrinkDelay {
                 editor_height_before_shrink: 0.,
                 editor_height_shrink_start: None,
@@ -3418,14 +3362,6 @@ impl EditorView {
         buffer.to_point(char_offset)
     }
 
-    fn next_command_state<'a, A: ModelAsRef>(&self, ctx: &'a A) -> &'a NextCommandSuggestionState {
-        self.next_command_model
-            .as_ref()
-            .map_or(&NextCommandSuggestionState::None, |model| {
-                model.as_ref(ctx).get_state()
-            })
-    }
-
     /// Set an autosuggestion that is rendered natively within the editor as "ghosted" text. This
     /// autosuggestion will continue to be displayed as long as the text in the editor stays the
     /// same or a user inserts a prefix of autosuggestion text.
@@ -3472,37 +3408,6 @@ impl EditorView {
             .is_some_and(|state| !state.autosuggestion_type.matches_input_type(input_type))
         {
             self.clear_autosuggestion(ctx);
-        }
-        if input_type.is_ai() {
-            // The server does not return AI query suggestions currently.
-            // If we switched to AI input, clear the next command state.
-            // This way when switching back to shell input, there should be no next command suggestion populated.
-            self.clear_next_command_state(ctx);
-        } else if let Some(command) = self
-            .next_command_state(ctx)
-            .command_suggestion()
-            .map(|command| command.to_owned())
-        {
-            // Check if this suggestion is ignored before applying it
-            let is_ignored = IgnoredSuggestionsModel::as_ref(ctx)
-                .is_ignored(&command, SuggestionType::ShellCommand);
-
-            if !is_ignored {
-                // If input type is shell, populate with suggested shell command.
-                // The suggestion must contain the current buffer text as a prefix.
-                let Some(autosuggestion) = command.strip_prefix(self.buffer_text(ctx).as_str())
-                else {
-                    return;
-                };
-                self.set_autosuggestion(
-                    autosuggestion,
-                    AutosuggestionLocation::EndOfBuffer,
-                    AutosuggestionType::Command {
-                        was_intelligent_autosuggestion: true,
-                    },
-                    ctx,
-                );
-            }
         }
     }
 
@@ -3568,16 +3473,6 @@ impl EditorView {
             view.set_current_autosuggestion(None);
         });
 
-        ctx.notify();
-    }
-
-    /// Clears any next command state. Autosuggestion (ghosted text) is not cleared.
-    fn clear_next_command_state(&mut self, ctx: &mut ViewContext<Self>) {
-        if let Some(next_command_model) = &self.next_command_model {
-            next_command_model.update(ctx, |model, _| {
-                model.clear_state();
-            });
-        }
         ctx.notify();
     }
 
@@ -5203,16 +5098,6 @@ impl EditorView {
             }
             return;
         }
-
-        let is_udi_enabled = InputSettings::as_ref(ctx).is_universal_developer_input_enabled(ctx);
-
-        send_telemetry_from_ctx!(
-            TelemetryEvent::AttachedImagesToAgentModeQuery {
-                num_images: pending_images.len(),
-                is_udi_enabled,
-            },
-            ctx
-        );
 
         self.process_attached_images_future_handle = Some(ctx.spawn(
             async move {
@@ -8644,7 +8529,7 @@ impl View for EditorView {
             &self.autosuggestion_ignore_view,
             self.show_autosuggestion_keybinding_hint,
             self.show_autosuggestion_ignore_button,
-            self.next_command_state(ctx).is_cycling(),
+            false,
             ctx,
         );
 

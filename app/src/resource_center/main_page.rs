@@ -1,27 +1,15 @@
 use crate::{
-    auth::AuthStateProvider,
-    changelog_model::ChangelogModel,
-    channel::ChannelState,
-    features::FeatureFlag,
-    resource_center::skip_tips_and_write_to_user_defaults,
-    send_telemetry_from_ctx,
-    server::telemetry::TelemetryEvent,
-    settings::Settings,
-    themes::theme::{Blend, Fill as FillTheme},
+    channel::ChannelState, features::FeatureFlag,
+    resource_center::skip_tips_and_write_to_user_defaults, settings::Settings,
 };
-use pathfinder_geometry::vector::vec2f;
 use warpui::{
     elements::{
-        Align, ClippedScrollStateHandle, ClippedScrollable, Container, CornerRadius, Element,
-        Empty, Fill, Flex, Hoverable, Icon, MainAxisAlignment, MainAxisSize, MouseStateHandle,
-        ParentElement, Radius, Shrinkable,
+        Align, ClippedScrollStateHandle, ClippedScrollable, Container, Element, Empty, Fill, Flex,
+        Hoverable, MainAxisSize, MouseStateHandle, ParentElement, Shrinkable,
     },
     platform::Cursor,
     presenter::ChildView,
-    ui_components::{
-        button::{ButtonVariant, TextAndIcon, TextAndIconAlignment},
-        components::{Coords, UiComponent, UiComponentStyles},
-    },
+    ui_components::components::{UiComponent, UiComponentStyles},
     AppContext, Entity, EntityId, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext,
     ViewHandle, WindowId,
 };
@@ -32,19 +20,15 @@ use super::{
     section_views::{
         feature_section::FeatureSectionEvent, SectionViewHandle, BUTTON_PADDING, DETAIL_FONT_SIZE,
         FOOTER_ICON_SIZE, SCROLLBAR_OFFSET, SCROLLBAR_WIDTH, SECTION_SPACING,
-        SECTION_SPACING_BOTTOM,
     },
     sections::sections,
-    ChangelogSectionView, ContentSectionData, ContentSectionView, FeatureSection,
-    FeatureSectionData, FeatureSectionView, Section, TipsCompleted,
+    ContentSectionData, ContentSectionView, FeatureSection, FeatureSectionData, FeatureSectionView,
+    Section, TipsCompleted,
 };
-
-const SEND_SVG_PATH: &str = "bundled/svg/send.svg";
 
 #[derive(Default)]
 struct MouseStateHandles {
     copy_version: MouseStateHandle,
-    invite_people: MouseStateHandle,
     skip_tips: MouseStateHandle,
 }
 
@@ -66,18 +50,10 @@ pub enum ResourceCenterMainAction {
 }
 
 impl ResourceCenterMainView {
-    pub fn new(
-        ctx: &mut ViewContext<Self>,
-        tips_completed: ModelHandle<TipsCompleted>,
-        changelog_model_handle: ModelHandle<ChangelogModel>,
-    ) -> Self {
+    pub fn new(ctx: &mut ViewContext<Self>, tips_completed: ModelHandle<TipsCompleted>) -> Self {
         let action_target = ctx.add_model(|_| ActionTarget::None);
-        let section_views = Self::initialize_section_views(
-            tips_completed.clone(),
-            action_target.clone(),
-            ctx,
-            changelog_model_handle.clone(),
-        );
+        let section_views =
+            Self::initialize_section_views(tips_completed.clone(), action_target.clone(), ctx);
         Self {
             button_mouse_states: Default::default(),
             clipped_scroll_state: Default::default(),
@@ -90,7 +66,6 @@ impl ResourceCenterMainView {
         tips_completed: ModelHandle<TipsCompleted>,
         action_target: ModelHandle<ActionTarget>,
         ctx: &mut ViewContext<Self>,
-        changelog_model_handle: ModelHandle<ChangelogModel>,
     ) -> Vec<SectionViewHandle> {
         let sections = sections(ctx);
 
@@ -122,7 +97,7 @@ impl ResourceCenterMainView {
 
         sections
             .iter()
-            .map(|section| match section {
+            .filter_map(|section| match section {
                 Section::Feature(data) => {
                     let is_tips_completed = tips_completed.as_ref(ctx).skipped_or_completed;
                     let is_expanded = match data.section_name {
@@ -154,21 +129,20 @@ impl ResourceCenterMainView {
                     // Show tips progress for every section except changelog
                     let show_tips_progress = !matches!(data.section_name, FeatureSection::WhatsNew);
 
-                    SectionViewHandle::Feature(Self::build_feature_section_view(
-                        data,
-                        action_target.clone(),
-                        ctx,
-                        tips_completed.clone(),
-                        show_tips_progress,
-                        is_expanded,
+                    Some(SectionViewHandle::Feature(
+                        Self::build_feature_section_view(
+                            data,
+                            action_target.clone(),
+                            ctx,
+                            tips_completed.clone(),
+                            show_tips_progress,
+                            is_expanded,
+                        ),
                     ))
                 }
-                Section::Content(data) => {
-                    SectionViewHandle::Content(Self::build_content_section_view(data, ctx))
-                }
-                Section::Changelog() => SectionViewHandle::Changelog(
-                    Self::build_changelog_section_view(changelog_model_handle.clone(), ctx),
-                ),
+                Section::Content(data) => Some(SectionViewHandle::Content(
+                    Self::build_content_section_view(data, ctx),
+                )),
             })
             .collect()
     }
@@ -225,7 +199,6 @@ impl ResourceCenterMainView {
                             }
                         }
                         SectionViewHandle::Content(_) => {}
-                        SectionViewHandle::Changelog(_) => {}
                     }
                 }
                 ctx.notify();
@@ -238,20 +211,6 @@ impl ResourceCenterMainView {
         ctx: &mut ViewContext<ResourceCenterMainView>,
     ) -> ViewHandle<ContentSectionView> {
         ctx.add_typed_action_view(|ctx| ContentSectionView::new(section_data.clone(), false, ctx))
-    }
-
-    fn build_changelog_section_view(
-        changelog_model_handle: ModelHandle<ChangelogModel>,
-        ctx: &mut ViewContext<ResourceCenterMainView>,
-    ) -> ViewHandle<ChangelogSectionView> {
-        let showing_new_changelog = match ChannelState::app_version() {
-            Some(version) => !Settings::has_changelog_been_shown(version, ctx),
-            None => false,
-        };
-
-        ctx.add_typed_action_view(|ctx: &mut ViewContext<_>| {
-            ChangelogSectionView::new(changelog_model_handle, showing_new_changelog, ctx)
-        })
     }
 
     pub fn set_action_target(
@@ -268,7 +227,6 @@ impl ResourceCenterMainView {
                     });
                 }
                 SectionViewHandle::Content(_) => {}
-                SectionViewHandle::Changelog(_) => {}
             }
         }
     }
@@ -282,9 +240,6 @@ impl ResourceCenterMainView {
                     body.add_child(ChildView::new(feature_view_handle).finish());
                 }
                 SectionViewHandle::Content(section_view_handle) => {
-                    body.add_child(ChildView::new(section_view_handle).finish());
-                }
-                SectionViewHandle::Changelog(section_view_handle) => {
                     body.add_child(ChildView::new(section_view_handle).finish());
                 }
             }
@@ -341,77 +296,6 @@ impl ResourceCenterMainView {
         .with_margin_left(SECTION_SPACING)
         .with_margin_bottom(BUTTON_PADDING)
         .with_uniform_padding(BUTTON_PADDING)
-        .finish()
-    }
-
-    fn render_invite_button(&self, appearance: &Appearance) -> Box<dyn Element> {
-        let default_styles = UiComponentStyles {
-            font_size: Some(DETAIL_FONT_SIZE),
-            font_family_id: Some(appearance.ui_font_family()),
-            font_color: Some(appearance.theme().accent().into()),
-            border_radius: Some(CornerRadius::with_all(Radius::Percentage(20.))),
-            border_width: Some(1.),
-            border_color: Some(appearance.theme().accent().into()),
-            padding: Some(Coords {
-                top: BUTTON_PADDING,
-                bottom: BUTTON_PADDING,
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-
-        let hovered_styles = UiComponentStyles {
-            background: Some(appearance.theme().accent().into()),
-            font_color: Some(
-                appearance
-                    .theme()
-                    .main_text_color(appearance.theme().accent())
-                    .into_solid(),
-            ),
-            ..default_styles
-        };
-
-        let clicked_color = appearance.theme().accent().blend(
-            &FillTheme::black().with_opacity(*appearance.theme().details().button_click_opacity()),
-        );
-        let clicked_styles = UiComponentStyles {
-            background: Some(clicked_color.into()),
-            border_color: Some(clicked_color.into()),
-            ..hovered_styles
-        };
-
-        Container::new(
-            appearance
-                .ui_builder()
-                .button_with_custom_styles(
-                    ButtonVariant::Outlined,
-                    self.button_mouse_states.invite_people.clone(),
-                    default_styles,
-                    Some(hovered_styles),
-                    Some(clicked_styles),
-                    None,
-                )
-                .with_text_and_icon_label(
-                    TextAndIcon::new(
-                        TextAndIconAlignment::IconFirst,
-                        "Invite a friend to Warp",
-                        Icon::new(SEND_SVG_PATH, appearance.theme().accent()),
-                        MainAxisSize::Max,
-                        MainAxisAlignment::Center,
-                        vec2f(FOOTER_ICON_SIZE, FOOTER_ICON_SIZE),
-                    )
-                    .with_inner_padding(BUTTON_PADDING),
-                )
-                .build()
-                .on_click(|ctx, _, _| {
-                    ctx.dispatch_typed_action(WorkspaceAction::ShowReferralSettingsPage)
-                })
-                .finish(),
-        )
-        .with_margin_top(SECTION_SPACING)
-        .with_margin_bottom(SECTION_SPACING_BOTTOM)
-        .with_margin_left(SECTION_SPACING + SCROLLBAR_OFFSET)
-        .with_margin_right(SECTION_SPACING + SCROLLBAR_OFFSET)
         .finish()
     }
 
@@ -489,7 +373,6 @@ impl TypedActionView for ResourceCenterMainView {
                 ctx.emit(ResourceCenterMainEvent::Close);
             }
             SkipTips => {
-                send_telemetry_from_ctx!(TelemetryEvent::ResourceCenterTipsSkipped, ctx);
                 self.tips_completed.update(ctx, |tips_completed, ctx| {
                     skip_tips_and_write_to_user_defaults(tips_completed, ctx);
                     ctx.notify();
@@ -507,18 +390,9 @@ impl View for ResourceCenterMainView {
     fn render(&self, app: &AppContext) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
         let body = self.render_body(appearance);
-        let invite_button = self.render_invite_button(appearance);
         let skip_tips = self.render_skip_tips_button(appearance);
 
         let mut main_page = Flex::column();
-
-        if !AuthStateProvider::as_ref(app)
-            .get()
-            .is_anonymous_or_logged_out()
-            && !FeatureFlag::AvatarInTabBar.is_enabled()
-        {
-            main_page = main_page.with_child(invite_button);
-        }
 
         if !self.tips_completed.as_ref(app).skipped_or_completed
             && !FeatureFlag::AvatarInTabBar.is_enabled()
@@ -530,7 +404,7 @@ impl View for ResourceCenterMainView {
             .with_child(Shrinkable::new(20., body).finish())
             .with_child(Shrinkable::new(0.1, Empty::new().finish()).finish()); // placeholder to ensure pane extends to bottom of the window
 
-        if FeatureFlag::Autoupdate.is_enabled() && ChannelState::show_autoupdate_menu_items() {
+        if ChannelState::app_version().is_some() {
             let current_version = self.render_current_version(appearance);
             main_page.add_child(current_version);
         }

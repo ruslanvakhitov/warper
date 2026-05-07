@@ -16,11 +16,7 @@
 set -e
 
 # Extract channel suffix from BINARY_NAME
-if [ "$ARTIFACT" = "cli" ]; then
-  CHANNEL_SUFFIX="${BINARY_NAME#oz}"
-else
-  CHANNEL_SUFFIX="${BINARY_NAME#warp}"
-fi
+CHANNEL_SUFFIX="${BINARY_NAME#warp}"
 
 # On Linux, we keep the `-stable` suffix for stable to avoid package conflicts.
 if [ "$ARTIFACT" = "cli" -a "$RELEASE_CHANNEL" = "stable" ]; then
@@ -37,7 +33,7 @@ elif [ "$ARTIFACT" = "cli" ]; then
   if [ "$RELEASE_CHANNEL" = "oss" ]; then
     PACKAGE_NAME="warper-cli"
   else
-    PACKAGE_NAME="oz$CHANNEL_SUFFIX"
+    PACKAGE_NAME="warp-cli$CHANNEL_SUFFIX"
   fi
 else
   echo "::error ::Unknown ARTIFACT: $ARTIFACT (expected 'app' or 'cli')"

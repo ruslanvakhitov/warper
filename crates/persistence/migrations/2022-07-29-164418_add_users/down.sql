@@ -1,1 +1,1 @@
-DROP TABLE IF EXISTS users;
+-- WARPER-001: hosted account persistence was removed.

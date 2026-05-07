@@ -4,7 +4,6 @@
 use std::{
     collections::{hash_map::Entry, HashMap, HashSet},
     future::Future,
-    sync::Arc,
 };
 
 use ai::diff_validation::{
@@ -13,28 +12,15 @@ use ai::diff_validation::{
 };
 use itertools::Itertools;
 use vec1::Vec1;
-use warpui::r#async::executor::Background;
 
 use crate::{
-    ai::{
-        agent::{AIIdentifiers, FileEdit},
-        blocklist::SessionContext,
-        paths::host_native_absolute_path,
-    },
-    auth::auth_state::AuthState,
-    safe_debug, safe_warn, send_telemetry_on_executor,
+    ai::{agent::FileEdit, blocklist::SessionContext, paths::host_native_absolute_path},
+    safe_debug, safe_warn,
 };
 
-use super::telemetry::{
-    DiffInvalidFileEvent, DiffMatchFailedEvent, MissingLineNumbersEvent,
-    RequestFileEditsTelemetryEvent,
-};
-
-/// Result of reading a file from disk or a remote server.
+/// Result of reading a file from disk.
 ///
-/// This is the common currency between the local (`std::fs`) and remote
-/// (`RemoteServerClient`) file-reading paths so that all diff application
-/// logic can be shared.
+/// This is the common currency for diff application logic.
 pub(crate) enum FileReadResult {
     /// The file was found and its full content is available.
     Found(String),
@@ -167,10 +153,6 @@ impl DiffApplicationError {
 pub(crate) async fn apply_edits<F, Fut>(
     edits: Vec<FileEdit>,
     session_context: &SessionContext,
-    ai_identifiers: &AIIdentifiers,
-    background_executor: Arc<Background>,
-    auth_state: Arc<AuthState>,
-    passive_diff: bool,
     read_file: F,
 ) -> Result<Vec<AIRequestedCodeDiff>, Vec1<DiffApplicationError>>
 where
@@ -179,86 +161,10 @@ where
 {
     let result = apply_edits_internal(edits, session_context, &read_file).await;
 
-    // Send telemetry for all diff application errors.
-
-    // Count of attempts to edit a file that doesn't exist or create a file that already exists.
-    let mut invalid_file_count = 0;
-
-    for error in result.errors.iter() {
-        match error {
-            DiffApplicationError::UnmatchedDiffs { match_failures, .. } => {
-                send_telemetry_on_executor!(
-                    auth_state,
-                    RequestFileEditsTelemetryEvent::DiffMatchFailed(DiffMatchFailedEvent {
-                        identifiers: ai_identifiers.clone(),
-                        failures: *match_failures,
-                        passive_diff,
-                    }),
-                    background_executor
-                );
-            }
-            DiffApplicationError::MissingFile { .. }
-            | DiffApplicationError::ReadFailed { .. }
-            | DiffApplicationError::AlreadyExists { .. }
-            | DiffApplicationError::MultipleFileCreation { .. }
-            | DiffApplicationError::MutatedDeletedFile { .. }
-            | DiffApplicationError::MultipleFileRenames { .. }
-            | DiffApplicationError::RemoteFileOperationsUnsupported => {
-                invalid_file_count += 1;
-            }
-            DiffApplicationError::EmptyDiff => {}
-        }
-    }
-
-    if invalid_file_count > 0 {
-        send_telemetry_on_executor!(
-            auth_state,
-            RequestFileEditsTelemetryEvent::DiffInvalidFile(DiffInvalidFileEvent {
-                count: invalid_file_count,
-                identifiers: ai_identifiers.clone(),
-                passive_diff,
-            }),
-            background_executor
-        );
-    }
-
-    // Send telemetry for any warnings, which don't necessarily prevent diff application.
-
-    let total_missing_line_numbers: u8 = result
-        .warnings
-        .iter()
-        .map(|warning| match warning {
-            DiffWarning::MissingLineNumbers { count, .. } => *count,
-        })
-        .sum();
-
-    if total_missing_line_numbers > 0 {
-        send_telemetry_on_executor!(
-            auth_state,
-            RequestFileEditsTelemetryEvent::MissingLineNumbers(MissingLineNumbersEvent {
-                identifiers: ai_identifiers.clone(),
-                count: total_missing_line_numbers,
-                passive_diff,
-            }),
-            background_executor
-        );
-    }
-
     match Vec1::try_from_vec(result.errors) {
         Ok(errors) => Err(errors),
         Err(vec1::Size0Error) => Ok(result.diffs),
     }
-}
-
-/// Warnings are issues that don't necessarily prevent diff application, but indicate an unexpected
-/// response from the LLM.
-///
-/// For example, we expect the search string in a diff to include line numbers, but can rely on
-/// fuzzy matching if they're missing.
-#[derive(Debug, Clone)]
-pub enum DiffWarning {
-    /// Search blocks that are missing line numbers.
-    MissingLineNumbers { count: u8 },
 }
 
 #[derive(Default)]
@@ -267,8 +173,6 @@ struct DiffResult {
     diffs: Vec<AIRequestedCodeDiff>,
     /// All errors that occurred while applying diffs.
     errors: Vec<DiffApplicationError>,
-    /// All warnings that occurred while applying diffs.
-    warnings: Vec<DiffWarning>,
 }
 
 /// You generally want to use `apply_edits`, however, if you don't want to report telemetry or be as
@@ -573,16 +477,6 @@ async fn apply_search_replace<F, Fut>(
                 full: ("Matching diffs for: {file_path:?}")
             );
             let fuzzy_match_diffs = fuzzy_match_diffs(&file_path, &deltas, file_content);
-
-            // Add warnings from the failure info - the `DiffMatchFailures` type includes both
-            // fatal and non-fatal errors.
-            if let Some(failures) = fuzzy_match_diffs.failures.as_ref() {
-                if failures.missing_line_numbers > 0 {
-                    result.warnings.push(DiffWarning::MissingLineNumbers {
-                        count: failures.missing_line_numbers,
-                    });
-                }
-            }
 
             if fuzzy_match_diffs.warrants_failure() {
                 if let Some(failures) = fuzzy_match_diffs.failures.as_ref() {

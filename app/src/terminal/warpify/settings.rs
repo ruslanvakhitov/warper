@@ -3,9 +3,8 @@ use lazy_static::lazy_static;
 use regex::Regex;
 use settings::{
     macros::{maybe_define_setting, register_settings_events},
-    ChangeEventReason, RespectUserSyncSetting, Setting, SupportedPlatforms, SyncToCloud,
+    ChangeEventReason, Setting, SupportedPlatforms, SyncToCloud,
 };
-use strum_macros::EnumIter;
 use warp_util::path::ShellFamily;
 use warpui::{AppContext, ModelContext};
 use warpui::{Entity, SingletonEntity};
@@ -17,7 +16,7 @@ maybe_define_setting!(AddedSubshellCommands, group: WarpifySettings, {
     type: Vec<String>,
     default: Vec::new(),
     supported_platforms: SupportedPlatforms::ALL,
-    sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+    sync_to_cloud: SyncToCloud::Never,
     private: false,
     toml_path: "warpify.subshells.added_subshell_commands",
     description: "Additional regex patterns for commands that should be recognized as subshells.",
@@ -27,7 +26,7 @@ maybe_define_setting!(SubshellCommandsDenylist, group: WarpifySettings, {
     type: Vec<String>,
     default: Vec::new(),
     supported_platforms: SupportedPlatforms::ALL,
-    sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+    sync_to_cloud: SyncToCloud::Never,
     private: false,
     toml_path: "warpify.subshells.subshell_commands_denylist",
     description: "Commands that should not trigger the subshell warpification prompt.",
@@ -37,80 +36,11 @@ maybe_define_setting!(SshHostsDenylist, group: WarpifySettings, {
     type: Vec<String>,
     default: Vec::new(),
     supported_platforms: SupportedPlatforms::ALL,
-    sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+    sync_to_cloud: SyncToCloud::Never,
     private: false,
     toml_path: "warpify.ssh.ssh_hosts_denylist",
     description: "SSH hosts that should not trigger the warpification prompt.",
 });
-
-maybe_define_setting!(EnableSshWarpification, group: WarpifySettings, {
-    type: bool,
-    default: true,
-    supported_platforms: SupportedPlatforms::ALL,
-    sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
-    private: false,
-    toml_path: "warpify.ssh.enable_ssh_warpification",
-    description: "Whether to enable Warp features in SSH sessions.",
-});
-
-maybe_define_setting!(UseSshTmuxWrapper, group: WarpifySettings, {
-    type: bool,
-    default: false,
-    supported_platforms: SupportedPlatforms::OR(SupportedPlatforms::MAC.into(), SupportedPlatforms::LINUX.into()),
-    sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
-    private: false,
-    toml_path: "warpify.ssh.use_ssh_tmux_wrapper",
-    description: "Whether to use a tmux-based wrapper for SSH warpification.",
-});
-
-/// Controls how Warp handles the SSH extension (remote server binary) when connecting
-/// to a remote host that does not already have it installed.
-#[derive(
-    Default,
-    Debug,
-    serde::Serialize,
-    serde::Deserialize,
-    PartialEq,
-    Copy,
-    Clone,
-    EnumIter,
-    schemars::JsonSchema,
-    settings_value::SettingsValue,
-)]
-#[serde(rename_all = "snake_case")]
-#[schemars(
-    description = "Controls SSH extension installation behavior.",
-    rename_all = "snake_case"
-)]
-pub enum SshExtensionInstallMode {
-    /// Always prompt the user before installing (default).
-    #[default]
-    AlwaysAsk,
-    /// Automatically install and connect without prompting.
-    AlwaysInstall,
-    /// Never install; fall back to legacy warpification.
-    NeverInstall,
-}
-
-settings::macros::implement_setting_for_enum!(
-    SshExtensionInstallMode,
-    WarpifySettings,
-    SupportedPlatforms::ALL,
-    SyncToCloud::Globally(RespectUserSyncSetting::Yes),
-    private: false,
-    toml_path: "warpify.ssh.ssh_extension_install_mode",
-    description: "Controls SSH extension installation behavior.",
-);
-
-impl SshExtensionInstallMode {
-    pub fn display_name(&self) -> &'static str {
-        match self {
-            SshExtensionInstallMode::AlwaysAsk => "Always ask",
-            SshExtensionInstallMode::AlwaysInstall => "Always install",
-            SshExtensionInstallMode::NeverInstall => "Never install",
-        }
-    }
-}
 
 /// Normally we use the define_settings_group! macro for singleton models of settings like this.
 /// However, this model needs to do some extra processing on the added_subshell_commands and store
@@ -148,17 +78,6 @@ pub struct WarpifySettings {
     /// needs to be kept up-to-date as ssh_hosts_denylist changes. See the Self::register
     /// method for how this is done.
     pub parsed_ssh_hosts_denylist: Vec<Result<Regex, regex::Error>>,
-
-    /// This setting controls whether we should ever warpify ssh sessions.
-    pub enable_ssh_warpification: EnableSshWarpification,
-
-    /// This setting controls whether we should prompt the user to warpify an ssh session using the
-    /// tmux wrapper instead of the default legacy wrapper.
-    pub use_ssh_tmux_wrapper: UseSshTmuxWrapper,
-
-    /// Controls the installation behavior for the SSH extension (remote server) when the binary
-    /// is not installed on the remote host.
-    pub ssh_extension_install_mode: SshExtensionInstallMode,
 }
 
 #[cfg(windows)]
@@ -222,9 +141,6 @@ impl WarpifySettings {
             subshell_command_denylist,
             parsed_ssh_hosts_denylist: Self::parse_ssh_hosts_denylist(&ssh_hosts_denylist),
             ssh_hosts_denylist,
-            enable_ssh_warpification: EnableSshWarpification::new_from_storage(ctx),
-            use_ssh_tmux_wrapper: UseSshTmuxWrapper::new_from_storage(ctx),
-            ssh_extension_install_mode: SshExtensionInstallMode::new_from_storage(ctx),
         }
     }
 
@@ -245,9 +161,6 @@ impl WarpifySettings {
             subshell_command_denylist,
             parsed_ssh_hosts_denylist: Self::parse_ssh_hosts_denylist(&ssh_hosts_denylist),
             ssh_hosts_denylist,
-            enable_ssh_warpification: EnableSshWarpification::new(None),
-            use_ssh_tmux_wrapper: UseSshTmuxWrapper::new(None),
-            ssh_extension_install_mode: SshExtensionInstallMode::new(None),
         }
     }
 
@@ -270,9 +183,6 @@ impl WarpifySettings {
                     me.parsed_ssh_hosts_denylist =
                         Self::parse_ssh_hosts_denylist(&me.ssh_hosts_denylist)
                 }
-                WarpifySettingsChangedEvent::EnableSshWarpification { .. } => {}
-                WarpifySettingsChangedEvent::UseSshTmuxWrapper { .. } => {}
-                WarpifySettingsChangedEvent::SshExtensionInstallMode { .. } => {}
             })
         });
 
@@ -288,30 +198,6 @@ impl WarpifySettings {
             WarpifySettings,
             subshell_command_denylist,
             SubshellCommandsDenylist,
-            handle.clone(),
-            ctx
-        );
-
-        register_settings_events!(
-            WarpifySettings,
-            enable_ssh_warpification,
-            EnableSshWarpification,
-            handle.clone(),
-            ctx
-        );
-
-        register_settings_events!(
-            WarpifySettings,
-            use_ssh_tmux_wrapper,
-            UseSshTmuxWrapper,
-            handle.clone(),
-            ctx
-        );
-
-        register_settings_events!(
-            WarpifySettings,
-            ssh_extension_install_mode,
-            SshExtensionInstallMode,
             handle.clone(),
             ctx
         );
@@ -337,15 +223,6 @@ pub enum WarpifySettingsChangedEvent {
         change_event_reason: ChangeEventReason,
     },
     SshHostsDenylist {
-        change_event_reason: ChangeEventReason,
-    },
-    EnableSshWarpification {
-        change_event_reason: ChangeEventReason,
-    },
-    UseSshTmuxWrapper {
-        change_event_reason: ChangeEventReason,
-    },
-    SshExtensionInstallMode {
         change_event_reason: ChangeEventReason,
     },
 }
@@ -383,9 +260,7 @@ impl WarpifySettings {
             return true;
         }
 
-        if !self.use_ssh_tmux_wrapper.value()
-            && SshWarpifyCommand::matches(command)
-                .is_some_and(|command| command.is_ssh_like_command())
+        if SshWarpifyCommand::matches(command).is_some_and(|command| command.is_ssh_like_command())
         {
             return true;
         }

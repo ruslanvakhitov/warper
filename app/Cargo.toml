@@ -1,7 +1,7 @@
 [package]
 authors = ["Warp Team <dev@warp.dev>"]
 default-run = "warp-oss"
-description = "The cloud-backed terminal for individuals and teams"
+description = "A local-first terminal"
 edition = "2021"
 autobins = false
 name = "warp"
@@ -100,7 +100,6 @@ enclose = "1.1.8"
 enum-iterator.workspace = true
 event-listener = "5.4.0"
 field_mask.workspace = true
-firebase.workspace = true
 flate2 = "1.0.17"
 float-cmp.workspace = true
 futures-lite.workspace = true
@@ -135,7 +134,6 @@ log.workspace = true
 log-panics = { version = "2.1.0", features = ["with-backtrace"] }
 lsp.workspace = true
 warp_logging.workspace = true
-sentry = { workspace = true, optional = true }
 lz4_flex = "0.11"
 markdown_parser.workspace = true
 memchr.workspace = true
@@ -165,7 +163,6 @@ regex-automata = "0.4.6"
 regex.workspace = true
 reqwest.workspace = true
 rust-embed.workspace = true
-sentry-log = { workspace = true, optional = true }
 inventory = "0.3"
 schemars = "1"
 serde.workspace = true
@@ -218,7 +215,6 @@ warp-workflows.workspace = true
 warp_completer.workspace = true
 warp_core.workspace = true
 warp_editor.workspace = true
-warp_graphql.workspace = true
 warp_js = { workspace = true, optional = true }
 warp_server_client.workspace = true
 warp_util.workspace = true
@@ -242,7 +238,6 @@ typed-path.workspace = true
 urlencoding = "2.1.3"
 mime_guess = "2.0"
 warp_multi_agent_api.workspace = true
-remote_server.workspace = true
 repo_metadata.workspace = true
 vim.workspace = true
 rmcp = { workspace = true, features = ["client"] }
@@ -348,10 +343,6 @@ nix = { workspace = true, features = [
     "mman",
 ] }
 
-[target.'cfg(any(target_os = "linux", target_os = "windows"))'.dependencies]
-crash-handler = { version = "0.6.3", optional = true }
-minidumper = { version = "0.8.3", optional = true }
-
 [target.'cfg(target_os = "linux")'.dependencies]
 freedesktop-desktop-entry = "0.5.0"
 x11rb.workspace = true
@@ -421,6 +412,7 @@ embed-resource = "3.0"
 
 # Note that we support channel-specific enables for these features
 [features]
+test-util = []
 ai_resume_button = []
 autoupdate = []
 figma_detection = []
@@ -437,7 +429,6 @@ changelog = []
 clear_autosuggestion_on_escape = []
 cloud_object_initial_load = ["enforce_revisions_to_cloud_objects"]
 codebase_index_speedbump = []
-cocoa_sentry = ["crash_reporting"]
 command_predictor = []
 context_line_review_comments = []
 completions_v2 = [
@@ -445,27 +436,16 @@ completions_v2 = [
     "warp_completer/v2",
     "dep:command-signatures-v2",
 ]
-crash_reporting = [
-    "dep:sentry",
-    "dep:sentry-log",
-    "dep:minidumper",
-    "dep:crash-handler",
-    "warp_logging/crash_reporting",
-    "ai/crash_reporting",
-]
 creating_shared_sessions = []
 cross_repo_context = []
 codebase_index_persistence = ["full_source_code_embedding"]
 default = [
     "agent_mode",
-    "viewing_shared_sessions",
     "render_continuous_block_selections_with_single_border",
     "settings_import",
-    "shared_with_me",
     "block_toolbelt_save_as_workflow",
     "remove_alt_screen_padding",
     "less_horizontal_terminal_padding",
-    "session_sharing_acls",
     "external_agent_mode_context",
     "shell_selector",
     "minimalist_ui",
@@ -482,13 +462,11 @@ default = [
     "suggested_rules",
     "default_waterfall_mode",
     "am_workflows",
-    "autoupdate_ui_revamp",
     "render_agent_mode_output_markdown",
     "agent_mode_primary_xml",
     "agent_mode_pre_plan_xml",
     "command_correction_key",
     "kitty_images",
-    "global_ai_analytics_collection",
     "grep_tool",
     "validate_autosuggestions",
     "clear_autosuggestion_on_escape",
@@ -497,12 +475,8 @@ default = [
     "fast_forward_autoexecute_button",
     "image_as_context",
     "command_palette_file_search",
-    "usage_based_pricing",
     "ai_context_menu",
     "at_menu_outside_of_ai_mode",
-    "agent_management_view",
-    "agent_management_details_view",
-    "interactive_conversation_management_view",
     "shared_block_title_generation",
     "tab_close_button_on_left",
     "ai_resume_button",
@@ -510,7 +484,6 @@ default = [
     "ai_context_menu_code",
     "agent_decides_command_execution",
     "linked_code_blocks",
-    "drive_objects_as_context",
     "search_codebase_ui",
     "profiles_design_revamp",
     "multi_profile",
@@ -531,8 +504,6 @@ default = [
     "mcp_oauth",
     "expand_edit_to_pane",
     "fallback_model_load_output_messaging",
-    "api_key_authentication",
-    "api_key_management",
     "summarization_cancellation_confirmation",
     "ui_zoom",
     "discard_per_file_and_all_changes",
@@ -541,39 +512,21 @@ default = [
     "summarize_conversation_command",
     "inline_code_review",
     "web_search_ui",
-    "agent_shared_sessions",
-    "integration_command",
-    "artifact_command",
-    "cloud_environments",
-    "create_environment_slash_command",
     "code_review_find",
-    "shared_session_long_running_commands",
     "mcp_grouped_server_context",
     "fork_from_command",
     "context_window_usage_v2",
-    "ambient_agents_command_line",
-    "ambient_agents_image_upload",
-    "scheduled_ambient_agents",
-    "warp_managed_secrets",
     "v4a_file_diffs",
     "classic_completions",
     "force_classic_completions",
-    "team_api_keys",
     "agent_tips",
     "pluggable_notifications",
     "agent_onboarding",
     "global_search",
-    "cloud_conversations",
     "list_skills",
     "ask_user_question",
     "bundled_skills",
-    "ambient_agents_rtc",
-    "cloud_mode",
-    "cloud_mode_from_local_session",
-    "cloud_mode_image_context",
     "agent_mode_computer_use",
-    "oz_platform_skills",
-    "sync_ambient_plans",
     "conversation_artifacts",
     "agent_view",
     "agent_view_block_context",
@@ -581,13 +534,10 @@ default = [
     "inline_slash_commands",
     "inline_history_menu",
     "inline_model_selector",
-    "oz_launch_modal",
-    "open_warp_launch_modal",
     "new_tab_styling",
     "richtext_multiselect",
     "inline_profile_selector",
     "web_fetch_ui",
-    "oz_changelog_updates",
     "skill_arguments",
     "incremental_auto_reload",
     "active_conversation_requires_interaction",
@@ -620,8 +570,6 @@ default = [
     "hoa_remote_control",
     "codex_notifications",
     "trim_trailing_blank_lines",
-    "open_warp_new_settings_modes",
-    "skip_firebase_anonymous_user",
     "settings_file",
 ]
 # Enable this feature to automatically perform heap profiling.  NOTE: This will
@@ -643,7 +591,6 @@ ssh_enable_host_denylist_in_settings = []
 extern_plist = []
 fast_dev = ["skip_login"]
 full_screen_zen_mode = []
-global_ai_analytics_banner = []
 global_ai_analytics_collection = []
 grab_the_baton_editing = []
 grep_tool = []
@@ -665,7 +612,6 @@ agent_mode_evals = [
     "full_source_code_embedding",
     "cross_repo_context",
     "rust-embed/debug-embed",
-    "warpui/log_named_telemetry_events",
     "warp_logging/agent_mode_evals",
 ]
 ambient_agents_command_line = []
@@ -678,7 +624,7 @@ inline_slash_commands = ["agent_view"]
 # profile report when app memory usage exceeds a 10GB threshold.
 #
 # Enabled on WarpDev by default.
-heap_usage_tracking = ["jemalloc_pprof", "crash_reporting"]
+heap_usage_tracking = ["jemalloc_pprof"]
 image_as_context = []
 in_band_generators_ssh = []
 jemalloc = ["dep:tikv-jemallocator", "ai/jemalloc"]
@@ -709,7 +655,6 @@ local_fs = [
     "repo_metadata/local_fs",
     "warp_core/local_fs",
 ]
-log_expensive_frames_in_sentry = []
 markdown_tables = []
 markdown_mermaid = []
 mcp_server = []
@@ -733,9 +678,7 @@ plugin_host = ["dep:rquickjs", "dep:warp_js", "warp_cli/plugin_host"]
 # generated profile will be written to profile.pb in the current directory.
 # NOTE: This may slow down program execution.
 pprof_cpu_profiling = ["dep:pprof"]
-predict_am_queries = []
 quake_mode = []
-record_app_active_events = []
 recording_mode = []
 # This feature should only be enabled when building a release bundle with
 # the bundle script, and can be used to conditionally enable functionality
@@ -790,11 +733,8 @@ external_agent_mode_context = []
 avatar_in_tab_bar = []
 ssh_drag_and_drop = []
 permanent_autosuggestion_hint = []
-cycle_next_command_suggestion = []
 multi_workspace = []
 ime_marked_text = []
-partial_next_command_suggestions = []
-drive_objects_as_context = []
 iterm_images = []
 validate_autosuggestions = []
 autoupdate_ui_revamp = []
@@ -829,7 +769,6 @@ changed_lines_only_apply_diff_result = []
 linked_code_blocks = []
 tabbed_editor_view = []
 selection_as_context = []
-send_telemetry_to_file = []
 multi_profile = []
 pr_comments_slash_command = []
 pr_comments_v2 = []
@@ -855,8 +794,6 @@ summarization_cancellation_confirmation = []
 code_review_find = []
 auto_open_code_review_pane = []
 inline_code_review = []
-integration_command = []
-artifact_command = []
 cloud_environments = []
 create_environment_slash_command = []
 summarize_conversation_command = []
@@ -917,7 +854,6 @@ oz_handoff = []
 hoa_notifications = []
 open_code_notifications = []
 transfer_control_tool = []
-skip_firebase_anonymous_user = []
 solo_user_byok = []
 configurable_toolbar = []
 warpify_footer = []
@@ -943,10 +879,9 @@ copyright = "© 2025, Denver Technologies, Inc"
 identifier = "dev.warp.Warp-Stable"
 name = "Warp"
 osx_frameworks = [
-    "frameworks/default/Sentry-Dynamic-WithARM64e.xcframework/macos-arm64_arm64e_x86_64/Sentry.framework",
 ]
 resources = ["assets/onboarding"]
-short_description = "The cloud-backed terminal for individuals and teams, stable build."
+short_description = "A local-first terminal for individuals and teams, stable build."
 
 [package.metadata.bundle.bin.preview]
 category = "public.app-category.developer-tools"
@@ -954,10 +889,9 @@ copyright = "© 2025, Denver Technologies, Inc"
 identifier = "dev.warp.Warp-Preview"
 name = "WarpPreview"
 osx_frameworks = [
-    "frameworks/default/Sentry-Dynamic-WithARM64e.xcframework/macos-arm64_arm64e_x86_64/Sentry.framework",
 ]
 resources = ["assets/onboarding"]
-short_description = "The cloud-backed terminal for individuals and teams, feature preview build."
+short_description = "A local-first terminal for individuals and teams, feature preview build."
 
 [package.metadata.bundle.bin.dev]
 category = "public.app-category.developer-tools"
@@ -965,10 +899,9 @@ copyright = "© 2025, Denver Technologies, Inc"
 identifier = "dev.warp.Warp-Dev"
 name = "WarpDev"
 osx_frameworks = [
-    "frameworks/dev/Sentry-Dynamic-WithARM64e.xcframework/macos-arm64_arm64e_x86_64/Sentry.framework",
 ]
 resources = ["assets/onboarding"]
-short_description = "The cloud-backed terminal for individuals and teams, developer build."
+short_description = "A local-first terminal for individuals and teams, developer build."
 
 [package.metadata.bundle.bin.warp]
 category = "public.app-category.developer-tools"
@@ -976,7 +909,7 @@ copyright = "© 2025, Denver Technologies, Inc"
 identifier = "dev.warp.Warp-Local"
 name = "WarpLocal"
 resources = ["assets/onboarding"]
-short_description = "The cloud-backed terminal for individuals and teams, developer build."
+short_description = "A local-first terminal for individuals and teams, developer build."
 
 [package.metadata.cargo-udeps.ignore]
 normal = ["embed_plist"]

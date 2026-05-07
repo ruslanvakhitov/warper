@@ -12,7 +12,7 @@ path = "src/bin/main.rs"
 required-features = ["bin"]
 
 [features]
-bin = ["warpui/log_named_telemetry_events"]
+bin = []
 
 [dependencies]
 ai.workspace = true

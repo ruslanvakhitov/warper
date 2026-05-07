@@ -25,11 +25,11 @@ use ai::skills::{
 use async_channel::Sender;
 use chrono::{DateTime, Duration, Utc};
 use repo_metadata::{
-    repositories::{DetectedRepositories, RepoDetectionSource},
+    repositories::DetectedRepositories,
     repository::{Repository, SubscriberId},
     DirectoryWatcher, RepoMetadataModel, RepositoryUpdate,
 };
-use warpui::{AppContext, Entity, ModelContext, ModelHandle, SingletonEntity};
+use warpui::{Entity, ModelContext, ModelHandle, SingletonEntity};
 
 #[derive(Debug, PartialEq)]
 pub enum SkillWatcherEvent {
@@ -69,20 +69,6 @@ pub struct SkillWatcher {
 }
 
 impl SkillWatcher {
-    /// Synchronously reads skills from the given repo paths.
-    /// Requires file trees to already be built (i.e. `RepositoryUpdated` has fired).
-    /// Returns the parsed skills; the caller is responsible for feeding them into
-    /// `SkillManager::handle_skills_added`.
-    pub fn read_skills_for_repos(repo_paths: &[PathBuf], ctx: &AppContext) -> Vec<ParsedSkill> {
-        let repo_metadata = RepoMetadataModel::as_ref(ctx);
-        let skill_dirs: Vec<PathBuf> = repo_paths
-            .iter()
-            .flat_map(|repo_path| find_skill_directories_in_tree(repo_path, repo_metadata, ctx))
-            .collect();
-
-        read_skills_from_directories(skill_dirs)
-    }
-
     pub fn new(ctx: &mut ModelContext<Self>, watcher_event_tx: Sender<SkillWatcherEvent>) -> Self {
         Self::new_internal(ctx, watcher_event_tx, dirs::home_dir())
     }
@@ -188,27 +174,6 @@ impl SkillWatcher {
                 | RepoMetadataEvent::FileTreeUpdated { .. }
                 | RepoMetadataEvent::UpdatingRepositoryFailed { .. }
                 | RepoMetadataEvent::IncrementalUpdateReady { .. } => {}
-            }
-        });
-
-        // Subscribe to DetectedRepositories to watch repos registered via CloudEnvironmentPrep.
-        // This fires when AgentDriver calls prepare_environment (for any run with a configured
-        // environment, Warp-hosted or self-hosted). The CloudEnvironmentPrep source filter means
-        // this is a no-op on local runs where no environment is configured.
-        ctx.subscribe_to_model(&DetectedRepositories::handle(ctx), |me, event, ctx| {
-            use repo_metadata::repositories::DetectedRepositoriesEvent;
-            match event {
-                DetectedRepositoriesEvent::DetectedGitRepo { source, .. }
-                    if *source == RepoDetectionSource::CloudEnvironmentPrep =>
-                {
-                    // The repo root is already registered in DirectoryWatcher by the time
-                    // this event fires. Extract its path from the repository handle.
-                    let DetectedRepositoriesEvent::DetectedGitRepo { repository, .. } = event;
-                    let repo_path = repository.as_ref(ctx).root_dir().to_local_path_lossy();
-                    me.watch_repo(repo_path.clone(), ctx);
-                    me.scan_repository_for_skills(&repo_path, ctx);
-                }
-                DetectedRepositoriesEvent::DetectedGitRepo { .. } => {}
             }
         });
 

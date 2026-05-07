@@ -1,5 +1,5 @@
-mod telemetry;
-pub use telemetry::{SkillOpenOrigin, SkillTelemetryEvent};
+mod open_origin;
+pub use open_origin::SkillOpenOrigin;
 
 cfg_if::cfg_if! {
     if #[cfg(not(feature = "local_fs"))] {
@@ -22,13 +22,11 @@ pub use skill_utils::{
 #[cfg(not(target_family = "wasm"))]
 mod resolve_skill_spec;
 #[cfg(not(target_family = "wasm"))]
-pub use resolve_skill_spec::{
-    clone_repo_for_skill, resolve_skill_spec, ResolveSkillError, ResolvedSkill,
-};
+pub use resolve_skill_spec::{resolve_skill_spec, ResolveSkillError, ResolvedSkill};
 
 cfg_if::cfg_if! {
     if #[cfg(feature = "local_fs")] {
         mod skill_manager;
-        pub use skill_manager::{SkillManager, SkillWatcher};
+        pub use skill_manager::SkillManager;
     }
 }

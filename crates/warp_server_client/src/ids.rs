@@ -4,12 +4,31 @@ use itertools::Itertools;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use uuid::Uuid;
 
-use crate::cloud_object::ObjectIdType;
-
 /// Convert ID enums into and from a hashed UUID.
 pub trait HashableId: Sized + Send + Sync {
     fn to_hash(&self) -> String;
     fn from_hash(hash: &str) -> Option<Self>;
+}
+
+/// Local object id categories kept for backwards-compatible SQLite ids.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum ObjectIdType {
+    Notebook,
+    Workflow,
+    Folder,
+    GenericStringObject,
+}
+
+impl ObjectIdType {
+    /// Returns the legacy prefix used for object ids stored in SQLite.
+    pub fn sqlite_prefix(&self) -> &'static str {
+        match self {
+            ObjectIdType::Notebook => "Notebook",
+            ObjectIdType::Workflow => "Workflow",
+            ObjectIdType::Folder => "Folder",
+            ObjectIdType::GenericStringObject => "GenericStringObject",
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize, schemars::JsonSchema)]
@@ -65,7 +84,7 @@ pub enum SyncId {
         description = "A locally-generated identifier for an object not yet synced to the server."
     )]
     ClientId(ClientId),
-    /// Item has been sync-ed to the cloud. Using the server ID.
+    /// Item has a legacy server-assigned ID.
     #[schemars(description = "A server-assigned identifier for a synced object.")]
     ServerId(ServerId),
 }
@@ -92,7 +111,7 @@ impl SyncId {
         }
     }
 
-    /// If this item has been synced to the cloud, extract its server ID.
+    /// If this item has a legacy server-assigned ID, extract it.
     pub fn into_server(self) -> Option<ServerId> {
         match self {
             Self::ServerId(id) => Some(id),

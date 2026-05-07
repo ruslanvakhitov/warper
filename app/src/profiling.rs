@@ -61,49 +61,19 @@ pub fn dump_dhat_heap_profile() {
     let _ = HEAP_PROFILER.lock().take();
 }
 
-/// Dumps a jemalloc heap profile and sends it to Sentry.
+/// Dumps a jemalloc heap profile and logs the result locally.
 ///
 /// This function spawns `go tool pprof` to fetch and symbolicate the heap
-/// profile from the local HTTP server, then attaches the resulting profile
-/// to a Sentry event.
+/// profile from the local HTTP server.
 #[cfg(feature = "heap_usage_tracking")]
-pub async fn dump_jemalloc_heap_profile(memory_breakdown: serde_json::Value) {
-    use sentry::protocol::{Attachment, AttachmentType};
-
+pub async fn dump_jemalloc_heap_profile(_memory_breakdown: serde_json::Value) {
     let result = dump_jemalloc_heap_profile_inner().await;
     match result {
         Ok(profile_data) => {
-            let attachment = Attachment {
-                buffer: profile_data,
-                filename: "heap-profile.pb".to_string(),
-                ty: Some(AttachmentType::Attachment),
-                ..Default::default()
-            };
-            sentry::with_scope(
-                |scope| {
-                    scope.add_attachment(attachment);
-
-                    // Attach the memory breakdown as structured context so it
-                    // is visible directly in the Sentry event.
-                    if let serde_json::Value::Object(map) = memory_breakdown {
-                        let context_map: std::collections::BTreeMap<
-                            String,
-                            sentry::protocol::Value,
-                        > = map.into_iter().collect();
-                        scope.set_context(
-                            "memory_breakdown",
-                            sentry::protocol::Context::Other(context_map),
-                        );
-                    }
-                },
-                || {
-                    sentry::capture_message(
-                        "Excessive memory usage detected",
-                        sentry::Level::Warning,
-                    )
-                },
+            log::warn!(
+                "Excessive memory usage detected; dumped local heap profile ({} bytes)",
+                profile_data.len()
             );
-            log::info!("Sent heap profile to Sentry");
         }
         Err(err) => {
             log::warn!("Failed to dump heap profile: {err:#}");

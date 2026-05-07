@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use super::super::controller::{BlocklistAIController, BlocklistAIControllerEvent};
 use crate::ai::agent::api::generate_multi_agent_output;
-use crate::ai::agent::AIIdentifiers;
 use crate::ai::agent::FileContext;
 use crate::ai::agent::PassiveCodeDiffEntry;
 use crate::ai::agent::PassiveSuggestionTrigger;
@@ -14,18 +13,14 @@ use crate::ai::blocklist::{
     SessionContext,
 };
 use crate::ai::paths::host_native_absolute_path;
-use crate::auth::auth_state::AuthStateProvider;
-use crate::server::server_api::ServerApiProvider;
 use crate::settings::AISettings;
 use crate::terminal::event::{BlockType, UserBlockCompleted};
 use crate::terminal::model::session::active_session::ActiveSession;
 use crate::terminal::model::terminal_model::TerminalModel;
 use crate::terminal::model_events::{ModelEvent, ModelEventDispatcher};
-use crate::terminal::view::ambient_agent::AmbientAgentViewModel;
 use crate::workspaces::user_workspaces::UserWorkspaces;
 use ai::agent::action::{AIAgentActionType, FileEdit};
 use ai::diff_validation::ParsedDiff;
-use chrono::{DateTime, Utc};
 use parking_lot::FairMutex;
 use warp_core::features::FeatureFlag;
 use warpui::r#async::SpawnedFutureHandle;
@@ -49,14 +44,10 @@ pub enum PassiveSuggestionsEvent {
     NewPromptSuggestion {
         prompt: String,
         label: Option<String>,
-        request_duration_ms: u64,
         /// The trigger for the suggestion. `None` when the server indicated the
         /// trigger is not relevant to the suggestion.
         trigger: Option<PassiveSuggestionTrigger>,
         conversation_id: Option<AIConversationId>,
-        /// The server-assigned request token from the passive suggestion
-        /// request. Used to join client-side telemetry with server-side logs.
-        server_request_token: Option<String>,
     },
     NewCodeDiffSuggestion {
         diffs: Vec<FileDiff>,
@@ -68,12 +59,7 @@ pub enum PassiveSuggestionsEvent {
         /// with agent" or "accept and continue". `None` for ephemeral triggers
         /// (shell command with no prior conversation).
         conversation_id: Option<AIConversationId>,
-        request_duration_ms: u64,
         trigger: PassiveSuggestionTrigger,
-        /// The server-assigned request token from the passive suggestion
-        /// request. Used to join client-side telemetry with server-side logs.
-        /// `None` on the legacy code path.
-        server_request_token: Option<String>,
     },
 }
 
@@ -82,7 +68,6 @@ struct Request {
     /// Conversation ID for the passive suggestion request.
     conversation_id: AIConversationId,
     trigger: PassiveSuggestionTrigger,
-    start_ts: DateTime<Utc>,
 
     /// Handle to the spawned future processing the response stream.
     _stream_handle: SpawnedFutureHandle,
@@ -94,7 +79,6 @@ pub struct PassiveSuggestionsModel {
     latest_request: Option<Request>,
     pending_file_read_handle: Option<SpawnedFutureHandle>,
     terminal_model: Arc<FairMutex<TerminalModel>>,
-    ambient_agent_view_model: ModelHandle<AmbientAgentViewModel>,
 
     #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
     terminal_view_id: EntityId,
@@ -108,7 +92,6 @@ impl PassiveSuggestionsModel {
         terminal_model: Arc<FairMutex<TerminalModel>>,
         ai_controller: ModelHandle<BlocklistAIController>,
         model_event_dispatcher: &ModelHandle<ModelEventDispatcher>,
-        ambient_agent_view_model: ModelHandle<AmbientAgentViewModel>,
         terminal_view_id: EntityId,
         ctx: &mut ModelContext<Self>,
     ) -> Self {
@@ -125,7 +108,6 @@ impl PassiveSuggestionsModel {
             latest_request: None,
             pending_file_read_handle: None,
             terminal_model,
-            ambient_agent_view_model,
             terminal_view_id,
         }
     }
@@ -168,13 +150,12 @@ impl PassiveSuggestionsModel {
             return;
         };
 
-        let server_api = ServerApiProvider::as_ref(ctx).get();
         let (cancellation_tx, cancellation_rx) = futures::channel::oneshot::channel();
 
         let stream_handle = ctx.spawn(
             async move {
                 let stream_result =
-                    generate_multi_agent_output(server_api, request_params, cancellation_rx).await;
+                    generate_multi_agent_output(request_params, cancellation_rx).await;
                 extract_suggestion_from_stream(stream_result).await
             },
             move |me, result, ctx| {
@@ -191,16 +172,9 @@ impl PassiveSuggestionsModel {
                     return;
                 };
 
-                let request_duration_ms = Utc::now()
-                    .signed_duration_since(latest_request.start_ts)
-                    .num_milliseconds()
-                    .max(0) as u64;
                 let trigger = latest_request.trigger.clone();
 
-                let StreamExtractionResult {
-                    suggestion: extracted,
-                    server_request_token,
-                } = extracted;
+                let StreamExtractionResult { suggestion: extracted } = extracted;
                 match extracted {
                     ExtractedSuggestion::Prompt {
                         prompt,
@@ -219,10 +193,8 @@ impl PassiveSuggestionsModel {
                         ctx.emit(PassiveSuggestionsEvent::NewPromptSuggestion {
                             prompt,
                             label,
-                            request_duration_ms,
                             trigger,
                             conversation_id: continuable_conversation_id,
-                            server_request_token,
                         });
                     }
                     ExtractedSuggestion::CodeDiff { apply_file_diffs } => {
@@ -237,19 +209,11 @@ impl PassiveSuggestionsModel {
 
                         let session_context =
                             SessionContext::from_session(me.active_session.as_ref(ctx), ctx);
-                        let identifiers = AIIdentifiers::default();
-                        let background_executor = ctx.background_executor();
-                        let auth_state = AuthStateProvider::as_ref(ctx).get().clone();
-
                         ctx.spawn(
                             async move {
                                 apply_edits(
                                     file_edits,
                                     &session_context,
-                                    &identifiers,
-                                    background_executor,
-                                    auth_state,
-                                    true,
                                     |path| async move {
                                         FileReadResult::from(std::fs::read_to_string(path))
                                     },
@@ -291,9 +255,7 @@ impl PassiveSuggestionsModel {
                                     title,
                                     original_edits: original_edits.clone(),
                                     conversation_id: continuable_conversation_id,
-                                    request_duration_ms,
                                     trigger,
-                                    server_request_token: server_request_token.clone(),
                                 });
                             },
                         );
@@ -307,7 +269,6 @@ impl PassiveSuggestionsModel {
             _cancellation_tx: cancellation_tx,
             conversation_id,
             trigger,
-            start_ts: Utc::now(),
         });
     }
 
@@ -393,11 +354,6 @@ impl PassiveSuggestionsModel {
             return;
         }
 
-        // Suppress passive suggestions in cloud mode sessions.
-        if self.ambient_agent_view_model.as_ref(ctx).is_ambient_agent() {
-            return;
-        }
-
         let history_model = BlocklistAIHistoryModel::as_ref(ctx);
         let Some(conversation) = history_model.conversation(&conversation_id) else {
             return;
@@ -442,23 +398,7 @@ impl PassiveSuggestionsModel {
         ctx: &mut ModelContext<Self>,
     ) {
         self.abort_pending_requests(ctx);
-        // Suppress passive suggestions in cloud mode sessions.
-        if self.ambient_agent_view_model.as_ref(ctx).is_ambient_agent() {
-            return;
-        }
 
-        // Startup commands run while bootstrapping an Oz cloud environment, so we skip
-        // passive prompt suggestion generation for them to avoid unnecessary requests.
-        let is_oz_environment_startup_command = FeatureFlag::CloudModeSetupV2.is_enabled()
-            && self
-                .terminal_model
-                .lock()
-                .block_list()
-                .block_at(block_completed.index)
-                .is_some_and(|block| block.is_oz_environment_startup_command());
-        if is_oz_environment_startup_command {
-            return;
-        }
         let is_prompt_suggestions_enabled = is_prompt_suggestions_enabled(ctx);
         let is_passive_code_diffs_enabled = is_passive_code_diffs_enabled(ctx);
         if !is_prompt_suggestions_enabled && !is_passive_code_diffs_enabled {
@@ -567,9 +507,6 @@ impl Entity for PassiveSuggestionsModel {
 /// Result of extracting a suggestion from an out-of-band response stream.
 struct StreamExtractionResult {
     suggestion: ExtractedSuggestion,
-    /// The server-assigned request token from the `StreamInit` event,
-    /// used to correlate client telemetry with server-side logs.
-    server_request_token: Option<String>,
 }
 
 enum ExtractedSuggestion {
@@ -600,19 +537,13 @@ async fn extract_suggestion_from_stream(
         return None;
     };
 
-    // Drain the stream, collecting all client actions and the server token.
+    // Drain the stream, collecting client actions.
     let mut client_actions: Vec<api::ClientAction> = Vec::new();
-    let mut server_request_token: Option<String> = None;
     while let Some(event) = stream.next().await {
         let Ok(response_event) = event else {
             continue;
         };
         match response_event.r#type {
-            Some(api::response_event::Type::Init(init)) => {
-                if !init.request_id.is_empty() {
-                    server_request_token = Some(init.request_id);
-                }
-            }
             Some(api::response_event::Type::ClientActions(actions)) => {
                 client_actions.extend(actions.actions);
             }
@@ -651,7 +582,6 @@ async fn extract_suggestion_from_stream(
                             label,
                             is_trigger_irrelevant: suggest_prompt.is_trigger_irrelevant,
                         },
-                        server_request_token,
                     });
                 }
             }
@@ -660,7 +590,6 @@ async fn extract_suggestion_from_stream(
                     suggestion: ExtractedSuggestion::CodeDiff {
                         apply_file_diffs: apply_file_diffs.clone(),
                     },
-                    server_request_token,
                 });
             }
             _ => {}

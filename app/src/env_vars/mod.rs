@@ -1,46 +1,29 @@
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
-use view::command_dialog::EnvVarSecretCommand;
 use warp_util::path::ShellFamily;
 
-pub mod active_env_var_collection_data;
 pub mod env_var_collection_block;
-pub mod manager;
-pub mod view;
 
-use crate::{
-    cloud_object::{
-        model::{
-            generic_string_model::{GenericStringModel, GenericStringObjectId, StringModel},
-            json_model::{JsonModel, JsonSerializer},
-        },
-        GenericCloudObject, GenericStringObjectFormat, GenericStringObjectUniqueKey,
-        JsonObjectType, Revision, ServerCloudObject,
-    },
-    drive::items::{env_var_collection::WarpDriveEnvVarCollection, WarpDriveItem},
-    external_secrets::ExternalSecret,
-    server::{ids::SyncId, sync_queue::QueueItem},
-    terminal::shell::ShellType,
-    Appearance, CloudObjectTypeAndId,
-};
+use crate::{external_secrets::ExternalSecret, terminal::shell::ShellType};
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct EnvVarSecretCommand {
+    pub name: String,
+    pub command: String,
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum EnvVarCollectionType {
-    /// Saved env vars, saved using cloud-sync. Today, we only support cloud
-    Cloud(Box<CloudEnvVarCollection>),
+    Local(EnvVarCollection),
 }
 
 impl EnvVarCollectionType {
-    pub fn as_cloud_env_var_collection(&self) -> &CloudEnvVarCollection {
+    pub fn as_env_var_collection(&self) -> &EnvVarCollection {
         match self {
-            EnvVarCollectionType::Cloud(cloud_env_var) => cloud_env_var,
+            EnvVarCollectionType::Local(env_var_collection) => env_var_collection,
         }
     }
 }
-
-pub type CloudEnvVarCollection =
-    GenericCloudObject<GenericStringObjectId, CloudEnvVarCollectionModel>;
-pub type CloudEnvVarCollectionModel = GenericStringModel<EnvVarCollection, JsonSerializer>;
 
 /// Defines the data model for a single environment variable
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Default)]
@@ -111,7 +94,7 @@ fn get_init_command_for_env_var(value: &EnvVarValue, shell_family: ShellFamily) 
     }
 }
 
-/// Defines the data model for a cloud synced collection of environment variables.
+/// Defines the data model for a retained local environment variable collection.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Default)]
 pub struct EnvVarCollection {
     // Collection title
@@ -142,104 +125,6 @@ impl EnvVarCollection {
 
     pub fn export_variables_for_shell(&self, shell_type: ShellType) -> String {
         serialize_variables_for_shell(self.key_value_iter(), shell_type)
-    }
-}
-
-impl StringModel for EnvVarCollection {
-    type CloudObjectType = CloudEnvVarCollection;
-
-    fn model_type_name(&self) -> &'static str {
-        "Environment variables"
-    }
-
-    fn should_enforce_revisions() -> bool {
-        true
-    }
-
-    fn model_format() -> GenericStringObjectFormat {
-        GenericStringObjectFormat::Json(Self::json_object_type())
-    }
-
-    fn display_name(&self) -> String {
-        self.title.clone().unwrap_or_default()
-    }
-
-    fn set_display_name(&mut self, name: &str) {
-        self.title = if name.is_empty() {
-            None
-        } else {
-            Some(name.to_owned())
-        }
-    }
-
-    fn update_object_queue_item(
-        &self,
-        revision_ts: Option<Revision>,
-        object: &CloudEnvVarCollection,
-    ) -> QueueItem {
-        QueueItem::UpdateEnvVarCollection {
-            model: object.model().clone().into(),
-            id: object.id,
-            revision: revision_ts.or_else(|| object.metadata.revision.clone()),
-        }
-    }
-
-    fn uniqueness_key(&self) -> Option<GenericStringObjectUniqueKey> {
-        None
-    }
-
-    fn new_from_server_update(&self, server_cloud_object: &ServerCloudObject) -> Option<Self> {
-        if let ServerCloudObject::EnvVarCollection(server_envvar_collection) = server_cloud_object {
-            return Some(server_envvar_collection.model.clone().string_model);
-        }
-        None
-    }
-
-    fn should_show_activity_toasts() -> bool {
-        true
-    }
-
-    fn warn_if_unsaved_at_quit() -> bool {
-        true
-    }
-
-    fn renders_in_warp_drive(&self) -> bool {
-        true
-    }
-
-    fn can_export(&self) -> bool {
-        true
-    }
-
-    fn supports_linking(&self) -> bool {
-        true
-    }
-
-    fn to_warp_drive_item(
-        &self,
-        id: SyncId,
-        _appearance: &Appearance,
-        env_var_collection: &CloudEnvVarCollection,
-    ) -> Option<Box<dyn WarpDriveItem>> {
-        Some(Box::new(WarpDriveEnvVarCollection::new(
-            CloudObjectTypeAndId::GenericStringObject {
-                object_type: GenericStringObjectFormat::Json(JsonObjectType::EnvVarCollection),
-                id,
-            },
-            env_var_collection.clone(),
-        )))
-    }
-}
-
-impl JsonModel for EnvVarCollection {
-    fn json_object_type() -> JsonObjectType {
-        JsonObjectType::EnvVarCollection
-    }
-}
-
-impl PartialEq<CloudEnvVarCollection> for CloudEnvVarCollection {
-    fn eq(&self, other: &CloudEnvVarCollection) -> bool {
-        self.model().string_model == other.model().string_model && self.id == other.id
     }
 }
 

@@ -59,7 +59,6 @@ use crate::{
     },
     terminal::{self, TerminalModel},
     util::link_detection::{add_link_detection_mouse_interactions, DetectedLinksState},
-    workspaces::{user_workspaces::UserWorkspaces, workspace::CustomerType},
 };
 use crate::{
     ai::{
@@ -92,7 +91,6 @@ use crate::{
             view_util::error_color,
             TextLocation,
         },
-        AIRequestUsageModel,
     },
     code::{editor::view::CodeEditorView, editor_management::CodeSource},
     notebooks::editor::{markdown_table_appearance, rich_text_styles},
@@ -2946,20 +2944,6 @@ pub fn render_failed_output(props: FailedOutputProps, app: &AppContext) -> Box<d
     let appearance = Appearance::as_ref(app);
 
     let error_text = match props.error {
-        RenderableAIError::QuotaLimit => {
-            let ai_request_usage_model = AIRequestUsageModel::as_ref(app);
-            let formatted_next_refresh_time = ai_request_usage_model
-                .next_refresh_time()
-                .format("%B %d")
-                .to_string();
-
-            format!(
-                "{ERROR_APOLOGY_TEXT}\n\nYou've reached your credit limit. Your credit limit resets on {formatted_next_refresh_time}.",
-            )
-        }
-        RenderableAIError::ServerOverloaded => {
-            "Warp is currently overloaded. Please try again later.".to_string()
-        }
         RenderableAIError::InternalWarpError => {
             format!("{ERROR_APOLOGY_TEXT}\n\n{INTERNAL_WARP_ERROR}")
         }
@@ -3206,12 +3190,9 @@ pub(crate) fn render_debug_footer<V: View>(
         .to_string()
     };
 
-    // Check if we should show the submit button (hide for dogfood and enterprise users)
+    // Check if we should show the submit button (hide for dogfood users)
     let is_dogfood = ChannelState::channel().is_dogfood();
-    let is_enterprise_user = UserWorkspaces::as_ref(app)
-        .current_team()
-        .is_some_and(|team| team.billing_metadata.customer_type == CustomerType::Enterprise);
-    let submit_button = if !is_dogfood && !is_enterprise_user {
+    let submit_button = if !is_dogfood {
         let submit_button_style = UiComponentStyles {
             font_color: Some(
                 appearance
@@ -3404,8 +3385,6 @@ pub(super) fn query_prefix_highlight_len(
 ) -> Option<usize> {
     if displayed_query.starts_with(commands::PLAN.name) {
         Some(commands::PLAN.name.len())
-    } else if displayed_query.starts_with(commands::CREATE_ENVIRONMENT.name) {
-        Some(commands::CREATE_ENVIRONMENT.name.len())
     } else if displayed_query.starts_with(commands::AGENT.name) {
         Some(commands::AGENT.name.len())
     } else if displayed_query.starts_with(commands::NEW.name) {
@@ -3417,7 +3396,6 @@ pub(super) fn query_prefix_highlight_len(
             | AIAgentInput::AutoCodeDiffQuery { .. }
             | AIAgentInput::ResumeConversation { .. }
             | AIAgentInput::InitProjectRules { .. }
-            | AIAgentInput::CreateEnvironment { .. }
             | AIAgentInput::TriggerPassiveSuggestion { .. }
             | AIAgentInput::CreateNewProject { .. }
             | AIAgentInput::CloneRepository { .. }

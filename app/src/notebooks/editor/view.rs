@@ -61,11 +61,10 @@ use crate::{
     editor::InteractionState,
     features::FeatureFlag,
     notebooks::{
+        actions::{ActionEntrypoint, BlockInfo, EmbeddedObjectInfo, SelectionMode},
         editor::{find_bar::FindBarAction, model::word_unit},
         link::{LinkTarget, NotebookLinks, ResolveError},
-        telemetry::{ActionEntrypoint, BlockInfo, EmbeddedObjectInfo, SelectionMode},
     },
-    server::ids::SyncId,
     settings::{AppEditorSettings, FontSettings, SelectionSettings},
     terminal::{grid_renderer::URL_COLOR, links::directly_open_link_keybinding_string},
     ui_components::icons::ICON_DIMENSIONS,
@@ -75,6 +74,7 @@ use crate::{
     },
     view_components::DismissibleToast,
 };
+use warp_server_client::ids::SyncId;
 
 #[cfg(feature = "local_fs")]
 use crate::util::link_detection::{detect_file_paths, get_word_range_at_offset, DetectedLinkType};
@@ -2509,34 +2509,6 @@ impl RichTextEditorView {
                 .has_single_exact_rendered_mermaid_selection(ctx)
             && !matches!(self.ongoing_mouse_state, OngoingMouseEvent::Selecting)
             && !self.is_block_insertion_menu_open()
-    }
-
-    /// Insert an embedded notebook inline link at the current insertion menu source.
-    /// For now, this looks like a regular hyperlink that opens the notebook in a new tab.
-    pub(super) fn insert_embedded_notebook_view(
-        &mut self,
-        title: String,
-        link: String,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        match self.insertion_menu_state.open_at_source {
-            Some(BlockInsertionSource::AtCursor) if self.selection_is_single_cursor(ctx) => {
-                self.model.update(ctx, |model, ctx| {
-                    // Remove slash
-                    model.backspace(ctx);
-                });
-            }
-            Some(BlockInsertionSource::BlockInsertionButton) if self.hovered_block.is_some() => {
-                self.model.update(ctx, |model, ctx| {
-                    model.newline(ctx);
-                });
-            }
-            _ => return,
-        };
-
-        self.model.update(ctx, |model, ctx| {
-            model.set_link(title, link, ctx);
-        });
     }
 }
 

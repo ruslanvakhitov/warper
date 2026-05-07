@@ -17,11 +17,7 @@ STAGE_DIR="$DIST_DIR/appimagepkg"
 APP_DIR="$DIST_DIR/AppDir"
 
 # Extract channel suffix from BINARY_NAME
-if [ "$ARTIFACT" = "cli" ]; then
-  CHANNEL_SUFFIX="${BINARY_NAME#oz}"
-else
-  CHANNEL_SUFFIX="${BINARY_NAME#warp}"
-fi
+CHANNEL_SUFFIX="${BINARY_NAME#warp}"
 if [ "$RELEASE_CHANNEL" = "oss" ]; then
   CHANNEL_SUFFIX=""
   PACKAGE_NAME="warper"

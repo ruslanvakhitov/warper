@@ -6,7 +6,6 @@ use crate::ai::agent::{
     AIAgentAction, AIAgentActionResultType, AIAgentActionType, LifecycleEventType,
     StartAgentExecutionMode, StartAgentResult,
 };
-use crate::ai::blocklist::orchestration_event_poller::OrchestrationEventPoller;
 use crate::ai::blocklist::orchestration_events::OrchestrationEventService;
 use crate::ai::blocklist::{BlocklistAIHistoryEvent, BlocklistAIHistoryModel};
 use warp_cli::agent::Harness;
@@ -109,15 +108,7 @@ impl StartAgentExecutor {
                         let _ = pending.sender.try_send(StartAgentDecision::Started {
                             agent_id: id.clone(),
                         });
-                        if FeatureFlag::OrchestrationV2.is_enabled() {
-                            OrchestrationEventPoller::handle(ctx).update(ctx, |poller, ctx| {
-                                poller.register_watched_run_id(
-                                    pending.parent_conversation_id,
-                                    id,
-                                    ctx,
-                                );
-                            });
-                        } else {
+                        if !FeatureFlag::OrchestrationV2.is_enabled() {
                             OrchestrationEventService::handle(ctx).update(ctx, |svc, ctx| {
                                 svc.emit_child_startup_started(*conversation_id, ctx);
                             });
@@ -232,7 +223,7 @@ impl StartAgentExecutor {
         let parent_conversation_id = input.conversation_id;
         let (execution_mode, parent_run_id) = match execution_mode.clone() {
             StartAgentExecutionMode::Local { harness_type: None } => {
-                // Legacy local Oz child agents do not use
+                // Legacy local child agents do not use
                 // StartAgentRequest.parent_run_id. Instead, the child
                 // conversation is linked back to its parent on the first
                 // request via Request.metadata.parent_agent_id, sourced

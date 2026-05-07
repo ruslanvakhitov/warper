@@ -4,12 +4,11 @@ use crate::search::ai_context_menu::view::AIContextMenu;
 use crate::settings::InputSettings;
 use crate::{
     ai::{blocklist::block::cli_controller::CLISubagentController, llms::LLMPreferences},
-    cloud_object::model::generic_string_model::StringModel,
     settings::AISettingsChangedEvent,
     terminal::profile_model_selector::{
         calculate_max_profile_name_width, calculate_scaled_font_size,
     },
-    terminal::view::ambient_agent::AmbientAgentViewModel,
+    terminal::view::local_agent::AmbientAgentViewModel,
 };
 use pathfinder_color::ColorU;
 #[cfg(not(target_family = "wasm"))]
@@ -59,7 +58,6 @@ use crate::{
             BlocklistAIInputModel, InputConfig, InputType,
         },
         execution_profiles::profiles::AIExecutionProfilesModel,
-        AIRequestUsageModel,
     },
     network::NetworkStatus,
     settings::AISettings,
@@ -70,13 +68,11 @@ use crate::{
         model::{block::BlockMetadata, session::Sessions},
         profile_model_selector::{ProfileModelSelector, ProfileModelSelectorEvent},
         session_settings::{SessionSettings, SessionSettingsChangedEvent},
-        shared_session::permissions_manager::SessionPermissionsManager,
     },
     ui_components::icons::Icon,
     view_components::action_button::{
         ActionButton, ActionButtonTheme, ButtonSize, NakedTheme, TooltipAlignment,
     },
-    workspaces::user_workspaces::UserWorkspaces,
     BlocklistAIHistoryModel,
 };
 use warp_core::features::FeatureFlag;
@@ -531,12 +527,6 @@ impl UniversalDeveloperInputButtonBar {
         ctx.subscribe_to_model(&NetworkStatus::handle(ctx), |_, _, _, ctx| {
             ctx.notify();
         });
-        ctx.subscribe_to_model(&UserWorkspaces::handle(ctx), |_, _, _, ctx| {
-            ctx.notify();
-        });
-        ctx.subscribe_to_model(&AIRequestUsageModel::handle(ctx), |_, _, _, ctx| {
-            ctx.notify()
-        });
 
         ctx.subscribe_to_model(&SessionSettings::handle(ctx), |_, _, event, ctx| {
             if let SessionSettingsChangedEvent::ShowModelSelectorsInPrompt { .. } = event {
@@ -582,10 +572,6 @@ impl UniversalDeveloperInputButtonBar {
             me.notify_and_notify_children(ctx);
         });
 
-        // Keep the control disabled state in sync with role changes
-        ctx.subscribe_to_model(&SessionPermissionsManager::handle(ctx), |me, _, _, ctx| {
-            me.update_segmented_control_disabled_state(ctx);
-        });
         // Keep the control disabled state in sync with agent control state
         ctx.subscribe_to_model(&cli_subagent_controller, move |me, _, _, ctx| {
             me.update_segmented_control_disabled_state(ctx);
@@ -664,7 +650,7 @@ impl UniversalDeveloperInputButtonBar {
         let (is_reader, is_agent_in_control) = {
             let terminal_model = self.terminal_model.lock();
             (
-                terminal_model.shared_session_status().is_reader(),
+                false,
                 terminal_model
                     .block_list()
                     .active_block()
@@ -830,15 +816,7 @@ impl View for UniversalDeveloperInputButtonBar {
 
             buttons = buttons.with_child(ChildView::new(&self.at_button).finish());
 
-            // Viewers cannot attach files in shared sessions at this point.
-            if !self
-                .terminal_model
-                .lock()
-                .shared_session_status()
-                .is_viewer()
-            {
-                buttons = buttons.with_child(ChildView::new(&self.file_button).finish());
-            }
+            buttons = buttons.with_child(ChildView::new(&self.file_button).finish());
 
             let show_model_selector = FeatureFlag::ProfilesDesignRevamp.is_enabled()
                 || *SessionSettings::as_ref(app).show_model_selectors_in_prompt;

@@ -1,8 +1,6 @@
-mod saved_prompts;
 mod zero_state;
 
 use ai::skills::SkillProvider;
-pub(crate) use saved_prompts::*;
 use warp_core::features::FeatureFlag;
 pub use zero_state::*;
 
@@ -27,7 +25,7 @@ use crate::terminal::cli_agent_sessions::{
 use crate::terminal::model::session::SessionType;
 use warp_core::ui::Icon as WarpIcon;
 
-use super::AcceptSlashCommandOrSavedPrompt;
+use super::AcceptSlashCommand;
 use crate::{
     ai::blocklist::{
         agent_view::{AgentViewController, AgentViewControllerEvent},
@@ -42,7 +40,7 @@ use crate::{
     },
     settings::{AISettings, AISettingsChangedEvent, InputSettings, InputSettingsChangedEvent},
     terminal::model::session::active_session::{ActiveSession, ActiveSessionEvent},
-    workspaces::user_workspaces::{UserWorkspaces, UserWorkspacesEvent},
+    workspaces::user_workspaces::UserWorkspaces,
 };
 
 pub struct DataSourceArgs {
@@ -103,11 +101,6 @@ impl SlashCommandDataSource {
                 event,
                 InputSettingsChangedEvent::EnableSlashCommandsInTerminal { .. }
             ) {
-                me.recompute_active_commands(ctx);
-            }
-        });
-        ctx.subscribe_to_model(&UserWorkspaces::handle(ctx), |me, event, ctx| {
-            if matches!(event, UserWorkspacesEvent::CodebaseContextEnablementChanged) {
                 me.recompute_active_commands(ctx);
             }
         });
@@ -274,7 +267,7 @@ impl SlashCommandDataSource {
 }
 
 impl SyncDataSource for SlashCommandDataSource {
-    type Action = AcceptSlashCommandOrSavedPrompt;
+    type Action = AcceptSlashCommand;
 
     fn run_query(
         &self,
@@ -408,7 +401,7 @@ impl Entity for SlashCommandDataSource {
 
 #[derive(Debug, Clone)]
 pub struct InlineItem {
-    pub action: AcceptSlashCommandOrSavedPrompt,
+    pub action: AcceptSlashCommand,
     pub icon_path: &'static str,
     pub name: String,
     pub description: Option<String>,
@@ -426,7 +419,7 @@ impl InlineItem {
     ) -> Self {
         let appearance = Appearance::as_ref(app);
         Self {
-            action: AcceptSlashCommandOrSavedPrompt::SlashCommand { id: *command_id },
+            action: AcceptSlashCommand::SlashCommand { id: *command_id },
             icon_path: command.icon_path,
             name: command.name.to_owned(),
             description: Some(command.description.to_owned()),
@@ -455,7 +448,7 @@ impl InlineItem {
         };
 
         Self {
-            action: AcceptSlashCommandOrSavedPrompt::Skill {
+            action: AcceptSlashCommand::Skill {
                 reference: skill.reference.clone(),
                 name: skill.name.clone(),
             },

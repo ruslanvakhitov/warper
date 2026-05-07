@@ -374,12 +374,12 @@ fn restored_v1_child_conversation_re_registers_lifecycle_subscription() {
         // parent's `server_conversation_token` is the agent identifier the
         // child subscribes to.
         let parent_token = "parent-token-v1";
-        let mut parent_conversation = AIConversation::new(false);
+        let mut parent_conversation = AIConversation::new();
         parent_conversation.set_server_conversation_token(parent_token.to_string());
         let parent_conversation_id = parent_conversation.id();
 
         // Build a child conversation pointing at the parent.
-        let mut child_conversation = AIConversation::new(false);
+        let mut child_conversation = AIConversation::new();
         child_conversation.set_parent_conversation_id(parent_conversation_id);
         let child_conversation_id = child_conversation.id();
 

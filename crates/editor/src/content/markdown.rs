@@ -41,8 +41,8 @@ use super::{
 /// A Markdown format to serialize a [`Buffer`] into.
 #[derive(Clone, Copy)]
 pub enum MarkdownStyle<'a> {
-    /// The internal Markdown format used in Warp Drive. References are normalized, so the Markdown
-    /// only refers to other objects by their IDs, with no other data.
+    /// The internal Markdown format used for persisted editor content. References are normalized,
+    /// so the Markdown only refers to other objects by their IDs, with no other data.
     Internal,
     /// A Markdown format suitable for external use. If an [`AppContext`] is set, it may be used to
     /// enrich the exported Markdown (e.g. by expanding out embedded objects).

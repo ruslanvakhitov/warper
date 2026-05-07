@@ -4,7 +4,7 @@ use warp_cli::mcp::MCPSpec;
 
 use crate::ai::mcp::TemplatableMCPServer;
 
-/// Build the `mcp_servers` map to send to the public ambient-agent API.
+/// Build the `mcp_servers` map for an agent configuration snapshot.
 ///
 /// Returns the unwrapped server map (`{ <server_name>: <server_config>, ... }`).
 /// If user input includes wrapper shapes like `{ "mcpServers": { ... } }`, we unpack them.
@@ -87,7 +87,7 @@ fn normalize_mcp_json_for_single_server(input: &str) -> anyhow::Result<String> {
         .context("Failed to normalize MCP JSON")
 }
 
-// The CLI + ambient-agent API isn’t used in WASM builds, but this module still needs to compile.
+// The CLI path is not used in WASM builds, but this module still needs to compile.
 // Implement the same normalization behavior (single-server shorthand wrap) locally.
 #[cfg(target_family = "wasm")]
 fn normalize_mcp_json_for_single_server(input: &str) -> anyhow::Result<String> {

@@ -69,7 +69,7 @@ impl RepoMetadataModel {
     }
 
     /// Creates a new `RepoMetadataModel` with incremental update emission
-    /// enabled on the local sub-model. Used by the remote server.
+    /// enabled on the local sub-model. Used by remote sessions.
     pub fn new_with_incremental_updates(ctx: &mut ModelContext<Self>) -> Self {
         let local = ctx.add_model(|ctx| {
             let mut model = LocalRepoMetadataModel::new(ctx);
@@ -281,8 +281,7 @@ impl RepoMetadataModel {
     }
 
     // ── Remote-specific operations ─────────────────────────────────
-    // These delegate to the remote sub-model and are called by the
-    // RemoteServerManager event subscription in the app layer.
+    // These delegate to the remote sub-model for restored remote metadata.
 
     /// Inserts or replaces a remote repository from a snapshot push event.
     pub fn insert_remote_snapshot(

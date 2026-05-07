@@ -2,22 +2,14 @@ use std::collections::HashSet;
 
 use super::*;
 use crate::ai::active_agent_views_model::ActiveAgentViewsModel;
-use crate::ai::agent_conversations_model::AgentConversationsModel;
 use crate::ai::blocklist::{AIQueryHistory, BlocklistAIPermissions};
 use crate::ai::execution_profiles::profiles::AIExecutionProfilesModel;
 use crate::ai::llms::LLMPreferences;
-use crate::ai::mcp::gallery::MCPGalleryManager;
 use crate::ai::mcp::templatable_manager::TemplatableMCPServerManager;
 use crate::ai::outline::RepoOutlines;
 use crate::ai::persisted_workspace::PersistedWorkspace;
 use crate::ai::restored_conversations::RestoredAgentConversations;
 use crate::ai::skills::SkillManager;
-use crate::ai::AIRequestUsageModel;
-use crate::auth::auth_manager::AuthManager;
-use crate::auth::AuthStateProvider;
-use crate::changelog_model::ChangelogModel;
-use crate::cloud_object::model::persistence::CloudModel;
-use crate::pricing::PricingInfoModel;
 use crate::search::files::model::FileSearchModel;
 use crate::terminal::cli_agent_sessions::CLIAgentSessionsModel;
 use crate::terminal::input::slash_command_model::SlashCommandEntryState;
@@ -31,11 +23,7 @@ use watcher::HomeDirectoryWatcher;
 use crate::editor::{EditorAction, TextStyleOperation};
 use crate::input_suggestions::{HistoryOrder, Item};
 use crate::network::NetworkStatus;
-use crate::server::cloud_objects::{listener::Listener, update_manager::UpdateManager};
-use crate::server::server_api::ServerApiProvider;
-use crate::server::sync_queue::SyncQueue;
 
-use crate::server::telemetry::context_provider::AppTelemetryContextProvider;
 use crate::settings::{AliasExpansionSettings, AppEditorSettings, InputBoxType, PrivacySettings};
 use crate::settings_view::keybindings::KeybindingChangedNotifier;
 #[cfg(windows)]
@@ -45,9 +33,6 @@ use crate::terminal::alt_screen_reporting::AltScreenReporting;
 use crate::terminal::event::BootstrappedEvent;
 use crate::terminal::keys::TerminalKeybindings;
 use crate::terminal::local_shell::LocalShellState;
-use crate::terminal::shared_session::permissions_manager::SessionPermissionsManager;
-use crate::workspaces::team_tester::TeamTesterStatus;
-use crate::workspaces::update_manager::TeamUpdateManager;
 use crate::workspaces::user_workspaces::UserWorkspaces;
 
 use crate::terminal::local_tty::shell::ShellStarter;
@@ -62,6 +47,7 @@ use ai::index::full_source_code_embedding::manager::CodebaseIndexManager;
 use chrono::Local;
 use warpui::text::SelectionType;
 
+use crate::experiments;
 use crate::terminal::shell::ShellType;
 use crate::test_util::settings::initialize_settings_for_tests;
 use crate::themes::theme::AnsiColorIdentifier;
@@ -70,7 +56,6 @@ use crate::{
     editor::{DisplayPoint, Point},
     terminal::TerminalView,
 };
-use crate::{experiments, AgentNotificationsModel};
 use fuzzy_match::FuzzyMatchResult;
 use session_sharing_protocol::common::Role;
 use smol_str::SmolStr;
@@ -93,11 +78,10 @@ use warp_util::user_input::UserInput;
 use workflows::workflow::{Argument, ArgumentType, Workflow};
 
 use crate::context_chips::prompt::Prompt;
-use crate::terminal::general_settings::UserDefaultShellUnsupportedBannerState;
 use crate::terminal::resizable_data::ResizableData;
 use crate::terminal::view::inline_banner::ByoLlmAuthBannerSessionState;
 use crate::terminal::writeable_pty::command_history::update_command_history;
-use crate::{GlobalResourceHandles, GlobalResourceHandlesProvider, ReferralThemeStatus};
+use crate::{GlobalResourceHandles, GlobalResourceHandlesProvider};
 
 pub fn initialize_app(app: &mut App) {
     initialize_settings_for_tests(app);
@@ -106,19 +90,10 @@ pub fn initialize_app(app: &mut App) {
     app.update(init);
 
     // Initialize any global models required by the Input view.
-    app.add_singleton_model(|_| ServerApiProvider::new_for_test());
-    app.add_singleton_model(|ctx| ChangelogModel::new(ServerApiProvider::as_ref(ctx).get()));
     app.add_singleton_model(|_| NetworkStatus::new());
     app.add_singleton_model(|_| SystemStats::new());
     app.add_singleton_model(|_| Prompt::mock());
-    app.add_singleton_model(SyncQueue::mock);
-    app.add_singleton_model(CloudModel::mock);
     app.add_singleton_model(UserWorkspaces::default_mock);
-    app.add_singleton_model(TeamTesterStatus::mock);
-    app.add_singleton_model(TeamUpdateManager::mock);
-    app.add_singleton_model(UpdateManager::mock);
-    app.add_singleton_model(MCPGalleryManager::new);
-    app.add_singleton_model(Listener::mock);
     app.add_singleton_model(|_| Appearance::mock());
     app.add_singleton_model(PrivacySettings::mock);
     app.add_singleton_model(|_ctx| SyncedInputState::mock());
@@ -128,19 +103,11 @@ pub fn initialize_app(app: &mut App) {
     app.add_singleton_model(|_| KeybindingChangedNotifier::new());
     app.add_singleton_model(TerminalKeybindings::new);
     app.add_singleton_model(|_| ActiveSession::default());
-    app.add_singleton_model(|ctx| {
-        AIRequestUsageModel::new_for_test(ServerApiProvider::as_ref(ctx).get_ai_client(), ctx)
-    });
     app.add_singleton_model(|_| BlocklistAIHistoryModel::new_for_test());
     app.add_singleton_model(|_| CLIAgentSessionsModel::new());
     app.add_singleton_model(|_| ActiveAgentViewsModel::new());
-    app.add_singleton_model(AgentNotificationsModel::new);
     app.add_singleton_model(BlocklistAIPermissions::new);
-    app.add_singleton_model(|_| AuthStateProvider::new_for_test());
-    app.add_singleton_model(AppTelemetryContextProvider::new_context_provider);
-    app.add_singleton_model(AuthManager::new_for_test);
     app.add_singleton_model(LLMPreferences::new);
-    app.add_singleton_model(SessionPermissionsManager::new);
     app.add_singleton_model(DirectoryWatcher::new);
     app.add_singleton_model(|_| DetectedRepositories::default());
     app.add_singleton_model(|_| crate::code_review::git_status_update::GitStatusUpdateModel::new());
@@ -150,7 +117,12 @@ pub fn initialize_app(app: &mut App) {
     #[cfg(feature = "voice_input")]
     app.add_singleton_model(voice_input::VoiceInput::new);
     app.add_singleton_model(|ctx| {
-        CodebaseIndexManager::new_for_test(ServerApiProvider::as_ref(ctx).get(), ctx)
+        CodebaseIndexManager::new_for_test(
+            std::sync::Arc::new(
+                ::ai::index::full_source_code_embedding::store_client::MockStoreClient,
+            ),
+            ctx,
+        )
     });
     app.add_singleton_model(|_| IgnoredSuggestionsModel::new(vec![]));
     app.add_singleton_model(|_| TemplatableMCPServerManager::default());
@@ -166,14 +138,11 @@ pub fn initialize_app(app: &mut App) {
 
     // Add GlobalResourceHandlesProvider for persistence
     let tips_handle = app.add_model(|_| TipsCompleted::default());
-    let referral_theme_status = app.add_model(ReferralThemeStatus::new);
-    let user_default_shell_unsupported_banner_model_handle =
-        app.add_model(|_| UserDefaultShellUnsupportedBannerState::default_value());
+    let user_default_shell_unsupported_banner_model_handle = app.add_model(|_| Default::default());
     app.add_singleton_model(move |_ctx| {
         GlobalResourceHandlesProvider::new(GlobalResourceHandles {
             model_event_sender: None, // No persistence in tests
             tips_completed: tips_handle,
-            referral_theme_status,
             user_default_shell_unsupported_banner_model_handle,
             settings_file_error: None,
         })
@@ -190,12 +159,7 @@ pub fn initialize_app(app: &mut App) {
     app.add_singleton_model(OneTimeModalModel::new);
     app.add_singleton_model(|_| WorkspaceRegistry::new());
     app.add_singleton_model(|_| ToastStack);
-    app.add_singleton_model(|_| PricingInfoModel::new());
     app.add_singleton_model(ByoLlmAuthBannerSessionState::new);
-    app.add_singleton_model(|_| {
-        crate::ai::ambient_agents::github_auth_notifier::GitHubAuthNotifier::new()
-    });
-    app.add_singleton_model(AgentConversationsModel::new);
     app.add_singleton_model(PersistedWorkspace::new_for_test);
     // `LocalShellState` captures the user's interactive login-shell PATH (used
     // for MCP/sbx executable resolution). Tests don't exercise that capture, so
@@ -993,84 +957,6 @@ fn test_history_up_buffer_restoration() {
         });
         input.read(&app, |input, ctx| {
             assert_eq!(input.buffer_text(ctx), "ls cd");
-        });
-    });
-}
-
-#[test]
-fn test_history_up_for_shared_session_executor() {
-    App::test((), |mut app| async move {
-        initialize_app(&mut app);
-
-        // Initialize as shared session executor
-        // such that the history model isn't also initialized during bootstrapping
-        // TODO(maggs): Improve testing utils for session sharing
-        let tips_model = app.add_model(|_| TipsCompleted::default());
-        let (_, terminal) = app.add_window(WindowStyle::NotStealFocus, move |ctx| {
-            TerminalView::new_for_test(tips_model, None, ctx)
-        });
-        terminal.update(&mut app, |view, _| {
-            let mut model = view.model.lock();
-            model.block_list_mut().set_bootstrapped();
-            model
-                .block_list_mut()
-                .active_block_for_test()
-                .set_session_id(SessionId::from(0));
-            model.set_shared_session_status(SharedSessionStatus::ActiveViewer {
-                role: Role::Executor,
-            });
-        });
-
-        let (input, suggestions) = terminal.read(&app, |view, _ctx| {
-            let input = view.input().clone();
-            let input_suggestions = input.read(&app, |input, _ctx| input.input_suggestions.clone());
-            (input, input_suggestions)
-        });
-
-        input.update(&mut app, |input, ctx| {
-            // Initialize shared session history model
-            let shared_session_history_model = ctx.add_model(|_| SharedSessionHistoryModel::new());
-
-            // Simulate blocks
-            shared_session_history_model.update(ctx, |history_model, _ctx| {
-                history_model.push(HistoryEntry::for_completed_block(
-                    "echo foo".into(),
-                    &SerializedBlock::new_for_test("echo foo".as_bytes().to_vec(), vec![]),
-                ));
-
-                history_model.push(HistoryEntry::for_completed_block(
-                    "cd ~".into(),
-                    &SerializedBlock::new_for_test("cd ~".as_bytes().to_vec(), vec![]),
-                ));
-            });
-
-            input.shared_session_input_state = Some(SharedSessionInputState {
-                history_model: shared_session_history_model,
-                pending_command_execution_request: None,
-            });
-            input.editor_up(ctx);
-        });
-
-        // Arrow up displays history in the correct order for an empty buffer
-        suggestions.read(&app, |suggestions, _ctx| {
-            assert_eq!(suggestions.items().len(), 2);
-            assert_eq!(suggestions.item_text(0).as_str(), "echo foo");
-            assert_eq!(suggestions.item_text(1).as_str(), "cd ~");
-        });
-
-        // The buffer should contain the text of the last item
-        input.read(&app, |input, ctx| {
-            assert_eq!(input.buffer_text(ctx), "cd ~");
-        });
-
-        // Shared session executor should be able to navigate through history
-        input.update(&mut app, |input, ctx| {
-            input.editor_up(ctx);
-        });
-
-        // The buffer should contain the text of the second last item after another arrow-up
-        input.read(&app, |input, ctx| {
-            assert_eq!(input.buffer_text(ctx), "echo foo");
         });
     });
 }
@@ -2503,33 +2389,6 @@ fn test_open_slash_command_requires_path() {
 }
 
 #[test]
-fn test_changelog_slash_command_clears_buffer_on_success() {
-    App::test((), |mut app| async move {
-        initialize_app(&mut app);
-
-        let terminal = add_window_with_bootstrapped_terminal(
-            &mut app, None, /* history_file_commands */
-            None,
-        )
-        .await;
-        let input = terminal.read(&app, |terminal, _| terminal.input().clone());
-
-        input.update(&mut app, |input, ctx| {
-            input.editor.update(ctx, |editor, ctx| {
-                editor.set_buffer_text(commands::CHANGELOG.name, ctx)
-            });
-        });
-
-        input.update(&mut app, |input, ctx| {
-            input.input_enter(ctx);
-        });
-
-        input.read(&app, |input, ctx| {
-            assert_eq!(input.buffer_text(ctx), "");
-        });
-    });
-}
-#[test]
 fn test_open_slash_command_opens_files_palette_when_entered_from_slash_menu() {
     App::test((), |mut app| async move {
         initialize_app(&mut app);
@@ -2716,7 +2575,6 @@ fn test_new_conversation_keybinding_requires_double_press_in_non_empty_agent_vie
                 controller.send_user_query_in_conversation(
                     "hello".to_owned(),
                     conversation_id,
-                    None,
                     ctx,
                 );
             });
@@ -2847,7 +2705,6 @@ fn test_new_conversation_input_trigger_remains_single_step_in_non_empty_agent_vi
                 controller.send_user_query_in_conversation(
                     "hello".to_owned(),
                     conversation_id,
-                    None,
                     ctx,
                 );
             });

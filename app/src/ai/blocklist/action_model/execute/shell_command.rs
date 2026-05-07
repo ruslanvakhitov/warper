@@ -36,7 +36,6 @@ use crate::{
         TerminalModel,
     },
 };
-use crate::{send_telemetry_from_ctx, TelemetryEvent};
 
 use super::{ActionExecution, AnyActionExecution, ExecuteActionInput, PreprocessActionInput};
 
@@ -55,9 +54,9 @@ pub struct ShellCommandExecutor {
 
 impl ShellCommandExecutor {
     pub const MAX_WAIT_DURATION: Duration = Duration::from_secs(2);
-    /// Maximum delay we will honor for any agent-requested wait. Applies both  
-    /// to finite `ShellCommandDelay::Duration` requests and to  
-    /// `ShellCommandDelay::OnCompletion`, which would otherwise wait indefinitely.  
+    /// Maximum delay we will honor for any agent-requested wait. Applies both
+    /// to finite `ShellCommandDelay::Duration` requests and to
+    /// `ShellCommandDelay::OnCompletion`, which would otherwise wait indefinitely.
     pub const MAX_AGENT_DELAY_DURATION: Duration = Duration::from_secs(120);
 
     pub fn new(
@@ -133,13 +132,7 @@ impl ShellCommandExecutor {
                     Some(self.terminal_view_id),
                     ctx,
                 );
-                if let CommandExecutionPermission::Allowed(reason) = autoexecution_permission {
-                    send_telemetry_from_ctx!(
-                        TelemetryEvent::AutoexecutedAgentModeRequestedCommand { reason },
-                        ctx
-                    );
-                } else if let CommandExecutionPermission::Denied(reason) = autoexecution_permission
-                {
+                if let CommandExecutionPermission::Denied(reason) = &autoexecution_permission {
                     if AppExecutionMode::as_ref(ctx).is_autonomous() {
                         log::warn!(
                             "Command denied during autonomous execution, reason: {reason:?}"
@@ -169,17 +162,6 @@ impl ShellCommandExecutor {
                             .has_agent_written_to_block(),
                         _ => false,
                     };
-
-                    if should_autoexecute {
-                        send_telemetry_from_ctx!(
-                            TelemetryEvent::CLISubagentActionExecuted {
-                                conversation_id: input.conversation_id,
-                                block_id: block_id.clone(),
-                                is_autoexecuted: true,
-                            },
-                            ctx
-                        );
-                    }
 
                     should_autoexecute
                 }
@@ -515,9 +497,9 @@ impl ShellCommandExecutor {
         enum WakeReason {
             BlockFinished,
             Timeout,
-            /// User clicked `Check now` in the warping indicator, short-circuiting  
-            /// the agent-set poll timer. Treated as a preemption so the server does  
-            /// not interpret the early snapshot as a completion.  
+            /// User clicked `Check now` in the warping indicator, short-circuiting
+            /// the agent-set poll timer. Treated as a preemption so the server does
+            /// not interpret the early snapshot as a completion.
             ForceRefresh,
         }
 

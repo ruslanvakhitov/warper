@@ -1,14 +1,12 @@
 pub mod feature_section;
 pub use feature_section::FeatureSectionView;
 pub mod content_section;
-pub use content_section::ContentSectionView;
-use warp_core::features::FeatureFlag;
-pub mod changelog_section;
 use crate::{
     appearance::Appearance,
     resource_center::{section_views::feature_section::FeatureSection, TipAction},
 };
-pub use changelog_section::ChangelogSectionView;
+pub use content_section::ContentSectionView;
+use warp_core::features::FeatureFlag;
 use warpui::{
     elements::{
         Align, Border, ConstrainedBox, Container, CrossAxisAlignment, Element, Flex, Hoverable,
@@ -37,7 +35,6 @@ pub const DROPDOWN_ICON_OPACITY: u8 = 75;
 pub const SCROLLBAR_OFFSET: f32 = 7.;
 pub const SCROLLBAR_WIDTH: ScrollbarWidth = ScrollbarWidth::Auto;
 
-pub const SECTION_SPACING_BOTTOM: f32 = 24.;
 pub const SECTION_SPACING: f32 = 12.;
 pub const BUTTON_PADDING: f32 = 10.;
 pub const ITEM_PADDING_BOTTOM: f32 = 6.;
@@ -49,7 +46,6 @@ pub const ELLIPSE_SVG_PATH: &str = "bundled/svg/ellipse.svg";
 pub enum SectionViewHandle {
     Feature(ViewHandle<FeatureSectionView>),
     Content(ViewHandle<ContentSectionView>),
-    Changelog(ViewHandle<ChangelogSectionView>),
 }
 
 #[derive(Debug)]

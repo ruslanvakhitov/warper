@@ -218,9 +218,10 @@ impl View for WasmNUXDialog {
                 ))
         } else {
             let object_kind = match web_intent_parser::current_web_intent() {
-                Some(WebIntent::DriveObject(_)) => "Warp Drive objects",
-                Some(WebIntent::SessionView(_)) => "shared sessions",
-                _ => "Warp links",
+                Some(WebIntent::SettingsView(_))
+                | Some(WebIntent::Home(_))
+                | Some(WebIntent::Action(_)) => "links",
+                None => "links",
             };
 
             Dialog::new(
@@ -278,7 +279,6 @@ impl TypedActionView for WasmNUXDialog {
                 }
             }
             WasmNUXDialogAction::OpenDownloadDesktopAppLink => {
-                ctx.open_url("https://app.warp.dev/get_warp");
                 self.requested_download = true;
                 ctx.notify();
             }

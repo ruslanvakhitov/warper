@@ -12,9 +12,8 @@ use crate::{
     ai::persisted_workspace::PersistedWorkspace,
     settings::CodeSettings,
     terminal::view::init_project::{
-        lsp_server_selector::LSPServerInfo, CodebaseIndexingResult, CreateEnvironmentResult,
-        InitActionResult, LanguageServersResult, ProjectScopedRulesResult, FILES_TO_CHECK,
-        LINKABLE_FILES,
+        lsp_server_selector::LSPServerInfo, CodebaseIndexingResult, InitActionResult,
+        LanguageServersResult, ProjectScopedRulesResult, FILES_TO_CHECK, LINKABLE_FILES,
     },
     workspaces::user_workspaces::UserWorkspaces,
 };
@@ -29,7 +28,6 @@ pub enum InitStepKind {
     CodebaseContext = 1,
     LanguageServers = 2,
     ProjectScopedRules = 3,
-    CreateEnvironment = 4,
 }
 
 /// Data needed for views to render ready steps, used to create [`InitStepBlock`]s
@@ -45,7 +43,6 @@ pub enum InitStepData {
     ProjectScopedRules {
         linkable_files: Vec<PathBuf>,
     },
-    CreateEnvironment,
 }
 
 /// Status of a step in the /init flow
@@ -128,7 +125,7 @@ impl InitProjectModel {
         let is_already_setup = !Self::should_have_available_steps(&pwd_path, ctx);
 
         Self {
-            steps: [None, None, None, None, None],
+            steps: [None, None, None, None],
             current_step_index: 0,
             is_cancelled: false,
             is_already_setup,
@@ -160,15 +157,6 @@ impl InitProjectModel {
             self.compute_language_servers_step(&pwd_path, ctx);
         }
         self.compute_project_scoped_rules_step(&pwd_path, ctx);
-
-        // CreateEnvironment step is always Ready (no async computation)
-        self.set_step(
-            InitStepKind::CreateEnvironment,
-            Some(InitStep::new_ready(
-                InitStepKind::CreateEnvironment,
-                InitStepData::CreateEnvironment,
-            )),
-        );
 
         // Emit welcome step immediately, then progress to next
         ctx.emit(InitProjectModelEvent::InsertStep(InitStepKind::Welcome));
@@ -307,9 +295,6 @@ impl InitProjectModel {
                     InitStepKind::ProjectScopedRules => {
                         InitActionResult::ProjectScopedRules(ProjectScopedRulesResult::Skipped)
                     }
-                    InitStepKind::CreateEnvironment => {
-                        InitActionResult::CreateEnvironment(CreateEnvironmentResult::Skipped)
-                    }
                 };
                 step.status = InitStepStatus::Completed(skipped_result);
             }
@@ -414,8 +399,7 @@ impl InitProjectModel {
         let repo_root = pwd_path.clone();
         let repo_root_for_callback = repo_root.clone();
         let executor = lsp::CommandBuilder::new(self.path_env_var.clone());
-        let http_client =
-            crate::server::server_api::ServerApiProvider::as_ref(ctx).get_http_client();
+        let http_client = super::lsp_http_client();
 
         ctx.spawn(
             async move {
@@ -587,10 +571,6 @@ pub enum InitProjectModelEvent {
     ViewCodebaseContextStatus,
     /// Language server installed and enabled
     LanguageServerInstalledAndEnabled,
-    /// Trigger create environment slash command
-    CreateEnvironment,
-    /// Cloud environment was created
-    EnvironmentCreated,
 }
 
 impl Entity for InitProjectModel {

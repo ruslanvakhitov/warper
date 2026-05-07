@@ -1,0 +1,2 @@
+-- WARPER-001 hard amputation is intentionally irreversible for hosted
+-- persistence residue.

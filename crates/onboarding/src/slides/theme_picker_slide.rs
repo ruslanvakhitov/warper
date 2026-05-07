@@ -1,13 +1,11 @@
 use super::OnboardingSlide;
 use crate::model::{OnboardingStateEvent, OnboardingStateModel};
 use crate::slides::{bottom_nav, layout, slide_content};
-use crate::telemetry::OnboardingEvent;
 use crate::visuals::theme_picker_visual;
 use crate::OnboardingIntention;
 use pathfinder_color::ColorU;
 use ui_components::{button, Component as _, Options as _};
 use warp_core::features::FeatureFlag;
-use warp_core::send_telemetry_from_ctx;
 use warp_core::ui::{appearance::Appearance, theme::color::internal_colors, theme::WarpTheme};
 use warpui::{
     elements::{
@@ -25,32 +23,17 @@ use warpui::{
 
 #[derive(Debug, Clone)]
 pub enum ThemePickerSlideEvent {
-    ThemeSelected {
-        theme_name: String,
-    },
-    SyncWithOsToggled {
-        enabled: bool,
-    },
-    /// Emitted when the user clicks the "Privacy Settings" link on the terminal
-    /// intention theme slide. The parent orchestrator is expected to open the
-    /// privacy settings (e.g. via a LoginSlideView in privacy-only mode).
-    PrivacySettingsRequested,
+    ThemeSelected { theme_name: String },
+    SyncWithOsToggled { enabled: bool },
 }
 
 #[derive(Debug, Clone)]
 pub enum ThemePickerSlideAction {
-    SelectTheme {
-        index: usize,
-    },
+    SelectTheme { index: usize },
     ToggleSyncWithOs,
     BackClicked,
     NextClicked,
-    /// Dispatched when the user clicks the "Privacy Settings" link in the
-    /// terminal-intention disclaimer block below the theme options.
-    PrivacySettingsClicked,
 }
-
-const TOS_URL: &str = "https://www.warp.dev/terms-of-service";
 
 #[derive(Debug, Clone)]
 struct ThemeOption {
@@ -64,8 +47,6 @@ pub struct ThemePickerSlide {
     selected_theme_index: usize,
     sync_with_os: bool,
     sync_with_os_mouse: MouseStateHandle,
-    tos_mouse_state: MouseStateHandle,
-    privacy_settings_mouse_state: MouseStateHandle,
     back_button: button::Button,
     next_button: button::Button,
     scroll_state: ClippedScrollStateHandle,
@@ -113,8 +94,6 @@ impl ThemePickerSlide {
             selected_theme_index,
             sync_with_os: false,
             sync_with_os_mouse: MouseStateHandle::default(),
-            tos_mouse_state: MouseStateHandle::default(),
-            privacy_settings_mouse_state: MouseStateHandle::default(),
             back_button: button::Button::default(),
             next_button: button::Button::default(),
             scroll_state: ClippedScrollStateHandle::new(),
@@ -161,20 +140,6 @@ impl ThemePickerSlide {
 
         if FeatureFlag::OpenWarpNewSettingsModes.is_enabled() {
             content.push(self.render_sync_with_os_section(appearance));
-        }
-
-        // Add the Privacy Settings / Terms of Service disclaimer block below the
-        // theme options when the user has selected the terminal intention and
-        // won't hit the login slide afterwards. The terminal-intent flow skips
-        // the login slide (which surfaces the same links) unless Warp Drive is
-        // enabled — in that case the login slide will still run after the theme
-        // step and show the disclaimer, so duplicating it here is unnecessary.
-        let state = self.onboarding_state.as_ref(app);
-        let is_terminal = matches!(state.intention(), OnboardingIntention::Terminal);
-        let warp_drive_enabled = state.ui_customization().show_warp_drive;
-        if is_terminal && !warp_drive_enabled && FeatureFlag::OpenWarpNewSettingsModes.is_enabled()
-        {
-            content.push(self.render_disclaimer_section(appearance));
         }
 
         slide_content::onboarding_slide_content(
@@ -549,97 +514,10 @@ impl ThemePickerSlide {
         .finish()
     }
 
-    fn render_disclaimer_section(&self, appearance: &Appearance) -> Box<dyn Element> {
-        let theme = appearance.theme();
-        let sub_text_color = internal_colors::text_sub(theme, theme.background().into_solid());
-        let ui_builder = appearance.ui_builder();
-
-        let disclaimer_styles = UiComponentStyles {
-            font_color: Some(sub_text_color),
-            font_size: Some(12.),
-            ..Default::default()
-        };
-        let link_styles = UiComponentStyles {
-            font_size: Some(12.),
-            ..Default::default()
-        };
-
-        // The disclaimer block is only rendered on the Terminal-without-Drive
-        // path (see `render_theme_picker_content`), where AI is not part of the
-        // selected onboarding settings; skip the "and AI features" wording.
-        let privacy_line = Flex::row()
-            .with_child(
-                ui_builder
-                    .span("If you'd like to opt out of analytics, you can adjust your ")
-                    .with_style(disclaimer_styles)
-                    .build()
-                    .finish(),
-            )
-            .with_child(
-                ui_builder
-                    .link(
-                        "Privacy Settings".into(),
-                        None,
-                        Some(Box::new(|ctx| {
-                            ctx.dispatch_typed_action(
-                                ThemePickerSlideAction::PrivacySettingsClicked,
-                            );
-                        })),
-                        self.privacy_settings_mouse_state.clone(),
-                    )
-                    .soft_wrap(false)
-                    .with_style(link_styles)
-                    .build()
-                    .finish(),
-            )
-            .finish();
-
-        let tos_line = Flex::row()
-            .with_child(
-                ui_builder
-                    .span("By continuing, you agree to Warp's ")
-                    .with_style(disclaimer_styles)
-                    .build()
-                    .finish(),
-            )
-            .with_child(
-                ui_builder
-                    .link(
-                        "Terms of Service".into(),
-                        Some(TOS_URL.into()),
-                        None,
-                        self.tos_mouse_state.clone(),
-                    )
-                    .soft_wrap(false)
-                    .with_style(link_styles)
-                    .build()
-                    .finish(),
-            )
-            .finish();
-
-        Container::new(
-            Flex::column()
-                .with_main_axis_size(MainAxisSize::Min)
-                .with_cross_axis_alignment(CrossAxisAlignment::Start)
-                .with_child(privacy_line)
-                .with_child(Container::new(tos_line).with_margin_top(8.).finish())
-                .finish(),
-        )
-        .with_margin_top(24.)
-        .finish()
-    }
-
     fn select_theme(&mut self, index: usize, ctx: &mut ViewContext<Self>) {
         self.sync_with_os = false;
         self.selected_theme_index = index;
         let theme_name = self.theme_display_name(index);
-        send_telemetry_from_ctx!(
-            OnboardingEvent::SettingChanged {
-                setting: "theme".to_string(),
-                value: theme_name.clone(),
-            },
-            ctx
-        );
         ctx.emit(ThemePickerSlideEvent::ThemeSelected { theme_name });
         ctx.notify();
     }
@@ -705,13 +583,6 @@ impl TypedActionView for ThemePickerSlide {
             }
             ThemePickerSlideAction::ToggleSyncWithOs => {
                 self.sync_with_os = !self.sync_with_os;
-                send_telemetry_from_ctx!(
-                    OnboardingEvent::SettingChanged {
-                        setting: "sync_with_os".to_string(),
-                        value: self.sync_with_os.to_string(),
-                    },
-                    ctx
-                );
                 ctx.emit(ThemePickerSlideEvent::SyncWithOsToggled {
                     enabled: self.sync_with_os,
                 });
@@ -725,9 +596,6 @@ impl TypedActionView for ThemePickerSlide {
             }
             ThemePickerSlideAction::NextClicked => {
                 self.next(ctx);
-            }
-            ThemePickerSlideAction::PrivacySettingsClicked => {
-                ctx.emit(ThemePickerSlideEvent::PrivacySettingsRequested);
             }
         }
     }

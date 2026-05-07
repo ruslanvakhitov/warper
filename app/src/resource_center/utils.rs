@@ -1,5 +1,4 @@
 // Hard coded constants to divide keybindings into their respective categories/sections.
-// This should always align with documentation: https://docs.warp.dev/getting-started/keyboard-shortcuts
 
 use warpui::keymap::Keystroke;
 
@@ -18,7 +17,6 @@ pub const BLOCKS_KEYBINDINGS: &[&str] = &[
     "terminal:open_block_list_context_menu_via_keybinding",
     "terminal:copy_commands",
     "terminal:reinput_commands_with_sudo",
-    "terminal:open_share_block_modal",
     "terminal:expand_block_selection_below",
     "terminal:expand_block_selection_above",
     "terminal:clear_blocks",
@@ -84,7 +82,6 @@ pub const TERMINAL_KEYBINDINGS: &[&str] = &[
     "workspace:set_a11y_verbose_verbosity_level",
     "workspace:show_command_search",
     "workspace:show_keybinding_settings",
-    "workspace:show_settings_account_page",
     "workspace:show_settings",
     "workspace:toggle_command_palette",
     "workspace:toggle_launch_config_palette",

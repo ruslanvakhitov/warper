@@ -112,23 +112,9 @@ impl ReadFilesExecutor {
 
         let locations = locations.clone();
 
-        // Check if this is a remote session with a connected host.
         let session_type = self.active_session.as_ref(ctx).session_type(ctx);
-        let remote_client = match &session_type {
-            Some(SessionType::WarpifiedRemote {
-                host_id: Some(host_id),
-            }) => remote_server::manager::RemoteServerManager::as_ref(ctx)
-                .client_for_host(host_id)
-                .cloned(),
-            _ => None,
-        };
 
-        // Remote session without a usable remote server client. File reading
-        // requires either local access or a connected remote server, neither
-        // of which is available.
-        if matches!(session_type, Some(SessionType::WarpifiedRemote { .. }))
-            && remote_client.is_none()
-        {
+        if matches!(session_type, Some(SessionType::WarpifiedRemote { .. })) {
             return ActionExecution::Sync(AIAgentActionResultType::ReadFiles(
                 ReadFilesResult::Error(
                     "The file read/edit tool is not available on this remote session. \
@@ -136,100 +122,6 @@ impl ReadFilesExecutor {
                         .to_string(),
                 ),
             ));
-        }
-
-        if let Some(client) = remote_client {
-            return ActionExecution::Async {
-                execute_future: Box::pin(async move {
-                    let request = remote_server::proto::ReadFileContextRequest {
-                        files: locations
-                            .iter()
-                            .map(|loc| {
-                                let absolute_path = host_native_absolute_path(
-                                    &loc.name,
-                                    &shell,
-                                    &current_working_directory,
-                                );
-                                remote_server::proto::ReadFileContextFile {
-                                    path: absolute_path,
-                                    line_ranges: loc
-                                        .lines
-                                        .iter()
-                                        .map(|r| remote_server::proto::LineRange {
-                                            start: r.start as u32,
-                                            end: r.end as u32,
-                                        })
-                                        .collect(),
-                                }
-                            })
-                            .collect(),
-                        max_file_bytes: None,
-                        max_batch_bytes: None,
-                    };
-
-                    let response = client
-                        .read_file_context(request)
-                        .await
-                        .map_err(|e| anyhow::anyhow!("Remote read failed: {e}"))?;
-
-                    if !response.failed_files.is_empty() && response.file_contexts.is_empty() {
-                        let failed = response
-                            .failed_files
-                            .iter()
-                            .map(|f| {
-                                let reason = f
-                                    .error
-                                    .as_ref()
-                                    .map(|e| e.message.as_str())
-                                    .unwrap_or("unknown error");
-                                format!("{}: {reason}", f.path)
-                            })
-                            .collect::<Vec<_>>()
-                            .join(", ");
-                        return Ok(ReadFilesResult::Error(format!(
-                            "Failed to read files: {failed}"
-                        )));
-                    }
-
-                    let file_contexts = response
-                        .file_contexts
-                        .into_iter()
-                        .filter_map(|fc| {
-                            let content = match fc.content? {
-                                remote_server::proto::file_context_proto::Content::TextContent(
-                                    text,
-                                ) => crate::ai::agent::AnyFileContent::StringContent(text),
-                                remote_server::proto::file_context_proto::Content::BinaryContent(
-                                    bytes,
-                                ) => crate::ai::agent::AnyFileContent::BinaryContent(bytes),
-                            };
-                            let line_range = match (fc.line_range_start, fc.line_range_end) {
-                                (Some(start), Some(end)) => Some(start as usize..end as usize),
-                                _ => None,
-                            };
-                            let last_modified = fc.last_modified_epoch_millis.map(|ms| {
-                                std::time::UNIX_EPOCH + std::time::Duration::from_millis(ms)
-                            });
-                            Some(crate::ai::agent::FileContext {
-                                file_name: fc.file_name,
-                                content,
-                                line_range,
-                                last_modified,
-                                line_count: fc.line_count as usize,
-                            })
-                        })
-                        .collect();
-
-                    Ok(ReadFilesResult::Success {
-                        files: file_contexts,
-                    })
-                }),
-                on_complete: Box::new(|res: Result<ReadFilesResult, anyhow::Error>, _ctx| {
-                    let action_result =
-                        res.unwrap_or_else(|e| ReadFilesResult::Error(e.to_string()));
-                    AIAgentActionResultType::ReadFiles(action_result)
-                }),
-            };
         }
 
         // Local path.

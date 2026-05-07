@@ -12,7 +12,6 @@ pub mod repos;
 mod selected_items;
 pub mod separator_search_item;
 pub mod view;
-pub mod warp_drive;
 mod zero_state;
 
 use filter_chip_renderer::FilterChipRenderer;

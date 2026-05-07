@@ -1,10 +1,8 @@
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use tempfile::NamedTempFile;
@@ -12,22 +10,15 @@ use warp_cli::agent::Harness;
 use warp_managed_secrets::ManagedSecretValue;
 use warpui::{ModelHandle, ModelSpawner};
 
-use crate::ai::agent::conversation::AIConversationId;
-use crate::ai::ambient_agents::AmbientAgentTaskId;
-use crate::server::server_api::harness_support::HarnessSupportClient;
-use crate::server::server_api::ServerApi;
-use crate::terminal::model::block::BlockId;
 use crate::terminal::CLIAgent;
 
 use super::super::terminal::{CommandHandle, TerminalDriver};
 use super::super::{AgentDriver, AgentDriverError};
 use super::json_utils::{read_json_file_or_default, write_json_file};
-use super::{write_temp_file, HarnessRunner, ResumePayload, SavePoint, ThirdPartyHarness};
+use super::{write_temp_file, HarnessRunner, SavePoint, ThirdPartyHarness};
 
 pub(crate) struct GeminiHarness;
 
-/// Format slug sent to the server when creating a Gemini conversation.
-const GEMINI_CLI_FORMAT: &str = "gemini_cli";
 /// Slash command Gemini's TUI recognises as a graceful shutdown.
 const GEMINI_EXIT_COMMAND: &str = "/quit";
 
@@ -64,23 +55,14 @@ impl ThirdPartyHarness for GeminiHarness {
         &self,
         prompt: &str,
         system_prompt: Option<&str>,
-        _resumption_prompt: Option<&str>,
         working_dir: &Path,
-        _task_id: Option<AmbientAgentTaskId>,
-        server_api: Arc<ServerApi>,
         terminal_driver: ModelHandle<TerminalDriver>,
-        _resume: Option<ResumePayload>,
     ) -> Result<Box<dyn HarnessRunner>, AgentDriverError> {
-        // Gemini does not support conversation resume yet. When it does, it will add its
-        // own `ResumePayload::Gemini(..)` variant and override `fetch_resume_payload`,
-        // and decide how to surface the user-turn resumption preamble.
-        let client: Arc<dyn HarnessSupportClient> = server_api;
         Ok(Box::new(GeminiHarnessRunner::new(
             self.cli_agent().command_prefix(),
             prompt,
             system_prompt,
             working_dir,
-            client,
             terminal_driver,
         )?))
     }
@@ -94,21 +76,11 @@ fn gemini_command(cli_name: &str, prompt_path: &str) -> String {
     format!("{cli_name} --yolo -i \"$(cat '{prompt_path}')\"")
 }
 
-enum GeminiRunnerState {
-    Preexec,
-    Running {
-        conversation_id: AIConversationId,
-        block_id: BlockId,
-    },
-}
-
 struct GeminiHarnessRunner {
     command: String,
     /// Held so the temp file is cleaned up when the runner is dropped.
     _temp_prompt_file: NamedTempFile,
-    client: Arc<dyn HarnessSupportClient>,
     terminal_driver: ModelHandle<TerminalDriver>,
-    state: Mutex<GeminiRunnerState>,
 }
 
 impl GeminiHarnessRunner {
@@ -117,18 +89,15 @@ impl GeminiHarnessRunner {
         prompt: &str,
         _system_prompt: Option<&str>,
         _working_dir: &Path,
-        client: Arc<dyn HarnessSupportClient>,
         terminal_driver: ModelHandle<TerminalDriver>,
     ) -> Result<Self, AgentDriverError> {
-        let temp_file = write_temp_file("oz_prompt_", prompt)?;
+        let temp_file = write_temp_file("gemini_prompt_", prompt)?;
         let prompt_path = temp_file.path().display().to_string();
 
         Ok(Self {
             command: gemini_command(cli_command, &prompt_path),
             _temp_prompt_file: temp_file,
-            client,
             terminal_driver,
-            state: Mutex::new(GeminiRunnerState::Preexec),
         })
     }
 }
@@ -140,33 +109,14 @@ impl HarnessRunner for GeminiHarnessRunner {
         &self,
         foreground: &ModelSpawner<AgentDriver>,
     ) -> Result<CommandHandle, AgentDriverError> {
-        // Create the external conversation record on the server.
-        let conversation_id = self
-            .client
-            .create_external_conversation(GEMINI_CLI_FORMAT)
-            .await
-            .map_err(|e| {
-                log::error!("Failed to create external conversation: {e}");
-                AgentDriverError::ConfigBuildFailed(e)
-            })?;
-        log::info!("Created external conversation {conversation_id}");
-
         let command = self.command.clone();
         let terminal_driver = self.terminal_driver.clone();
-        let command_handle = foreground
+        foreground
             .spawn(move |_, ctx| {
                 terminal_driver.update(ctx, |driver, ctx| driver.execute_command(&command, ctx))
             })
             .await??
-            .await?;
-
-        // Only store conversation info once the CLI command has started.
-        *self.state.lock() = GeminiRunnerState::Running {
-            conversation_id,
-            block_id: command_handle.block_id().clone(),
-        };
-
-        Ok(command_handle)
+            .await
     }
 
     async fn exit(&self, foreground: &ModelSpawner<AgentDriver>) -> Result<()> {
@@ -194,26 +144,8 @@ impl HarnessRunner for GeminiHarnessRunner {
             return Ok(());
         }
 
-        let (conversation_id, block_id) = match &*self.state.lock() {
-            GeminiRunnerState::Preexec => {
-                log::warn!("save_conversation called before start");
-                return Ok(());
-            }
-            GeminiRunnerState::Running {
-                conversation_id,
-                block_id,
-            } => (*conversation_id, block_id.clone()),
-        };
-
-        // TODO(REMOTE-1408) Also save the conversation transcript.
-        super::upload_current_block_snapshot(
-            foreground,
-            &self.terminal_driver,
-            self.client.as_ref(),
-            conversation_id,
-            block_id,
-        )
-        .await
+        log::debug!("Skipping hosted Gemini conversation save");
+        Ok(())
     }
 }
 
@@ -284,7 +216,7 @@ fn prepare_gemini_trusted_folders(trusted_path: &Path, working_dir: &Path) -> Re
 const GEMINI_CONFIG_DIR: &str = ".gemini";
 const GEMINI_SETTINGS_FILE_NAME: &str = "settings.json";
 const GEMINI_TRUSTED_FOLDERS_FILE_NAME: &str = "trustedFolders.json";
-const GEMINI_SYSTEM_PROMPT_FILE_NAME: &str = "OZ_SYSTEM_PROMPT.md";
+const GEMINI_SYSTEM_PROMPT_FILE_NAME: &str = "GEMINI_SYSTEM_PROMPT.md";
 /// Auth-type discriminant for API-key auth — matches `AuthType.USE_GEMINI` in
 /// Gemini's `packages/core/src/core/contentGenerator.ts`.
 const GEMINI_API_KEY_AUTH_TYPE: &str = "gemini-api-key";

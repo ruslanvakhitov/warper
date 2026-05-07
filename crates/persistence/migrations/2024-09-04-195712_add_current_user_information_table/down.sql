@@ -1,1 +1,1 @@
-DROP TABLE current_user_information;
+-- WARPER-001: current hosted user persistence was removed.

@@ -1,6 +1,4 @@
-//! Inline plan menu for selecting among multiple AI document plans.
-mod data_source;
-mod search_item;
+//! Inline plan menu for selecting among local AI document plans.
 mod view;
 
 pub use view::{InlinePlanMenuEvent, InlinePlanMenuView};

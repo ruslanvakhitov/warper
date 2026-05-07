@@ -1,4 +1,1 @@
-CREATE TABLE users (
-   id INTEGER NOT NULL PRIMARY KEY,
-   firebase_uid  TEXT NOT NULL UNIQUE
-);
+-- WARPER-001: hosted account persistence was removed.

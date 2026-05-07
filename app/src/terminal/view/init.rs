@@ -4,14 +4,13 @@ use super::{
 };
 
 use crate::ai::predict::prompt_suggestions::ACCEPT_PROMPT_SUGGESTION_KEYBINDING;
-use crate::server::telemetry::ToggleBlockFilterSource;
+use crate::terminal::metadata::ToggleBlockFilterSource;
 
-use crate::server::telemetry::InteractionSource;
 use crate::settings_view::flags;
 use crate::terminal::input::{
     SET_INPUT_MODE_AGENT_ACTION_NAME, SET_INPUT_MODE_TERMINAL_ACTION_NAME,
 };
-use crate::terminal::shared_session::SharedSessionActionSource;
+use crate::terminal::metadata::InteractionSource;
 use crate::terminal::ssh::error::{SshErrorBlockAction, SSH_ERROR_BLOCK_VISIBLE_KEY};
 use crate::terminal::view::passive_suggestions::PromptSuggestionResolution;
 use crate::terminal::view::{
@@ -27,11 +26,9 @@ use crate::{
         escape_sequences::{self, EscCodes},
         selection::SelectionDirection,
     },
-    terminal::shared_session::SharedSessionStatus,
     terminal::TerminalView,
     util::bindings::CustomAction,
 };
-use warp_core::context_flag::ContextFlag;
 use warpui::keymap::ContextPredicate;
 use warpui::keymap::{BindingDescription, PerPlatformKeystroke};
 use warpui::platform::OperatingSystem;
@@ -59,7 +56,6 @@ pub const CAN_FORK_FROM_LAST_KNOWN_GOOD_STATE_KEY: &str = "CanForkFromLastKnownG
 pub const INPUT_BOX_VISIBLE_KEY: &str = "InputVisible";
 pub const KEYBOARD_PROTOCOL_ENABLED_KEY: &str = "KeyboardProtocolEnabled";
 pub const CLI_AGENT_SESSION_ACTIVE_KEY: &str = "CLIAgentSessionActive";
-pub const ROOT_CLOUD_MODE_PANE_KEY: &str = "RootCloudModePane";
 
 /// Some keybindings will do different things in different contexts. We break
 /// these into their own function to ensure we pay special attention to
@@ -574,15 +570,6 @@ pub fn init(app: &mut AppContext) {
             id!("Terminal") & id!("TerminalView_NonEmptyBlockList") & !id!("AltScreen"),
         ),
         EditableBinding::new(
-            "terminal:open_share_block_modal",
-            "Share selected block",
-            TerminalAction::OpenShareModal,
-        )
-        .with_custom_action(CustomAction::CreateBlockPermalink)
-        .with_context_predicate(
-            id!("Terminal") & eq!("TerminalView_BlockSelectionCardinality", "One"),
-        ),
-        EditableBinding::new(
             "terminal:bookmark_selected_block",
             "Bookmark selected block",
             TerminalAction::BookmarkSelectedBlock,
@@ -739,7 +726,7 @@ pub fn init(app: &mut AppContext) {
 
     app.register_editable_bindings([
         EditableBinding::new(
-            "terminal:ask_ai_assistant",
+            "terminal:attach_agent_context",
             BindingDescription::new("Attach Selected Block as Agent Context")
                 .with_custom_description(
                     bindings::MAC_MENUS_CONTEXT,
@@ -760,7 +747,7 @@ pub fn init(app: &mut AppContext) {
                 & id!(flags::IS_ANY_AI_ENABLED),
         ),
         EditableBinding::new(
-            "terminal:ask_ai_assistant",
+            "terminal:attach_agent_context",
             BindingDescription::new("Attach Selected Text as Agent Context")
                 .with_custom_description(
                     bindings::MAC_MENUS_CONTEXT,
@@ -778,48 +765,6 @@ pub fn init(app: &mut AppContext) {
                 & (id!("ActiveBlockTextSelection") | id!("ActiveAltScreenSelection"))
                 & id!(flags::IS_ANY_AI_ENABLED),
         ),
-        // We register a single binding for either a selected block or selected text
-        // to avoid cluttering the keybindings UI. At the end of the day, these
-        // map to the same logic, and we should be able to distinguish whether
-        // this is a block selection or text selection later on.
-        EditableBinding::new(
-            "terminal:ask_ai_assistant",
-            "Ask Warp AI about Selection",
-            TerminalAction::ContextMenu(ContextMenuAction::AskAI(AskAISource::SelectedBlockOrText)),
-        )
-        .with_enabled(|| !FeatureFlag::AgentMode.is_enabled())
-        .with_custom_action(CustomAction::AttachSelectionAsAgentModeContext)
-        .with_group(bindings::BindingGroup::WarpAi.as_str())
-        .with_context_predicate(
-            id!("Terminal")
-                & id!(flags::IS_ANY_AI_ENABLED)
-                & (eq!("TerminalView_BlockSelectionCardinality", "One")
-                    | id!("ActiveBlockTextSelection")
-                    | id!("ActiveAltScreenSelection")),
-        ),
-    ]);
-
-    app.register_editable_bindings([
-        EditableBinding::new(
-            "terminal:ask_ai_assistant_last_block",
-            "Ask Warp AI about last block",
-            TerminalAction::ContextMenu(ContextMenuAction::AskAI(AskAISource::LastBlock)),
-        )
-        .with_enabled(|| !FeatureFlag::AgentMode.is_enabled())
-        .with_key_binding("ctrl-shift->")
-        .with_group(bindings::BindingGroup::WarpAi.as_str())
-        .with_context_predicate(
-            id!("Terminal") & id!("TerminalView_NonEmptyBlockList") & id!(flags::IS_ANY_AI_ENABLED),
-        ),
-        EditableBinding::new(
-            "terminal:ask_ai_assistant",
-            "Ask Warp AI",
-            TerminalAction::ContextMenu(ContextMenuAction::AskAI(AskAISource::SelectedInputText)),
-        )
-        .with_enabled(|| !FeatureFlag::AgentMode.is_enabled())
-        .with_group(bindings::BindingGroup::WarpAi.as_str())
-        .with_key_binding("ctrl-shift-space")
-        .with_context_predicate(id!("Input") & id!(flags::IS_ANY_AI_ENABLED)),
     ]);
 
     if FeatureFlag::CommandCorrectionKey.is_enabled() {
@@ -837,9 +782,7 @@ pub fn init(app: &mut AppContext) {
             "Setup Guide",
             TerminalAction::OnboardingFlow(OnboardingVersion::Legacy),
         )
-        .with_context_predicate(
-            id!("Terminal") & id!(SharedSessionStatus::NotShared.as_keymap_context()),
-        ),
+        .with_context_predicate(id!("Terminal") & id!("TerminalLocalSession")),
         // UniversalInput callout debug bindings
         EditableBinding::new(
             "terminal:agent_onboarding_flow_legacy_terminal",
@@ -849,9 +792,7 @@ pub fn init(app: &mut AppContext) {
         .with_enabled(|| {
             FeatureFlag::AgentOnboarding.is_enabled() && ChannelState::enable_debug_features()
         })
-        .with_context_predicate(
-            id!("Terminal") & id!(SharedSessionStatus::NotShared.as_keymap_context()),
-        ),
+        .with_context_predicate(id!("Terminal") & id!("TerminalLocalSession")),
         EditableBinding::new(
             "terminal:agent_onboarding_flow_universal_input_project",
             "[Debug] Onboarding Callout: WarpInput - Project",
@@ -862,9 +803,7 @@ pub fn init(app: &mut AppContext) {
         .with_enabled(|| {
             FeatureFlag::AgentOnboarding.is_enabled() && ChannelState::enable_debug_features()
         })
-        .with_context_predicate(
-            id!("Terminal") & id!(SharedSessionStatus::NotShared.as_keymap_context()),
-        ),
+        .with_context_predicate(id!("Terminal") & id!("TerminalLocalSession")),
         EditableBinding::new(
             "terminal:agent_onboarding_flow_universal_input_no_project",
             "[Debug] Onboarding Callout: WarpInput - No Project",
@@ -875,9 +814,7 @@ pub fn init(app: &mut AppContext) {
         .with_enabled(|| {
             FeatureFlag::AgentOnboarding.is_enabled() && ChannelState::enable_debug_features()
         })
-        .with_context_predicate(
-            id!("Terminal") & id!(SharedSessionStatus::NotShared.as_keymap_context()),
-        ),
+        .with_context_predicate(id!("Terminal") & id!("TerminalLocalSession")),
         // AgentModality callout debug bindings
         EditableBinding::new(
             "terminal:agent_onboarding_flow_modality_project",
@@ -892,9 +829,7 @@ pub fn init(app: &mut AppContext) {
         .with_enabled(|| {
             FeatureFlag::AgentOnboarding.is_enabled() && ChannelState::enable_debug_features()
         })
-        .with_context_predicate(
-            id!("Terminal") & id!(SharedSessionStatus::NotShared.as_keymap_context()),
-        ),
+        .with_context_predicate(id!("Terminal") & id!("TerminalLocalSession")),
         EditableBinding::new(
             "terminal:agent_onboarding_flow_modality_no_project",
             "[Debug] Onboarding Callout: Modality - No Project",
@@ -908,9 +843,7 @@ pub fn init(app: &mut AppContext) {
         .with_enabled(|| {
             FeatureFlag::AgentOnboarding.is_enabled() && ChannelState::enable_debug_features()
         })
-        .with_context_predicate(
-            id!("Terminal") & id!(SharedSessionStatus::NotShared.as_keymap_context()),
-        ),
+        .with_context_predicate(id!("Terminal") & id!("TerminalLocalSession")),
         EditableBinding::new(
             "terminal:agent_onboarding_flow_modality_terminal",
             "[Debug] Onboarding Callout: Modality - Terminal",
@@ -924,9 +857,7 @@ pub fn init(app: &mut AppContext) {
         .with_enabled(|| {
             FeatureFlag::AgentOnboarding.is_enabled() && ChannelState::enable_debug_features()
         })
-        .with_context_predicate(
-            id!("Terminal") & id!(SharedSessionStatus::NotShared.as_keymap_context()),
-        ),
+        .with_context_predicate(id!("Terminal") & id!("TerminalLocalSession")),
     ]);
 
     app.register_editable_bindings([EditableBinding::new(
@@ -935,34 +866,6 @@ pub fn init(app: &mut AppContext) {
         TerminalAction::ImportSettings,
     )
     .with_context_predicate(id!("Terminal") & id!(flags::HAS_SETTINGS_TO_IMPORT_FLAG))]);
-
-    app.register_editable_bindings([
-        EditableBinding::new(
-            "terminal:share_current_session",
-            "Share current session",
-            TerminalAction::OpenShareSessionModal {
-                source: SharedSessionActionSource::CommandPalette,
-            },
-        )
-        .with_context_predicate(
-            id!("Terminal") & id!(SharedSessionStatus::NotShared.as_keymap_context()),
-        )
-        .with_custom_action(CustomAction::ShareCurrentSession)
-        .with_enabled(|| {
-            FeatureFlag::CreatingSharedSessions.is_enabled()
-                && ContextFlag::CreateSharedSession.is_enabled()
-        }),
-        EditableBinding::new(
-            "terminal:stop_sharing_current_session",
-            "Stop sharing current session",
-            TerminalAction::StopSharingCurrentSession {
-                source: SharedSessionActionSource::CommandPalette,
-            },
-        )
-        .with_context_predicate(
-            id!("Terminal") & id!(SharedSessionStatus::ActiveSharer.as_keymap_context()),
-        ),
-    ]);
 
     app.register_editable_bindings([EditableBinding::new(
         TOGGLE_BLOCK_FILTER_KEYBINDING,
@@ -1043,14 +946,6 @@ pub fn init(app: &mut AppContext) {
     .with_context_predicate(id!("Workspace"))]);
 
     app.register_editable_bindings([EditableBinding::new(
-        "terminal:load_agent_mode_conversation",
-        "Load agent mode conversation (from debug link in clipboard)",
-        TerminalAction::LoadAgentModeConversation,
-    )
-    .with_enabled(ChannelState::enable_debug_features)
-    .with_context_predicate(id!("Terminal"))]);
-
-    app.register_editable_bindings([EditableBinding::new(
         "terminal:toggle_session_recording",
         "Toggle PTY Recording for Session",
         TerminalAction::ToggleSessionRecording,
@@ -1072,36 +967,6 @@ pub fn init(app: &mut AppContext) {
     )
     .with_enabled(|| FeatureFlag::Projects.is_enabled())
     .with_context_predicate(id!("Workspace") & id!(flags::IS_ANY_AI_ENABLED))]);
-
-    // Register bindings for starting a new cloud agent conversation.
-    {
-        app.register_fixed_bindings([FixedBinding::new_per_platform(
-            PerPlatformKeystroke {
-                mac: "cmd-alt-enter",
-                linux_and_windows: "ctrl-alt-enter",
-            },
-            TerminalAction::EnterCloudAgentView,
-            id!("Terminal") & id!(flags::IS_ANY_AI_ENABLED),
-        )
-        .with_enabled(|| {
-            FeatureFlag::AgentView.is_enabled()
-                && FeatureFlag::CloudMode.is_enabled()
-                && FeatureFlag::CloudModeFromLocalSession.is_enabled()
-        })
-        .with_group(bindings::BindingGroup::WarpAi.as_str())]);
-        if cfg!(target_os = "macos") {
-            // On MacOS, if the user has the 'Option as meta' setting enabled, the cmd-alt-enter
-            // binding above will not match.
-            //
-            // TODO(zachbai): Consider if, for the purposes of fixed bindings, alt/meta should work
-            // fungibly regardless of underlying setting.
-            app.register_fixed_bindings([FixedBinding::new(
-                "cmd-meta-enter",
-                TerminalAction::EnterCloudAgentView,
-                id!("Terminal") & id!(flags::IS_ANY_AI_ENABLED),
-            )]);
-        }
-    }
 }
 
 /// Registers bindings related to input modes.
@@ -1150,7 +1015,6 @@ fn register_input_mode_bindings(app: &mut AppContext) {
         TerminalAction::SetInputModeAgent,
         agent_mode_predicate.clone()
             & !id!("Input")
-            & !id!(ROOT_CLOUD_MODE_PANE_KEY)
             & !id!(flags::HAS_PENDING_PROMPT_SUGGESTION)
             & !id!(SSH_ERROR_BLOCK_VISIBLE_KEY),
     )
