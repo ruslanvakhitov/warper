@@ -125,6 +125,7 @@ jobs:
             extra_test_args: "--exclude command-signatures-v2 --exclude warp_js"
     runs-on: ${{ matrix.runner }}
     needs: params
+    if: ${{ needs.params.outputs.affects-rust-sources == 'true' }}
     # Make sure an ID token is created with the necessary permissions to use
     # GCP's Workload Identity Federation (for service account authentication).
     permissions:
@@ -501,7 +502,7 @@ jobs:
             clippy_excludes: "--exclude warp_js --exclude command-signatures-v2"
     runs-on: ${{ matrix.runner }}
     needs: params
-    #    if: ${{ needs.params.outputs.affects-rust-sources == 'true' }}
+    if: ${{ needs.params.outputs.affects-rust-sources == 'true' }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
@@ -596,6 +597,7 @@ jobs:
       fail-fast: false
     runs-on: ${{ fromJSON(needs.params.outputs.wasm-runner) }}
     needs: params
+    if: ${{ needs.params.outputs.affects-rust-sources == 'true' }}
     steps:
       - name: Compute IS_SELF_HOSTED
         id: is_self_hosted
@@ -657,6 +659,7 @@ jobs:
             null_device: "/dev/null"
     runs-on: ${{ matrix.runner }}
     needs: params
+    if: ${{ needs.params.outputs.affects-rust-sources == 'true' }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
@@ -703,23 +706,39 @@ jobs:
     steps:
       - name: Check CI results
         run: |
-          # Convert needs context to JSON and check required jobs
-          echo '${{ toJSON(needs) }}' | jq -r '
-            # Get all jobs except database-migration
-            to_entries | 
-            map(select(.key != "database-migration")) |
-            .[] |
-            if .value.result != "success" then
-              "::error::Required job \(.key) failed or was skipped (status: \(.value.result))"
-            else
-              empty
-            end
-          ' | {
-            if read -r error; then
-              echo "$error"
+          needs_json='${{ toJSON(needs) }}'
+
+          result_for() {
+            jq -r --arg job "$1" '.[$job].result' <<< "$needs_json"
+          }
+
+          require_success() {
+            job="$1"
+            result="$(result_for "$job")"
+
+            if [[ "$result" != "success" ]]; then
+              echo "::error::Required job $job failed or was skipped (status: $result)"
               exit 1
             fi
           }
+
+          require_success "params"
+          require_success "general-lint"
+
+          # Rust-heavy jobs are skipped for docs-only PRs to avoid queuing
+          # unavailable large/self-hosted runners when no Rust source changed.
+          affects_rust="${{ needs.params.outputs.affects-rust-sources }}"
+          rust_jobs=("tests" "lints" "wasm-lint" "check-release-compilation")
+          for job in "${rust_jobs[@]}"; do
+            result="$(result_for "$job")"
+            if [[ "$affects_rust" == "true" && "$result" != "success" ]]; then
+              echo "::error::Required job $job failed or was skipped (status: $result)"
+              exit 1
+            elif [[ "$affects_rust" != "true" && "$result" != "skipped" ]]; then
+              echo "::error::Rust CI job $job should have been skipped but wasn't (status: $result)"
+              exit 1
+            fi
+          done
         
           # Special handling for conditional database-migration job.
           affects_schema="${{ needs.params.outputs.affects-database-schema }}"
