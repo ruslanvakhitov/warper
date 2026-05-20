@@ -269,10 +269,14 @@ fn embed_resource_file(target_dir: &Path) {
 
     let version = env::var("GIT_RELEASE_TAG").unwrap_or("v0".to_owned());
     let app_name = env::var("WARP_APP_NAME").unwrap_or("Warp".to_owned());
-    let bin_name = env::var("CARGO_BIN_NAME").unwrap_or("local".to_owned());
+    let bin_name = env::var("CARGO_BIN_NAME").unwrap_or("warp-oss".to_owned());
+    let channel_name = match bin_name.as_str() {
+        "warp-oss" => "oss",
+        name => name,
+    };
 
     let icon_path = Path::new("channels")
-        .join(bin_name)
+        .join(channel_name)
         .join("icon")
         .join("no-padding")
         .join("icon.ico");
