@@ -8357,29 +8357,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "onboarding"
-version = "0.1.0"
-dependencies = [
- "ai",
- "anyhow",
- "cfg-if",
- "instant",
- "log",
- "pathfinder_color",
- "pathfinder_geometry",
- "rust-embed 8.7.2",
- "serde",
- "serde_json",
- "strum",
- "strum_macros",
- "ui_components",
- "uuid",
- "warp_core",
- "warp_logging",
- "warpui",
-]
-
-[[package]]
 name = "once_cell"
 version = "1.21.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -13398,7 +13375,6 @@ dependencies = [
  "oauth2",
  "objc",
  "objc2-foundation 0.3.2",
- "onboarding",
  "once_cell",
  "ordered-float 3.9.2",
  "os_info",
@@ -13879,6 +13855,7 @@ dependencies = [
  "persistence",
  "schemars",
  "serde",
+ "serde_json",
  "settings_value",
  "thiserror 2.0.17",
  "uuid",

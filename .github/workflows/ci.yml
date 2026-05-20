@@ -78,6 +78,9 @@ jobs:
   tests:
     name: Run ${{ matrix.name }} tests
     timeout-minutes: 25
+    # Full OS test coverage is expensive, so only run it when a maintainer
+    # explicitly starts this workflow.
+    if: ${{ github.event_name == 'workflow_dispatch' }}
     env:
       # When CI runs on a PR from a fork, the GCP OIDC auth used by
       # `google-github-actions/auth` fails because our Workload Identity
@@ -633,7 +636,7 @@ jobs:
     runs-on: ubuntu-latest
     # Always run this job, as it needs to check the results of all of the other
     # jobs. If we skipped CI checks (e.g. on a draft PR), also skip this one.
-    if: ${{ !cancelled() && needs.params.result != 'skipped' }}
+    if: ${{ always() && !cancelled() && needs.params.result != 'skipped' }}
     needs:
       - params
       - database-migration
@@ -645,12 +648,16 @@ jobs:
       - name: Check CI results
         run: |
           # Convert needs context to JSON and check required jobs
-          echo '${{ toJSON(needs) }}' | jq -r '
-            # Get all jobs except database-migration
-            to_entries | 
+          echo '${{ toJSON(needs) }}' | jq -r --arg event_name '${{ github.event_name }}' '
+            # Get all jobs except database-migration, which has conditional
+            # validation below. The expensive tests job is allowed to be
+            # skipped outside of manual workflow_dispatch runs.
+            to_entries |
             map(select(.key != "database-migration")) |
             .[] |
-            if .value.result != "success" then
+            if .key == "tests" and $event_name != "workflow_dispatch" and .value.result == "skipped" then
+              empty
+            elif .value.result != "success" then
               "::error::Required job \(.key) failed or was skipped (status: \(.value.result))"
             else
               empty

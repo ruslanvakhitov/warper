@@ -198,7 +198,6 @@ languages.workspace = true
 warp_terminal.workspace = true
 wgpu = { workspace = true, optional = true }
 natural_language_detection.workspace = true
-onboarding.workspace = true
 aho-corasick = "1.1.3"
 strum.workspace = true
 strum_macros.workspace = true
@@ -387,7 +386,6 @@ agent_mode_computer_use = []
 agent_mode_debug = []
 agent_mode_primary_xml = []
 agent_mode_pre_plan_xml = []
-agent_onboarding = []
 agent_shared_sessions = []
 ask_user_question = []
 changelog = []
@@ -485,7 +483,6 @@ default = [
     "force_classic_completions",
     "agent_tips",
     "pluggable_notifications",
-    "agent_onboarding",
     "global_search",
     "list_skills",
     "ask_user_question",
@@ -530,7 +527,6 @@ default = [
     "cli_agent_rich_input",
     "vertical_tabs",
     "tab_configs",
-    "hoa_onboarding_flow",
     "hoa_remote_control",
     "codex_notifications",
     "trim_trailing_blank_lines",
@@ -815,7 +811,6 @@ transfer_control_tool = []
 solo_user_byok = []
 configurable_toolbar = []
 warpify_footer = []
-hoa_onboarding_flow = []
 git_operations_in_code_review = []
 hoa_remote_control = []
 codex_notifications = []
@@ -827,7 +822,6 @@ category = "public.app-category.developer-tools"
 copyright = "Copyleft 2026 Warper contributors"
 identifier = "dev.warper.Warper"
 name = "Warper"
-resources = ["assets/onboarding"]
 icon = ["channels/oss/icon/no-padding/512x512.png", "channels/oss/icon/no-padding/icon.ico"]
 short_description = "An OpenRouter-ready agentic terminal for individuals and teams."
 

@@ -422,6 +422,7 @@ pub fn init(app: &mut AppContext) {
     }
 }
 
+#[allow(clippy::large_enum_variant)]
 pub enum Event {
     AppStateChanged,
     Escape,
@@ -446,8 +447,6 @@ pub enum Event {
     /// Event used to propagate a state change for one of the terminal views
     /// inside this pane group.
     TerminalViewStateChanged,
-    /// Event used to propagate guided onboarding tutorial completion to the workspace.
-    OnboardingTutorialCompleted,
     // Tell the workspace to open the workflow modal.
     OpenWorkflowModalWithCommand(String),
     // Tell the workspace to open the workflow for edit.

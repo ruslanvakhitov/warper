@@ -25,9 +25,8 @@ use crate::{
     system::SystemStats,
     terminal::history::History,
     terminal::{
-        alt_screen_reporting::AltScreenReporting,
-        keys::TerminalKeybindings,
-        local_tty::{spawner::PtySpawner, TerminalManager},
+        alt_screen_reporting::AltScreenReporting, keys::TerminalKeybindings,
+        local_tty::spawner::PtySpawner,
     },
     test_util::settings::initialize_settings_for_tests,
     undo_close::UndoCloseStack,
@@ -182,6 +181,7 @@ fn get_newly_created_pane_id(panes: &PaneGroup, existing_ids: &[PaneId]) -> Pane
         .unwrap()
 }
 
+#[allow(dead_code)]
 fn split_pane_state(panes: &PaneGroup, pane_id: PaneId, ctx: &AppContext) -> SplitPaneState {
     panes
         .focus_state_handle()
@@ -189,6 +189,7 @@ fn split_pane_state(panes: &PaneGroup, pane_id: PaneId, ctx: &AppContext) -> Spl
         .split_pane_state_for(pane_id)
 }
 
+#[allow(dead_code)]
 fn is_active_session(panes: &PaneGroup, pane_id: PaneId, ctx: &AppContext) -> bool {
     panes.active_session_id(ctx).map(Into::into) == Some(pane_id)
 }

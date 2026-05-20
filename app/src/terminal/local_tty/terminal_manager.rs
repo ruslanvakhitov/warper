@@ -303,9 +303,7 @@ impl TerminalManager {
 
         ctx.subscribe_to_model(&SessionSettings::handle(ctx), move |_, event, ctx| {
             if let SessionSettingsChangedEvent::HonorPS1 { .. } = event {
-                if !*SessionSettings::as_ref(ctx).honor_ps1 {
-                    return;
-                }
+                let _ = *SessionSettings::as_ref(ctx).honor_ps1;
             }
         });
 

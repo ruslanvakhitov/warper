@@ -19,12 +19,7 @@ use crate::{
     },
     features::FeatureFlag,
     settings::AISettings,
-    terminal::cli_agent_sessions::{
-        CLIAgentInputState, CLIAgentSession, CLIAgentSessionContext, CLIAgentSessionStatus,
-        CLIAgentSessionsModel,
-    },
     terminal::model::ansi::{BootstrappedValue, Handler as _, InitShellValue},
-    terminal::CLIAgent,
     test_util::{add_window_with_terminal, terminal::initialize_app_for_terminal_view},
 };
 
