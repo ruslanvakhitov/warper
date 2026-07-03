@@ -210,18 +210,16 @@ impl SyncDataSource for DataSource {
         // When the query is empty, we want to add the "new conversation" and "fork conversation" items.
         if self.add_conversation_actions && query.text.trim().is_empty() {
             result.map(|mut results| {
-                if true {
-                    if let Some(conversation) = selected_conversation_in_focused_pane(app) {
-                        // Only surface the fork option if the selected conversation is done.
-                        if conversation.status().is_done() {
-                            results.push(
-                                ConversationSearchItem::new(ConversationAction::Fork {
-                                    conversation_id: conversation.id(),
-                                    title: conversation.title().unwrap_or_default().to_string(),
-                                })
-                                .into(),
-                            );
-                        }
+                if let Some(conversation) = selected_conversation_in_focused_pane(app) {
+                    // Only surface the fork option if the selected conversation is done.
+                    if conversation.status().is_done() {
+                        results.push(
+                            ConversationSearchItem::new(ConversationAction::Fork {
+                                conversation_id: conversation.id(),
+                                title: conversation.title().unwrap_or_default().to_string(),
+                            })
+                            .into(),
+                        );
                     }
                 }
                 results.push(ConversationSearchItem::new(ConversationAction::New).into());

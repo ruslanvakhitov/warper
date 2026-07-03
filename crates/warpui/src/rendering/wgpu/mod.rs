@@ -181,11 +181,6 @@ pub async fn is_low_power_gpu_available() -> bool {
         .iter()
         .any(|adapter| adapter.get_info().device_type == ::wgpu::DeviceType::IntegratedGpu)
 }
-pub async fn is_low_power_gpu_available() -> bool {
-    // We return false here because we only support WebGL (not WebGPU) on the web and the former
-    // does not allow configuration of a low or high power GPU.
-    false
-}
 
 #[cfg(windows)]
 fn get_dx12_shader_compiler() -> Option<wgpu::Dx12Compiler> {
