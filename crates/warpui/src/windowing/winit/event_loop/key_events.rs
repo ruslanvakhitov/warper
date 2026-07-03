@@ -1,7 +1,4 @@
 use std::borrow::Cow;
-use std::collections::HashMap;
-
-use lazy_static::lazy_static;
 
 use winit::event::ElementState;
 #[cfg(windows)]
@@ -13,46 +10,6 @@ use crate::platform::KEYS_TO_IGNORE;
 use crate::{event::KeyEventDetails, keymap::Keystroke};
 
 use super::WindowState;
-
-lazy_static! {
-    /// Mapping between a printable ASCII character and its corresponding control code had `ctrl`
-    /// been pressed. For example: `ctrl-c` corresponds to the `^C` control code, which has an ASCII
-    /// value of 03. See <https://www.geeksforgeeks.org/control-characters/> for more details.
-    static ref CONTROL_CHARACTER_MAP: HashMap<&'static str, &'static str> = HashMap::from_iter([
-        ("@", "\x00"),
-        ("a", "\x01"),
-        ("b", "\x02"),
-        ("c", "\x03"),
-        ("d", "\x04"),
-        ("e", "\x05"),
-        ("f", "\x06"),
-        ("g", "\x07"),
-        ("h", "\x08"),
-        ("i", "\x09"),
-        ("j", "\x0A"),
-        ("k", "\x0B"),
-        ("l", "\x0C"),
-        ("m", "\x0D"),
-        ("n", "\x0E"),
-        ("o", "\x0F"),
-        ("p", "\x10"),
-        ("q", "\x11"),
-        ("r", "\x12"),
-        ("s", "\x13"),
-        ("t", "\x14"),
-        ("u", "\x15"),
-        ("v", "\x16"),
-        ("w", "\x17"),
-        ("x", "\x18"),
-        ("y", "\x19"),
-        ("z", "\x1A"),
-        ("[", "\x1B"),
-        ("\\", "\x1C"),
-        ("]", "\x1D"),
-        ("^", "\x1E"),
-        ("_", "\x1F"),
-    ]);
-}
 
 /// Converts a KeyboardInput event to a UI framework event, returning None
 /// if no UI framework event should be emitted.
@@ -138,9 +95,6 @@ fn get_key_without_modifiers(input: &winit::event::KeyEvent) -> Option<String> {
     let unmodified_input = get_input_key(&unmodified, false);
     convert_key(unmodified_input).map(|k| k.to_string())
 }
-fn get_key_without_modifiers(_input: &winit::event::KeyEvent) -> Option<String> {
-    None
-}
 /// Returns the text of the [`winit::event::KeyEvent`] with the characters modified by `ctrl`.
 /// For example,  `Ctrl+a` produces `Some("\x01")`.
 fn text_with_modifiers(
@@ -148,23 +102,6 @@ fn text_with_modifiers(
     _modifier_state: ModifiersState,
 ) -> Option<&str> {
     key_event.text_with_all_modifiers()
-}
-fn text_with_modifiers(
-    key_event: &winit::event::KeyEvent,
-    modifier_state: ModifiersState,
-) -> Option<&str> {
-    // Provide the bare-minimum amount of support for mapping modifiers to their corresponding
-    // ASCII character. This is not actually fully functional because keys like `@` require the
-    // addition of the `SHIFT` key, which doesn't yet work here.
-    // Extend this to support all of the function/shift/arrow keys.
-    match (modifier_state, &key_event.logical_key) {
-        (ModifiersState::CONTROL, Key::Character(character))
-            if CONTROL_CHARACTER_MAP.contains_key(character.as_str()) =>
-        {
-            CONTROL_CHARACTER_MAP.get(character.as_str()).copied()
-        }
-        (_, key) => key.to_text(),
-    }
 }
 
 fn get_input_key(logical_key: &Key, is_shift: bool) -> Key {
