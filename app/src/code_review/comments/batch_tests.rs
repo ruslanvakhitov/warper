@@ -97,6 +97,32 @@ fn delete_and_clear_mutations_work() {
 }
 
 #[test]
+fn clear_non_outdated_keeps_outdated_comments() {
+    App::test((), |mut app| async move {
+        let model = app.add_model(|_| ReviewCommentBatch::default());
+
+        let active = line_comment("/repo/src/lib.rs", 1, "active");
+        let mut outdated = line_comment("/repo/src/lib.rs", 2, "outdated");
+        outdated.outdated = true;
+
+        model.update(&mut app, |batch, ctx| {
+            batch.upsert_comment(active, ctx);
+            batch.upsert_comment(outdated, ctx);
+        });
+
+        model.update(&mut app, |batch, ctx| {
+            batch.clear_non_outdated(ctx);
+        });
+
+        model.read(&app, |batch, _| {
+            assert_eq!(batch.comments.len(), 1);
+            assert_eq!(batch.comments[0].content, "outdated");
+            assert!(batch.comments[0].outdated);
+        });
+    });
+}
+
+#[test]
 fn file_and_line_queries_filter_by_suffix() {
     App::test((), |mut app| async move {
         let model = app.add_model(|_| ReviewCommentBatch::default());

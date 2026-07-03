@@ -95,6 +95,7 @@ pub enum CommentListAction {
     EditComment,
     JumpToCommentLocation(CommentId),
     Cancel,
+    CopyToClipboard,
     Submit,
     ShowOverflow { comment_id: CommentId },
     DeleteComment,
@@ -105,6 +106,7 @@ pub enum CommentListAction {
 #[derive(Clone, Debug)]
 pub enum CommentListEvent {
     Submitted,
+    CopyToClipboard,
     Cancelled,
     DeleteComment { comment_id: CommentId },
     EditComment(CommentId),
@@ -128,6 +130,7 @@ struct ViewState {
     chevron_mouse_state: MouseStateHandle,
     outdated_chevron_mouse_state: MouseStateHandle,
     cancel_button_mouse_state: MouseStateHandle,
+    copy_button_mouse_state: MouseStateHandle,
     submit_button_mouse_state: MouseStateHandle,
     resizable_state: ResizableStateHandle,
 }
@@ -139,6 +142,7 @@ impl Default for ViewState {
             chevron_mouse_state: Default::default(),
             outdated_chevron_mouse_state: Default::default(),
             cancel_button_mouse_state: Default::default(),
+            copy_button_mouse_state: Default::default(),
             submit_button_mouse_state: Default::default(),
             resizable_state: resizable_state_handle(300.0),
         }
@@ -866,6 +870,7 @@ impl CommentListView {
             .with_main_axis_alignment(MainAxisAlignment::End)
             .with_cross_axis_alignment(CrossAxisAlignment::Center);
         right_section.add_child(self.render_cancel_button(appearance));
+        right_section.add_child(self.render_copy_button(appearance));
         right_section.add_child(self.render_send_button(appearance, ctx));
         right_section.finish()
     }
@@ -894,6 +899,56 @@ impl CommentListView {
         self.comments_by_id
             .values()
             .any(|state| !state.card.source().outdated)
+    }
+
+    fn render_copy_button(&self, appearance: &Appearance) -> Box<dyn Element> {
+        let has_sendable_comments = self.has_non_outdated_comments();
+        let tooltip_text = if has_sendable_comments {
+            "Copy comments to clipboard and clear them"
+        } else {
+            "No non-outdated comments to copy"
+        };
+        let tooltip = appearance
+            .ui_builder()
+            .tool_tip(tooltip_text.to_string())
+            .build()
+            .finish();
+
+        let button = appearance
+            .ui_builder()
+            .button(
+                ButtonVariant::Secondary,
+                self.view_state.copy_button_mouse_state.clone(),
+            )
+            .with_text_label("Copy to Clipboard".to_string())
+            .with_tooltip(|| tooltip)
+            .with_tooltip_position(ButtonTooltipPosition::AboveLeft);
+
+        let button = if has_sendable_comments {
+            EventHandler::new(button.build().finish())
+                .on_left_mouse_down(|ctx, _, _| {
+                    ctx.dispatch_typed_action(CommentListAction::CopyToClipboard);
+                    DispatchEventResult::StopPropagation
+                })
+                .finish()
+        } else {
+            let background_fill = appearance.theme().surface_3();
+            let foreground_color = appearance
+                .theme()
+                .disabled_text_color(background_fill)
+                .into_solid();
+            button
+                .with_style(UiComponentStyles {
+                    background: Some(background_fill.into_solid().into()),
+                    border_color: Some(foreground_color.into()),
+                    font_color: Some(foreground_color),
+                    ..Default::default()
+                })
+                .build()
+                .finish()
+        };
+
+        Container::new(button).with_margin_right(8.).finish()
     }
 
     /// Computes the tooltip text for the send button based on current state.
@@ -1188,6 +1243,9 @@ impl TypedActionView for CommentListView {
             }
             CommentListAction::Submit => {
                 ctx.emit(CommentListEvent::Submitted);
+            }
+            CommentListAction::CopyToClipboard => {
+                ctx.emit(CommentListEvent::CopyToClipboard);
             }
             CommentListAction::ShowOverflow { comment_id } => {
                 let current_overflow = self.active_overflow_comment_id.take();
