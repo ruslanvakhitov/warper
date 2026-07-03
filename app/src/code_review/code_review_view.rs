@@ -81,6 +81,7 @@ use crate::{
 };
 
 use crate::code_review::find_model::CodeReviewFindModel;
+use crate::terminal::cli_agent::build_review_clipboard_packet;
 #[cfg(feature = "local_fs")]
 use crate::terminal::cli_agent::{
     build_selection_line_range_prompt, build_selection_substring_prompt,
@@ -1742,6 +1743,10 @@ impl CodeReviewView {
         match event {
             CommentListEvent::Submitted => {
                 self.handle_submit_review_with_comments(ctx);
+                ctx.notify();
+            }
+            CommentListEvent::CopyToClipboard => {
+                self.handle_copy_review_comments_to_clipboard(ctx);
                 ctx.notify();
             }
             CommentListEvent::Cancelled => {
@@ -4390,12 +4395,49 @@ impl CodeReviewView {
     /// Prepares review comments and emits an event for a higher-level view to route
     /// them to an available terminal.
     fn handle_submit_review_with_comments(&mut self, ctx: &mut ViewContext<Self>) {
-        let Some(model) = self.active_comment_model.as_ref() else {
+        let Some(agent_comment_batch) = self.active_agent_review_comment_batch(ctx) else {
+            log::info!("No review comments to submit");
             return;
         };
 
-        let review_comments = model.read(ctx, |batch, _| batch.clone());
+        let Some(repo_path) = self.repo_path().cloned() else {
+            log::warn!("No active repo path for submitting review");
+            return;
+        };
 
+        ctx.emit(CodeReviewViewEvent::SubmitReviewComments {
+            comments: agent_comment_batch,
+            repo_path,
+        });
+    }
+
+    fn handle_copy_review_comments_to_clipboard(&mut self, ctx: &mut ViewContext<Self>) {
+        let Some(agent_comment_batch) = self.active_agent_review_comment_batch(ctx) else {
+            log::info!("No review comments to copy");
+            return;
+        };
+
+        let packet = build_review_clipboard_packet(&agent_comment_batch);
+        ctx.clipboard().write(ClipboardContent::plain_text(packet));
+
+        if let Some(model) = self.active_comment_model.clone() {
+            model.update(ctx, |batch, ctx| {
+                batch.clear_non_outdated(ctx);
+            });
+        }
+
+        ToastStack::handle(ctx).update(ctx, |stack, ctx| {
+            let toast = DismissibleToast::default("Comments copied and cleared".into());
+            stack.add_ephemeral_toast(toast, self.window_id, ctx);
+        });
+    }
+
+    fn active_agent_review_comment_batch(
+        &self,
+        ctx: &AppContext,
+    ) -> Option<AgentReviewCommentBatch> {
+        let model = self.active_comment_model.as_ref()?;
+        let review_comments = model.read(ctx, |batch, _| batch.clone());
         let active_comments: Vec<_> = review_comments
             .comments
             .into_iter()
@@ -4403,26 +4445,15 @@ impl CodeReviewView {
             .collect();
 
         if active_comments.is_empty() {
-            log::info!("No review comments to submit");
-            return;
+            return None;
         }
-
-        let Some(repo_path) = self.repo_path().cloned() else {
-            log::warn!("No active repo path for submitting review");
-            return;
-        };
 
         let active_batch = ReviewCommentBatch::from_comments(active_comments);
         let diff_set = self.collect_diff_set(&active_batch);
-        let agent_comment_batch = AgentReviewCommentBatch {
+        Some(AgentReviewCommentBatch {
             comments: active_batch.comments,
             diff_set,
-        };
-
-        ctx.emit(CodeReviewViewEvent::SubmitReviewComments {
-            comments: agent_comment_batch,
-            repo_path,
-        });
+        })
     }
 
     /// Called by the routing layer (RightPanelView) after attempting to submit review
