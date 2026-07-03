@@ -6,7 +6,6 @@ mod drag_drop_tests;
 use std::collections::HashMap;
 use std::mem::ManuallyDrop;
 
-#[cfg(target_os = "linux")]
 use crate::notification::RequestPermissionsOutcome;
 
 use futures_util::future::LocalBoxFuture;
@@ -338,7 +337,7 @@ fn convert_touch_moved(
             // Touch in titlebar = window drag
             let initial_pos: winit::dpi::LogicalPosition<f32> =
                 last_touch.location.to_logical(scale_factor as f64);
-            if initial_pos.y < titlebar_height && true {
+            if initial_pos.y < titlebar_height {
                 let start_touch = last_touch.location;
                 window_state.last_touch_purpose = Some(TouchPurpose::WindowDrag { start_touch });
                 return Some(ConvertedEvent::MoveWindowBy {
@@ -1361,25 +1360,8 @@ impl EventLoop {
 
     #[allow(unused_variables)]
     fn request_notification_permissions(&mut self, callback: RequestPermissionsCallback) {
-        let proxy = self.proxy.clone();
         self.ui_app.update(|ctx| {
-            ctx.background_executor()
-                .spawn(async move {
-                    crate::windowing::winit::notifications::request_notification_permissions(
-                        callback, proxy,
-                    )
-                    .await;
-
-                    #[cfg(target_os = "linux")]
-                    {
-                        // On Linux, there is no concept of requesting notification permissions. This
-                        // logic is hard-coded to always return an outcome of "Accepted".
-                        let _ = proxy.send_event(CustomEvent::UpdateUIApp(Box::new(|ctx| {
-                            callback(RequestPermissionsOutcome::Accepted, ctx)
-                        })));
-                    }
-                })
-                .detach()
+            callback(RequestPermissionsOutcome::Accepted, ctx);
         });
     }
 
@@ -1577,7 +1559,7 @@ impl EventLoop {
             {
                 // The current window backend does not support dragging or maximization.
                 let titlebar_height = winit_window.titlebar_height();
-                if position.y() < titlebar_height && true {
+                if position.y() < titlebar_height {
                     // Double-clicking the titlebar does maximize/restore.
                     if click_count >= 2 {
                         window.toggle_maximized();
@@ -1592,23 +1574,6 @@ impl EventLoop {
                     }
                 }
             }
-        }
-
-        //         // This must happen synchronously within the touch event handler (user gesture context)
-        // for the browser to allow focusing the hidden input element.
-        //
-        // For touch events, we defer keyboard updates until LeftMouseUp to avoid showing
-        // the keyboard during drags/scrolls (which start with LeftMouseDown but later get
-        // reclassified as scroll gestures). We only trigger the keyboard if the touch purpose
-        // is still Tap (meaning it was never reclassified to Scroll, Select, or WindowDrag).
-        {
-            // First, check what kind of event we have without holding a mutable borrow.
-            let touch_info = self.state.windows.get(&window_id).and_then(|ws| {
-                ws.last_touch_purpose.as_ref().map(|purpose| {
-                    // Check if this is still a tap (not a scroll/drag/select)
-                    matches!(purpose, TouchPurpose::Tap(..))
-                })
-            });
         }
 
         // On LeftMouseUp: clear touch state and start momentum scrolling if applicable.

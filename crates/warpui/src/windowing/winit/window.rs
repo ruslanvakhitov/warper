@@ -1117,13 +1117,6 @@ impl Window {
             .unwrap_or(true)
     }
 
-    /// Intended for reading whether or not the window is visible. Always returns true.
-    ///
-    /// winit may not support is_visible on every backend. See: https://docs.rs/winit/latest/winit/window/struct.Window.html#method.is_visible
-    fn is_visible(&self) -> bool {
-        true
-    }
-
     fn set_bounds(&self, bounds: RectF) {
         if let Some(Inner { window, .. }) = self.inner.borrow().as_ref() {
             let origin = bounds.origin();

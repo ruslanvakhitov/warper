@@ -482,19 +482,15 @@ fn all_commands() -> Vec<StaticCommand> {
         commands.push(QUEUE.clone());
     }
 
-    if true {
-        commands.extend([FORK.clone(), FORK_AND_COMPACT.clone()]);
+    commands.extend([FORK.clone(), FORK_AND_COMPACT.clone()]);
 
-        if FeatureFlag::ForkFromCommand.is_enabled() {
-            commands.push(FORK_FROM);
-        }
+    if FeatureFlag::ForkFromCommand.is_enabled() {
+        commands.push(FORK_FROM);
     }
 
-    if true {
-        commands.extend([EDIT.clone(), EXPORT_TO_FILE.clone()]);
-    }
+    commands.extend([EDIT.clone(), EXPORT_TO_FILE.clone()]);
 
-    if FeatureFlag::ListSkills.is_enabled() && true {
+    if FeatureFlag::ListSkills.is_enabled() {
         commands.push(EDIT_SKILL.clone());
         commands.push(INVOKE_SKILL.clone());
     }
@@ -514,7 +510,7 @@ fn all_commands() -> Vec<StaticCommand> {
         commands.push(REWIND);
     }
 
-    if FeatureFlag::InlineRepoMenu.is_enabled() && true {
+    if FeatureFlag::InlineRepoMenu.is_enabled() {
         commands.push(OPEN_REPO);
     }
 

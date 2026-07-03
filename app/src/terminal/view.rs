@@ -12340,18 +12340,29 @@ impl TerminalView {
                             ctx,
                         ));
 
-                        // Add fork option for conversation management
-                        if true {
-                            let fork_label = fork_label_for_query(
-                                &ai_metadata
-                                    .ai_block_handle
-                                    .as_ref(ctx)
-                                    .get_preceding_user_query(ctx),
-                            );
+                        let fork_label = fork_label_for_query(
+                            &ai_metadata
+                                .ai_block_handle
+                                .as_ref(ctx)
+                                .get_preceding_user_query(ctx),
+                        );
+                        items.push(
+                            MenuItemFields::new(fork_label)
+                                .with_on_select_action(TerminalAction::ContextMenu(
+                                    ContextMenuAction::ForkAIConversationFromBlock {
+                                        ai_block_view_id: *rich_content_view_id,
+                                        exchange_id: ai_metadata.exchange_id,
+                                        conversation_id: ai_metadata.conversation_id,
+                                    },
+                                ))
+                                .into_item(),
+                        );
+
+                        if ChannelState::channel().is_dogfood() {
                             items.push(
-                                MenuItemFields::new(fork_label)
+                                MenuItemFields::new("Fork from here")
                                     .with_on_select_action(TerminalAction::ContextMenu(
-                                        ContextMenuAction::ForkAIConversationFromBlock {
+                                        ContextMenuAction::ForkAIConversationFromExactExchange {
                                             ai_block_view_id: *rich_content_view_id,
                                             exchange_id: ai_metadata.exchange_id,
                                             conversation_id: ai_metadata.conversation_id,
@@ -12359,20 +12370,6 @@ impl TerminalView {
                                     ))
                                     .into_item(),
                             );
-
-                            if ChannelState::channel().is_dogfood() {
-                                items.push(
-                                    MenuItemFields::new("Fork from here")
-                                        .with_on_select_action(TerminalAction::ContextMenu(
-                                            ContextMenuAction::ForkAIConversationFromExactExchange {
-                                                ai_block_view_id: *rich_content_view_id,
-                                                exchange_id: ai_metadata.exchange_id,
-                                                conversation_id: ai_metadata.conversation_id,
-                                            },
-                                        ))
-                                        .into_item(),
-                                );
-                            }
                         }
 
                         // We can't revert restored blocks since we don't restore the full diff
@@ -13262,25 +13259,37 @@ impl TerminalView {
             )
         };
 
-        if true {
-            let fork_label = fork_label_for_query(
-                &self
-                    .rich_content_views
-                    .iter()
-                    .find_map(|rc| {
-                        let meta = rc.ai_block_metadata()?;
-                        (meta.ai_block_handle.id() == ai_block_view_id).then(|| {
-                            meta.ai_block_handle
-                                .as_ref(ctx)
-                                .get_preceding_user_query(ctx)
-                        })
+        let fork_label = fork_label_for_query(
+            &self
+                .rich_content_views
+                .iter()
+                .find_map(|rc| {
+                    let meta = rc.ai_block_metadata()?;
+                    (meta.ai_block_handle.id() == ai_block_view_id).then(|| {
+                        meta.ai_block_handle
+                            .as_ref(ctx)
+                            .get_preceding_user_query(ctx)
                     })
-                    .unwrap_or_default(),
-            );
+                })
+                .unwrap_or_default(),
+        );
+        menu_items.push(
+            MenuItemFields::new(fork_label)
+                .with_on_select_action(TerminalAction::ContextMenu(
+                    ContextMenuAction::ForkAIConversationFromBlock {
+                        ai_block_view_id,
+                        exchange_id: ai_exchange_id,
+                        conversation_id: ai_conversation_id,
+                    },
+                ))
+                .into_item(),
+        );
+
+        if ChannelState::channel().is_dogfood() {
             menu_items.push(
-                MenuItemFields::new(fork_label)
+                MenuItemFields::new("Fork from here")
                     .with_on_select_action(TerminalAction::ContextMenu(
-                        ContextMenuAction::ForkAIConversationFromBlock {
+                        ContextMenuAction::ForkAIConversationFromExactExchange {
                             ai_block_view_id,
                             exchange_id: ai_exchange_id,
                             conversation_id: ai_conversation_id,
@@ -13288,20 +13297,6 @@ impl TerminalView {
                     ))
                     .into_item(),
             );
-
-            if ChannelState::channel().is_dogfood() {
-                menu_items.push(
-                    MenuItemFields::new("Fork from here")
-                        .with_on_select_action(TerminalAction::ContextMenu(
-                            ContextMenuAction::ForkAIConversationFromExactExchange {
-                                ai_block_view_id,
-                                exchange_id: ai_exchange_id,
-                                conversation_id: ai_conversation_id,
-                            },
-                        ))
-                        .into_item(),
-                );
-            }
         }
 
         // We can't revert restored blocks since we don't restore the full diff

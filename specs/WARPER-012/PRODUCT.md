@@ -20,14 +20,14 @@ Figma: none provided.
 
 3. When there are no non-outdated comments, the copy action is disabled or unavailable. Outdated comments are not copied.
 
-4. Activating Copy to Clipboard writes a plain-text review packet to the clipboard. The packet is neutral data, not an agent-specific prompt. It must include:
+4. Activating Copy to Clipboard writes the same plain-text review message that Send to Agent sends. It must include:
    - Each copied comment body.
    - The file path for each file or line comment.
    - The line or range when the comment is attached to a line, removed line, or collapsed hunk.
    - A clear marker for general comments.
-   - Relevant diff context for the copied comments when available.
+   - The same instruction text used by Send to Agent, including the guidance to inspect `git diff` for full context.
 
-5. The copied text must not include marketing copy, UI labels, hidden internal IDs, timestamps, debug fields, or phrasing that assumes a specific destination agent.
+5. Copy to Clipboard and Send to Agent must use the same review-message formatter so their payloads cannot drift.
 
 6. The copied text must preserve user-authored comment text accurately. Markdown comments may be represented as readable plain markdown, but punctuation must not gain extra escaping that the user did not write.
 
@@ -41,7 +41,7 @@ Figma: none provided.
 
 11. Cancel remains distinct from copy. Cancel clears comments without writing anything to the clipboard.
 
-12. Send to Agent remains distinct from copy. Send routes comments to the selected agent destination and clears comments only after successful submission; Copy writes to the clipboard and clears comments without requiring an agent destination.
+12. Send to Agent remains distinct from copy in delivery only. Send routes the shared review message to the selected agent destination and clears comments only after successful submission; Copy writes the same review message to the clipboard and clears comments without requiring an agent destination.
 
 13. Multiple code review panes or repositories remain isolated. Copying comments from one review surface does not copy or clear comments from another active review surface.
 

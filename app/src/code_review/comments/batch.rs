@@ -183,6 +183,13 @@ impl ReviewCommentBatch {
         });
     }
 
+    pub(crate) fn clear_non_outdated(&mut self, ctx: &mut ModelContext<Self>) {
+        self.comments.retain(|comment| comment.outdated);
+        ctx.emit(ReviewCommentBatchEvent::Changed {
+            should_reposition_comments: false,
+        });
+    }
+
     /// Stores imported comments that are waiting for diffs and editors to load before they can be flattened,
     /// relocated, and inserted into `comments`.
     #[cfg(feature = "local_fs")]

@@ -45,12 +45,6 @@ use crate::{
 use self::global_hotkey::GlobalHotKeyHandler;
 use super::{notifications, CustomEvent};
 
-// struct GlobalHotKeyHandler {}
-impl GlobalHotKeyHandler {
-    fn register(&self, _: keymap::Keystroke) {}
-    fn unregister(&self, _: &keymap::Keystroke) {}
-}
-
 /// Stores the ID of the application's main thread, which we can reference
 /// to determine if a given thread is the main thread or not.
 static MAIN_THREAD_ID: OnceLock<thread::ThreadId> = OnceLock::new();
