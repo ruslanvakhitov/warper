@@ -377,6 +377,11 @@ pub fn build_review_prompt(review: &AgentReviewCommentBatch) -> String {
     text
 }
 
+/// Builds the same code review text for clipboard export that `Send to Agent` sends.
+pub fn build_review_clipboard_packet(review: &AgentReviewCommentBatch) -> String {
+    build_review_prompt(review)
+}
+
 fn export_review_comment_for_cli_prompt(comment: &str) -> String {
     let mut result = parse_markdown(comment)
         .map(|parsed| {

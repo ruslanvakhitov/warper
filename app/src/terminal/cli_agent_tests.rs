@@ -8,8 +8,8 @@ use warp_util::path::EscapeChar;
 use warpui::App;
 
 use super::{
-    build_diff_hunk_prompt, build_review_prompt, build_selection_line_range_prompt,
-    build_selection_substring_prompt, CLIAgent,
+    build_diff_hunk_prompt, build_review_clipboard_packet, build_review_prompt,
+    build_selection_line_range_prompt, build_selection_substring_prompt, CLIAgent,
 };
 use crate::ai::agent::{AgentReviewCommentBatch, DiffSetHunk};
 use crate::code::editor::line::EditorLineLocation;
@@ -207,6 +207,26 @@ fn test_build_review_prompt_exports_internal_markdown_without_punctuation_escape
     let prompt = build_review_prompt(&batch(vec![comment]));
     assert!(prompt.contains("General: Fix this."));
     assert!(!prompt.contains("Fix this\\."));
+}
+
+#[test]
+fn test_build_review_clipboard_packet_matches_agent_prompt() {
+    let comment = make_comment(
+        "Fix this\\.",
+        AttachedReviewCommentTarget::Line {
+            absolute_file_path: PathBuf::from("/repo/src/main.rs"),
+            line: EditorLineLocation::Current {
+                line_number: LineCount::from(4),
+                line_range: LineCount::from(4)..LineCount::from(5),
+            },
+            content: LineDiffContent::default(),
+        },
+        false,
+    );
+    let review = batch(vec![comment]);
+    let packet = build_review_clipboard_packet(&review);
+    let agent_prompt = build_review_prompt(&review);
+    assert_eq!(packet, agent_prompt);
 }
 
 // ---------------------------------------------------------------------------

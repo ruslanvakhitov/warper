@@ -81,6 +81,7 @@ use crate::{
 };
 
 use crate::code_review::find_model::CodeReviewFindModel;
+use crate::terminal::cli_agent::build_review_clipboard_packet;
 #[cfg(feature = "local_fs")]
 use crate::terminal::cli_agent::{
     build_selection_line_range_prompt, build_selection_substring_prompt,
@@ -177,13 +178,11 @@ use super::{
     GlobalCodeReviewEvent, GlobalCodeReviewModel,
 };
 use crate::code::ShowCommentEditorProvider;
-#[cfg(not(target_family = "wasm"))]
 use crate::code::ShowFindReferencesCard;
 use crate::code_review::comments::CommentId;
 use crate::ui_components::render_file_search_row::{render_file_search_row, FileSearchRowOptions};
 use crate::workspace::view::right_panel::{ReviewDestination, ReviewSubmissionResult};
 use warp_editor::model::CoreEditorModel;
-#[cfg(not(target_family = "wasm"))]
 use warp_editor::render::model::AutoScrollMode;
 use warp_editor::{
     content::buffer::{AutoScrollBehavior, InitialBufferState, SelectionOffsets},
@@ -311,8 +310,6 @@ pub const CODE_REVIEW_TOOLTIP_TEXT: &str = "View changes";
 const REMOTE_TEXT: &str = "Diffs only work for local workspaces.";
 const DISABLED_TEXT: &str = "Diffs only work for git repositories.";
 const WSL_TEXT: &str = "Diffs don't currently work in WSL.";
-
-#[cfg(not(target_family = "wasm"))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[allow(dead_code)]
 enum InitButtons {
@@ -333,20 +330,11 @@ pub fn get_discard_button_disabled_tooltip(git_operation_blocked: bool) -> Strin
 /// Returns true if the file status changed between Deleted and non-Deleted states,
 /// which requires rebuilding the editor state because we can't use global buffer
 /// for files that don't exist on the file system.
-#[cfg(not(target_family = "wasm"))]
 fn file_status_changed_deleted_state(
     current_status: &GitFileStatus,
     new_status: &GitFileStatus,
 ) -> bool {
     matches!(current_status, GitFileStatus::Deleted) != matches!(new_status, GitFileStatus::Deleted)
-}
-
-#[cfg(target_family = "wasm")]
-fn file_status_changed_deleted_state(
-    _current_status: &GitFileStatus,
-    _new_status: &GitFileStatus,
-) -> bool {
-    false
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -477,8 +465,6 @@ impl PendingFileUpdate {
         }
     }
 }
-
-#[cfg_attr(target_family = "wasm", allow(dead_code))]
 struct GitSessionState {
     enablement: CodingPanelEnablementState,
 }
@@ -519,7 +505,6 @@ pub enum CodeReviewViewEvent {
         line_and_column: Option<LineAndColumnArg>,
     },
     /// Request to open LSP logs for the given log file path.
-    #[cfg(not(target_family = "wasm"))]
     OpenLspLogs {
         log_path: PathBuf,
     },
@@ -581,8 +566,6 @@ pub struct DiscardDialogState {
     operation_type: DiscardOperationType,
     file_list_scroll_state: ClippedScrollStateHandle,
 }
-
-#[cfg_attr(target_family = "wasm", allow(dead_code))]
 struct PendingPreciseScroll {
     editor_index: usize,
     /// Starting character offset of the target range to scroll to.
@@ -736,7 +719,6 @@ pub struct CodeReviewView {
     active_comment_model: Option<ModelHandle<ReviewCommentBatch>>,
 
     init_project_button: ViewHandle<ActionButton>,
-    #[cfg(not(target_family = "wasm"))]
     open_repository_button: ViewHandle<ActionButton>,
 
     ui_state_handles: UiStateHandles,
@@ -922,7 +904,6 @@ impl CodeReviewView {
                 });
             }
             CodeFooterViewEvent::OpenLogs { path } => {
-                #[cfg(not(target_family = "wasm"))]
                 {
                     // Look up the LSP server for this path and emit the log path
                     let lsp_manager = lsp::LspManagerModel::handle(ctx);
@@ -1128,7 +1109,6 @@ impl CodeReviewView {
     fn create_list_state(ctx: &mut ViewContext<Self>) -> ListState<RelocatableScrollContext> {
         let view_handle: WeakViewHandle<Self> = ctx.handle();
         let render_handle = view_handle.clone();
-        #[cfg(not(target_family = "wasm"))]
         let adjustment_handle = view_handle;
 
         let (list_state, scroll_rx) = ListState::new_with_scroll_preservation(
@@ -1140,12 +1120,9 @@ impl CodeReviewView {
                     .as_ref(app)
                     .render_diff_at_index(index, scroll_offset, app)
             },
-            #[cfg(not(target_family = "wasm"))]
             move |index, captured_context, app| {
                 Self::adjust_scroll_offset(&adjustment_handle, index, captured_context, app)
             },
-            #[cfg(target_family = "wasm")]
-            move |_index, _captured_context, _app| None,
         );
 
         Self::setup_scroll_tracking(scroll_rx, ctx);
@@ -1374,8 +1351,6 @@ impl CodeReviewView {
                     ctx.dispatch_typed_action(CodeReviewAction::InitProjectForCurrentDirectory)
                 })
         });
-
-        #[cfg(not(target_family = "wasm"))]
         let open_repository_button = ctx.add_typed_action_view(|_ctx| {
             ActionButton::new("Open repository", NakedTheme)
                 .with_size(ButtonSize::Small)
@@ -1430,7 +1405,6 @@ impl CodeReviewView {
             pending_jump_to_comment: None,
             active_comment_model: None,
             init_project_button,
-            #[cfg(not(target_family = "wasm"))]
             open_repository_button,
             is_open: false,
             code_review_footer: None,
@@ -1732,9 +1706,7 @@ impl CodeReviewView {
                     model.update_query(query.clone(), self.editor_handles(), model_ctx);
                 });
             }
-            #[cfg_attr(target_family = "wasm", allow(unused_variables))]
             FindViewEvent::NextMatch { direction } => {
-                #[cfg(not(target_family = "wasm"))]
                 self.find_model.update(ctx, |model, model_ctx| {
                     model.focus_next_find_match(*direction, self.editor_handles(), model_ctx);
                 });
@@ -1773,6 +1745,10 @@ impl CodeReviewView {
                 self.handle_submit_review_with_comments(ctx);
                 ctx.notify();
             }
+            CommentListEvent::CopyToClipboard => {
+                self.handle_copy_review_comments_to_clipboard(ctx);
+                ctx.notify();
+            }
             CommentListEvent::Cancelled => {
                 self.clear_review_comments(ctx);
                 ctx.notify();
@@ -1790,8 +1766,6 @@ impl CodeReviewView {
             }
         }
     }
-
-    #[cfg(not(target_family = "wasm"))]
     fn update_search_decorations(&mut self, ctx: &mut ViewContext<Self>) {
         let CodeReviewViewState::Loaded(state) = self.state() else {
             return;
@@ -1818,11 +1792,6 @@ impl CodeReviewView {
                 });
             });
         }
-    }
-
-    #[cfg(target_family = "wasm")]
-    fn update_search_decorations(&mut self, _ctx: &mut ViewContext<Self>) {
-        unreachable!("Code review is not available on wasm")
     }
 
     fn open_review_comment_composer(
@@ -2133,8 +2102,6 @@ impl CodeReviewView {
                 end_offset,
                 buffer,
             });
-
-            #[cfg(not(target_family = "wasm"))]
             {
                 let CodeReviewViewState::Loaded(state) = self.state() else {
                     return;
@@ -2201,19 +2168,6 @@ impl CodeReviewView {
             }
         }
     }
-
-    #[cfg(target_family = "wasm")]
-    fn get_match_character_bounds(
-        &self,
-        _editor_index: usize,
-        _start_offset: CharOffset,
-        _end_offset: CharOffset,
-        _ctx: &ViewContext<Self>,
-    ) -> Option<(Pixels, Pixels)> {
-        unreachable!("get_match_character_bounds should not run on wasm");
-    }
-
-    #[cfg(not(target_family = "wasm"))]
     fn get_match_character_bounds(
         &self,
         editor_index: usize,
@@ -2286,19 +2240,6 @@ impl CodeReviewView {
             );
         }
     }
-
-    #[cfg(target_family = "wasm")]
-    fn horizontally_scroll_to_match(
-        &self,
-        _editor_index: usize,
-        _start_offset: CharOffset,
-        _end_offset: CharOffset,
-        _ctx: &mut ViewContext<Self>,
-    ) {
-        unreachable!("horizontally_scroll_to_match should not run on wasm");
-    }
-
-    #[cfg(not(target_family = "wasm"))]
     fn horizontally_scroll_to_match(
         &self,
         editor_index: usize,
@@ -2374,7 +2315,6 @@ impl CodeReviewView {
         });
 
         // Clear finder match decorations
-        #[cfg(not(target_family = "wasm"))]
         if let CodeReviewViewState::Loaded(state) = self.state() {
             for file_state in state.file_states.values() {
                 if let Some(editor_state) = &file_state.editor_state {
@@ -2874,16 +2814,7 @@ impl CodeReviewView {
 
         let mut file_states = vec![];
         for file in files {
-            let editor_state = {
-                #[cfg(not(target_family = "wasm"))]
-                {
-                    self.create_code_review_model_with_global_buffer(file, ctx)
-                }
-                #[cfg(target_family = "wasm")]
-                {
-                    self.create_code_review_model(file, ctx)
-                }
-            };
+            let editor_state = { self.create_code_review_model_with_global_buffer(file, ctx) };
             let is_expanded = self.should_auto_expand_file(&file.file_diff);
 
             let file_path = file.file_diff.file_path.clone();
@@ -3090,8 +3021,6 @@ impl CodeReviewView {
     fn state_mut(&mut self) -> Option<&mut CodeReviewViewState> {
         Some(&mut self.active_repo.as_mut()?.state)
     }
-
-    #[cfg(not(target_family = "wasm"))]
     fn session_env(&self, app: &AppContext) -> Option<GitSessionState> {
         let terminal_view = self.terminal_view.as_ref()?.upgrade(app)?;
         terminal_view.read(app, |terminal, ctx| {
@@ -3113,17 +3042,6 @@ impl CodeReviewView {
             Some(GitSessionState { enablement })
         })
     }
-
-    #[cfg(target_family = "wasm")]
-    fn render_no_repo_for_env(
-        &self,
-        _app: &AppContext,
-        appearance: &Appearance,
-    ) -> Box<dyn Element> {
-        Self::render_wsl_state(appearance, None)
-    }
-
-    #[cfg(not(target_family = "wasm"))]
     fn render_no_repo_for_env(
         &self,
         app: &AppContext,
@@ -3205,8 +3123,6 @@ impl CodeReviewView {
 
         diff_deltas
     }
-
-    #[cfg(not(target_family = "wasm"))]
     fn create_code_review_model_with_global_buffer(
         &self,
         file: &FileDiffAndContent,
@@ -3529,7 +3445,6 @@ impl CodeReviewView {
                     }
                 }
             }
-            #[cfg(not(target_family = "wasm"))]
             LocalCodeEditorEvent::GotoDefinition {
                 path,
                 line,
@@ -3553,7 +3468,6 @@ impl CodeReviewView {
                     ctx,
                 );
             }
-            #[cfg(not(target_family = "wasm"))]
             LocalCodeEditorEvent::OpenLspLogs { log_path } => {
                 ctx.emit(CodeReviewViewEvent::OpenLspLogs {
                     log_path: log_path.clone(),
@@ -3664,7 +3578,6 @@ impl CodeReviewView {
                     // Reset editor state with incoming content.
                     local_editor.reset_with_state(state, ctx);
                 }
-                #[cfg(not(target_family = "wasm"))]
                 if !is_deleted_file {
                     // We only want to recompute diff is the file is loaded. If not, we can rely on the file load event
                     // for diff computation.
@@ -4078,8 +3991,6 @@ impl CodeReviewView {
             .with_child(main_column)
             .finish()
     }
-
-    #[cfg(not(target_family = "wasm"))]
     fn render_no_repo_found_state_with_buttons(
         &self,
         appearance: &Appearance,
@@ -4247,8 +4158,6 @@ impl CodeReviewView {
     ) -> Box<dyn Element> {
         Self::render_no_repo_found_state(appearance, DISABLED_TEXT, open_repo_button)
     }
-
-    #[cfg(not(target_family = "wasm"))]
     fn render_remote_state_with_buttons(&self, appearance: &Appearance) -> Box<dyn Element> {
         self.render_no_repo_found_state_with_buttons(
             appearance,
@@ -4256,8 +4165,6 @@ impl CodeReviewView {
             InitButtons::OpenRepository,
         )
     }
-
-    #[cfg(not(target_family = "wasm"))]
     fn render_wsl_state_with_buttons(&self, appearance: &Appearance) -> Box<dyn Element> {
         self.render_no_repo_found_state_with_buttons(
             appearance,
@@ -4265,8 +4172,6 @@ impl CodeReviewView {
             InitButtons::OpenRepository,
         )
     }
-
-    #[cfg(not(target_family = "wasm"))]
     fn render_not_repo_state_with_buttons(&self, appearance: &Appearance) -> Box<dyn Element> {
         self.render_no_repo_found_state_with_buttons(
             appearance,
@@ -4490,12 +4395,49 @@ impl CodeReviewView {
     /// Prepares review comments and emits an event for a higher-level view to route
     /// them to an available terminal.
     fn handle_submit_review_with_comments(&mut self, ctx: &mut ViewContext<Self>) {
-        let Some(model) = self.active_comment_model.as_ref() else {
+        let Some(agent_comment_batch) = self.active_agent_review_comment_batch(ctx) else {
+            log::info!("No review comments to submit");
             return;
         };
 
-        let review_comments = model.read(ctx, |batch, _| batch.clone());
+        let Some(repo_path) = self.repo_path().cloned() else {
+            log::warn!("No active repo path for submitting review");
+            return;
+        };
 
+        ctx.emit(CodeReviewViewEvent::SubmitReviewComments {
+            comments: agent_comment_batch,
+            repo_path,
+        });
+    }
+
+    fn handle_copy_review_comments_to_clipboard(&mut self, ctx: &mut ViewContext<Self>) {
+        let Some(agent_comment_batch) = self.active_agent_review_comment_batch(ctx) else {
+            log::info!("No review comments to copy");
+            return;
+        };
+
+        let packet = build_review_clipboard_packet(&agent_comment_batch);
+        ctx.clipboard().write(ClipboardContent::plain_text(packet));
+
+        if let Some(model) = self.active_comment_model.clone() {
+            model.update(ctx, |batch, ctx| {
+                batch.clear_non_outdated(ctx);
+            });
+        }
+
+        ToastStack::handle(ctx).update(ctx, |stack, ctx| {
+            let toast = DismissibleToast::default("Comments copied and cleared".into());
+            stack.add_ephemeral_toast(toast, self.window_id, ctx);
+        });
+    }
+
+    fn active_agent_review_comment_batch(
+        &self,
+        ctx: &AppContext,
+    ) -> Option<AgentReviewCommentBatch> {
+        let model = self.active_comment_model.as_ref()?;
+        let review_comments = model.read(ctx, |batch, _| batch.clone());
         let active_comments: Vec<_> = review_comments
             .comments
             .into_iter()
@@ -4503,26 +4445,15 @@ impl CodeReviewView {
             .collect();
 
         if active_comments.is_empty() {
-            log::info!("No review comments to submit");
-            return;
+            return None;
         }
-
-        let Some(repo_path) = self.repo_path().cloned() else {
-            log::warn!("No active repo path for submitting review");
-            return;
-        };
 
         let active_batch = ReviewCommentBatch::from_comments(active_comments);
         let diff_set = self.collect_diff_set(&active_batch);
-        let agent_comment_batch = AgentReviewCommentBatch {
+        Some(AgentReviewCommentBatch {
             comments: active_batch.comments,
             diff_set,
-        };
-
-        ctx.emit(CodeReviewViewEvent::SubmitReviewComments {
-            comments: agent_comment_batch,
-            repo_path,
-        });
+        })
     }
 
     /// Called by the routing layer (RightPanelView) after attempting to submit review
@@ -7548,12 +7479,9 @@ impl BackingView for CodeReviewView {
                 .on_cancel(handle_save_intent(PendingSaveIntent::Cancel))
                 .build();
 
-            if cfg!(all(not(target_family = "wasm"), target_os = "macos")) {
+            if cfg!(target_os = "macos") {
                 AppContext::show_native_platform_modal(ctx, dialog);
-            } else if cfg!(all(
-                not(target_family = "wasm"),
-                any(target_os = "linux", target_os = "windows")
-            )) {
+            } else if cfg!(any(target_os = "linux", target_os = "windows")) {
                 // Find the workspace to show the Warp-native modal
                 if let Some(workspace) = ctx
                     .views_of_type::<Workspace>(ctx.window_id())
