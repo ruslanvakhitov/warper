@@ -97,7 +97,7 @@ The remaining 887 skipped commits fall into these evidence-backed groups:
 
 ## Specs created
 
-No new product spec was created.
+- `specs/WARPER-014/PRODUCT.md` documents the alternate-screen background behavior added in this branch.
 
 ## Specs not created
 

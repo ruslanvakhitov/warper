@@ -642,14 +642,10 @@ impl Element for AltScreenElement {
             get_secret_obfuscation_mode(app).and(&grid.get_secret_obfuscation());
 
         let mut sampler = model.alt_screen().bg_color_sampler.lock();
-        if let Some(bounds) = self.bounds {
-            let background = sampler
-                .uniform_background()
-                .map(Fill::Solid)
-                .unwrap_or_else(|| self.grid_render_params.warp_theme.background().into());
+        if let (Some(bounds), Some(bg_color)) = (self.bounds, sampler.uniform_background()) {
             ctx.scene
                 .draw_rect_without_hit_recording(bounds)
-                .with_background(background);
+                .with_background(Fill::Solid(bg_color));
         }
         sampler.reset();
 

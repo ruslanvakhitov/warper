@@ -16,7 +16,7 @@ In a side-by-side diff viewer, the diff pane is wider than the file pane. A scre
 2. A content color that covers a simple majority of sampled cells is not sufficient to identify the alternate-screen canvas.
 3. Warper infers a solid alternate-screen canvas only when one opaque color accounts for at least 90% of recorded samples.
 4. Transparent/default-background cells participate in the confidence calculation and cannot be discarded when deciding whether an opaque color is uniform.
-5. When no color meets the confidence requirement, the alternate-screen surface uses the configured Warper theme background.
+5. When no color meets the confidence requirement, the alternate-screen surface preserves the configured terminal background, including its image and opacity.
 6. Warper-owned UI that surrounds an alternate-screen CLI agent uses the inferred color only when it meets the same confidence requirement. Otherwise it retains its normal theme background.
 7. Alternate-screen applications that paint a nearly uniform custom background continue to blend into terminal padding and supported Warper-owned controls.
 8. The decision is deterministic when sampled colors tie or compete. No opaque color is inferred unless it independently meets the confidence requirement.
@@ -31,5 +31,5 @@ In a side-by-side diff viewer, the diff pane is wider than the file pane. A scre
 - Competing opaque colors return no inferred color.
 - A transparent winner returns no inferred color.
 - Resetting the sampler clears its samples and inferred color.
-- The alternate-screen renderer falls back to the configured Warper theme background when inference returns no color.
+- The alternate-screen renderer preserves the configured terminal background when inference returns no color.
 - Existing alternate-screen rendering and CLI-agent footer tests pass.
