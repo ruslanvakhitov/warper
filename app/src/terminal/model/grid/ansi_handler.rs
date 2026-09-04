@@ -6,6 +6,7 @@ mod tab_stops;
 use std::cmp::min;
 use std::collections::HashMap;
 use std::io;
+use std::mem;
 use std::ops::Range;
 use std::sync::Arc;
 
@@ -205,7 +206,22 @@ impl ansi::Handler for GridHandler {
                 col = col.saturating_sub(1);
             }
 
-            self.grid[row][col].push_zerowidth(c, /* log_long_grapheme_warnings */ true);
+            let old_cell_content_width = match self.grid[row][col].raw_content() {
+                CharOrStr::Str(s) => s.width(),
+                CharOrStr::Char(c) => match c.width() {
+                    Some(width) => width,
+                    None => {
+                        return;
+                    }
+                },
+            };
+
+            // A rejected append cannot change the cell's width, so there is no structural work to
+            // do.
+            if !self.grid[row][col].push_zerowidth(c, /* log_long_grapheme_warnings */ true) {
+                return;
+            }
+
             let cell_content_width = match self.grid[row][col].raw_content() {
                 CharOrStr::Str(s) => s.width(),
                 // Note that we should never reach here since we are pushing a zerowidth character,
@@ -222,19 +238,30 @@ impl ansi::Handler for GridHandler {
             // Bash and Fish support emoji variation selectors, but Zsh does not in bracketed paste
             // mode. Specifically, this references sequences such as \0x2601\0xFE0F (☁️),
             // which are commonly used in prompts e.g. GCloud prompt chip in Starship.
-            if cell_content_width == 2
+            if old_cell_content_width != cell_content_width
+                && cell_content_width == 2
                 && self.ansi_handler_state.supports_emoji_presentation_selector
             {
-                // Current cursor cell contains a wide character (double-width).
-                self.grid[row][col].flags.insert(Flags::WIDE_CHAR);
+                let mut wide_cell = mem::take(&mut self.grid[row][col]);
+                if col + 1 == num_cols
+                    && !self.ansi_handler_state.mode.contains(TermMode::LINE_WRAP)
+                {
+                    // Remove the selector rather than leave a wide grapheme without room for its
+                    // spacer.
+                    let popped = wide_cell.pop_zerowidth();
+                    debug_assert_eq!(popped, Some(c));
+                    self.grid[row][col] = wide_cell;
+                    return;
+                }
+                wide_cell.flags.remove(
+                    Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER | Flags::WRAPLINE,
+                );
+                let base_char = wide_cell.c;
 
-                // Insert spacer at the next cell.
-                self.write_at_cursor(cell::DEFAULT_CHAR)
-                    .flags
-                    .insert(Flags::WIDE_CHAR_SPACER);
-
-                // Update cursor appropriately before early-return.
-                self.advance_cursor_by_one_cell();
+                self.update_cursor(|cursor| {
+                    cursor.point.col = col;
+                });
+                self.write_wide_char(base_char, |cell| *cell = wide_cell);
             }
             return;
         }
@@ -272,37 +299,10 @@ impl ansi::Handler for GridHandler {
 
         if width == 1 {
             self.write_at_cursor(c);
+            self.advance_cursor_by_one_cell();
         } else {
-            if self.grid.cursor().point.col + 1 >= num_cols {
-                if self.ansi_handler_state.mode.contains(TermMode::LINE_WRAP) {
-                    // Insert placeholder before wide char if glyph does not fit in this row.
-                    self.write_at_cursor(cell::DEFAULT_CHAR)
-                        .flags
-                        .insert(Flags::LEADING_WIDE_CHAR_SPACER);
-                    self.wrapline();
-                } else {
-                    // Prevent out of bounds crash when linewrapping is disabled.
-                    self.move_cursor_forward(|cursor| {
-                        cursor.input_needs_wrap = true;
-                    });
-                    return;
-                }
-            }
-
-            // Write full width glyph to current cursor cell.
-            self.write_at_cursor(c).flags.insert(Flags::WIDE_CHAR);
-
-            // Write spacer to cell following the wide glyph.
-            self.move_cursor_forward(|cursor| {
-                cursor.point.col += 1;
-            });
-
-            self.write_at_cursor(cell::DEFAULT_CHAR)
-                .flags
-                .insert(Flags::WIDE_CHAR_SPACER);
+            self.write_wide_char(c, |_| {});
         }
-
-        self.advance_cursor_by_one_cell();
     }
 
     fn goto(&mut self, row: VisibleRow, column: usize) {
@@ -1463,6 +1463,35 @@ impl GridHandler {
                 cursor.input_needs_wrap = true;
             }
         });
+    }
+
+    fn write_wide_char(&mut self, c: char, update_wide_cell: impl FnOnce(&mut Cell)) {
+        let num_cols = self.columns();
+        if self.grid.cursor().point.col + 1 >= num_cols {
+            if !self.ansi_handler_state.mode.contains(TermMode::LINE_WRAP) {
+                self.move_cursor_forward(|cursor| {
+                    cursor.input_needs_wrap = true;
+                });
+                return;
+            }
+
+            self.write_at_cursor(cell::DEFAULT_CHAR)
+                .flags
+                .insert(Flags::LEADING_WIDE_CHAR_SPACER);
+            self.wrapline();
+        }
+
+        let wide_cell = self.write_at_cursor(c);
+        update_wide_cell(wide_cell);
+        wide_cell.flags.insert(Flags::WIDE_CHAR);
+
+        self.move_cursor_forward(|cursor| {
+            cursor.point.col += 1;
+        });
+        self.write_at_cursor(cell::DEFAULT_CHAR)
+            .flags
+            .insert(Flags::WIDE_CHAR_SPACER);
+        self.advance_cursor_by_one_cell();
     }
 
     /// Insert a linebreak at the current cursor position.

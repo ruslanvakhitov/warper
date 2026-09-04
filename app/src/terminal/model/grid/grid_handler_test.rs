@@ -1302,6 +1302,79 @@ fn test_emoji_variation_selector() {
 }
 
 #[test]
+fn emoji_variation_selector_wraps_width_promotion_at_last_column() {
+    let mut grid = GridHandler::new_for_test(2, 4);
+    grid.input('a');
+    grid.input('b');
+    grid.input('c');
+    grid.input('\u{26A0}');
+
+    grid.input('\u{FE0F}');
+
+    let storage = grid.grid_storage();
+    assert_eq!(storage[VisibleRow(0)][3].c, '\0');
+    assert!(storage[VisibleRow(0)][3]
+        .flags
+        .contains(Flags::LEADING_WIDE_CHAR_SPACER));
+    assert!(storage[VisibleRow(0)][3].flags.contains(Flags::WRAPLINE));
+    assert!(matches!(
+        storage[VisibleRow(1)][0].content_for_display(),
+        CharOrStr::Str("⚠️")
+    ));
+    assert!(storage[VisibleRow(1)][0].flags.contains(Flags::WIDE_CHAR));
+    assert!(storage[VisibleRow(1)][1]
+        .flags
+        .contains(Flags::WIDE_CHAR_SPACER));
+    assert_eq!(grid.cursor_point(), Point::new(1, 2));
+}
+
+#[test]
+fn emoji_variation_selector_drops_width_promotion_when_line_wrap_is_disabled() {
+    let mut grid = GridHandler::new_for_test(2, 4);
+    grid.unset_mode(ansi::Mode::LineWrap);
+    grid.input('a');
+    grid.input('b');
+    grid.input('c');
+    grid.input('\u{26A0}');
+
+    grid.input('\u{FE0F}');
+
+    let storage = grid.grid_storage();
+    assert!(matches!(
+        storage[VisibleRow(0)][3].content_for_display(),
+        CharOrStr::Char('⚠')
+    ));
+    assert!(!storage[VisibleRow(0)][3]
+        .flags
+        .intersects(Flags::WIDE_CHAR | Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER));
+    assert_eq!(grid.cursor_point(), Point::new(0, 3));
+}
+
+#[test]
+fn emoji_variation_selector_does_not_advance_already_wide_grapheme() {
+    let mut grid = GridHandler::new_for_test(2, 6);
+    grid.input('😀');
+
+    grid.input('\u{FE0F}');
+    grid.input('x');
+
+    let storage = grid.grid_storage();
+    assert!(matches!(
+        storage[VisibleRow(0)][0].content_for_display(),
+        CharOrStr::Str("😀️")
+    ));
+    assert!(storage[VisibleRow(0)][0].flags.contains(Flags::WIDE_CHAR));
+    assert!(storage[VisibleRow(0)][1]
+        .flags
+        .contains(Flags::WIDE_CHAR_SPACER));
+    assert_eq!(storage[VisibleRow(0)][2].c, 'x');
+    assert!(!storage[VisibleRow(0)][2]
+        .flags
+        .contains(Flags::WIDE_CHAR_SPACER));
+    assert_eq!(grid.cursor_point(), Point::new(0, 3));
+}
+
+#[test]
 pub fn test_grid_agnostic_point() {
     let mut grid = mock_blockgrid(
         "\
