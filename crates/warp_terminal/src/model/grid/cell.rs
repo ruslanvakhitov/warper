@@ -206,7 +206,7 @@ impl Cell {
     /// already capped on the way in) should pass `false` to suppress
     /// that redundant warning.
     #[inline]
-    pub fn push_zerowidth(&mut self, c: char, log_long_grapheme_warnings: bool) {
+    pub fn push_zerowidth(&mut self, c: char, log_long_grapheme_warnings: bool) -> bool {
         // If we're adding a zero-width character to this cell, but it has not
         // had any content set yet, set the content to a space.  This preserves
         // its visual appearance, but clearly marks the cell as having been
@@ -227,7 +227,7 @@ impl Cell {
                     // zero-width characters: logging every dropped
                     // character would produce a flood of spam for
                     // pathological streams.
-                    return;
+                    return false;
                 }
                 zerowidth.push(c);
                 // Log exactly once, on the push that first takes this cell
@@ -250,6 +250,26 @@ impl Cell {
                 extra.cell_with_zero_width = Some(format!("{}{}", self.c, c));
             }
         }
+
+        true
+    }
+
+    /// Remove and return the most recently appended zero-width character.
+    pub fn pop_zerowidth(&mut self) -> Option<char> {
+        let extra = self.extra.as_mut()?;
+        let zerowidth = extra.cell_with_zero_width.as_mut()?;
+        let popped = zerowidth.pop();
+
+        if zerowidth.len() == self.c.len_utf8() {
+            extra.cell_with_zero_width = None;
+        }
+
+        let extra_is_empty = extra.cell_with_zero_width.is_none() && extra.end_of_prompt.is_none();
+        if extra_is_empty {
+            self.extra = None;
+        }
+
+        popped
     }
 
     /// Returns whether cell is the end of prompt content (contains `EndOfPromptMarker`).

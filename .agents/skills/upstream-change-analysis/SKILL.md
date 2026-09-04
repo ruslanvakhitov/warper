@@ -58,17 +58,19 @@ Read these before deciding anything:
 - `specs/WARPER-005/TECH.md` if local agent/tool behavior is involved
 - Current `AGENTS.md` instructions if present
 
-Then establish the Git facts:
+Then establish the Git facts without changing configured remotes or creating remote-tracking refs:
 
 ```bash
 git remote -v
-git merge-base HEAD upstream/master
-git log --oneline --decorate --left-right HEAD...upstream/master
+git fetch --no-tags https://github.com/warpdotdev/warp.git refs/heads/master
+upstream_head="$(git rev-parse FETCH_HEAD)"
+git merge-base HEAD "$upstream_head"
+git log --oneline --decorate --left-right HEAD..."$upstream_head"
 git show --stat --oneline --no-renames <commit>
 git show --name-only --format=fuller <commit>
 ```
 
-If `upstream/master` is missing or stale, fetch upstream before analysis. If network access is blocked, say that clearly and base the analysis only on available refs.
+Never add or configure an `upstream` remote, create a persistent upstream branch or tag, use `upstream/master`, or fetch into `refs/remotes/upstream/*`. In particular, do not use a refspec such as `master:refs/remotes/upstream/master`. Fetch into `FETCH_HEAD`, immediately record its commit SHA, and use that SHA for the rest of the analysis. If the fetch is blocked, report that the upstream head could not be refreshed; do not create a persistent ref as a fallback.
 
 ## PR And Issue Grounding
 

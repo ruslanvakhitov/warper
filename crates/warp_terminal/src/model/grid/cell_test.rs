@@ -60,8 +60,9 @@ fn push_zerowidth_caps_accumulated_grapheme() {
     let zwj = '\u{200D}';
     let zwj_bytes = zwj.len_utf8();
     let pushes = (MAX_GRAPHEME_BYTES * 10) / zwj_bytes;
+    let mut rejected_push = false;
     for _ in 0..pushes {
-        cell.push_zerowidth(zwj, /* log_long_grapheme_warnings */ true);
+        rejected_push |= !cell.push_zerowidth(zwj, /* log_long_grapheme_warnings */ true);
     }
 
     let CharOrStr::Str(content) = cell.raw_content() else {
@@ -86,6 +87,7 @@ fn push_zerowidth_caps_accumulated_grapheme() {
     );
     assert!(content.starts_with('e'));
     assert!(content[1..].chars().all(|c| c == zwj));
+    assert!(rejected_push, "expected pushes past the cap to be rejected");
 }
 
 #[test]
@@ -101,4 +103,22 @@ fn push_zerowidth_seeds_base_char_on_first_push() {
 
     cell.push_zerowidth('\u{0301}', /* log_long_grapheme_warnings */ true);
     assert_eq!(cell.raw_content(), CharOrStr::Str("x\u{0301}"));
+}
+
+#[test]
+fn pop_zerowidth_restores_previous_cell_content() {
+    let mut cell = Cell {
+        c: 'x',
+        ..Cell::default()
+    };
+
+    assert!(cell.push_zerowidth('\u{0301}', /* log_long_grapheme_warnings */ true));
+    assert!(cell.push_zerowidth('\u{0302}', /* log_long_grapheme_warnings */ true));
+    assert_eq!(cell.raw_content(), CharOrStr::Str("x\u{0301}\u{0302}"));
+
+    assert_eq!(cell.pop_zerowidth(), Some('\u{0302}'));
+    assert_eq!(cell.raw_content(), CharOrStr::Str("x\u{0301}"));
+    assert_eq!(cell.pop_zerowidth(), Some('\u{0301}'));
+    assert_eq!(cell.raw_content(), CharOrStr::Char('x'));
+    assert_eq!(cell.pop_zerowidth(), None);
 }

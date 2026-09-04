@@ -56,8 +56,7 @@ const UNDERLINE_THICKNESS_SCALE_FACTOR: f32 = 0.15;
 const SELECTION_CURSOR_TOP_DIAMETER: f32 = 5.;
 
 /// Stores count of occurrences of distinct colors as a grid is rendered, which we can use to
-/// compute the most common background color of a grid and color-match other UI elements against
-/// it.
+/// identify a nearly uniform background color and color-match other UI elements against it.
 #[derive(Debug, Default)]
 pub struct ColorSampler {
     counts: HashMap<ColorU, usize>,
@@ -90,11 +89,22 @@ impl ColorSampler {
         *self.counts.entry(color).or_default() += 1;
     }
 
-    pub fn most_common(&self) -> Option<ColorU> {
-        self.counts
-            .iter()
-            .max_by_key(|(_, &count)| count)
-            .map(|(&color, _)| color)
+    /// Returns an opaque color only when it accounts for at least 90% of recorded samples.
+    ///
+    /// A simple majority is insufficient because large selections, diffs, and diagnostics are
+    /// content colors rather than the application's canvas. Transparent samples remain in the
+    /// denominator so default-background cells prevent those content colors from leaking into
+    /// surrounding UI.
+    pub fn uniform_background(&self) -> Option<ColorU> {
+        const MIN_UNIFORM_PERCENT: usize = 90;
+
+        let sampled = self.counts.values().sum::<usize>();
+        let (&color, &count) = self.counts.iter().max_by_key(|(_, count)| *count)?;
+        if color.is_fully_transparent() || count * 100 < sampled * MIN_UNIFORM_PERCENT {
+            return None;
+        }
+
+        Some(color)
     }
 
     pub fn reset(&mut self) {
