@@ -361,10 +361,7 @@ impl AltScreen {
     }
 
     pub fn inferred_bg_color(&self) -> Option<ColorU> {
-        self.bg_color_sampler
-            .lock()
-            .most_common()
-            .filter(|color| !color.is_fully_transparent())
+        self.bg_color_sampler.lock().uniform_background()
     }
 }
 

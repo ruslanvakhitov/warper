@@ -1,12 +1,53 @@
-use super::{active_or_next_match, CachedBackgroundColor};
+use super::{active_or_next_match, CachedBackgroundColor, ColorSampler};
 use crate::terminal::grid_size_util::calculate_grid_baseline_position;
 use crate::terminal::model::index::Point;
 use crate::terminal::model::selection::SelectionPoint;
 use crate::terminal::{grid_renderer, SizeInfo};
 use pathfinder_geometry::rect::RectF;
 use pathfinder_geometry::vector::{vec2f, Vector2F};
+use warpui::color::ColorU;
 use warpui::fonts::Cache as FontCache;
 use warpui::units::{IntoLines, Lines, Pixels};
+
+fn record_background_samples(sampler: &mut ColorSampler, color: ColorU, count: usize) {
+    for _ in 0..count {
+        for _ in 0..8 {
+            sampler.sample(color);
+        }
+    }
+}
+
+#[test]
+fn test_color_sampler_requires_uniform_opaque_background() {
+    let canvas = ColorU::new(20, 30, 40, 255);
+    let highlight = ColorU::new(120, 20, 20, 255);
+
+    let mut sampler = ColorSampler::new();
+    record_background_samples(&mut sampler, canvas, 10);
+    assert_eq!(sampler.uniform_background(), Some(canvas));
+
+    sampler.reset();
+    record_background_samples(&mut sampler, canvas, 9);
+    record_background_samples(&mut sampler, highlight, 1);
+    assert_eq!(sampler.uniform_background(), Some(canvas));
+
+    sampler.reset();
+    record_background_samples(&mut sampler, highlight, 8);
+    record_background_samples(&mut sampler, ColorU::transparent_black(), 2);
+    assert_eq!(sampler.uniform_background(), None);
+
+    sampler.reset();
+    record_background_samples(&mut sampler, canvas, 6);
+    record_background_samples(&mut sampler, highlight, 4);
+    assert_eq!(sampler.uniform_background(), None);
+
+    sampler.reset();
+    record_background_samples(&mut sampler, ColorU::transparent_black(), 10);
+    assert_eq!(sampler.uniform_background(), None);
+
+    sampler.reset();
+    assert_eq!(sampler.uniform_background(), None);
+}
 
 fn rect_from_points(min_x: f32, min_y: f32, max_x: f32, max_y: f32) -> RectF {
     RectF::from_points(vec2f(min_x, min_y), vec2f(max_x, max_y))
