@@ -18,7 +18,7 @@ use crate::editor::InteractionState;
 use crate::notebooks::editor::view::RichTextEditorView;
 use crate::util::time_format::human_readable_approx_duration;
 use pathfinder_color::ColorU;
-use warp_core::ui::theme::color::internal_colors::{neutral_1, neutral_2, text_sub};
+use warp_core::ui::theme::color::internal_colors::{neutral_1, neutral_2};
 use warp_core::ui::theme::Fill;
 use warp_editor::content::buffer::InitialBufferState;
 use warp_editor::render::element::VerticalExpansionBehavior;
@@ -158,7 +158,6 @@ fn render_comment_file_path_header(
 fn render_comment_text_section(
     comment_editor: &ViewHandle<RichTextEditorView>,
     last_updated_duration: Duration,
-    is_imported_from_github: bool,
     metadata_trailing_element: Option<Box<dyn Element>>,
     appearance: &Appearance,
 ) -> Box<dyn Element> {
@@ -168,18 +167,6 @@ fn render_comment_text_section(
     let mut left_section = Flex::row()
         .with_cross_axis_alignment(CrossAxisAlignment::Center)
         .with_spacing(8.);
-
-    if is_imported_from_github {
-        left_section.add_child(
-            Text::new(
-                "From GitHub".to_string(),
-                appearance.ui_font_family(),
-                appearance.ui_font_size(),
-            )
-            .with_color(text_sub(theme, background))
-            .finish(),
-        );
-    }
 
     left_section.add_child(
         Text::new(
@@ -344,14 +331,6 @@ impl CommentViewCard {
         }
     }
 
-    pub(crate) fn toggle_collapsed(&mut self) {
-        self.is_collapsed = !self.is_collapsed;
-    }
-
-    pub(crate) fn is_collapsed(&self) -> bool {
-        self.is_collapsed
-    }
-
     /// Updates the comment data and resets the body editor with the new content.
     pub(crate) fn update_source<V: View>(
         &mut self,
@@ -423,7 +402,6 @@ impl CommentViewCard {
         card.add_child(render_comment_text_section(
             &self.comment_editor,
             self.last_updated_duration,
-            self.source.origin.is_imported_from_github(),
             metadata_trailing_element,
             appearance,
         ));

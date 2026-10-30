@@ -30,10 +30,10 @@ pub fn init(app: &mut AppContext) {
 use warp_core::ui::theme::color::internal_colors;
 
 use crate::{
-    ai::persisted_workspace::PersistedWorkspace,
     appearance::Appearance,
     editor::{EditorView, Event as EditorEvent, SingleLineEditorOptions},
     modal::ModalAction,
+    project_workspaces::PersistedWorkspace,
     tab_configs::{
         branch_picker::BranchPicker,
         repo_picker::{RepoPicker, RepoPickerEvent},

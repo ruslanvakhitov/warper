@@ -55,31 +55,3 @@ fn test_workflow_serialization_with_enum_params() {
 
     assert_eq!(deserialized, workflow);
 }
-
-#[test]
-fn test_agent_mode_workflow_serialization() {
-    let workflow = Workflow::AgentMode {
-        name: "name".to_string(),
-        query: "query {{text}}".to_string(),
-        arguments: vec![Argument {
-            name: "text".to_string(),
-            arg_type: ArgumentType::Text,
-            description: None,
-            default_value: Some("default".to_string()),
-        }],
-        description: None,
-    };
-
-    let serialized = serde_json::to_string(&workflow).expect("failed to serialize");
-    let correct_serialized = r#"{"type":"agent_mode","name":"name","query":"query {{text}}","arguments":[{"name":"text","arg_type":"Text","description":null,"default_value":"default"}]}"#;
-
-    assert_eq!(
-        serialized, correct_serialized,
-        "Workflow should serialize correctly"
-    );
-
-    let deserialized: Workflow =
-        serde_json::from_str(serialized.as_str()).expect("failed to deserialized");
-
-    assert_eq!(deserialized, workflow);
-}

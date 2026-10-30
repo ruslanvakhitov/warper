@@ -58,8 +58,6 @@ pub struct SessionConfigModal {
     is_git_repo: bool,
     enable_worktree: bool,
     autogenerate_worktree_branch_name: bool,
-    /// When `false`, the session type pill row is hidden and the session type
-    /// defaults to Terminal behind the scenes when local Agent Mode is hidden.
     show_session_type_row: bool,
     session_pill_mouse_states: Vec<MouseStateHandle>,
     directory_button_mouse_state: MouseStateHandle,
@@ -74,7 +72,7 @@ pub struct SessionConfigModal {
 impl SessionConfigModal {
     pub fn new(ctx: &mut ViewContext<Self>) -> Self {
         let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
-        let session_types = session_config_rendering::visible_session_types(true);
+        let session_types = session_config_rendering::visible_session_types();
 
         let close_button = ctx.add_view(|ctx| {
             ActionButton::new("", NakedTheme)
@@ -122,13 +120,10 @@ impl SessionConfigModal {
         }
     }
 
-    /// Reconfigures the visible session types based on whether local Agent Mode is available.
-    /// Resets the selection to index 0 (the first available type).
-    /// When local Agent Mode is disabled, hides the session type row entirely and defaults
-    /// to Terminal behind the scenes.
-    pub fn configure(&mut self, show_agent: bool) {
-        self.show_session_type_row = show_agent;
-        self.session_types = session_config_rendering::visible_session_types(show_agent);
+    /// Resets the session selection and refreshes repository availability.
+    pub fn configure(&mut self) {
+        self.show_session_type_row = true;
+        self.session_types = session_config_rendering::visible_session_types();
         self.selected_session_type_index = 0;
         self.session_pill_mouse_states = self
             .session_types

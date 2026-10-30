@@ -4,12 +4,11 @@ use crate::code::editor::comment_editor::DEFAULT_COMMENT_MAX_WIDTH;
 use crate::code::editor::view::{CodeEditorEvent, CodeEditorView};
 use crate::code_review::comment_rendering::CommentViewCard;
 use crate::code_review::comments::{
-    AttachedReviewComment, AttachedReviewCommentTarget, CommentId, CommentOrigin,
-    ReviewCommentBatch, ReviewCommentBatchEvent,
+    AttachedReviewComment, AttachedReviewCommentTarget, CommentId, ReviewCommentBatch,
+    ReviewCommentBatchEvent,
 };
 use crate::menu::{Event, Menu, MenuItem, MenuItemFields};
 use crate::notebooks::editor::view::{EditorViewEvent, RichTextEditorView};
-use crate::settings::AISettings;
 use crate::view_components::action_button::{
     ActionButton, ActionButtonTheme, ButtonSize, NakedTheme, SecondaryTheme,
 };
@@ -23,7 +22,6 @@ use pathfinder_geometry::vector::vec2f;
 use std::path::PathBuf;
 use string_offset::CharOffset;
 use vec1::vec1;
-use warp_core::features::FeatureFlag;
 use warp_core::ui::color::blend::Blend;
 use warp_editor::model::CoreEditorModel;
 
@@ -100,7 +98,6 @@ pub enum CommentListAction {
     ShowOverflow { comment_id: CommentId },
     DeleteComment,
     DismissOverflowMenu,
-    ViewInGitHub { url: String },
 }
 
 #[derive(Clone, Debug)]
@@ -120,8 +117,6 @@ pub struct CommentListDebugState {
     pub sendable_comments: usize,
     pub is_collapsed: bool,
     pub is_outdated_section_collapsed: Option<bool>,
-    pub ai_available: bool,
-    pub ai_enabled: bool,
     pub send_button_tooltip_text: String,
 }
 
@@ -238,7 +233,7 @@ impl CommentListView {
     fn recompute_comment_button_label(&mut self, ctx: &mut ViewContext<Self>) {
         let total_count = self.comments_by_id.len();
 
-        let label_text = if FeatureFlag::PRCommentsSlashCommand.is_enabled() {
+        let label_text = {
             let non_outdated_count = self
                 .comments_by_id
                 .values()
@@ -258,12 +253,6 @@ impl CommentListView {
                     if non_outdated_count == 1 { "" } else { "s" }
                 )
             }
-        } else {
-            format!(
-                "{} comment{}",
-                total_count,
-                if total_count == 1 { "" } else { "s" }
-            )
         };
 
         self.comments_button
@@ -281,19 +270,15 @@ impl CommentListView {
         }
     }
 
-    pub fn debug_state(&self, ctx: &AppContext) -> CommentListDebugState {
-        let ai_enabled = AISettings::as_ref(ctx).is_any_ai_enabled(ctx);
+    pub fn debug_state(&self, _ctx: &AppContext) -> CommentListDebugState {
         let sendable_comments = self
             .comments_by_id
             .values()
             .filter(|state| !state.card.source().outdated)
             .count();
-        let send_button_tooltip_text = Self::send_button_tooltip_text(
-            &self.review_destination,
-            sendable_comments > 0,
-            ai_enabled,
-        )
-        .into_owned();
+        let send_button_tooltip_text =
+            Self::send_button_tooltip_text(&self.review_destination, sendable_comments > 0)
+                .into_owned();
 
         CommentListDebugState {
             review_destination: self.review_destination.clone(),
@@ -301,8 +286,6 @@ impl CommentListView {
             sendable_comments,
             is_collapsed: self.is_collapsed,
             is_outdated_section_collapsed: self.is_outdated_section_collapsed,
-            ai_available: ai_enabled,
-            ai_enabled,
             send_button_tooltip_text,
         }
     }
@@ -561,7 +544,7 @@ impl CommentListView {
             .with_main_axis_alignment(MainAxisAlignment::Start)
             .with_cross_axis_alignment(CrossAxisAlignment::Stretch);
 
-        if FeatureFlag::PRCommentsSlashCommand.is_enabled() {
+        {
             let (outdated_comments, active_comments): (Vec<_>, Vec<_>) = self
                 .comments_by_id
                 .values()
@@ -576,14 +559,6 @@ impl CommentListView {
             }
 
             for comment_render_state in active_comments {
-                comments_column.add_child(
-                    Container::new(self.render_comment(comment_render_state, ctx))
-                        .with_margin_bottom(12.)
-                        .finish(),
-                );
-            }
-        } else {
-            for comment_render_state in self.comments_by_id.values() {
                 comments_column.add_child(
                     Container::new(self.render_comment(comment_render_state, ctx))
                         .with_margin_bottom(12.)
@@ -955,7 +930,6 @@ impl CommentListView {
     fn send_button_tooltip_text(
         destination: &ReviewDestination,
         has_sendable_comments: bool,
-        ai_enabled: bool,
     ) -> Cow<'static, str> {
         if let ReviewDestination::Cli(agent) = destination {
             if !has_sendable_comments {
@@ -965,33 +939,22 @@ impl CommentListView {
                 let label = if cmd.is_empty() { "CLI agent" } else { cmd };
                 Cow::Owned(format!("Send diff comments to {label}"))
             }
-        } else if !ai_enabled {
-            Cow::Borrowed("AI must be enabled to send comments to Agent")
-        } else if matches!(destination, ReviewDestination::None) {
-            Cow::Borrowed("All terminals are busy")
-        } else if !has_sendable_comments {
-            Cow::Borrowed("No non-outdated comments to send")
         } else {
-            Cow::Borrowed("Send diff comments to Agent")
+            Cow::Borrowed("No CLI agent is available")
         }
     }
 
-    fn render_send_button(&self, appearance: &Appearance, ctx: &AppContext) -> Box<dyn Element> {
-        let ai_enabled = AISettings::as_ref(ctx).is_any_ai_enabled(ctx);
+    fn render_send_button(&self, appearance: &Appearance, _ctx: &AppContext) -> Box<dyn Element> {
         let has_sendable_comments = self.has_non_outdated_comments();
 
         // CLI agents use the configured local destination and do not depend on AI provider settings.
         let enable_send = match &self.review_destination {
             ReviewDestination::None => false,
             ReviewDestination::Cli(_) => has_sendable_comments,
-            ReviewDestination::Warp => ai_enabled && has_sendable_comments,
         };
 
-        let tooltip_text = Self::send_button_tooltip_text(
-            &self.review_destination,
-            has_sendable_comments,
-            ai_enabled,
-        );
+        let tooltip_text =
+            Self::send_button_tooltip_text(&self.review_destination, has_sendable_comments);
 
         let tooltip = appearance
             .ui_builder()
@@ -1005,7 +968,7 @@ impl CommentListView {
                 ButtonVariant::Accent,
                 self.view_state.submit_button_mouse_state.clone(),
             )
-            .with_text_label("Send to Agent".to_string())
+            .with_text_label("Send to CLI agent".to_string())
             .with_tooltip(|| tooltip)
             .with_tooltip_position(ButtonTooltipPosition::AboveLeft);
 
@@ -1111,7 +1074,6 @@ impl CommentListView {
     fn menu_items_for_comment(
         is_file_level: bool,
         is_outdated: bool,
-        html_url: Option<&str>,
         appearance: &Appearance,
     ) -> Vec<MenuItem<CommentListAction>> {
         let mut items = vec![MenuItemFields::new("Copy text")
@@ -1131,17 +1093,6 @@ impl CommentListView {
             edit_item = edit_item.with_disabled(true).with_tooltip(tooltip_text);
         }
         items.push(edit_item.into_item());
-
-        if let Some(url) = html_url {
-            items.push(
-                MenuItemFields::new("View in GitHub")
-                    .with_icon(Icon::Github)
-                    .with_on_select_action(CommentListAction::ViewInGitHub {
-                        url: url.to_string(),
-                    })
-                    .into_item(),
-            );
-        }
 
         items.push(
             MenuItemFields::new("Remove")
@@ -1254,34 +1205,23 @@ impl TypedActionView for CommentListView {
 
                     // File-level comments cannot be edited (no line to jump to).
                     // Outdated comments cannot be edited.
-                    let (is_file_level, is_outdated, html_url) = self
+                    let (is_file_level, is_outdated) = self
                         .comments_by_id
                         .get(comment_id)
                         .map(|state| {
                             let source = state.card.source();
-                            let html_url = match &source.origin {
-                                CommentOrigin::ImportedFromGitHub(details) => {
-                                    details.html_url.clone()
-                                }
-                                CommentOrigin::Native => None,
-                            };
+
                             (
                                 matches!(source.target, AttachedReviewCommentTarget::File { .. }),
                                 source.outdated,
-                                html_url,
                             )
                         })
-                        .unwrap_or((true, true, None));
+                        .unwrap_or((true, true));
 
                     self.overflow_menu.update(ctx, |menu, ctx| {
                         let appearance = Appearance::handle(ctx).as_ref(ctx);
                         menu.set_items(
-                            Self::menu_items_for_comment(
-                                is_file_level,
-                                is_outdated,
-                                html_url.as_deref(),
-                                appearance,
-                            ),
+                            Self::menu_items_for_comment(is_file_level, is_outdated, appearance),
                             ctx,
                         );
                     });
@@ -1312,10 +1252,7 @@ impl TypedActionView for CommentListView {
                 }
                 ctx.notify();
             }
-            CommentListAction::ViewInGitHub { url } => {
-                ctx.open_url(url);
-                self.close_overflow_menu(ctx);
-            }
+
             CommentListAction::JumpToCommentLocation(comment_id) => {
                 ctx.emit(CommentListEvent::JumpToCommentLocation(*comment_id));
             }

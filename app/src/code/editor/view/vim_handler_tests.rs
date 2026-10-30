@@ -8,7 +8,6 @@ use crate::{
     test_util::settings::initialize_settings_for_tests,
     vim_registers::VimRegisters,
     workspace::sync_inputs::SyncedInputState,
-    workspaces::user_workspaces::UserWorkspaces,
 };
 use unindent::Unindent;
 use vim::vim::{MotionType, VimMode};
@@ -43,13 +42,9 @@ fn initialize_code_editor_app(app: &mut App) {
     app.add_singleton_model(|_| SyncedInputState::mock());
     app.add_singleton_model(|_| VimRegisters::new());
     app.add_singleton_model(|_| KeybindingChangedNotifier::mock());
-    #[cfg(feature = "voice_input")]
-    app.add_singleton_model(voice_input::VoiceInput::new);
 
     app.add_singleton_model(|_| ActiveSession::default());
     app.add_singleton_model(NotebookKeybindings::new);
-
-    app.add_singleton_model(|ctx| UserWorkspaces::mock(vec![], ctx));
 
     // Enable vim mode in editor settings
     app.update_model(

@@ -98,11 +98,10 @@ pub struct WorkspaceState {
     pub is_agent_toolbar_editor_open: bool,
     pub is_header_toolbar_editor_open: bool,
     pub is_import_modal_open: bool,
-    pub is_rewind_confirmation_dialog_open: bool,
-    pub is_delete_conversation_confirmation_dialog_open: bool,
+
     pub is_native_quit_modal_open: bool,
     pub is_shared_objects_creation_denied_modal_open: bool,
-    pub is_codex_modal_open: bool,
+
     pub is_tab_config_params_modal_open: bool,
     pub is_session_config_modal_open: bool,
     pub is_new_worktree_modal_open: bool,
@@ -128,7 +127,6 @@ impl WorkspaceState {
             || self.is_header_toolbar_editor_open
             || self.is_import_modal_open
             || self.is_shared_objects_creation_denied_modal_open
-            || self.is_codex_modal_open
             || self.is_tab_config_params_modal_open
             || self.is_session_config_modal_open
             || self.is_new_worktree_modal_open
@@ -157,7 +155,6 @@ impl WorkspaceState {
         self.is_header_toolbar_editor_open = false;
         self.is_import_modal_open = false;
         self.is_shared_objects_creation_denied_modal_open = false;
-        self.is_codex_modal_open = false;
         self.is_tab_config_params_modal_open = false;
         self.is_session_config_modal_open = false;
         self.is_new_worktree_modal_open = false;
@@ -308,7 +305,9 @@ pub fn get_context_target_terminal_view(
                 workspace
                     .active_tab_pane_group()
                     .read(w_ctx, |active_group, a_ctx| {
-                        active_group.active_session_view(a_ctx)
+                        active_group.active_session_view(a_ctx).filter(|terminal| {
+                            terminal.as_ref(a_ctx).active_cli_agent(a_ctx).is_some()
+                        })
                     })
             })
         })

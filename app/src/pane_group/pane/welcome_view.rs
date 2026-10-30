@@ -122,8 +122,8 @@ impl WelcomeView {
         match event {
             WelcomePaletteEvent::Close => self.close(ctx),
             WelcomePaletteEvent::ParentAction { action } => self.handle_action(action, ctx),
-            WelcomePaletteEvent::NewConversationInProject { path } => {
-                self.open_project_conversation(path, ctx);
+            WelcomePaletteEvent::OpenProject { path } => {
+                self.open_selected_project(path, ctx);
                 self.close(ctx);
             }
             _ => {
@@ -170,7 +170,7 @@ impl WelcomeView {
         );
     }
 
-    fn open_project_conversation(&mut self, path: &String, ctx: &mut ViewContext<Self>) {
+    fn open_selected_project(&mut self, path: &String, ctx: &mut ViewContext<Self>) {
         let path_buf = PathBuf::from(path);
         // todo(jparker): What happens if the user deletes a project folder between when this list was generated and now?
         update_workspace(ctx.window_id(), ctx, |workspace, ctx| {
@@ -183,13 +183,6 @@ impl WelcomeView {
                 None,
                 ctx,
             );
-
-            // Start AI mode in the new terminal
-            workspace
-                .active_tab_pane_group()
-                .update(ctx, |pane_group, ctx| {
-                    pane_group.start_agent_mode_in_new_pane(None, None, ctx);
-                });
 
             // Open code review pane
             workspace.active_tab_pane_group().update(ctx, |tab, ctx| {
@@ -331,13 +324,6 @@ fn save_and_open_project(path: String, window_id: WindowId, ctx: &mut AppContext
                 None,
                 ctx,
             );
-            workspace.active_tab_pane_group().update(ctx, |tab, ctx| {
-                if let Some(active_terminal) = tab.active_session_view(ctx) {
-                    active_terminal.update(ctx, |terminal, _ctx| {
-                        terminal.maybe_set_pending_repo_init_path(path_buf);
-                    });
-                }
-            });
         });
     });
 }

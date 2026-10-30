@@ -27,7 +27,6 @@ pub enum WorktreeBranchNamingMode {
 #[serde(rename_all = "snake_case")]
 pub enum GuidedModalSessionType {
     Terminal,
-    Agent,
     CliAgent,
 }
 
@@ -35,7 +34,6 @@ impl From<&SessionType> for GuidedModalSessionType {
     fn from(value: &SessionType) -> Self {
         match value {
             SessionType::Terminal => Self::Terminal,
-            SessionType::Agent => Self::Agent,
             SessionType::CliAgent(_) => Self::CliAgent,
         }
     }

@@ -75,25 +75,19 @@ fn is_falsey(val: &Option<bool>) -> bool {
 
 /// The mode a leaf pane opens in.
 ///
-/// Used by tab configs to distinguish terminal, agent, and cloud panes.
-/// Launch configs always produce `Terminal` (the default).
+/// Tab and launch configurations open terminal sessions.
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum PaneMode {
     /// A standard terminal shell session.
     #[default]
     Terminal,
-    /// A terminal that immediately enters Agent Mode.
-    Agent,
-    /// A cloud-mode (ambient agent) pane with no local shell.
-    Cloud,
 }
 
-#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[derive(Clone, Serialize, Debug, PartialEq, Eq)]
 #[serde(untagged, rename_all = "lowercase")]
 pub enum PaneTemplateType {
     PaneTemplate {
-        #[serde(deserialize_with = "deserialize_path")]
         cwd: PathBuf,
         #[serde(skip_serializing_if = "Vec::is_empty", default)]
         commands: Vec<CommandTemplate>,
@@ -110,6 +104,56 @@ pub enum PaneTemplateType {
         split_direction: SplitDirection,
         panes: Vec<PaneTemplateType>,
     },
+}
+
+impl<'de> Deserialize<'de> for PaneTemplateType {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        // Parse the shared node directly so invalid modes retain their specific error,
+        // rather than losing it while trying each branch of an untagged enum.
+        #[derive(Deserialize)]
+        struct Node {
+            #[serde(default, deserialize_with = "deserialize_optional_path")]
+            cwd: Option<PathBuf>,
+            #[serde(default)]
+            commands: Vec<CommandTemplate>,
+            is_focused: Option<bool>,
+            #[serde(default)]
+            pane_mode: PaneMode,
+            shell: Option<String>,
+            split_direction: Option<SplitDirection>,
+            panes: Option<Vec<PaneTemplateType>>,
+        }
+
+        let node = Node::deserialize(deserializer)?;
+        if let Some(cwd) = node.cwd {
+            Ok(Self::PaneTemplate {
+                cwd,
+                commands: node.commands,
+                is_focused: node.is_focused,
+                pane_mode: node.pane_mode,
+                shell: node.shell,
+            })
+        } else {
+            Ok(Self::PaneBranchTemplate {
+                split_direction: node
+                    .split_direction
+                    .ok_or_else(|| serde::de::Error::missing_field("split_direction"))?,
+                panes: node
+                    .panes
+                    .ok_or_else(|| serde::de::Error::missing_field("panes"))?,
+            })
+        }
+    }
+}
+
+fn deserialize_optional_path<'de, D>(deserializer: D) -> Result<Option<PathBuf>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    deserialize_path(deserializer).map(Some)
 }
 
 impl TryFrom<PaneNodeSnapshot> for PaneTemplateType {
@@ -150,15 +194,9 @@ impl TryFrom<PaneNodeSnapshot> for PaneTemplateType {
                 | LeafContents::Code(_)
                 | LeafContents::Workflow(_)
                 | LeafContents::Settings(_)
-                | LeafContents::AIFact(_)
                 | LeafContents::CodeReview(_)
-                | LeafContents::ExecutionProfileEditor
                 | LeafContents::GetStarted
-                | LeafContents::Welcome { .. }
-                | LeafContents::AIDocument(_) => {
-                    // TODO: Handle AIDocument in launch config
-                    Err(())
-                }
+                | LeafContents::Welcome { .. } => Err(()),
             },
         }
     }

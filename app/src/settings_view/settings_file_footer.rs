@@ -150,7 +150,6 @@ pub fn render_open_settings_file_button(
 pub fn render_settings_error_alert(
     appearance: &Appearance,
     error: &SettingsFileError,
-    _ai_enabled: bool,
     mouse_states: &SettingsFooterMouseStates,
 ) -> Box<dyn Element> {
     let theme = appearance.theme();
@@ -263,7 +262,6 @@ pub fn render_footer(
     kind: SettingsFooterKind,
     appearance: &Appearance,
     error: Option<&SettingsFileError>,
-    ai_enabled: bool,
     mouse_states: &SettingsFooterMouseStates,
 ) -> Box<dyn Element> {
     let inner: Box<dyn Element> = match kind {
@@ -273,7 +271,7 @@ pub fn render_footer(
             mouse_states.open_settings_file_button.clone(),
         ),
         SettingsFooterKind::ErrorAlert => match error {
-            Some(error) => render_settings_error_alert(appearance, error, ai_enabled, mouse_states),
+            Some(error) => render_settings_error_alert(appearance, error, mouse_states),
             // Defensive fallback: if the error disappears between `choose` and
             // `render_footer`, fall back to the plain button rather than
             // rendering an empty alert shell.

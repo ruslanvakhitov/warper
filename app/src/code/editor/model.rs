@@ -4,7 +4,6 @@ use rangemap::{RangeMap, RangeSet};
 use std::future::Future;
 use std::ops::Range;
 use std::path::Path;
-use std::rc::Rc;
 use std::sync::Arc;
 use std::{cmp, mem};
 use warp_core::platform::SessionPlatform;
@@ -25,10 +24,9 @@ use crate::{
     themes::theme::AnsiColorIdentifier,
 };
 
-use ai::diff_validation::DiffDelta;
+use crate::code::diff_validation::DiffDelta;
 use itertools::Itertools;
 use languages::{language_by_filename, language_by_name, Language};
-use line_ending::LineEnding;
 use string_offset::CharOffset;
 use syntax_tree::{ColorMap, DecorationStateEvent, SyntaxTreeState};
 use vec1::{vec1, Vec1};
@@ -69,13 +67,12 @@ use warpui::elements::{
 use warpui::text::{point::Point, TextBuffer};
 use warpui::{AppContext, Entity, ModelContext, ModelHandle, SingletonEntity};
 
-use super::super::DiffResult;
 use super::comments::{EditorCommentsModel, PendingComment, PendingCommentEvent};
 use super::diff::{
     add_inline_overlay_color, DiffModel, DiffModelEvent, DiffStatus, RenderableDiffHunk,
 };
 use super::line::EditorLineLocation;
-use crate::code_review::comments::{CommentId, CommentOrigin, LineDiffContent};
+use crate::code_review::comments::{CommentId, LineDiffContent};
 
 /// An opaque handle to a stable line in the editor content, suitable for scroll
 /// position preservation. Contains an internal anchor that tracks through
@@ -202,7 +199,7 @@ pub enum CodeEditorModelEvent {
         origin: EditOrigin,
     },
     SelectionChanged,
-    UnifiedDiffComputed(Rc<DiffResult>),
+
     ViewportUpdated(BufferVersion),
     InteractionStateChanged,
     DelayedRenderingFlushed,
@@ -1368,11 +1365,6 @@ impl CodeEditorModel {
 
                 ctx.emit(CodeEditorModelEvent::DiffUpdated);
             }
-            DiffModelEvent::UnifiedDiffComputed(unified_diff) => {
-                ctx.emit(CodeEditorModelEvent::UnifiedDiffComputed(
-                    unified_diff.clone(),
-                ));
-            }
         }
     }
 
@@ -1404,8 +1396,8 @@ impl CodeEditorModel {
     fn handle_content_model_event(&mut self, event: &BufferEvent, ctx: &mut ModelContext<Self>) {
         match event {
             BufferEvent::ContentChanged {
-                delta,
                 origin,
+                delta,
                 should_autoscroll,
                 buffer_version,
                 selection_model_id,
@@ -1857,30 +1849,6 @@ impl CodeEditorModel {
         self.insert(content.plain_text.as_str(), EditOrigin::UserInitiated, ctx);
     }
 
-    /// Append text to the end of the buffer regardless of cursor position.
-    /// This is used for streaming content where we always want to append at the end,
-    /// not at the current cursor position.
-    pub fn append_at_end(&mut self, text: &str, ctx: &mut ModelContext<Self>) {
-        let buffer = self.content().as_ref(ctx);
-        let max_offset = buffer.max_charoffset();
-
-        let edits = vec1![(text.to_string(), max_offset..max_offset)];
-
-        let selection_model = self.selection_model.clone();
-        self.update_content(
-            |mut content, ctx| {
-                content.apply_edit(
-                    BufferEditAction::InsertAtCharOffsetRanges { edits: &edits },
-                    EditOrigin::SystemEdit,
-                    selection_model,
-                    ctx,
-                );
-            },
-            ctx,
-        );
-        self.validate(ctx);
-    }
-
     /// Set Vim visual tails to the current selection heads (cursor positions).
     pub fn vim_set_visual_tail_to_selection_heads(&mut self, ctx: &mut ModelContext<Self>) {
         let selection_model = self.selection_model.as_ref(ctx);
@@ -2038,18 +2006,6 @@ impl CodeEditorModel {
         bracket_pairs
             .iter()
             .any(|(start, end)| *start == opening_char && *end == ending_char)
-    }
-
-    pub fn retrieve_unified_diff(&self, file_name: String, ctx: &mut ModelContext<Self>) {
-        // Use the buffer's text with normalized line endings, for consistency with how we calculate diffs.
-        let content = self
-            .content()
-            .as_ref(ctx)
-            .text_with_line_ending_mode(LineEnding::LF);
-
-        self.diff.update(ctx, move |diff, ctx| {
-            diff.retrieve_unified_diff(content, file_name, ctx)
-        });
     }
 
     pub fn interaction_state(&self) -> InteractionState {
@@ -3825,7 +3781,6 @@ impl CodeEditorModel {
         id: &CommentId,
         line: &EditorLineLocation,
         comment_text: &str,
-        origin: &CommentOrigin,
         ctx: &mut ModelContext<Self>,
     ) {
         // Telemetry: comment editor opened for editing an existing inline review comment.
@@ -3836,7 +3791,6 @@ impl CodeEditorModel {
                 id: *id,
                 line: line.to_owned(),
                 comment_text: comment_text.to_owned(),
-                origin: origin.to_owned(),
             });
         });
     }

@@ -28,7 +28,6 @@ use crate::pane_group::pane::welcome_view::WelcomeViewAction;
 use crate::search::action::search_item::MatchedBinding;
 use crate::search::action::{CommandBindingDataSource, Event as CommandBindingDataSourceEvent};
 use crate::search::binding_source::BindingSource;
-use crate::search::command_palette::conversations::{self};
 use crate::search::command_palette::mixer::CommandPaletteItemAction;
 use crate::search::command_palette::new_session::{AllowedSessionKinds, NewSessionDataSource};
 use crate::search::command_palette::{launch_config, CommandPaletteMixer};
@@ -41,7 +40,6 @@ use crate::search::search_bar::{
     SearchBar, SearchBarEvent, SearchBarState, SearchResultOrdering, SelectionUpdate,
 };
 use crate::search::QueryFilter;
-use crate::settings::AISettings;
 use crate::terminal::History;
 use crate::themes::theme::WarpTheme;
 use crate::ui_components::icons::Icon;
@@ -56,7 +54,6 @@ const PALETTE_LIST_SAVE_POSITION_ID: &str = "welcome_palette:list";
 const MAX_SEARCH_RESULTS: usize = 250;
 
 const MAX_PROJECTS_IN_ZERO_STATE: usize = 4;
-const MAX_ITEMS_IN_ZERO_STATE: usize = 5;
 
 #[derive(Debug)]
 pub enum Action {
@@ -78,7 +75,7 @@ pub enum Event {
     OpenDirectory {
         path: String,
     },
-    NewConversationInProject {
+    OpenProject {
         path: String,
     },
 }
@@ -114,7 +111,6 @@ pub struct WelcomePalette {
     zero_state_items: Vec<QueryResultRenderer<CommandPaletteItemAction>>,
     selected_item: SelectedItem,
     project_data_source: ModelHandle<ProjectDataSource>,
-    conversations_data_source: ModelHandle<conversations::DataSource>,
     suggested_projects_data_source: ModelHandle<SuggestedProjectsDataSource>,
     open_project_keybinding: Option<String>,
     terminal_session_keybinding: Option<String>,
@@ -209,21 +205,16 @@ impl WelcomePalette {
 
         let project_data_source = ctx.add_model(ProjectDataSource::new);
         let suggested_projects_data_source = ctx.add_model(SuggestedProjectsDataSource::new);
-        let conversations_data_source = ctx.add_model(|_| conversations::DataSource::new());
         let launch_config_data_source = ctx.add_model(launch_config::DataSource::new);
         let new_session_data_source = ctx.add_model(|ctx| {
             NewSessionDataSource::new(binding_source.clone(), ctx)
                 .with_allowed_kinds(AllowedSessionKinds::tabs_only())
         });
-        let mixer = ctx.add_model(|ctx| {
+        let mixer = ctx.add_model(|_ctx| {
             let mut mixer = CommandPaletteMixer::new();
             mixer.add_sync_source(actions_data_source.clone(), HashSet::new());
             mixer.add_sync_source(project_data_source.clone(), HashSet::new());
             mixer.add_sync_source(suggested_projects_data_source.clone(), HashSet::new());
-
-            if AISettings::as_ref(ctx).is_any_ai_enabled(ctx) {
-                mixer.add_sync_source(conversations_data_source.clone(), HashSet::new());
-            }
 
             if ContextFlag::LaunchConfigurations.is_enabled() {
                 mixer.add_sync_source(launch_config_data_source.clone(), HashSet::new());
@@ -242,7 +233,7 @@ impl WelcomePalette {
             SearchBar::new(
                 mixer.clone(),
                 search_bar_state.clone(),
-                "Code, build, or search for anything...",
+                "Search projects and actions...",
                 Self::create_query_result_renderer,
                 ctx,
             )
@@ -273,7 +264,6 @@ impl WelcomePalette {
             placeholder_query_renderer: placeholder_element,
             binding_source,
             project_data_source,
-            conversations_data_source,
             open_project_keybinding,
             terminal_session_keybinding,
             suggested_projects_data_source,
@@ -329,19 +319,6 @@ impl WelcomePalette {
             vec![]
         };
 
-        let conversation_slots = MAX_ITEMS_IN_ZERO_STATE
-            .saturating_sub(projects.len())
-            .saturating_sub(suggested_projects.len());
-
-        let conversations = if conversation_slots > 0 {
-            self.conversations_data_source
-                .read(ctx, |conversations, ctx| {
-                    conversations.top_n(conversation_slots, ctx).collect()
-                })
-        } else {
-            vec![]
-        };
-
         let projects = dedupe_score(
             projects
                 .into_iter()
@@ -352,7 +329,6 @@ impl WelcomePalette {
 
         self.zero_state_items = projects
             .into_iter()
-            .chain(conversations)
             .enumerate()
             .map(|(i, item)| Self::create_query_result_renderer(i, item))
             .collect();
@@ -750,15 +726,13 @@ impl WelcomePalette {
                     self.dispatch_typed_action_on_view(action, ctx);
                 };
             }
-            CommandPaletteItemAction::NewConversationInProject {
+            CommandPaletteItemAction::OpenProject {
                 path,
                 project_name: _,
             } => {
-                ctx.emit(Event::NewConversationInProject { path: path.clone() });
+                ctx.emit(Event::OpenProject { path: path.clone() });
             }
-            CommandPaletteItemAction::NavigateToConversation { .. } => {
-                // This code is dead, so no need to support this case
-            }
+
             CommandPaletteItemAction::NewSession { source } => {
                 self.dispatch_typed_action_on_view(source.action().deref(), ctx);
                 self.close(ctx, Some(result_action.result_type()));

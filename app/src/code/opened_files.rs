@@ -13,10 +13,6 @@ impl OpenedFilesInRepo {
     pub fn get(&self, file_path: &PathBuf) -> Option<&Instant> {
         self.0.get(file_path)
     }
-
-    pub fn iter(&self) -> impl Iterator<Item = (&PathBuf, &Instant)> {
-        self.0.iter()
-    }
 }
 
 /// Model that tracks files that have been opened, organized by repository.

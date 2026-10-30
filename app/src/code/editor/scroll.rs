@@ -1,30 +1,9 @@
 use warp_editor::content::version::BufferVersion;
 use warp_util::path::LineAndColumnArg;
 
-#[derive(Debug, Clone, Copy)]
-pub enum ScrollWheelBehavior {
-    #[allow(dead_code)]
-    OnlyHandleOnFocus,
-    #[allow(dead_code)]
-    AlwaysHandle,
-    #[allow(dead_code)]
-    NeverHandle,
-}
-
-impl ScrollWheelBehavior {
-    #[allow(dead_code)]
-    pub fn should_handle(&self, focused: bool) -> bool {
-        match self {
-            Self::OnlyHandleOnFocus => focused,
-            Self::AlwaysHandle => true,
-            Self::NeverHandle => false,
-        }
-    }
-}
 #[derive(Clone)]
 pub enum ScrollPosition {
     LineAndColumn(LineAndColumnArg),
-    FocusedDiffHunk,
 }
 
 /// We don't want to scroll to the provided line number until the content has

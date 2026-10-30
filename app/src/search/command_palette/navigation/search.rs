@@ -152,15 +152,7 @@ fn searchable_session_string_and_ranges(
             let end = start + running_command.chars().count();
             Some(start..end)
         }
-        CommandContext::LastRunAIBlock { prompt } | CommandContext::RunningAIBlock { prompt } => {
-            // Fuzzy search gives different weights to characters in the same word vs different words.
-            searchable_string.push(' ');
-            searchable_string.push_str(prompt.as_str());
 
-            let start = prompt_end + 1;
-            let end = start + prompt.chars().count();
-            Some(start..end)
-        }
         CommandContext::None => None,
     };
 

@@ -18,21 +18,19 @@ use super::tab_config::{
 
 /// The type of session the user wants to start.
 ///
-/// Wraps the existing `CLIAgent` for third-party agents and adds
-/// Terminal and the local Agent Mode as first-class variants.
+/// Supports terminal sessions and third-party CLI agents.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SessionType {
     Terminal,
-    Agent,
     CliAgent(CLIAgent),
 }
 
 impl SessionType {
     /// The CLI command to auto-run for this session type, if any.
-    /// Returns `None` for Terminal and local Agent Mode, which uses agent view.
+    /// Returns `None` for a plain terminal session.
     fn command_prefix(&self) -> Option<&'static str> {
         match self {
-            SessionType::Terminal | SessionType::Agent => None,
+            SessionType::Terminal => None,
             SessionType::CliAgent(agent) => Some(agent.command_prefix()),
         }
     }
@@ -41,7 +39,6 @@ impl SessionType {
     pub(crate) fn icon(&self) -> Icon {
         match self {
             SessionType::Terminal => Icon::Terminal,
-            SessionType::Agent => Icon::Warp,
             SessionType::CliAgent(agent) => agent.icon().unwrap_or(Icon::Terminal),
         }
     }
@@ -50,7 +47,6 @@ impl SessionType {
     pub(crate) fn pill_label(&self) -> &'static str {
         match self {
             SessionType::Terminal => "Terminal",
-            SessionType::Agent => "Agent",
             SessionType::CliAgent(CLIAgent::Claude) => "Claude",
             SessionType::CliAgent(CLIAgent::Codex) => "Codex",
             SessionType::CliAgent(CLIAgent::Gemini) => "Gemini",
@@ -145,7 +141,6 @@ pub fn build_tab_config(
     }
 
     let pane_type = match session_type {
-        SessionType::Agent => TabConfigPaneType::Agent,
         SessionType::Terminal | SessionType::CliAgent(_) => TabConfigPaneType::Terminal,
     };
 
@@ -281,13 +276,7 @@ fn snapshot_to_flat_panes(
 
             let (directory, pane_type) = match contents {
                 LeafContents::Terminal(terminal) => {
-                    // If the agent view was open in fullscreen, treat as an Agent pane.
-                    let pane_type = if terminal.active_conversation_id.is_some() {
-                        TabConfigPaneType::Agent
-                    } else {
-                        TabConfigPaneType::Terminal
-                    };
-                    (terminal.cwd.clone(), pane_type)
+                    (terminal.cwd.clone(), TabConfigPaneType::Terminal)
                 }
                 // Non-terminal panes become empty terminal panes to preserve layout.
                 _ => (None, TabConfigPaneType::Terminal),
