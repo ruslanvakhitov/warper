@@ -32,7 +32,7 @@ Does not validate:
     deterministic local terminal-server/PTY harness instead
   - manual terminal creation, pane splitting, or settings edits in a live UI
   - app crate `#[cfg(test)]` modules for amputated hosted features
-  - private credentials, hosted Warp/Oz service availability, or OpenRouter behavior
+  - private credentials, hosted Warp/Oz service availability
 
 Use this as the local harness that can run in presubmit-like environments
 without private credentials; pair it with a manual blocked-network .app launch
@@ -71,7 +71,7 @@ echo "  - OS-level outbound network blocking"
 echo "  - full .app GUI terminal-session network interception"
 echo "  - live UI terminal creation, pane splitting, or settings edits"
 echo "  - app crate #[cfg(test)] modules for amputated hosted features"
-echo "  - private credentials, hosted Warp/Oz availability, or OpenRouter behavior"
+echo "  - private credentials, hosted Warp/Oz availability"
 echo
 echo "Uses a deterministic local terminal-server/PTY harness for terminal-session"
 echo "coverage without private credentials or the integration-test crate."

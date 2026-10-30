@@ -427,7 +427,10 @@ pub fn test_restore_snapshot_with_settings_page() -> Builder {
 
                     let settings_view = settings_views.first().expect("Settings view must exist");
                     settings_view.read(app, |view, _| {
-                        async_assert_eq!(view.current_settings_section(), SettingsSection::Account)
+                        async_assert_eq!(
+                            view.current_settings_section(),
+                            SettingsSection::Appearance
+                        )
                     })
                 }),
         )

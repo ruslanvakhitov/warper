@@ -22,7 +22,7 @@
 
 ## Why this exists
 
-Warp is a good terminal that picked up a lot of other product over time. We didn't want any of it, so we forked, removed it, and rewired the AI hook to OpenRouter.
+Warp is a good terminal that picked up a lot of other product over time. Warper keeps the terminal and third-party CLI-agent integration, and removes the built-in AI and hosted platform.
 
 ---
 
@@ -32,9 +32,7 @@ Warp is a good terminal that picked up a lot of other product over time. We didn
 
 Native Rust app with blocks, panes, tabs, session restoration, command history, shell integration, command palette, themes, keybindings, launch configs, local workflows, and a background image picker.
 
-### AI (optional, BYOK, BYOA)
-
-Small scope: generate or explain a shell command, explain an error, suggest a safer variant of a risky command, summarise selected output. OpenRouter is the supported provider, configurable in Settings or via `OPENROUTER_API_KEY` and `OPENROUTER_MODEL`.
+### Third-party CLI agents
 
 Type `codex` and Warper notices you're running Codex; same for `claude`, `gemini`, and others. It adds a status indicator, optional rich input, and a finish notification, but doesn't try to wrap the agent CLI in its own UI. The shell already does that job.
 
@@ -44,6 +42,7 @@ Type `codex` and Warper notices you're running Codex; same for `claude`, `gemini
 
 If a feature needs an account, a server, a billing entitlement, a team object, a shared session, or any Warp.dev infrastructure, it's out of scope. Specifically removed:
 
+- Built-in AI, Agent Mode, model providers, API-key management, MCP servers, skills discovery, AI indexing, and agent orchestration
 - Accounts, sign-up, sign-in, SSO, anonymous cloud users, subscriptions
 - Billing, plans, credits, usage limits, upgrade prompts
 - Warp Drive, team drives, shared-with-me, cloud trash
@@ -58,11 +57,10 @@ These are deleted from the product surface, not toggled off behind a flag.
 
 ## Local data
 
-Settings live in files on disk. API keys live in your keychain. Nothing is uploaded by default. On macOS:
+Warper settings and terminal state live on disk. Third-party CLI agents manage their own credentials and data. On macOS:
 
 | Thing | Location |
 |---|---|
-| OpenRouter key and model | Keychain, service `dev.warper.Warper`, account `AiApiKeys` |
 | User settings | `~/.warp-oss/settings.toml` |
 | Runtime state, cache, DB | `~/Library/Application Support/dev.warper.Warper/` |
 | Logs | `~/Library/Logs/warper.log` |
