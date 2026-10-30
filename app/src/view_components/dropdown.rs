@@ -347,13 +347,6 @@ where
         })
     }
 
-    pub fn set_menu_max_height(&mut self, height: f32, ctx: &mut ViewContext<Self>) {
-        self.dropdown.update(ctx, |menu, ctx| {
-            menu.set_height(height);
-            ctx.notify();
-        })
-    }
-
     fn selected_item(&self, ctx: &mut ViewContext<Self>) -> Option<MenuItem<DropdownAction<A>>> {
         self.dropdown
             .read(ctx, |dropdown, _| dropdown.selected_item())

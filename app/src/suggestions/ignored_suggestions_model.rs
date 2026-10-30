@@ -8,21 +8,18 @@ use crate::{persistence::ModelEvent, GlobalResourceHandlesProvider};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub enum SuggestionType {
     ShellCommand,
-    AIQuery,
 }
 
 impl SuggestionType {
     pub fn as_str(&self) -> &'static str {
         match self {
             SuggestionType::ShellCommand => "shell_command",
-            SuggestionType::AIQuery => "ai_query",
         }
     }
 
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
             "shell_command" => Some(SuggestionType::ShellCommand),
-            "ai_query" => Some(SuggestionType::AIQuery),
             _ => None,
         }
     }
@@ -113,14 +110,6 @@ impl IgnoredSuggestionsModel {
                 log::error!("Failed to remove ignored suggestion from database: {err}");
             }
         }
-    }
-
-    pub fn is_ignored(&self, suggestion: &str, suggestion_type: SuggestionType) -> bool {
-        let key = IgnoredSuggestionKey {
-            suggestion: suggestion.to_string(),
-            suggestion_type,
-        };
-        self.ignored_suggestions.contains(&key)
     }
 
     /// Returns a set of all ignored suggestions for a specific type

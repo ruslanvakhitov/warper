@@ -59,11 +59,7 @@ pub fn wire_up_pty_controller_with_view<T: EventLoopSender>(
                     controller.write_bytes(bytes.clone(), ctx);
                 });
             }
-            view::Event::WriteAgentInputToPty { bytes, mode } => {
-                controller.update(ctx, |controller, ctx| {
-                    controller.write_agent_bytes(bytes.clone(), mode, ctx);
-                });
-            }
+
             view::Event::Resize { size_update } => {
                 controller.update(ctx, |controller, ctx| {
                     controller.resize_pty(*size_update, ctx);

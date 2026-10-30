@@ -5,8 +5,8 @@ use std::{any::Any, path::PathBuf, sync::Arc};
 use warpui::{AppContext, SingletonEntity, ViewHandle};
 
 use crate::{
-    ai::blocklist::SerializedBlockListItem,
     appearance::Appearance,
+    persistence::SerializedBlockListItem,
     settings::{BlockVisibilitySettings, DebugSettings, InputModeSettings},
 };
 
@@ -112,7 +112,6 @@ pub(super) fn create_terminal_model(
         honor_ps1,
         is_inverted,
         obfuscate_secrets,
-        false,
         startup_directory,
         shell_state,
     )

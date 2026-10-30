@@ -99,7 +99,7 @@ impl TerminalView {
 
         from_model
             .or_else(|| {
-                git_line_changes_from_chips(&self.current_prompt.as_ref(ctx).agent_view_chips(ctx))
+                git_line_changes_from_chips(&self.current_prompt.as_ref(ctx).cli_agent_chips(ctx))
             })
             .filter(|line_changes| {
                 line_changes.files_changed > 0

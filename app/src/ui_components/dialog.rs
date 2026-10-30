@@ -75,11 +75,6 @@ impl Dialog {
         self
     }
 
-    pub fn with_width(mut self, width: f32) -> Self {
-        self.styles.width = Some(width);
-        self
-    }
-
     pub fn with_separator(mut self) -> Self {
         self.show_separator = true;
         self

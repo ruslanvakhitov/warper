@@ -15,11 +15,11 @@ use warpui::{
 use markdown_parser::{FormattedText, FormattedTextFragment, FormattedTextLine};
 use warpui::elements::FormattedTextElement;
 
-use crate::ai::blocklist::code_block::{
-    render_code_block_plain, CodeBlockOptions, CodeSnippetButtonHandles,
-};
 use crate::appearance::Appearance;
 use crate::terminal::cli_agent_sessions::plugin_manager::PluginInstructions;
+use crate::terminal::code_snippet::{
+    render_code_block_plain, CodeBlockOptions, CodeSnippetButtonHandles,
+};
 use crate::terminal::CLIAgent;
 use crate::ui_components::icons::Icon;
 use crate::view_components::action_button::{ActionButton, ButtonSize, NakedTheme};
@@ -142,7 +142,6 @@ impl PluginInstructionsBlock {
                 command,
                 Box::new(iter::empty()),
                 CodeBlockOptions {
-                    on_open: None,
                     on_execute: if executable {
                         Some(Box::new(move |code, ctx| {
                             ctx.dispatch_typed_action(WorkspaceAction::RunCommand(code));
@@ -155,13 +154,10 @@ impl PluginInstructionsBlock {
                             index,
                         ));
                     })),
-                    on_insert: None,
                     footer_element: None,
                     mouse_handles: Some(handles),
-                    file_path: None,
                 },
                 app,
-                None,
             );
             column.add_child(Container::new(code_block).with_padding_left(40.).finish());
         }

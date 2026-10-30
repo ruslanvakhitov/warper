@@ -23,12 +23,12 @@ use warpui::platform::Cursor;
 use warpui::ui_components::components::UiComponent;
 use warpui::{Action, View, ViewContext};
 
-use crate::ai::blocklist::agent_view::toolbar_item::AgentToolbarItemKind;
 use crate::appearance::Appearance;
 use crate::context_chips::display_chip::{chip_container, udi_font_size};
 use crate::context_chips::renderer::{ChipDragState, Renderer as ContextChipRenderer};
 use crate::context_chips::spacing;
 use crate::context_chips::{ChipAvailability, ContextChipKind};
+use crate::terminal::cli_agent_toolbar::toolbar_item::AgentToolbarItemKind;
 use crate::ui_components::icons;
 
 const USED_CHIPS_POSITION_ID: &str = "chip_cfg_used";
@@ -47,7 +47,7 @@ impl ConfigurableItem {
     pub fn from_toolbar_item(kind: AgentToolbarItemKind, appearance: &Appearance) -> Option<Self> {
         match kind {
             AgentToolbarItemKind::ContextChip(chip_kind) => {
-                ContextChipRenderer::default_from_kind_with_agent_view(
+                ContextChipRenderer::default_from_kind_with_cli_footer_style(
                     chip_kind,
                     ChipAvailability::Enabled,
                     true,
@@ -119,8 +119,8 @@ impl ConfigurableItem {
     }
 }
 
-/// Lightweight renderer for non-chip control items (model selector, NLD toggle,
-/// voice input, image attach, file explorer, view changes, compose, etc.)
+/// Lightweight renderer for toolbar controls such as Rich Input, file
+/// attachments, and the file explorer.
 /// inside the configurator.
 pub struct ControlItemRenderer {
     kind: Option<AgentToolbarItemKind>,

@@ -100,12 +100,7 @@ pub enum Event {
     /// the running program. The shell stores these characters, inserts them into its internal line
     /// buffer, and re-echoes them after Precmd.
     Typeahead,
-    /// Emitted when the agent is tagged in or out of the active block.
-    /// Users "Tag an agent in" when they ask the agent to take over a long running command
-    /// that was started outside of a conversation (and they tag the agent out when they take control back).
-    AgentTaggedInChanged {
-        is_tagged_in: bool,
-    },
+
     Handler(HandlerEvent),
     TextSelectionChanged,
     ShellSpawned(ShellType),
@@ -282,7 +277,6 @@ pub struct UserBlockCompleted {
     pub output_truncated_with_obfuscated_secrets: String,
 
     /// `true` if the block was run as a requested command or was part of a CLI subagent interaction.
-    pub was_part_of_agent_interaction: bool,
 
     /// Time that we started the command grid (i.e. immediately after the user
     /// hit enter).
@@ -434,9 +428,7 @@ impl Debug for Event {
             Event::PromptUpdated => write!(f, "PromptUpdated"),
             Event::HonorPS1OutOfSync => write!(f, "HonorPS1OutOfSync"),
             Event::Typeahead => write!(f, "Typeahead"),
-            Event::AgentTaggedInChanged { is_tagged_in } => {
-                write!(f, "AgentTaggedInChanged(is_tagged_in: {is_tagged_in})")
-            }
+
             Event::Handler(handler_event) => write!(f, "Handler({handler_event:?}))"),
             Event::TextSelectionChanged => write!(f, "TextSelectionChanged"),
             Event::ShellSpawned(shell_type) => write!(f, "ShellSpawned({shell_type:?})"),

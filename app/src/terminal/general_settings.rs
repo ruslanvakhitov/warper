@@ -109,20 +109,4 @@ define_settings_group!(GeneralSettings, settings: [
         sync_to_cloud: SyncToCloud::Never,
         private: true,
     },
-    anonymous_user_ai_sign_up_banner_shown: AnonymousUserAISignUpBannerShown {
-        type: bool,
-        default: false,
-        supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Never,
-        private: true,
-    },
-    auto_open_code_review_pane_on_first_agent_change: AutoOpenCodeReviewPaneOnFirstAgentChange {
-        type: bool,
-        default: false,
-        supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Never,
-        private: false,
-        toml_path: "code.editor.auto_open_code_review_pane_on_first_agent_change",
-        description: "Whether to automatically open the code review pane when the agent makes its first change.",
-    },
 ]);

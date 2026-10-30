@@ -1,14 +1,8 @@
 use float_cmp::{approx_eq, assert_approx_eq};
-use warp_core::features::FeatureFlag;
 use warpui::units::IntoLines;
 use warpui::{elements::DEFAULT_UI_LINE_HEIGHT_RATIO, App};
 
 use super::*;
-use crate::ai::agent::AIAgentActionId;
-use crate::ai::blocklist::agent_view::{
-    AgentViewDisplayMode, AgentViewEntryOrigin, AgentViewState,
-};
-use crate::terminal::model::block::AgentInteractionMetadata;
 use crate::terminal::model::test_utils;
 use crate::terminal::view::{InlineBannerItem, InlineBannerType};
 use crate::terminal::BlockListSettings;
@@ -337,9 +331,7 @@ pub fn test_script_execution_block() {
     // We have the `WarpInput` block and the current script execution block.
     assert_eq!(block_list.blocks.len(), 2);
     // Ensure that script execution block has a height of 0 if nothing was added to it.
-    assert!(block_list
-        .active_block()
-        .is_empty(&AgentViewState::Inactive));
+    assert!(block_list.active_block().is_empty());
 
     advance_to_bootstrapped(&mut block_list, Default::default());
 
@@ -352,17 +344,13 @@ pub fn test_script_execution_block() {
     advance_to_script_execution(&mut block_list);
 
     assert_eq!(block_list.blocks.len(), 2);
-    assert!(block_list
-        .active_block()
-        .is_empty(&AgentViewState::Inactive));
+    assert!(block_list.active_block().is_empty());
 
     // Add characters to script execution block.
     block_list.input('c');
 
     assert_eq!(block_list.blocks.len(), 2);
-    assert!(!block_list
-        .active_block()
-        .is_empty(&AgentViewState::Inactive));
+    assert!(!block_list.active_block().is_empty());
 
     advance_to_bootstrapped(&mut block_list, Default::default());
 
@@ -414,14 +402,8 @@ pub fn test_restore_completed_blocks() {
     // block.
     assert_eq!(block_list.blocks.len(), 3);
     let restored_block_height = 5.5;
-    assert_lines_approx_eq!(
-        block_list.blocks[0].height(&AgentViewState::Inactive),
-        restored_block_height
-    );
-    assert_lines_approx_eq!(
-        block_list.blocks[1].height(&AgentViewState::Inactive),
-        restored_block_height
-    );
+    assert_lines_approx_eq!(block_list.blocks[0].height(), restored_block_height);
+    assert_lines_approx_eq!(block_list.blocks[1].height(), restored_block_height);
     assert_lines_approx_eq!(
         block_list.block_heights.summary().height,
         2.0 * restored_block_height + RESTORED_BLOCK_SEPARATOR_HEIGHT
@@ -518,10 +500,7 @@ pub fn test_restore_block_that_wasnt_started() {
         block_list.blocks[0].bootstrap_stage(),
         BootstrapStage::WarpInput
     );
-    assert_eq!(
-        block_list.blocks[0].height(&AgentViewState::Inactive),
-        Lines::zero()
-    );
+    assert_eq!(block_list.blocks[0].height(), Lines::zero());
 
     let mut block_completed_events = Vec::new();
     while let Ok(event) = events_rx.try_recv() {
@@ -553,7 +532,7 @@ pub fn test_restore_block_that_wasnt_completed() {
         block_list.blocks[0].bootstrap_stage(),
         BootstrapStage::WarpInput
     );
-    assert_lines_approx_eq!(block_list.blocks[0].height(&AgentViewState::Inactive), 0.0);
+    assert_lines_approx_eq!(block_list.blocks[0].height(), 0.0);
 
     let mut block_completed_events = Vec::new();
     while let Ok(event) = events_rx.try_recv() {
@@ -593,9 +572,9 @@ pub fn test_basic_bootstrapping() {
 
     // We have four blocks from calling `create_warp_input_block` once and `block_finished` twice.
     assert_eq!(block_list.blocks.len(), 3);
-    assert_lines_approx_eq!(block_list.blocks[0].height(&AgentViewState::Inactive), 0.0);
-    assert_lines_approx_eq!(block_list.blocks[1].height(&AgentViewState::Inactive), 0.0);
-    assert_lines_approx_eq!(block_list.blocks[2].height(&AgentViewState::Inactive), 0.0);
+    assert_lines_approx_eq!(block_list.blocks[0].height(), 0.0);
+    assert_lines_approx_eq!(block_list.blocks[1].height(), 0.0);
+    assert_lines_approx_eq!(block_list.blocks[2].height(), 0.0);
     assert_lines_approx_eq!(block_list.block_heights.summary().height, 0.0);
 
     let mut block_completed_events = Vec::new();
@@ -627,9 +606,9 @@ pub fn test_session_restoration_separator() {
 
     block_list.set_next_gap_height_in_lines((11. + RESTORED_BLOCK_SEPARATOR_HEIGHT).into_lines());
     assert_eq!(block_list.blocks.len(), 3);
-    assert_lines_approx_eq!(block_list.blocks[0].height(&AgentViewState::Inactive), 5.5);
-    assert_lines_approx_eq!(block_list.blocks[1].height(&AgentViewState::Inactive), 5.5);
-    assert_lines_approx_eq!(block_list.blocks[2].height(&AgentViewState::Inactive), 0.0);
+    assert_lines_approx_eq!(block_list.blocks[0].height(), 5.5);
+    assert_lines_approx_eq!(block_list.blocks[1].height(), 5.5);
+    assert_lines_approx_eq!(block_list.blocks[2].height(), 0.0);
 
     // We have two blocks at height 5.5 and a separator with height 1.5.
     assert_lines_approx_eq!(
@@ -684,8 +663,6 @@ pub fn test_insert_non_block_item() {
         first_block_index,
         BlockHeightItem::RestoredBlockSeparator {
             height_when_visible: BlockHeight::from(RESTORED_BLOCK_SEPARATOR_HEIGHT),
-            is_historical_conversation_restoration: false,
-            is_hidden: false,
         },
     );
     assert_eq!(inserted_index, TotalIndex(2));
@@ -695,25 +672,17 @@ pub fn test_insert_non_block_item() {
         block_list.active_block_index(),
         BlockHeightItem::RestoredBlockSeparator {
             height_when_visible: BlockHeight::from(RESTORED_BLOCK_SEPARATOR_HEIGHT),
-            is_historical_conversation_restoration: false,
-            is_hidden: false,
         },
     );
     assert_eq!(inserted_index, TotalIndex(5));
 
     // The blocks should remain unchanged.
     assert_eq!(block_list.blocks.len(), 5);
-    assert_lines_approx_eq!(block_list.blocks[0].height(&AgentViewState::Inactive), 0.);
-    assert_lines_approx_eq!(block_list.blocks[1].height(&AgentViewState::Inactive), 0.);
-    assert_lines_approx_eq!(
-        block_list.blocks[2].height(&AgentViewState::Inactive),
-        block_height
-    );
-    assert_lines_approx_eq!(
-        block_list.blocks[3].height(&AgentViewState::Inactive),
-        block_height
-    );
-    assert_lines_approx_eq!(block_list.blocks[4].height(&AgentViewState::Inactive), 0.);
+    assert_lines_approx_eq!(block_list.blocks[0].height(), 0.);
+    assert_lines_approx_eq!(block_list.blocks[1].height(), 0.);
+    assert_lines_approx_eq!(block_list.blocks[2].height(), block_height);
+    assert_lines_approx_eq!(block_list.blocks[3].height(), block_height);
+    assert_lines_approx_eq!(block_list.blocks[4].height(), 0.);
 
     fn assert_block_height_summary_eq(a: BlockHeightSummary, b: BlockHeightSummary) {
         assert_eq!(a.block_count, b.block_count);
@@ -925,12 +894,8 @@ fn test_banner_insertion_and_removal() {
         total_count_after_insertion
     );
 
-    let expected_total_height = (block_list.blocks[2]
-        .height(&AgentViewState::Inactive)
-        .as_f64()
-        * 3.
-        + 3. * INLINE_BANNER_HEIGHT)
-        .into_lines();
+    let expected_total_height =
+        (block_list.blocks[2].height().as_f64() * 3. + 3. * INLINE_BANNER_HEIGHT).into_lines();
     assert_lines_approx_eq!(
         block_list.block_heights.summary().height,
         expected_total_height
@@ -990,7 +955,7 @@ fn test_gap_after_banner() {
     block_list.clear_visible_screen();
 
     insert_block(&mut block_list, "cmd2", "output2");
-    let baseline_block_height = block_list.blocks[2].height(&AgentViewState::Inactive);
+    let baseline_block_height = block_list.blocks[2].height();
 
     {
         let summary = block_list.block_heights.summary();
@@ -1037,7 +1002,7 @@ fn test_gap_after_banner() {
 
     {
         let active_gap = block_list.active_gap.as_ref().unwrap().clone();
-        let new_block_height = block_list.blocks[2].height(&AgentViewState::Inactive);
+        let new_block_height = block_list.blocks[2].height();
         assert_lines_approx_eq!(active_gap.current_height, 5.);
         assert_eq!(active_gap.index, 3);
 
@@ -1147,7 +1112,7 @@ pub fn test_block_heights_combined_prompt_command_grid_warp_prompt() {
     // we have the built-in Warp prompt, so there's padding between that prompt and the combined grid.
     // The combined grid _just_ has the command in this case! The PS1 is unset!
     // Hence, we expect heights of 8.5.
-    assert_lines_approx_eq!(first_block.height(&AgentViewState::Inactive), 8.5);
+    assert_lines_approx_eq!(first_block.height(), 8.5);
 }
 
 #[test]
@@ -1188,7 +1153,7 @@ pub fn test_block_heights_combined_prompt_command_grid_ps1() {
 
     // We have a 2-line prompt, adding 1 extra line to the combined grid (vs 0.6 default for Warp prompt).
     // Hence, we expect a height of 8.7 rather than 8.3.
-    assert_lines_approx_eq!(first_block.height(&AgentViewState::Inactive), 8.7);
+    assert_lines_approx_eq!(first_block.height(), 8.7);
 }
 
 #[test]
@@ -1275,7 +1240,7 @@ fn test_remove_rich_content_block() {
     insert_block(&mut block_list, "cmd", "output");
 
     let view_id_a = EntityId::new();
-    block_list.append_rich_content(RichContentItem::new_for_test(None, view_id_a, None), false);
+    block_list.append_rich_content(RichContentItem::new_for_test(None, view_id_a), false);
 
     let second_block_index = insert_block(&mut block_list, "cmd", "output");
 
@@ -1286,7 +1251,7 @@ fn test_remove_rich_content_block() {
     );
 
     let view_id_b = EntityId::new();
-    block_list.append_rich_content(RichContentItem::new_for_test(None, view_id_b, None), false);
+    block_list.append_rich_content(RichContentItem::new_for_test(None, view_id_b), false);
 
     /*
     The blocklist is now:
@@ -1346,223 +1311,6 @@ fn test_remove_rich_content_block() {
         .items()
         .iter()
         .any(|item| matches!(&item, BlockHeightItem::RichContent { .. })));
-}
-
-#[test]
-fn test_conversation_scoped_rich_content_hidden_outside_fullscreen_agent_view() {
-    FeatureFlag::AgentView.set_enabled(true);
-    let mut block_list =
-        new_bootstrapped_block_list(None, None, ChannelEventListener::new_for_test());
-    let conversation_id = AIConversationId::new();
-    let view_id = EntityId::new();
-
-    block_list.append_rich_content(
-        RichContentItem::new_for_test(None, view_id, Some(conversation_id)),
-        false,
-    );
-
-    block_list.set_agent_view_state(AgentViewState::Active {
-        conversation_id,
-        origin: AgentViewEntryOrigin::Input {
-            was_prompt_autodetected: false,
-        },
-        display_mode: AgentViewDisplayMode::FullScreen,
-        original_conversation_length: 0,
-    });
-
-    let item_visible_in_fullscreen =
-        block_list
-            .block_heights()
-            .items()
-            .iter()
-            .find_map(|item| match item {
-                BlockHeightItem::RichContent(rich_content) if rich_content.view_id == view_id => {
-                    Some(*rich_content)
-                }
-                _ => None,
-            });
-    assert!(item_visible_in_fullscreen.is_some());
-    assert!(item_visible_in_fullscreen.is_some_and(|item| !item.should_hide));
-    assert!(item_visible_in_fullscreen
-        .is_some_and(|item| item.last_laid_out_height > BlockHeight::zero()));
-
-    block_list.set_agent_view_state(AgentViewState::Inactive);
-
-    let item_hidden_in_terminal_mode =
-        block_list
-            .block_heights()
-            .items()
-            .iter()
-            .find_map(|item| match item {
-                BlockHeightItem::RichContent(rich_content) if rich_content.view_id == view_id => {
-                    Some(*rich_content)
-                }
-                _ => None,
-            });
-    assert!(item_hidden_in_terminal_mode.is_some());
-    assert!(item_hidden_in_terminal_mode.is_some_and(|item| item.should_hide));
-
-    block_list.set_agent_view_state(AgentViewState::Active {
-        conversation_id,
-        origin: AgentViewEntryOrigin::Input {
-            was_prompt_autodetected: false,
-        },
-        display_mode: AgentViewDisplayMode::Inline,
-        original_conversation_length: 0,
-    });
-
-    let item_hidden_in_inline =
-        block_list
-            .block_heights()
-            .items()
-            .iter()
-            .find_map(|item| match item {
-                BlockHeightItem::RichContent(rich_content) if rich_content.view_id == view_id => {
-                    Some(*rich_content)
-                }
-                _ => None,
-            });
-    assert!(item_hidden_in_inline.is_some());
-    assert!(item_hidden_in_inline.is_some_and(|item| item.should_hide));
-}
-
-#[test]
-fn test_clear_user_executed_command_blocks_for_conversation() {
-    let mut block_list =
-        new_bootstrapped_block_list(None, None, ChannelEventListener::new_for_test());
-
-    let terminal_block_index = insert_block(&mut block_list, "terminal", "output");
-
-    let conversation_id = AIConversationId::new();
-
-    let user_block_index = insert_block(&mut block_list, "user", "output");
-    {
-        let block = &mut block_list.blocks_mut()[user_block_index.0];
-        // User-executed command blocks created inside agent view typically remain in User
-        // interaction mode.
-        block.set_conversation_id(conversation_id);
-    }
-
-    let requested_command_block_index = insert_block(&mut block_list, "requested", "output");
-    {
-        let block = &mut block_list.blocks_mut()[requested_command_block_index.0];
-        block.set_conversation_id(conversation_id);
-        let action_id: AIAgentActionId = "action".to_owned().into();
-        block.set_agent_interaction_mode(AgentInteractionMetadata::new_hidden(
-            action_id,
-            conversation_id,
-        ));
-    }
-
-    let view_id = EntityId::new();
-    block_list.append_rich_content(
-        RichContentItem::new_for_test(None, view_id, Some(conversation_id)),
-        false,
-    );
-
-    block_list.set_agent_view_state(AgentViewState::Active {
-        conversation_id,
-        origin: AgentViewEntryOrigin::LongRunningCommand,
-        display_mode: AgentViewDisplayMode::FullScreen,
-        original_conversation_length: 0,
-    });
-
-    let terminal_block_id = block_list
-        .block_at(terminal_block_index)
-        .unwrap()
-        .id()
-        .clone();
-    let user_block_id = block_list.block_at(user_block_index).unwrap().id().clone();
-    let requested_command_block_id = block_list
-        .block_at(requested_command_block_index)
-        .unwrap()
-        .id()
-        .clone();
-
-    block_list.clear_user_executed_command_blocks_for_conversation(conversation_id);
-
-    assert!(block_list.block_index_for_id(&terminal_block_id).is_some());
-    assert!(block_list
-        .block_index_for_id(&requested_command_block_id)
-        .is_some());
-    assert!(block_list.block_index_for_id(&user_block_id).is_none());
-    assert!(block_list
-        .removable_blocklist_item_positions
-        .contains_key(&RemovableBlocklistItem::RichContent(view_id)));
-}
-
-#[test]
-fn test_agent_origin_block_can_be_attached_to_other_conversation() {
-    let _agent_view_flag = FeatureFlag::AgentView.override_enabled(true);
-    let mut block_list =
-        new_bootstrapped_block_list(None, None, ChannelEventListener::new_for_test());
-
-    let expected_origin_conversation_id = AIConversationId::new();
-    let other_conversation_id = AIConversationId::new();
-
-    let active_state = |conversation_id| AgentViewState::Active {
-        conversation_id,
-        origin: AgentViewEntryOrigin::Input {
-            was_prompt_autodetected: false,
-        },
-        display_mode: AgentViewDisplayMode::FullScreen,
-        original_conversation_length: 0,
-    };
-
-    block_list.set_agent_view_state(active_state(expected_origin_conversation_id));
-    let user_block_index = insert_block(&mut block_list, "user", "output");
-    let user_block_id = block_list.block_at(user_block_index).unwrap().id().clone();
-
-    let associated = block_list
-        .associate_blocks_with_conversation([&user_block_id].into_iter(), other_conversation_id);
-    assert_eq!(associated.len(), 1);
-    assert_eq!(associated[0].0, user_block_id);
-    match &associated[0].1 {
-        AgentViewVisibility::Agent {
-            origin_conversation_id: observed_origin_conversation_id,
-            pending_other_conversation_ids,
-            other_conversation_ids,
-        } => {
-            assert_eq!(
-                observed_origin_conversation_id,
-                &expected_origin_conversation_id
-            );
-            assert!(pending_other_conversation_ids.contains(&other_conversation_id));
-            assert!(!other_conversation_ids.contains(&other_conversation_id));
-        }
-        _ => panic!("Expected agent visibility for agent-origin block"),
-    }
-
-    block_list.set_agent_view_state(active_state(other_conversation_id));
-    let user_block_index = block_list.block_index_for_id(&user_block_id).unwrap();
-    let user_block = block_list.block_at(user_block_index).unwrap();
-    assert!(!user_block.is_empty(block_list.agent_view_state()));
-
-    let promoted = block_list.promote_blocks_to_attached_from_conversation(other_conversation_id);
-    assert_eq!(promoted.len(), 1);
-    assert_eq!(promoted[0].0, user_block_id);
-    match &promoted[0].1 {
-        AgentViewVisibility::Agent {
-            pending_other_conversation_ids,
-            other_conversation_ids,
-            ..
-        } => {
-            assert!(!pending_other_conversation_ids.contains(&other_conversation_id));
-            assert!(other_conversation_ids.contains(&other_conversation_id));
-        }
-        _ => panic!("Expected agent visibility for agent-origin block"),
-    }
-
-    let removed = block_list.remove_pending_context_assocation_for_blocks(
-        [&user_block_id].into_iter(),
-        other_conversation_id,
-    );
-    assert!(removed.is_empty());
-
-    block_list.set_agent_view_state(AgentViewState::Inactive);
-    let user_block_index = block_list.block_index_for_id(&user_block_id).unwrap();
-    let user_block = block_list.block_at(user_block_index).unwrap();
-    assert!(user_block.is_empty(block_list.agent_view_state()));
 }
 
 #[test]

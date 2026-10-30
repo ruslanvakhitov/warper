@@ -11,7 +11,7 @@ cfg_if::cfg_if! {
         use warpui::{ViewContext};
 
         use crate::{
-            ai::blocklist::SerializedBlockListItem, pane_group::TerminalViewResources,
+            persistence::SerializedBlockListItem, pane_group::TerminalViewResources,
             resource_center::TipsCompleted,
         };
         use crate::terminal::model::session::Sessions;
@@ -82,7 +82,7 @@ impl TerminalView {
             colors,
             event_proxy,
             ctx.background_executor().clone(),
-            false,
+            false, /* should_show_bootstrap_block */
             restored_blocks,
             false, /* honor_ps1 */
             false, /* is_inverted */
@@ -105,8 +105,6 @@ impl TerminalView {
             colors,
             None,
             prompt_type,
-            None,
-            None, // conversation_restoration - not used for test
             None, // inactive_pty_reads_rx - not used for test
             ctx,
         )

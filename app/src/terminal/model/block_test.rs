@@ -2,7 +2,6 @@ use std::{collections::HashMap, pin::pin, time::Duration};
 
 use super::*;
 use crate::{
-    ai::blocklist::agent_view::AgentViewState,
     terminal::model::{
         ansi::{Attr, Handler},
         cell::Flags,
@@ -45,7 +44,7 @@ pub fn test_find() {
 
     block.precmd(PrecmdValue::default());
     block.start();
-    assert_lines_approx_eq!(block.height(&AgentViewState::Inactive), 3.);
+    assert_lines_approx_eq!(block.height(), 3.);
 
     assert_approx_eq!(
         BlockSection,
@@ -83,7 +82,7 @@ pub fn test_find() {
     block.header_grid.command_grid_linefeed();
     block.header_grid.command_grid_linefeed();
 
-    assert_lines_approx_eq!(block.height(&AgentViewState::Inactive), 6.);
+    assert_lines_approx_eq!(block.height(), 6.);
 
     assert_approx_eq!(
         BlockSection,
@@ -148,7 +147,7 @@ pub fn test_find() {
 
     assert_eq!(block.header_grid.prompt_and_command_number_of_rows(), 3);
     assert_eq!(block.output_grid.len(), 3);
-    assert_lines_approx_eq!(block.height(&AgentViewState::Inactive), 8.5);
+    assert_lines_approx_eq!(block.height(), 8.5);
 
     assert_approx_eq!(
         BlockSection,
@@ -249,7 +248,7 @@ pub fn test_find() {
 
     assert_eq!(block.header_grid.prompt_and_command_number_of_rows(), 2);
     assert_eq!(block.output_grid.len(), 3);
-    assert_lines_approx_eq!(block.height(&AgentViewState::Inactive), 7.5);
+    assert_lines_approx_eq!(block.height(), 7.5);
 
     assert_approx_eq!(
         BlockSection,
@@ -419,12 +418,12 @@ pub fn test_block_height_non_bootstrapped_block() {
     block.on_finish_byte_processing(&ansi::ProcessorInput::new(&[]));
 
     // The block is empty since it was never started.
-    assert!(block.is_empty(&AgentViewState::Inactive));
+    assert!(block.is_empty());
 
     block.start();
 
     // The block should be non-empty even though it wasn't boostrapped.
-    assert_lines_approx_eq!(block.height(&AgentViewState::Inactive), 5.);
+    assert_lines_approx_eq!(block.height(), 5.);
 }
 
 #[test]
@@ -451,7 +450,7 @@ fn test_background_block() {
     // Background blocks have the usual top and bottom padding, but no
     // between-grid padding because there's only one grid.
     assert_lines_approx_eq!(block.output_grid_displayed_height(), 3);
-    assert_lines_approx_eq!(block.height(&AgentViewState::Inactive), 4.2);
+    assert_lines_approx_eq!(block.height(), 4.2);
 }
 
 #[test]
@@ -1365,26 +1364,6 @@ fn test_restored_block_was_local() {
         .with_bootstrap_stage(BootstrapStage::RestoreBlocks)
         .build();
     assert_eq!(block.restored_block_was_local(), None);
-}
-
-#[test]
-fn test_deserialize_legacy_agent_view_visibility_agent_variant() {
-    let origin_conversation_id = AIConversationId::new();
-    let json = format!("{{\"Agent\":{{\"conversation_id\":\"{origin_conversation_id}\"}}}}");
-
-    let visibility: SerializedAgentViewVisibility = serde_json::from_str(&json).unwrap();
-    match visibility {
-        SerializedAgentViewVisibility::Agent {
-            origin_conversation_id: parsed_origin_conversation_id,
-            pending_other_conversation_ids,
-            other_conversation_ids,
-        } => {
-            assert_eq!(parsed_origin_conversation_id, origin_conversation_id);
-            assert!(pending_other_conversation_ids.is_empty());
-            assert!(other_conversation_ids.is_empty());
-        }
-        _ => panic!("Expected agent visibility"),
-    }
 }
 
 #[test]

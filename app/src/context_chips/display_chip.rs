@@ -1,12 +1,6 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use crate::ai::blocklist::agent_view::AgentViewController;
-use crate::ai::blocklist::prompt::plan_and_todo_list::{PlanAndTodoListEvent, PlanAndTodoListView};
-use crate::ai::{
-    blocklist::{BlocklistAIContextModel, BlocklistAIInputModel},
-    document::ai_document_model::{AIDocumentId, AIDocumentVersion},
-};
 use crate::code::editor::{add_color, remove_color};
 use crate::code_review::code_review_view::CODE_REVIEW_TOOLTIP_TEXT;
 use crate::code_review::diff_state::DiffStats;
@@ -17,17 +11,16 @@ use crate::settings_view::keybindings::{KeybindingChangedEvent, KeybindingChange
 use crate::terminal::cli_agent_sessions::CLIAgentSessionsModel;
 use crate::terminal::input::{MenuPositioning, MenuPositioningProvider};
 use crate::terminal::model_events::ModelEventDispatcher;
-use crate::terminal::view::local_agent::AmbientAgentViewModel;
 use crate::ui_components::blended_colors;
 use crate::ui_components::icons::Icon;
 use crate::util::bindings::keybinding_name_to_display_string;
 use crate::util::truncation::truncate_from_beginning;
 use crate::view_components::action_button::{ActionButtonTheme, NakedTheme};
 use pathfinder_color::ColorU;
-use pathfinder_geometry::vector::{vec2f, Vector2F};
+use pathfinder_geometry::vector::vec2f;
 use std::path::PathBuf;
+use warp_core::ui::theme::color::internal_colors;
 use warp_core::ui::theme::Fill;
-use warp_core::{features::FeatureFlag, ui::theme::color::internal_colors};
 use warpui::elements::Empty;
 use warpui::keymap::Keystroke;
 use warpui::platform::Cursor;
@@ -40,15 +33,15 @@ use warpui::{
         ParentElement, ParentOffsetBounds, Radius, Stack, Text, DEFAULT_UI_LINE_HEIGHT_RATIO,
     },
     fonts::{Cache, FamilyId, Properties, Weight},
-    AppContext, Element, Entity, EntityId, Gradient, ModelHandle, SingletonEntity, TypedActionView,
-    View, ViewContext, ViewHandle,
+    AppContext, Element, Entity, EntityId, ModelHandle, SingletonEntity, TypedActionView, View,
+    ViewContext, ViewHandle,
 };
 
 use crate::appearance::Appearance;
 use crate::completer::SessionContext;
 
 use super::{
-    agent_view_chip_color,
+    cli_footer_chip_color,
     directory_fetcher::{DirectoryFetcher, DirectoryFetcherEvent, DirectoryItem, DirectoryType},
     display_menu::{
         ChipMenuType, DisplayChipMenu, FixedFooter, GenericMenuItem, PromptDisplayMenuEvent,
@@ -58,7 +51,7 @@ use super::{
 use crate::workspace::view::TOGGLE_RIGHT_PANEL_BINDING_NAME;
 
 /// Helper function to render git diff stats content (file icon or +- icons, file count, bullet, +/- counts)
-/// Used by both the context chips and the AI control panel
+/// Used by context chips and the external CLI agent footer.
 pub fn render_git_diff_stats_content(
     line_changes: &GitLineChanges,
     icon_size: f32,
@@ -192,15 +185,12 @@ fn udi_tooltip_positioning() -> OffsetPositioning {
 pub(crate) struct UdiChipConfig {
     /// The icon to display
     icon: Option<Icon>,
-    keystroke: Option<Keystroke>,
     /// The color for both icon and text
     color: ColorU,
     /// The text content to display
     text: String,
-    /// Whether to truncate text to UDI_CHIP_MAX_NUM_CHARACTERS
-    truncate_text: bool,
     border_override: Option<Border>,
-    is_in_agent_view: bool,
+    is_cli_footer: bool,
     /// When `true`, the chip paints its hover background instead of its
     /// default background. The chip's background is opaque, so callers must
     /// toggle this from their `Hoverable` rather than wrap the chip in an
@@ -212,12 +202,10 @@ impl UdiChipConfig {
     pub(crate) fn new(color: ColorU, text: String) -> Self {
         Self {
             icon: None,
-            keystroke: None,
             color,
             text,
-            truncate_text: true,
             border_override: None,
-            is_in_agent_view: false,
+            is_cli_footer: false,
             hovered: false,
         }
     }
@@ -225,32 +213,12 @@ impl UdiChipConfig {
     pub(crate) fn new_with_icon(icon: Icon, color: ColorU, text: String) -> Self {
         Self {
             icon: Some(icon),
-            keystroke: None,
             color,
             text,
-            truncate_text: true,
             border_override: None,
-            is_in_agent_view: false,
+            is_cli_footer: false,
             hovered: false,
         }
-    }
-
-    fn new_with_keystroke(color: ColorU, text: String, keystroke: Keystroke) -> Self {
-        Self {
-            icon: None,
-            keystroke: Some(keystroke),
-            color,
-            text,
-            truncate_text: true,
-            border_override: None,
-            is_in_agent_view: false,
-            hovered: false,
-        }
-    }
-
-    pub(crate) fn with_truncate_text(mut self, truncate: bool) -> Self {
-        self.truncate_text = truncate;
-        self
     }
 
     pub(crate) fn with_border_override(mut self, border: Border) -> Self {
@@ -263,8 +231,8 @@ impl UdiChipConfig {
         self
     }
 
-    fn for_agent_view(mut self) -> Self {
-        self.is_in_agent_view = true;
+    fn for_cli_footer(mut self) -> Self {
+        self.is_cli_footer = true;
         self
     }
 }
@@ -288,10 +256,7 @@ pub struct DisplayChip {
     first_on_click_value: Option<String>,
     session_context: Option<SessionContext>,
     menu_positioning_provider: Arc<dyn MenuPositioningProvider>,
-    agent_view_controller: ModelHandle<AgentViewController>,
-    is_in_agent_view: bool,
-    /// Optional because `DisplayChip` sometimes should be disabled, depending on if it is in an ambient agent view.
-    ambient_agent_view_model: Option<ModelHandle<AmbientAgentViewModel>>,
+    is_cli_footer: bool,
     /// Cached display string for the code review keybinding.
     code_review_keybinding: Option<String>,
     /// The terminal view this chip belongs to, used to check CLI agent session state.
@@ -355,7 +320,6 @@ impl GitLineChanges {
 pub enum DisplayChipKind {
     Text,
     WorkingDirectory {
-        show_menu: bool,
         menu_open: bool,
         menu: ViewHandle<DisplayChipMenu>,
         directory_fetcher: ModelHandle<DirectoryFetcher>,
@@ -368,9 +332,7 @@ pub enum DisplayChipKind {
         popup_open: bool,
         popup: ViewHandle<crate::context_chips::node_version_popup::NodeVersionPopupView>,
     },
-    AgentPlanAndTodoList {
-        plan_and_todo_list: ViewHandle<PlanAndTodoListView>,
-    },
+
     GitBranch {
         menu_open: bool,
         menu: ViewHandle<DisplayChipMenu>,
@@ -393,8 +355,7 @@ impl DisplayChipKind {
             | DisplayChipKind::Ssh
             | DisplayChipKind::Subshell
             | DisplayChipKind::VirtualEnvironment
-            | DisplayChipKind::CondaEnvironment
-            | DisplayChipKind::AgentPlanAndTodoList { .. } => false,
+            | DisplayChipKind::CondaEnvironment => false,
         }
     }
 }
@@ -423,16 +384,11 @@ pub struct MenuItem {
 /// Configuration for creating a DisplayChip
 #[derive(Clone)]
 pub struct DisplayChipConfig {
-    pub ai_input_model: ModelHandle<BlocklistAIInputModel>,
-    pub ai_context_model: ModelHandle<BlocklistAIContextModel>,
     pub terminal_view_id: EntityId,
     pub menu_positioning_provider: Arc<dyn MenuPositioningProvider>,
     pub session_context: Option<SessionContext>,
     pub current_repo_path: Option<PathBuf>,
     pub model_events: ModelHandle<ModelEventDispatcher>,
-    pub agent_view_controller: ModelHandle<AgentViewController>,
-    /// Optional because `DisplayChip` sometimes should be disabled, depending on if it is in an ambient agent view.
-    pub ambient_agent_view_model: Option<ModelHandle<AmbientAgentViewModel>>,
 }
 
 #[derive(Debug, Clone)]
@@ -545,7 +501,7 @@ impl DisplayChip {
         Self::new_internal(chip_result, next_chip_kind, config, false, ctx)
     }
 
-    pub fn new_for_agent_view(
+    pub fn new_for_cli_agent(
         chip_result: ChipResult,
         next_chip_kind: Option<ContextChipKind>,
         config: DisplayChipConfig,
@@ -558,43 +514,10 @@ impl DisplayChip {
         chip_result: ChipResult,
         next_chip_kind: Option<ContextChipKind>,
         config: DisplayChipConfig,
-        is_in_agent_view: bool,
+        is_cli_footer: bool,
         ctx: &mut ViewContext<Self>,
     ) -> Self {
-        // Re-render this chip whenever Agent Mode state changes so UDI font/color updates
-        // immediately on enter/exit.
-        ctx.subscribe_to_model(&config.agent_view_controller, |_me, _model, _event, ctx| {
-            ctx.notify();
-        });
-
         let display_chip_kind = match chip_result.kind {
-            ContextChipKind::AgentPlanAndTodoList => {
-                let context_model = config.ai_context_model.clone();
-                let view_id = config.terminal_view_id;
-                let plan_and_todo_list = ctx.add_typed_action_view(|ctx| {
-                    PlanAndTodoListView::new(
-                        context_model,
-                        config.menu_positioning_provider.clone(),
-                        view_id,
-                        is_in_agent_view,
-                        ctx,
-                    )
-                });
-
-                ctx.subscribe_to_view(&plan_and_todo_list, |_me, _, event, ctx| match event {
-                    PlanAndTodoListEvent::OpenAIDocument {
-                        document_id,
-                        document_version,
-                    } => {
-                        ctx.emit(PromptDisplayChipEvent::OpenAIDocument {
-                            document_id: *document_id,
-                            document_version: *document_version,
-                        });
-                    }
-                });
-
-                DisplayChipKind::AgentPlanAndTodoList { plan_and_todo_list }
-            }
             ContextChipKind::ShellGitBranch => {
                 // Convert git branch strings to GitBranch items
                 let git_branch_items: Vec<GitBranch> = chip_result
@@ -758,7 +681,6 @@ impl DisplayChip {
                 });
 
                 DisplayChipKind::WorkingDirectory {
-                    show_menu: true,
                     menu_open: false,
                     menu: menu_view,
                     directory_fetcher,
@@ -789,18 +711,7 @@ impl DisplayChip {
                         me.close_node_version_popup(ctx);
                         ctx.focus_self();
                     }
-                    NodeVersionPopupEvent::InstallNvm => {
-                        ctx.emit(PromptDisplayChipEvent::RunAgentQuery(if cfg!(windows) {
-                            // nvm-windows has documented issues when installed alongside an existing Node.js installation.
-                            // https://github.com/coreybutler/nvm-windows?tab=readme-ov-file#star-star-uninstall-any-pre-existing-node-installations-star-star
-                            // Prompt the agent to remove this first.
-                            "Uninstall existing Node.js installation and install nvm for me"
-                                .to_string()
-                        } else {
-                            "Install nvm for me".to_string()
-                        }));
-                        me.close_node_version_popup(ctx);
-                    }
+
                     NodeVersionPopupEvent::InstallLatestNodeVersion => {
                         ctx.emit(PromptDisplayChipEvent::TryExecuteCommand(
                             PromptChipShellCommand::NvmInstallLatestNode,
@@ -816,13 +727,6 @@ impl DisplayChip {
             }
             _ => DisplayChipKind::Text,
         };
-
-        // Subscribe to ambient agent model changes to re-render when the state changes
-        if let Some(ref ambient_agent_model) = config.ambient_agent_view_model {
-            ctx.subscribe_to_model(ambient_agent_model, |_, _, _, ctx| {
-                ctx.notify();
-            });
-        }
 
         // Cache the code review keybinding and subscribe to changes.
         let code_review_keybinding =
@@ -851,9 +755,7 @@ impl DisplayChip {
             first_on_click_value: chip_result.on_click_values.first().cloned(),
             session_context: config.session_context,
             menu_positioning_provider: config.menu_positioning_provider,
-            agent_view_controller: config.agent_view_controller.clone(),
-            is_in_agent_view,
-            ambient_agent_view_model: config.ambient_agent_view_model,
+            is_cli_footer,
             code_review_keybinding,
             terminal_view_id: config.terminal_view_id,
         }
@@ -936,7 +838,6 @@ impl DisplayChip {
             | DisplayChipKind::VirtualEnvironment
             | DisplayChipKind::CondaEnvironment
             | DisplayChipKind::NodeVersion { .. }
-            | DisplayChipKind::AgentPlanAndTodoList { .. }
             | DisplayChipKind::GithubPullRequest => {}
         }
         false
@@ -1033,15 +934,6 @@ impl DisplayChip {
         row.finish()
     }
 
-    pub fn should_render(&self, app: &AppContext) -> bool {
-        match &self.display_chip_kind {
-            DisplayChipKind::AgentPlanAndTodoList { plan_and_todo_list } => {
-                plan_and_todo_list.as_ref(app).should_render(app)
-            }
-            _ => true,
-        }
-    }
-
     fn git_branch_chip(
         &self,
         menu_open: bool,
@@ -1049,22 +941,22 @@ impl DisplayChip {
         app: &AppContext,
     ) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
-        let font_color = if self.is_in_agent_view {
-            agent_view_chip_color(appearance)
+        let font_color = if self.is_cli_footer {
+            cli_footer_chip_color(appearance)
         } else {
             appearance.theme().ansi_fg_green()
         };
 
         let is_interactive = !self.is_cli_agent_session_active(app);
-        let is_in_agent_view = self.is_in_agent_view;
+        let is_cli_footer = self.is_cli_footer;
         let chip_text = self.text.clone();
         let hover = Hoverable::new(self.mouse_state.clone(), move |state| {
             let hovered = state.is_hovered() && is_interactive;
             let mut config =
                 UdiChipConfig::new_with_icon(Icon::GitBranch, font_color, chip_text.clone())
                     .with_hovered(hovered);
-            if is_in_agent_view {
-                config = config.for_agent_view();
+            if is_cli_footer {
+                config = config.for_cli_footer();
             }
             let chip_element = render_udi_chip(config, appearance);
 
@@ -1116,22 +1008,22 @@ impl DisplayChip {
 
     fn github_pull_request_chip(&self, app: &AppContext) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
-        let font_color = if self.is_in_agent_view {
-            agent_view_chip_color(appearance)
+        let font_color = if self.is_cli_footer {
+            cli_footer_chip_color(appearance)
         } else {
             appearance.theme().ansi_fg_green()
         };
         let chip_text =
             github_pr_display_text_from_url(&self.text).unwrap_or_else(|| self.text.clone());
         let url = self.text.clone();
-        let is_in_agent_view = self.is_in_agent_view;
+        let is_cli_footer = self.is_cli_footer;
 
         let hover = Hoverable::new(self.mouse_state.clone(), move |state| {
             let mut config =
                 UdiChipConfig::new_with_icon(Icon::Github, font_color, chip_text.clone())
                     .with_hovered(state.is_hovered());
-            if is_in_agent_view {
-                config = config.for_agent_view();
+            if is_cli_footer {
+                config = config.for_cli_footer();
             }
             let chip_element = render_udi_chip(config, appearance);
 
@@ -1172,12 +1064,10 @@ impl DisplayChip {
         let theme = appearance.theme();
         let udi_icon_size = udi_icon_size(appearance, app);
         let font_size = udi_font_size(appearance);
-        let font_family = if self.is_in_agent_view {
+        let font_family = if self.is_cli_footer {
             appearance.ui_font_family()
-        } else if FeatureFlag::AgentView.is_enabled() {
-            appearance.monospace_font_family()
         } else {
-            appearance.ui_font_family()
+            appearance.monospace_font_family()
         };
 
         let git_diff_stats_content = render_git_diff_stats_content(
@@ -1257,7 +1147,6 @@ impl DisplayChip {
 
     fn working_directory_chip(
         &self,
-        show_menu: bool,
         menu: &ViewHandle<DisplayChipMenu>,
         menu_open: bool,
         app: &AppContext,
@@ -1266,40 +1155,28 @@ impl DisplayChip {
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
 
-        // Check if we're in an ambient agent conversation.
-        // If so, the directory chip should be non-interactive.
-        let is_in_active_ambient_agent = self
-            .ambient_agent_view_model
-            .as_ref()
-            .map(|model| {
-                let m = model.as_ref(app);
-                m.is_ambient_agent() && !m.is_configuring_ambient_agent()
-            })
-            .unwrap_or(false);
-
         let mut stack = Stack::new();
 
-        // Menu is only allowed when the caller requests it and we're not in an active ambient
-        // agent session or CLI agent session.
+        // Shell-changing menus are unavailable while a CLI agent owns terminal input.
         let is_cli_agent_active = self.is_cli_agent_session_active(app);
-        let allow_show_menu = show_menu && !is_in_active_ambient_agent && !is_cli_agent_active;
+        let allow_show_menu = !is_cli_agent_active;
 
         let button = if allow_show_menu {
             let chip_text = self.text.clone();
-            let font_color = if self.is_in_agent_view {
-                agent_view_chip_color(appearance)
+            let font_color = if self.is_cli_footer {
+                cli_footer_chip_color(appearance)
             } else {
                 theme.ansi_fg_cyan()
             };
 
-            let is_in_agent_view = self.is_in_agent_view;
+            let is_cli_footer = self.is_cli_footer;
             Hoverable::new(self.mouse_state.clone(), move |state| {
                 let hovered = !menu_open && state.is_hovered();
                 let mut config =
                     UdiChipConfig::new_with_icon(Icon::Folder, font_color, chip_text.clone())
                         .with_hovered(hovered);
-                if is_in_agent_view {
-                    config = config.for_agent_view();
+                if is_cli_footer {
+                    config = config.for_cli_footer();
                 }
 
                 let chip_element = render_udi_chip(config, appearance);
@@ -1323,30 +1200,21 @@ impl DisplayChip {
             .with_cursor(Cursor::PointingHand)
             .finish()
         } else {
-            // Non-interactive chip (either show_menu is false or in active ambient agent)
-            let font_color = if self.is_in_agent_view {
-                // Use disabled text color when in active ambient agent
-                if is_in_active_ambient_agent {
-                    theme
-                        .disabled_text_color(blended_colors::neutral_1(theme).into())
-                        .into_solid()
-                } else {
-                    // In agent view but the chip is non-interactive for reasons other than an active
-                    // ambient agent session. Keep the normal agent-view subtext styling (not disabled).
-                    agent_view_chip_color(appearance)
-                }
+            // Render without shell-changing controls while a CLI agent is active.
+            let font_color = if self.is_cli_footer {
+                cli_footer_chip_color(appearance)
             } else {
                 theme.ansi_fg_cyan()
             };
 
             let chip_text = self.text.clone();
-            let is_in_agent_view = self.is_in_agent_view;
+            let is_cli_footer = self.is_cli_footer;
 
             Hoverable::new(self.mouse_state.clone(), move |state| {
                 let mut config =
                     UdiChipConfig::new_with_icon(Icon::Folder, font_color, chip_text.clone());
-                if is_in_agent_view {
-                    config = config.for_agent_view();
+                if is_cli_footer {
+                    config = config.for_cli_footer();
                 }
 
                 let chip_element = render_udi_chip(config, appearance);
@@ -1394,29 +1262,29 @@ impl DisplayChip {
 
     fn ssh_chip(&self, app: &AppContext) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
-        let color = if self.is_in_agent_view {
-            agent_view_chip_color(appearance)
+        let color = if self.is_cli_footer {
+            cli_footer_chip_color(appearance)
         } else {
             appearance.theme().ansi_fg_blue()
         };
 
         let mut config = UdiChipConfig::new_with_icon(Icon::User, color, self.text.clone());
-        if self.is_in_agent_view {
-            config = config.for_agent_view();
+        if self.is_cli_footer {
+            config = config.for_cli_footer();
         }
         render_udi_chip(config, appearance)
     }
 
     fn subshell_chip(&self, app: &AppContext) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
-        let color = if self.is_in_agent_view {
-            agent_view_chip_color(appearance)
+        let color = if self.is_cli_footer {
+            cli_footer_chip_color(appearance)
         } else {
             appearance.theme().ansi_fg_blue()
         };
         let mut config = UdiChipConfig::new_with_icon(Icon::Terminal, color, self.text.clone());
-        if self.is_in_agent_view {
-            config = config.for_agent_view();
+        if self.is_cli_footer {
+            config = config.for_cli_footer();
         }
 
         render_udi_chip(config, appearance)
@@ -1424,14 +1292,14 @@ impl DisplayChip {
 
     fn virtual_environment_chip(&self, app: &AppContext) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
-        let color = if self.is_in_agent_view {
-            agent_view_chip_color(appearance)
+        let color = if self.is_cli_footer {
+            cli_footer_chip_color(appearance)
         } else {
             appearance.theme().ansi_fg_yellow()
         };
         let mut config = UdiChipConfig::new_with_icon(Icon::Terminal, color, self.text.clone());
-        if self.is_in_agent_view {
-            config = config.for_agent_view();
+        if self.is_cli_footer {
+            config = config.for_cli_footer();
         }
 
         render_udi_chip(config, appearance)
@@ -1439,14 +1307,14 @@ impl DisplayChip {
 
     fn conda_environment_chip(&self, app: &AppContext) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
-        let color = if self.is_in_agent_view {
-            agent_view_chip_color(appearance)
+        let color = if self.is_cli_footer {
+            cli_footer_chip_color(appearance)
         } else {
             appearance.theme().ansi_fg_yellow()
         };
         let mut config = UdiChipConfig::new_with_icon(Icon::Terminal, color, self.text.clone());
-        if self.is_in_agent_view {
-            config = config.for_agent_view();
+        if self.is_cli_footer {
+            config = config.for_cli_footer();
         }
 
         render_udi_chip(config, appearance)
@@ -1461,18 +1329,18 @@ impl DisplayChip {
         let appearance = Appearance::as_ref(app);
 
         let chip_text = self.text.clone();
-        let is_in_agent_view = self.is_in_agent_view;
+        let is_cli_footer = self.is_cli_footer;
         let hoverable = Hoverable::new(self.mouse_state.clone(), move |state| {
-            let color = if is_in_agent_view {
-                agent_view_chip_color(appearance)
+            let color = if is_cli_footer {
+                cli_footer_chip_color(appearance)
             } else {
                 appearance.theme().ansi_fg_green()
             };
             let hovered = state.is_hovered() && !popup_open;
             let mut config = UdiChipConfig::new_with_icon(Icon::NodeJS, color, chip_text.clone())
                 .with_hovered(hovered);
-            if is_in_agent_view {
-                config = config.for_agent_view();
+            if is_cli_footer {
+                config = config.for_cli_footer();
             }
             render_udi_chip(config, appearance)
         })
@@ -1505,7 +1373,7 @@ impl DisplayChip {
 
     fn render_chip(&self, app: &AppContext) -> Option<Box<dyn Element>> {
         let appearance = Appearance::as_ref(app);
-        let font_family = if self.is_in_agent_view || !FeatureFlag::AgentView.is_enabled() {
+        let font_family = if self.is_cli_footer {
             appearance.ui_font_family()
         } else {
             appearance.monospace_font_family()
@@ -1514,11 +1382,8 @@ impl DisplayChip {
 
         match &self.display_chip_kind {
             DisplayChipKind::WorkingDirectory {
-                show_menu,
-                menu,
-                menu_open,
-                ..
-            } => Some(self.working_directory_chip(*show_menu, menu, *menu_open, app)),
+                menu, menu_open, ..
+            } => Some(self.working_directory_chip(menu, *menu_open, app)),
             DisplayChipKind::Ssh => Some(self.ssh_chip(app)),
             DisplayChipKind::Subshell => Some(self.subshell_chip(app)),
             DisplayChipKind::VirtualEnvironment => Some(self.virtual_environment_chip(app)),
@@ -1526,9 +1391,7 @@ impl DisplayChip {
                 Some(self.node_version_chip(popup, *popup_open, app))
             }
             DisplayChipKind::CondaEnvironment => Some(self.conda_environment_chip(app)),
-            DisplayChipKind::AgentPlanAndTodoList { plan_and_todo_list } => {
-                Some(ChildView::new(plan_and_todo_list).finish())
-            }
+
             DisplayChipKind::GitBranch { menu_open, menu } => {
                 Some(self.git_branch_chip(*menu_open, menu, app))
             }
@@ -1546,7 +1409,7 @@ impl DisplayChip {
                     &mut text,
                     self.chip_kind.clone(),
                     self.text.clone(),
-                    self.is_in_agent_view,
+                    self.is_cli_footer,
                     appearance,
                 );
 
@@ -1567,7 +1430,7 @@ impl View for DisplayChip {
 
     fn render(&self, app: &AppContext) -> Box<dyn Element> {
         if let Some(chip) = self.render_chip(app) {
-            if self.is_in_agent_view {
+            if self.is_cli_footer {
                 chip
             } else {
                 Container::new(chip)
@@ -1607,18 +1470,10 @@ pub enum PromptChipShellCommand {
 pub enum PromptDisplayChipEvent {
     OpenFile(String),
     OpenTextFileInCodeEditor(String),
-    ToggleMenu {
-        open: bool,
-    },
+    ToggleMenu { open: bool },
     OpenCodeReview,
-    OpenConversationHistory,
     OpenCommandPaletteFiles,
     TryExecuteCommand(PromptChipShellCommand),
-    RunAgentQuery(String),
-    OpenAIDocument {
-        document_id: AIDocumentId,
-        document_version: AIDocumentVersion,
-    },
 }
 
 impl TypedActionView for DisplayChip {
@@ -1647,7 +1502,6 @@ impl TypedActionView for DisplayChip {
                 | DisplayChipKind::Subshell
                 | DisplayChipKind::VirtualEnvironment
                 | DisplayChipKind::CondaEnvironment
-                | DisplayChipKind::AgentPlanAndTodoList { .. }
                 | DisplayChipKind::Text
                 | DisplayChipKind::GithubPullRequest
                 | DisplayChipKind::GitDiffStats { .. } => {}
@@ -1778,45 +1632,6 @@ impl ActionButtonTheme for UdiPromptChipHintButton {
     }
 }
 
-pub struct EnterAgentViewButton;
-
-impl ActionButtonTheme for EnterAgentViewButton {
-    fn background(&self, hovered: bool, appearance: &Appearance) -> Option<Fill> {
-        Some(if hovered {
-            internal_colors::fg_overlay_2(appearance.theme())
-        } else {
-            internal_colors::fg_overlay_1(appearance.theme())
-        })
-    }
-
-    fn text_color(
-        &self,
-        _hovered: bool,
-        _background: Option<Fill>,
-        appearance: &Appearance,
-    ) -> ColorU {
-        appearance
-            .theme()
-            .main_text_color(appearance.theme().background())
-            .into_solid()
-    }
-
-    fn border_gradient(&self, appearance: &Appearance) -> Option<(Vector2F, Vector2F, Gradient)> {
-        Some((
-            vec2f(0.0, 0.0),
-            vec2f(3.0, 3.0),
-            Gradient {
-                start: appearance.theme().ansi_fg_magenta(),
-                end: appearance.theme().ansi_fg_yellow(),
-            },
-        ))
-    }
-
-    fn should_opt_out_of_contrast_adjustment(&self) -> bool {
-        true
-    }
-}
-
 pub(crate) fn chip_container(
     content: Box<dyn Element>,
     border_override: Option<Border>,
@@ -1855,13 +1670,9 @@ pub(crate) fn render_udi_chip(config: UdiChipConfig, appearance: &Appearance) ->
         );
     }
 
-    let display_text = if config.truncate_text {
-        truncate_from_beginning(&config.text, UDI_CHIP_MAX_NUM_CHARACTERS)
-    } else {
-        config.text.clone()
-    };
+    let display_text = truncate_from_beginning(&config.text, UDI_CHIP_MAX_NUM_CHARACTERS);
 
-    let font_family = if config.is_in_agent_view || !FeatureFlag::AgentView.is_enabled() {
+    let font_family = if config.is_cli_footer {
         appearance.ui_font_family()
     } else {
         appearance.monospace_font_family()
@@ -1871,31 +1682,11 @@ pub(crate) fn render_udi_chip(config: UdiChipConfig, appearance: &Appearance) ->
         .with_color(Fill::Solid(config.color).into())
         .with_line_height_ratio(appearance.line_height_ratio());
 
-    if !config.is_in_agent_view {
+    if !config.is_cli_footer {
         rendered_text = rendered_text.with_style(Properties::default().weight(Weight::Semibold))
     }
 
     content.add_child(rendered_text.finish());
-
-    if let Some(keystroke) = config.keystroke {
-        content.add_child(
-            appearance
-                .ui_builder()
-                .keyboard_shortcut(&keystroke)
-                .with_space_between_keys(4.)
-                .with_style(UiComponentStyles {
-                    font_size: Some(appearance.monospace_font_size() - 4.),
-                    width: Some(appearance.monospace_font_size()),
-                    height: Some(appearance.monospace_font_size()),
-                    padding: Some(Coords::default()),
-                    margin: Some(Coords::default().left(4.)),
-                    ..Default::default()
-                })
-                .with_line_height_ratio(1.0)
-                .build()
-                .finish(),
-        );
-    }
 
     let mut container = chip_container(content.finish(), config.border_override, appearance);
     if config.hovered {

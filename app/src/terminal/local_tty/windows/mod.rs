@@ -110,8 +110,6 @@ pub enum PtySpawnError {
     ChildExitWatcherFailed(#[source] windows::core::Error),
     #[error("Failed to write shell command bytes to pty: {0:#}")]
     FailedToWriteCommandBytes(#[source] std::io::Error),
-    #[error("Shell starter is not supported on this platform: {0}")]
-    UnsupportedShellStarter(String),
 }
 
 pub(super) fn spawn(
@@ -160,16 +158,6 @@ pub(super) fn spawn(
             shell_command(shell_starter)?
         }
         ShellStarter::Wsl(wsl_shell_starter) => wsl_shell_command(wsl_shell_starter)?,
-        ShellStarter::DockerSandbox(_) => {
-            // Docker sandbox shells are only supported on Unix; they should
-            // never reach the Windows PTY spawn path. Surface as an error
-            // rather than panicking so a rogue persisted/round-tripped
-            // sandbox starter degrades gracefully on Windows.
-            log::error!("Docker sandbox shell starter reached the Windows PTY spawn path");
-            return Err(PtySpawnError::UnsupportedShellStarter(
-                "Docker sandbox shells are not supported on Windows".to_owned(),
-            ));
-        }
     };
     let mut process_information = PROCESS_INFORMATION::default();
 

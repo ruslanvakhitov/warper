@@ -132,13 +132,6 @@ where
         });
     }
 
-    pub fn clear_footer(&mut self, ctx: &mut ViewContext<Self>) {
-        self.has_pinned_footer = false;
-        self.dropdown.update(ctx, |menu, _| {
-            menu.clear_pinned_footer_builder();
-        });
-    }
-
     pub fn set_style(&mut self, style: UiComponentStyles) {
         self.style_override = Some(style);
     }
@@ -164,38 +157,6 @@ where
             self.selected_item = None;
             ctx.notify();
         }
-    }
-
-    /// Set items from rich menu items (MenuItem). This passes the rich menu items to the
-    /// internal dropdown but also extracts searchable DropdownItem objects for filtering.
-    pub fn set_rich_items(
-        &mut self,
-        items: Vec<MenuItem<DropdownAction<A>>>,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        // Extract simple DropdownItem objects from MenuItem for filtering
-        self.items = items
-            .iter()
-            .filter_map(|item| match item {
-                MenuItem::Item(fields) => {
-                    let label = fields.label().to_string();
-                    fields.on_select_action().and_then(|action| {
-                        if let DropdownAction::SelectActionAndClose(a) = action {
-                            Some(DropdownItem::new(label, a.clone()))
-                        } else {
-                            None
-                        }
-                    })
-                }
-                _ => None, // Skip headers and separators
-            })
-            .collect();
-
-        // Set the full rich items on the internal dropdown
-        self.dropdown.update(ctx, |dropdown, ctx| {
-            dropdown.set_items(items, ctx);
-        });
-        ctx.notify();
     }
 
     /// The number of items in the dropdown.
@@ -227,21 +188,6 @@ where
         self.dropdown.update(ctx, |dropdown, ctx| {
             dropdown.set_selected_by_index(selected_index, ctx);
             ctx.notify();
-        });
-        self.selected_item = self.selected_item_in_dropdown(ctx);
-        ctx.notify();
-    }
-
-    /// Select the dropdown item whose on-select action equals the given action. If no such item exists,
-    /// this clears the selection.
-    ///
-    /// This is primarily useful when items are dynamically generated and correspond to some backing data that's captured by the action.
-    pub fn set_selected_by_action(&mut self, action: A, ctx: &mut ViewContext<Self>)
-    where
-        A: PartialEq,
-    {
-        self.dropdown.update(ctx, |dropdown, ctx| {
-            dropdown.set_selected_by_action(&DropdownAction::SelectActionAndClose(action), ctx);
         });
         self.selected_item = self.selected_item_in_dropdown(ctx);
         ctx.notify();
@@ -596,13 +542,6 @@ where
 
     fn dropdown_items_len(&self, ctx: &AppContext) -> usize {
         self.dropdown.as_ref(ctx).items_len()
-    }
-
-    pub fn clear_filter(&mut self, ctx: &mut ViewContext<Self>) {
-        self.filter_editor.update(ctx, |editor, ctx| {
-            editor.clear_buffer(ctx);
-            ctx.notify();
-        });
     }
 
     pub fn set_menu_header_to_static(&mut self, header: &'static str) {

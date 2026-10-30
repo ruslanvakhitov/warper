@@ -2,7 +2,6 @@ use super::super::soft_wrap::{
     ClampDirection, DisplayPointAndClampDirection, FrameLayouts, SoftWrapPoint, SoftWrapState,
 };
 use super::model::MarkedTextState;
-use super::snapshot::VOICE_INPUT_ICON_CURSOR_GAP;
 use super::{
     position_id_for_cached_point, snapshot::ViewSnapshot, CursorColors, DisplayPoint,
     DrawableSelection, EditorAction, ScrollState, SelectAction,
@@ -26,7 +25,7 @@ use vim::vim::{MotionType, VimMode};
 use warp_core::features::FeatureFlag;
 use warp_core::ui::appearance::DEFAULT_UI_FONT_SIZE;
 use warp_util::user_input::UserInput;
-use warpui::event::KeyState;
+
 use warpui::text_selection_utils::{
     calculate_tick_width, create_newline_tick_rect, selection_crosses_newline_row_based,
     NewlineTickParams,
@@ -59,7 +58,6 @@ use warpui::{
 use warpui::elements::{
     ChildView, ConstrainedBox, Container, CrossAxisAlignment, Flex, ParentElement, Text,
 };
-use warpui::platform::keyboard::KeyCode;
 
 use instant::Instant;
 use warpui::elements::{Radius, DEFAULT_UI_LINE_HEIGHT_RATIO};
@@ -216,10 +214,6 @@ pub struct EditorElement {
     editor_decorator_elements: EditorDecoratorElements,
     local_selection_data: LocalDrawableSelectionData,
     remote_selections_data: HashMap<ReplicaId, RemoteDrawableSelectionData>,
-
-    voice_input_cursor_icon: Option<Box<dyn Element>>,
-    #[cfg_attr(not(feature = "voice_input"), allow(unused))]
-    voice_input_toggle_key_code: Option<KeyCode>,
 }
 
 impl EditorElement {
@@ -238,7 +232,6 @@ impl EditorElement {
         local_selection_data: LocalDrawableSelectionData,
         remote_selections_data: HashMap<ReplicaId, super::RemoteDrawableSelectionData>,
         cursor_display_type: Option<CursorDisplayType>,
-        voice_input_toggle_key_code: Option<KeyCode>,
     ) -> Self {
         let remote_selections_data = HashMap::from_iter(remote_selections_data.into_iter().map(
             |(replica_id, drawable_selections_data)| {
@@ -267,8 +260,6 @@ impl EditorElement {
             remote_selections_data,
             preferred_cursor_type: cursor_display_type.unwrap_or_default(),
             cycle_next_command_hint: None,
-            voice_input_cursor_icon: None,
-            voice_input_toggle_key_code,
         }
     }
 
@@ -431,39 +422,6 @@ impl EditorElement {
             )));
         }
         false
-    }
-
-    fn modifier_key_change(
-        &self,
-        key_code: &KeyCode,
-        state: &KeyState,
-        ctx: &mut EventContext,
-    ) -> bool {
-        cfg_if::cfg_if! {
-            if #[cfg(feature = "voice_input")] {
-                self.maybe_handle_voice_toggle(key_code, state, ctx);
-            } else {
-                // Silence unused param warnings when voice_input is disabled.
-                let _ = (key_code, state, ctx);
-            }
-        }
-        false
-    }
-
-    #[cfg(feature = "voice_input")]
-    fn maybe_handle_voice_toggle(
-        &self,
-        key_code: &KeyCode,
-        state: &KeyState,
-        ctx: &mut EventContext,
-    ) {
-        if let Some(voice_input_toggle_key_code) = self.voice_input_toggle_key_code {
-            if *key_code == voice_input_toggle_key_code {
-                ctx.dispatch_typed_action(EditorAction::ToggleVoiceInput(
-                    voice_input::VoiceInputToggledFrom::Key { state: *state },
-                ));
-            }
-        }
     }
 
     fn mouse_moved(
@@ -828,7 +786,7 @@ impl EditorElement {
         cursors: SmallVec<[CursorData; 32]>,
         view_snapshot: &ViewSnapshot,
         remote_selections_data: &mut HashMap<ReplicaId, RemoteDrawableSelectionData>,
-        voice_input_icon: &mut Option<Box<dyn Element>>,
+
         ctx: &mut PaintContext,
         app: &AppContext,
     ) {
@@ -880,19 +838,6 @@ impl EditorElement {
                         .paint(avatar_origin, ctx, app);
                     ctx.scene.stop_layer();
                 }
-            }
-
-            if let Some(element) = voice_input_icon {
-                let icon_size = view_snapshot.voice_input_icon_size();
-                let icon_x_offset = icon_size.x() / 2. - cursor_width / 2.;
-                let icon_origin = vec2f(
-                    cursor.origin.x() - icon_x_offset,
-                    cursor.origin.y() - icon_size.y() - VOICE_INPUT_ICON_CURSOR_GAP,
-                );
-                // New layer is started so voice icon is rendered over text and prompt
-                ctx.scene.start_layer(warpui::ClipBounds::None);
-                element.paint(icon_origin, ctx, app);
-                ctx.scene.stop_layer();
             }
         }
     }
@@ -1517,18 +1462,6 @@ impl EditorElement {
             .finish()
     }
 
-    #[cfg(feature = "voice_input")]
-    pub fn with_voice_input_cursor_icon(self, element: Box<dyn Element>) -> Self {
-        // If voice input is not active, don't render the icon.
-        if !self.view_snapshot.voice_input_state.is_active() {
-            return self;
-        }
-        Self {
-            voice_input_cursor_icon: Some(element),
-            ..self
-        }
-    }
-
     /// Takes into account whether or not we're in Vim mode to determine the cursor type.
     fn get_cursor_type(&self) -> CursorDisplayType {
         self.vim_mode
@@ -1751,15 +1684,6 @@ impl Element for EditorElement {
             );
         }
 
-        if let Some(element) = self.voice_input_cursor_icon.as_mut() {
-            let voice_input_icon_size = view_snapshot.voice_input_icon_size();
-            element.layout(
-                SizeConstraint::new(voice_input_icon_size, voice_input_icon_size),
-                ctx,
-                app,
-            );
-        }
-
         self.soft_wrap_state.update(frame_layouts.clone());
 
         self.layout = Some(LayoutState {
@@ -1884,7 +1808,6 @@ impl Element for EditorElement {
                 cursors,
                 view_snapshot,
                 &mut self.remote_selections_data,
-                &mut self.voice_input_cursor_icon,
                 ctx,
                 app,
             );
@@ -2174,9 +2097,6 @@ impl Element for EditorElement {
                 modifiers: ModifiersState { ctrl: false, .. },
             } => self.scroll(*position, *delta, *precise, ctx, app),
             Event::KeyDown { keystroke, .. } => self.key_down(keystroke, ctx),
-            Event::ModifierKeyChanged {
-                key_code, state, ..
-            } => self.modifier_key_change(key_code, state, ctx),
             Event::TypedCharacters { chars } => self.typed_characters(chars, ctx),
             Event::DragAndDropFiles { paths, location } => {
                 self.drag_and_drop_file(paths.clone(), *location, ctx)

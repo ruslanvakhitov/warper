@@ -1,4 +1,3 @@
-use crate::ai::blocklist::BlocklistAIInputModel;
 use crate::context_chips::display::PromptDisplay;
 use crate::context_chips::spacing;
 use crate::features::FeatureFlag;
@@ -92,33 +91,16 @@ pub fn should_render_prompt_on_same_line(
         return false;
     }
 
-    let should_render_ps1 = should_render_ps1_prompt(terminal_model, app);
-
-    if FeatureFlag::AgentView.is_enabled() {
-        should_render_ps1
-    } else {
-        let session_settings = SessionSettings::as_ref(app);
-        should_render_ps1
-            || session_settings
-                .saved_prompt
-                .value()
-                .same_line_prompt_enabled()
-    }
+    should_render_ps1_prompt(terminal_model, app)
 }
 
-/// Returns `true` if the shell or AI prompt should be rendered using the editors
-/// `EditorDecoratorElements` API.
-///
-/// The AI prompt is unconditionally rendered above the input.
+/// Whether the shell prompt should render using editor decorator elements.
 pub fn should_render_prompt_using_editor_decorator_elements(
     is_universal_developer_input: bool,
-    ai_input_model: &ModelHandle<BlocklistAIInputModel>,
     model: &TerminalModel,
     app: &AppContext,
 ) -> bool {
     should_render_prompt_on_same_line(is_universal_developer_input, model, app)
-        && (!ai_input_model.as_ref(app).is_ai_input_enabled()
-            || FeatureFlag::AgentView.is_enabled())
 }
 
 pub(in crate::terminal) struct PromptAndPadding {
@@ -178,8 +160,6 @@ pub struct PromptRenderHelper {
     prompt_view: ViewHandle<PromptDisplay>,
     prompt_selection_state_handle: SelectionHandle,
     input_render_state_model_handle: ModelHandle<InputRenderStateModel>,
-
-    ai_input_model: ModelHandle<BlocklistAIInputModel>,
 }
 
 #[derive(Clone, Copy)]
@@ -204,7 +184,6 @@ impl PromptRenderHelper {
         prompt_selection_state_handle: SelectionHandle,
         parent_view_id: EntityId,
         input_render_state_model_handle: ModelHandle<InputRenderStateModel>,
-        ai_input_model: ModelHandle<BlocklistAIInputModel>,
     ) -> Self {
         Self {
             sessions,
@@ -212,7 +191,6 @@ impl PromptRenderHelper {
             prompt_selection_state_handle,
             prompt_parent_view_id: parent_view_id,
             input_render_state_model_handle,
-            ai_input_model,
         }
     }
 
@@ -387,16 +365,13 @@ impl PromptRenderHelper {
             InputSettings::as_ref(app).is_universal_developer_input_enabled(app);
         let render_prompt_on_same_line =
             should_render_prompt_on_same_line(is_universal_input, model, app);
-        let padding_right = if should_render_prompt_using_editor_decorator_elements(
-            is_universal_input,
-            &self.ai_input_model,
-            model,
-            app,
-        ) {
-            LPROMPT_RIGHT_PADDING_SAME_LINE_PROMPT
-        } else {
-            *TERMINAL_VIEW_PADDING_LEFT
-        };
+        let padding_right =
+            if should_render_prompt_using_editor_decorator_elements(is_universal_input, model, app)
+            {
+                LPROMPT_RIGHT_PADDING_SAME_LINE_PROMPT
+            } else {
+                *TERMINAL_VIEW_PADDING_LEFT
+            };
         // If the active block hasn't received the precmd message, we're waiting for the next
         // prompt. However, we don't want the UI to flicker so we show the previous prompt
         // until the user changes the editor.
@@ -572,7 +547,6 @@ impl PromptRenderHelper {
         let should_render_prompt_using_editor_decorator_elements =
             should_render_prompt_using_editor_decorator_elements(
                 is_universal_input,
-                &self.ai_input_model,
                 terminal_model,
                 app,
             );
