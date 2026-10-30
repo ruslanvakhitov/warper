@@ -4,17 +4,12 @@
 use std::path::Path;
 
 use warpui::{
-    elements::{
-        Border, Container, CornerRadius, Flex, MouseStateHandle, ParentElement, Radius, Text,
-    },
+    elements::{Border, Container, CornerRadius, Flex, MouseStateHandle, ParentElement, Radius},
     ui_components::components::{Coords, UiComponent, UiComponentStyles},
-    AppContext, Element, EventContext, SingletonEntity,
+    AppContext, Element, EventContext,
 };
 
-use crate::{
-    appearance::Appearance, settings::PrivacySettings, terminal::model::secrets::SecretLevel,
-    ui_components::blended_colors,
-};
+use crate::appearance::Appearance;
 
 /// A link to be shown in a tooltip
 pub struct TooltipLink<OnClick> {
@@ -41,30 +36,12 @@ impl<OnClick> TooltipLink<OnClick> {
     }
 }
 
-/// Configuration for redaction messaging in tooltips
-pub enum TooltipRedaction {
-    /// When sending text to an LLM, we want to ensure users this secret
-    /// was obfuscated and not sent to the LLM.
-    SecretNotSentToLLMMessaging {
-        secret_level: Option<SecretLevel>,
-    },
-    /// When displaying text which is secret and could be added to an Agent Mode
-    /// conversation, we want to ensure users this secret will not be sent to
-    /// the LLM.
-    SecretWillNotBeSentToLLMMessaging {
-        secret_level: Option<SecretLevel>,
-    },
-    NoRedaction,
-}
-
-/// Render a tooltip with one or more links and optional redaction messaging.
+/// Render a tooltip with one or more links.
 ///
 /// This is generic over the click handler type to support different action dispatch mechanisms.
 pub fn render_tooltip<OnClick>(
     tooltip_links: impl IntoIterator<Item = TooltipLink<OnClick>>,
-    redaction: TooltipRedaction,
     appearance: &Appearance,
-    app: &AppContext,
 ) -> Box<dyn Element>
 where
     OnClick: 'static + Fn(&mut EventContext),
@@ -129,105 +106,13 @@ where
         Some(Flex::row().with_children(links).finish())
     };
 
-    match redaction {
-        TooltipRedaction::SecretNotSentToLLMMessaging { secret_level }
-        | TooltipRedaction::SecretWillNotBeSentToLLMMessaging { secret_level } => {
-            let theme = appearance.theme();
-            let title = if matches!(
-                redaction,
-                TooltipRedaction::SecretNotSentToLLMMessaging { .. }
-            ) {
-                "This wasn't included in the AI conversation."
-            } else {
-                "This won't be included in any AI conversations or shared blocks."
-            };
-
-            // Generate the appropriate message based on secret level
-            let secret_message = match secret_level {
-                Some(SecretLevel::Enterprise) => {
-                    "Pattern matched your organization's secret redaction regex list."
-                }
-                Some(SecretLevel::User) => "Pattern matched your secret redaction regex list.",
-                None => "Pattern matched the secret redaction regex list.",
-            };
-
-            tooltip.add_child(
-                Flex::column()
-                    .with_child(
-                        Text::new(
-                            title,
-                            appearance.ui_font_family(),
-                            appearance.ui_font_size() + 1.,
-                        )
-                        .with_color(theme.main_text_color(background_color.into()).into_solid())
-                        .finish(),
-                    )
-                    .with_child(
-                        Container::new(
-                            Text::new(
-                                secret_message,
-                                appearance.ui_font_family(),
-                                appearance.ui_font_size(),
-                            )
-                            .with_color(theme.sub_text_color(background_color.into()).into_solid())
-                            .finish(),
-                        )
-                        .with_margin_top(4.)
-                        .finish(),
-                    )
-                    .finish(),
-            );
-            if let Some(link_row) = link_row {
-                tooltip.add_child(Container::new(link_row).with_margin_top(4.).finish());
-            }
-        }
-        TooltipRedaction::NoRedaction => {
-            if let Some(link_row) = link_row {
-                tooltip.add_child(link_row);
-            }
-        }
+    if let Some(link_row) = link_row {
+        tooltip.add_child(link_row);
     }
-
-    let is_secret = matches!(
-        redaction,
-        TooltipRedaction::SecretNotSentToLLMMessaging { .. }
-            | TooltipRedaction::SecretWillNotBeSentToLLMMessaging { .. }
-    );
-
-    // If enterprise secret redaction is enabled, add additional messaging and padding to the tooltip.
-    let is_enterprise_secret_redaction_enabled =
-        is_secret && PrivacySettings::as_ref(app).is_enterprise_secret_redaction_enabled();
-    let tooltip_element = if is_enterprise_secret_redaction_enabled {
-        let tooltip_column = Flex::column()
-            .with_child(tooltip.finish())
-            .with_child(
-                appearance
-                    .ui_builder()
-                    .span("*Secrets are only sent to your configured AI provider when needed.")
-                    .with_style(UiComponentStyles {
-                        font_size: Some(12.),
-                        margin: Some(Coords::default().top(4.)),
-                        font_color: Some(blended_colors::text_disabled(
-                            appearance.theme(),
-                            background_color,
-                        )),
-                        ..Default::default()
-                    })
-                    .build()
-                    .finish(),
-            )
-            .finish();
-
-        Container::new(tooltip_column)
-            .with_vertical_padding(4.)
-            .with_horizontal_padding(6.)
-            .finish()
-    } else {
-        Container::new(tooltip.finish())
-            .with_vertical_padding(4.)
-            .with_horizontal_padding(6.)
-            .finish()
-    };
+    let tooltip_element = Container::new(tooltip.finish())
+        .with_vertical_padding(4.)
+        .with_horizontal_padding(6.)
+        .finish();
 
     Container::new(tooltip_element)
         .with_background(background_color)

@@ -7,7 +7,6 @@ publish.workspace = true
 license.workspace = true
 
 [dependencies]
-anyhow = "1.0"
 async-channel.workspace = true
 async-fs.workspace = true
 futures.workspace = true

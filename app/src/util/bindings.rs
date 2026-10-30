@@ -49,7 +49,6 @@ pub enum CustomAction {
     Undo,
     Redo,
     CommandPalette,
-    AISearch,
     ClearEditor,
     Find,
     SelectAll,
@@ -107,19 +106,11 @@ pub enum CustomAction {
     WindowsPaste,
     #[cfg(windows)]
     WindowsCopy,
-    /// Also applies to Agent Mode entrypoints.
-    NewAgentModePane,
-    /// Also applies to Agent Mode context attachment.
-    AttachSelectionAsAgentModeContext,
-    OpenAIFactCollection,
-    OpenMCPServerCollection,
     ToggleProjectExplorer,
     OpenRepository,
     NewTerminalTab,
-    NewAgentTab,
     GoToLine,
     ToggleGlobalSearch,
-    ToggleConversationListView,
 }
 
 lazy_static! {
@@ -200,8 +191,6 @@ lazy_static! {
         // introducing multiple codepaths for handling ctrl-c, we register ctrl-c as a binding
         // on TerminalView on all platforms.
         Keystroke::parse("ctrl-c").expect("should be able to construct ctrl-c keystroke"),
-        // The resume conversation binding uses cmd-shift-R on Mac and should be allowed
-        Keystroke::parse("cmd-shift-R").expect("should be able to construct cmd-shift-R keystroke")
     ]);
 }
 
@@ -267,7 +256,6 @@ pub fn custom_tag_to_keystroke(custom: CustomTag) -> Option<Keystroke> {
         CustomAction::AddCursorAbove => Keystroke::parse("ctrl-shift-up").ok(),
         CustomAction::AddCursorBelow => Keystroke::parse("ctrl-shift-down").ok(),
         CustomAction::CommandPalette => Keystroke::parse(cmd_or_ctrl_shift("p")).ok(),
-        CustomAction::AISearch => Keystroke::parse("ctrl-`").ok(),
         CustomAction::Find => Keystroke::parse(cmd_or_ctrl_shift("f")).ok(),
         CustomAction::SelectAll => Keystroke::parse("cmdorctrl-a").ok(),
         CustomAction::CommandSearch => Keystroke::parse("ctrl-r").ok(),
@@ -375,10 +363,7 @@ pub fn custom_tag_to_keystroke(custom: CustomTag) -> Option<Keystroke> {
         CustomAction::AddWindow => Keystroke::parse(cmd_or_ctrl_shift("n")).ok(),
         CustomAction::CloseWindow => mac_only_keystroke("cmd-shift-W"),
         CustomAction::CloseCurrentSession => Keystroke::parse(cmd_or_ctrl_shift("w")).ok(),
-        CustomAction::NewAgentModePane => Keystroke::parse("ctrl-space").ok(),
-        CustomAction::AttachSelectionAsAgentModeContext => {
-            Keystroke::parse("ctrl-shift-space").ok()
-        }
+
         CustomAction::ToggleProjectExplorer => {
             if OperatingSystem::get().is_mac() {
                 Keystroke::parse("ctrl-2").ok()
@@ -401,13 +386,7 @@ pub fn custom_tag_to_keystroke(custom: CustomTag) -> Option<Keystroke> {
                 Keystroke::parse("alt-3").ok()
             }
         }
-        CustomAction::ToggleConversationListView => {
-            if OperatingSystem::get().is_mac() {
-                Keystroke::parse("ctrl-1").ok()
-            } else {
-                Keystroke::parse("alt-1").ok()
-            }
-        }
+
         CustomAction::NewTerminalTab
         | CustomAction::NewFile
         | CustomAction::ShowAboutWarp
@@ -424,10 +403,7 @@ pub fn custom_tag_to_keystroke(custom: CustomTag) -> Option<Keystroke> {
         | CustomAction::TriggerWelcomeBlock
         | CustomAction::HistorySearch
         | CustomAction::DisableSyncTerminalInputs
-        | CustomAction::ToggleSyncAllTerminalInputsInAllTabs
-        | CustomAction::OpenAIFactCollection
-        | CustomAction::OpenMCPServerCollection
-        | CustomAction::NewAgentTab => None,
+        | CustomAction::ToggleSyncAllTerminalInputsInAllTabs => None,
     }
 }
 
@@ -763,7 +739,6 @@ pub enum BindingGroup {
     Settings,
     Close,
     Navigation,
-    WarpAi,
     Workflow,
     Notebooks,
     Folders,
@@ -778,7 +753,6 @@ impl BindingGroup {
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Settings => "settings",
-            Self::WarpAi => "warp_ai",
             Self::Navigation => "navigation",
             Self::Workflow => "workflows",
             Self::Notebooks => "notebooks",

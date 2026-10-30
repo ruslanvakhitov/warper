@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use lazy_static::lazy_static;
-use warp_core::features::FeatureFlag;
+
 use warp_core::ui::theme::color::internal_colors;
 use warpui::elements::Wrap;
 use warpui::{
@@ -15,7 +15,6 @@ use warpui::{
 use crate::appearance::Appearance;
 use crate::search::FilterChipRenderer;
 use crate::search::QueryFilter;
-use crate::settings::{AISettings, AISettingsChangedEvent};
 
 lazy_static! {
     /// Map of sample queries to the [`QueryFilter`]s they employ.
@@ -24,10 +23,6 @@ lazy_static! {
     static ref SAMPLE_QUERY_TO_FILTER: HashMap<&'static str, QueryFilter> = HashMap::from([
         ("history: git checkout", QueryFilter::History),
         ("workflows: run dev server", QueryFilter::Workflows),
-        (
-            "# find \"foo\" in files",
-            QueryFilter::NaturalLanguage
-        ),
     ]);
 }
 
@@ -48,13 +43,7 @@ pub struct CommandSearchZeroStateView {
 }
 
 impl CommandSearchZeroStateView {
-    pub fn new(ctx: &mut ViewContext<Self>) -> Self {
-        ctx.subscribe_to_model(&AISettings::handle(ctx), |_, _, event, ctx| {
-            if let AISettingsChangedEvent::IsAnyAIEnabled { .. } = event {
-                ctx.notify();
-            }
-        });
-
+    pub fn new(_ctx: &mut ViewContext<Self>) -> Self {
         Self {
             filter_chip_to_mouse_state_handle: QueryFilter::all()
                 .map(|filter| (filter, MouseStateHandle::default()))
@@ -277,19 +266,8 @@ impl TypedActionView for CommandSearchZeroStateView {
 }
 
 /// Returns list of valid query filters that may be applied.
-fn valid_query_filters(app: &AppContext) -> Vec<QueryFilter> {
-    let mut filters = vec![QueryFilter::History];
-
-    if FeatureFlag::AgentMode.is_enabled() && AISettings::as_ref(app).is_any_ai_enabled(app) {
-        if FeatureFlag::AgentModeWorkflows.is_enabled() {
-            filters.push(QueryFilter::AgentModeWorkflows);
-        }
-        filters.push(QueryFilter::PromptHistory);
-    }
-
-    filters.push(QueryFilter::Workflows);
-
-    filters
+fn valid_query_filters(_app: &AppContext) -> Vec<QueryFilter> {
+    vec![QueryFilter::History, QueryFilter::Workflows]
 }
 
 mod styles {

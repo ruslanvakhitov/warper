@@ -4,7 +4,7 @@ use crate::code::editor_management::CodeEditorStatus;
 use crate::code::global_buffer_model::GlobalBufferModel;
 use crate::code::local_code_editor::ShowFindReferencesCard;
 use crate::code::{ImmediateSaveError, SaveOutcome, SaveStatus};
-use crate::editor::InteractionState;
+
 use crate::input::Vector2F;
 use crate::pane_group::focus_state::PaneFocusHandle;
 use crate::pane_group::pane::view::header::components::{
@@ -27,7 +27,7 @@ use pathfinder_geometry::vector::vec2f;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use warp_core::channel::{Channel, ChannelState};
-use warp_core::features::FeatureFlag;
+
 use warp_core::ui::appearance::Appearance;
 use warp_core::ui::icons::ICON_DIMENSIONS;
 use warp_editor::render::element::VerticalExpansionBehavior;
@@ -50,7 +50,7 @@ use warpui::{
     fonts::{Properties, Weight},
     id,
     keymap::EditableBinding,
-    ui_components::{button::ButtonVariant, components::UiComponent},
+    ui_components::components::UiComponent,
     AppContext, Element, Entity, ModelHandle, SingletonEntity, TypedActionView, View, ViewContext,
     ViewHandle, WindowId,
 };
@@ -62,7 +62,7 @@ use crate::{
     tab::TAB_BAR_BORDER_HEIGHT,
     ui_components::{blended_colors, buttons::icon_button},
     view_components::{DismissibleToast, MarkdownToggleEvent, MarkdownToggleView},
-    workspace::{ActiveSession, ToastStack, WorkspaceAction},
+    workspace::{ActiveSession, ToastStack},
 };
 
 use crate::pane_group::{
@@ -71,9 +71,8 @@ use crate::pane_group::{
 };
 
 use super::{
-    diff_viewer::DiffViewer,
     editor::view::{CodeEditorEvent, CodeEditorView},
-    editor_management::{CodeManager, CodeSource},
+    editor_management::CodeSource,
     local_code_editor::{LocalCodeEditorEvent, LocalCodeEditorView},
 };
 
@@ -86,7 +85,7 @@ const TAB_INTERNAL_MARGIN: f32 = 4.;
 const TAB_HORIZONTAL_MARGIN: f32 = 8.;
 const TAB_PADDING: f32 = 2.;
 
-// Keybinding constants - exported so AI document view can reuse
+// Keybinding constants for editor actions.
 pub const SAVE_FILE_BINDING_NAME: &str = "code_view:save";
 pub const SAVE_FILE_BINDING_DESCRIPTION: &str = "Save file";
 
@@ -145,8 +144,7 @@ enum TabBarDragPosition {
 pub enum CodeViewAction {
     SaveFile,
     SaveFileAs,
-    AcceptPendingDiffsAndSave,
-    RejectPendingDiffs,
+
     SetCurrentTabIndex {
         index: usize,
     },
@@ -184,9 +182,7 @@ pub enum CodeViewEvent {
         file_path: PathBuf,
         tab_index: usize,
     },
-    RunTabConfigSkill {
-        path: PathBuf,
-    },
+
     OpenLspLogs {
         log_path: PathBuf,
     },
@@ -196,8 +192,6 @@ pub enum CodeViewEvent {
 struct TabDataMouseStateHandles {
     tab_handle: MouseStateHandle,
     close_handle: MouseStateHandle,
-    accept_mouse_state: MouseStateHandle,
-    reject_mouse_state: MouseStateHandle,
     tab_draggable_state: DraggableState,
 }
 
@@ -234,6 +228,30 @@ pub struct CodeView {
 }
 
 impl CodeView {
+    fn insert_selection_as_context(
+        &mut self,
+        file_path: String,
+        start_line: usize,
+        end_line: usize,
+        selected_text: String,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        // If a CLI agent is active, send appropriate content to the PTY (or rich input if open).
+        let window_id = ctx.window_id();
+        if let Some(terminal_view) = get_context_target_terminal_view(window_id, ctx) {
+            let prompt = if start_line == end_line {
+                // Single-line: send the literal text with file/line context.
+                build_selection_substring_prompt(&file_path, start_line, &selected_text)
+            } else {
+                // Multi-line: send a line-range reference with format note.
+                build_selection_line_range_prompt(&file_path, start_line, end_line)
+            };
+            terminal_view.update(ctx, |terminal, ctx| {
+                terminal.try_send_text_to_cli_agent_or_rich_input(prompt, ctx);
+            });
+        }
+    }
+
     fn new_internal(source: CodeSource, ctx: &mut ViewContext<Self>) -> Self {
         let pane_configuration = ctx.add_model(|_ctx| PaneConfiguration::new(""));
         let window_id = ctx.window_id();
@@ -380,14 +398,10 @@ impl CodeView {
                         )
                     })
                 },
-                false,
-                None,
                 ctx,
             );
-            if FeatureFlag::HoaCodeReview.is_enabled() {
-                editor =
-                    editor.with_selection_as_context(Box::new(get_context_target_terminal_view));
-            }
+
+            editor = editor.with_selection_as_context(Box::new(get_context_target_terminal_view));
             let mut editor = editor.with_find_references_provider(
                 ShowFindReferencesCard {
                     editor_window_id: ctx.window_id(),
@@ -422,11 +436,10 @@ impl CodeView {
         });
 
         ctx.add_typed_action_view(|ctx| {
-            let mut local_editor = LocalCodeEditorView::new(editor, None, false, None, ctx);
-            if FeatureFlag::HoaCodeReview.is_enabled() {
-                local_editor = local_editor
-                    .with_selection_as_context(Box::new(get_context_target_terminal_view));
-            }
+            let mut local_editor = LocalCodeEditorView::new(editor, ctx);
+
+            local_editor =
+                local_editor.with_selection_as_context(Box::new(get_context_target_terminal_view));
             local_editor.with_find_references_provider(
                 ShowFindReferencesCard {
                     editor_window_id: ctx.window_id(),
@@ -473,32 +486,7 @@ impl CodeView {
             });
         }
 
-        // Bundled skills cannot be edited.
-        if self.source.is_bundled_skill() {
-            editor.update(ctx, |editor, ctx| {
-                editor.set_interaction_state(InteractionState::Selectable, ctx);
-            });
-        }
         ctx.subscribe_to_view(&code_editor, |me, _, event, ctx| match event {
-            LocalCodeEditorEvent::FileLoaded => {
-                me.pane_configuration.update(ctx, |pane_config, ctx| {
-                    pane_config.refresh_pane_header_overflow_menu_items(ctx);
-                });
-                ctx.emit(CodeViewEvent::Pane(PaneEvent::AppStateChanged));
-            }
-            LocalCodeEditorEvent::FailedToLoad { error: err } => {
-                // When code source is New, AIAction, or ProjectRules, it is possible that the
-                // passed in file path might not exist currently if the intention is to create a
-                // new file or if the project rules file doesn't exist yet.
-                if let CodeSource::AIAction { .. }
-                | CodeSource::New { .. }
-                | CodeSource::ProjectRules { .. } = me.source
-                {
-                    return;
-                }
-                log::warn!("Failed to load file. {err:?}");
-                CodeView::display_load_failure(ctx.window_id(), ctx);
-            }
             LocalCodeEditorEvent::SelectionAddedAsContext {
                 relative_file_path,
                 line_range,
@@ -512,6 +500,21 @@ impl CodeView {
                     ctx,
                 );
             }
+
+            LocalCodeEditorEvent::FileLoaded => {
+                me.pane_configuration.update(ctx, |pane_config, ctx| {
+                    pane_config.refresh_pane_header_overflow_menu_items(ctx);
+                });
+                ctx.emit(CodeViewEvent::Pane(PaneEvent::AppStateChanged));
+            }
+            LocalCodeEditorEvent::FailedToLoad { error: err } => {
+                if let CodeSource::New { .. } = me.source {
+                    return;
+                }
+                log::warn!("Failed to load file. {err:?}");
+                CodeView::display_load_failure(ctx.window_id(), ctx);
+            }
+
             LocalCodeEditorEvent::FileSaved => {
                 me.sync_active_tab_path(ctx);
                 me.set_title_after_content_update(ctx);
@@ -522,16 +525,7 @@ impl CodeView {
                 log::warn!("Failed to load file. {err:?}");
                 CodeView::display_save_failure(ctx.window_id(), ctx);
             }
-            LocalCodeEditorEvent::DiffAccepted => {
-                CodeManager::handle(ctx).update(ctx, |code_manager, ctx| {
-                    code_manager.complete_pending_diffs(me.source.clone(), ctx);
-                });
-            }
-            LocalCodeEditorEvent::DiffRejected => {
-                CodeManager::handle(ctx).update(ctx, |code_manager, ctx| {
-                    code_manager.complete_pending_diffs(me.source.clone(), ctx);
-                });
-            }
+
             LocalCodeEditorEvent::DiffStatusUpdated => (),
             LocalCodeEditorEvent::UserEdited => (),
             LocalCodeEditorEvent::VimMinimizeRequested => (),
@@ -576,9 +570,7 @@ impl CodeView {
             | LocalCodeEditorEvent::DeleteComment { .. } => {
                 // Comment events are handled by CodeReviewView, not CodeView
             }
-            LocalCodeEditorEvent::RunTabConfigSkill { path } => {
-                ctx.emit(CodeViewEvent::RunTabConfigSkill { path: path.clone() });
-            }
+
             LocalCodeEditorEvent::OpenLspLogs { log_path } => {
                 ctx.emit(CodeViewEvent::OpenLspLogs {
                     log_path: log_path.clone(),
@@ -965,99 +957,6 @@ impl CodeView {
         GlobalBufferModel::handle(ctx).update(ctx, |model, ctx| {
             model.remove_deallocated_buffers(ctx);
         });
-    }
-
-    fn insert_selection_as_context(
-        &mut self,
-        file_path: String,
-        start_line: usize,
-        end_line: usize,
-        selected_text: String,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        // If a CLI agent is active, send appropriate content to the PTY (or rich input if open).
-        let window_id = ctx.window_id();
-        if let Some(terminal_view) = get_context_target_terminal_view(window_id, ctx) {
-            let prompt = if start_line == end_line {
-                // Single-line: send the literal text with file/line context.
-                build_selection_substring_prompt(&file_path, start_line, &selected_text)
-            } else {
-                // Multi-line: send a line-range reference with format note.
-                build_selection_line_range_prompt(&file_path, start_line, end_line)
-            };
-            if terminal_view
-                .update(ctx, |tv, ctx| {
-                    tv.try_send_text_to_cli_agent_or_rich_input(prompt, ctx)
-                })
-                .is_some()
-            {
-                return;
-            }
-        }
-
-        // Otherwise insert the location snippet into the input buffer (original behavior).
-        ctx.dispatch_typed_action(&WorkspaceAction::InsertInInput {
-            content: format!("{file_path}:{start_line}-{end_line} "),
-            replace_buffer: false,
-            ensure_agent_mode: true,
-        });
-    }
-
-    fn render_request_edit_action_header(
-        &self,
-        tab: &TabData,
-        app: &AppContext,
-    ) -> Box<dyn Element> {
-        let appearance = Appearance::as_ref(app);
-        ConstrainedBox::new(
-            Align::new(
-                Flex::row()
-                    .with_main_axis_size(MainAxisSize::Min)
-                    .with_child(
-                        Container::new(
-                            appearance
-                                .ui_builder()
-                                .button(
-                                    ButtonVariant::Outlined,
-                                    tab.mouse_state_handles.reject_mouse_state.clone(),
-                                )
-                                .with_text_label("Reject".to_string())
-                                .build()
-                                .on_click(|ctx, _, _| {
-                                    ctx.dispatch_typed_action(CodeViewAction::RejectPendingDiffs)
-                                })
-                                .finish(),
-                        )
-                        .with_padding_right(16.)
-                        .finish(),
-                    )
-                    .with_child(
-                        Container::new(
-                            appearance
-                                .ui_builder()
-                                .button(
-                                    ButtonVariant::Outlined,
-                                    tab.mouse_state_handles.accept_mouse_state.clone(),
-                                )
-                                .with_text_label("Accept and save".to_string())
-                                .build()
-                                .on_click(|ctx, _, _| {
-                                    ctx.dispatch_typed_action(
-                                        CodeViewAction::AcceptPendingDiffsAndSave,
-                                    )
-                                })
-                                .finish(),
-                        )
-                        .with_padding_right(16.)
-                        .finish(),
-                    )
-                    .finish(),
-            )
-            .right()
-            .finish(),
-        )
-        .with_height(40.)
-        .finish()
     }
 
     pub fn close_overlays(&mut self, ctx: &mut ViewContext<Self>) {
@@ -2004,18 +1903,10 @@ impl View for CodeView {
         "CodeView"
     }
 
-    fn render(&self, app: &AppContext) -> Box<dyn Element> {
+    fn render(&self, _app: &AppContext) -> Box<dyn Element> {
         let tab = self.tab_at(self.active_tab_index);
         let body = if let Some(tab) = tab {
-            match self.source {
-                CodeSource::AIAction { .. } => Flex::column()
-                    .with_child(self.render_request_edit_action_header(tab, app))
-                    .with_child(
-                        Shrinkable::new(1., ChildView::new(&tab.editor_view).finish()).finish(),
-                    )
-                    .finish(),
-                _ => ChildView::new(&tab.editor_view).finish(),
-            }
+            ChildView::new(&tab.editor_view).finish()
         } else {
             Empty::new().finish()
         };
@@ -2035,43 +1926,7 @@ impl TypedActionView for CodeView {
             CodeViewAction::SaveFileAs => {
                 self.save_as(self.active_tab_index, None, ctx);
             }
-            CodeViewAction::AcceptPendingDiffsAndSave => {
-                if !matches!(self.source, CodeSource::AIAction { .. }) {
-                    log::warn!("Received Accept and save in code without the AIAction source");
-                    return;
-                }
 
-                // Accepts the diff and marks it complete.
-                if let Some(tab) = self.tab_at(self.active_tab_index) {
-                    tab.editor_view.update(ctx, |code_diff, ctx| {
-                        code_diff.accept_diff(ctx);
-                    });
-                }
-
-                self.save_local(
-                    self.active_tab_index,
-                    Some(Box::new(|outcome, me, ctx| {
-                        if outcome != SaveOutcome::Canceled {
-                            me.close(ctx);
-                        }
-                    })),
-                    ctx,
-                );
-            }
-            CodeViewAction::RejectPendingDiffs => {
-                if !matches!(self.source, CodeSource::AIAction { .. }) {
-                    log::warn!("Received Reject in code without the AIAction source");
-                    return;
-                }
-
-                if let Some(tab) = self.tab_at(self.active_tab_index) {
-                    tab.editor_view.update(ctx, |code_diff, ctx| {
-                        code_diff.reject_diff(ctx);
-                    });
-                }
-
-                self.close(ctx);
-            }
             CodeViewAction::SetCurrentTabIndex { index } => {
                 self.set_active_tab_index(*index, ctx);
             }

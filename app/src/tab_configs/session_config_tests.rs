@@ -20,11 +20,6 @@ fn terminal_command_prefix_is_none() {
 }
 
 #[test]
-fn agent_command_prefix_is_none() {
-    assert_eq!(SessionType::Agent.command_prefix(), None);
-}
-
-#[test]
 fn cli_agent_command_prefix_delegates() {
     assert_eq!(
         SessionType::CliAgent(CLIAgent::Claude).command_prefix(),
@@ -126,48 +121,6 @@ fn cli_agent_with_worktree() {
     );
     assert!(config.params.contains_key("worktree_branch_name"));
     assert_eq!(config.title.as_deref(), Some("{{worktree_branch_name}}"));
-}
-
-#[test]
-fn agent_no_worktree_same_as_terminal() {
-    let agent = build_tab_config(
-        &SessionType::Agent,
-        Path::new("/home/user/project"),
-        false,
-        true,
-    );
-    let terminal = build_tab_config(
-        &SessionType::Terminal,
-        Path::new("/home/user/project"),
-        false,
-        true,
-    );
-
-    assert_eq!(agent.panes[0].directory, terminal.panes[0].directory);
-    assert_eq!(agent.panes[0].commands, terminal.panes[0].commands);
-    assert_eq!(agent.params.len(), terminal.params.len());
-}
-
-#[test]
-fn agent_with_worktree_has_worktree_commands_but_no_cli_agent_command() {
-    let config = build_tab_config(
-        &SessionType::Agent,
-        Path::new("/home/user/repo"),
-        true,
-        false,
-    );
-    let expected_worktree_path =
-        generated_worktree_path_string("/home/user/repo", "{{worktree_branch_name}}");
-
-    assert_eq!(
-        config.panes[0].commands.as_deref().unwrap(),
-        [
-            format!("git worktree add -b {{{{worktree_branch_name}}}} {expected_worktree_path}"),
-            format!("cd {expected_worktree_path}"),
-        ]
-        .as_ref()
-    );
-    assert!(config.params.contains_key("worktree_branch_name"));
 }
 
 #[test]
@@ -410,11 +363,6 @@ fn make_terminal_leaf(cwd: Option<&str>, is_focused: bool) -> PaneNodeSnapshot {
             shell_launch_data: None,
             is_active: false,
             is_read_only: false,
-            input_config: None,
-            llm_model_override: None,
-            active_profile_id: None,
-            conversation_ids_to_restore: vec![],
-            active_conversation_id: None,
         }),
     })
 }
@@ -598,27 +546,6 @@ fn snapshot_round_trip_toml() {
 
 // ── snapshot pane_type derivation ──
 
-use crate::ai::agent::conversation::AIConversationId;
-
-fn make_agent_leaf(cwd: Option<&str>, is_focused: bool) -> PaneNodeSnapshot {
-    PaneNodeSnapshot::Leaf(LeafSnapshot {
-        is_focused,
-        custom_vertical_tabs_title: None,
-        contents: LeafContents::Terminal(TerminalPaneSnapshot {
-            uuid: vec![],
-            cwd: cwd.map(|s| s.to_string()),
-            shell_launch_data: None,
-            is_active: false,
-            is_read_only: false,
-            input_config: None,
-            llm_model_override: None,
-            active_profile_id: None,
-            conversation_ids_to_restore: vec![],
-            active_conversation_id: Some(AIConversationId::new()),
-        }),
-    })
-}
-
 fn make_non_terminal_leaf(is_focused: bool) -> PaneNodeSnapshot {
     PaneNodeSnapshot::Leaf(LeafSnapshot {
         is_focused,
@@ -631,20 +558,6 @@ fn make_non_terminal_leaf(is_focused: bool) -> PaneNodeSnapshot {
 }
 
 #[test]
-fn snapshot_agent_pane_gets_agent_type() {
-    let snapshot = make_agent_leaf(Some("/home/user/project"), true);
-    let config = tab_config_from_pane_snapshot(&snapshot, None, None);
-
-    assert_eq!(config.panes.len(), 1);
-    assert_eq!(config.panes[0].pane_type, Some(TabConfigPaneType::Agent));
-    assert_eq!(
-        config.panes[0].directory.as_deref(),
-        Some("/home/user/project")
-    );
-    assert_eq!(config.panes[0].is_focused, Some(true));
-}
-
-#[test]
 fn snapshot_non_terminal_pane_falls_back_to_terminal_type() {
     let snapshot = make_non_terminal_leaf(true);
     let config = tab_config_from_pane_snapshot(&snapshot, None, None);
@@ -652,35 +565,6 @@ fn snapshot_non_terminal_pane_falls_back_to_terminal_type() {
     assert_eq!(config.panes.len(), 1);
     assert_eq!(config.panes[0].pane_type, Some(TabConfigPaneType::Terminal));
     assert!(config.panes[0].directory.is_none());
-}
-
-#[test]
-fn snapshot_mixed_terminal_agent_non_terminal_split() {
-    let snapshot = PaneNodeSnapshot::Branch(BranchSnapshot {
-        direction: crate::app_state::SplitDirection::Horizontal,
-        children: vec![
-            (
-                crate::app_state::PaneFlex(0.33),
-                make_terminal_leaf(Some("/home/user/a"), true),
-            ),
-            (
-                crate::app_state::PaneFlex(0.33),
-                make_agent_leaf(Some("/home/user/b"), false),
-            ),
-            (
-                crate::app_state::PaneFlex(0.33),
-                make_non_terminal_leaf(false),
-            ),
-        ],
-    });
-
-    let config = tab_config_from_pane_snapshot(&snapshot, None, None);
-
-    // 1 split + 3 leaves = 4 panes.
-    assert_eq!(config.panes.len(), 4);
-    assert_eq!(config.panes[1].pane_type, Some(TabConfigPaneType::Terminal));
-    assert_eq!(config.panes[2].pane_type, Some(TabConfigPaneType::Agent));
-    assert_eq!(config.panes[3].pane_type, Some(TabConfigPaneType::Terminal));
 }
 
 // ── nested / multi-level pane layout edge cases ──
@@ -760,48 +644,6 @@ fn snapshot_3_deep_nesting() {
 }
 
 #[test]
-fn snapshot_asymmetric_tree() {
-    // Root(H) -> deep_left(V) -> [leaf_a, leaf_b]
-    //         -> right_leaf
-    // Left subtree has 3 panes; right has 1.
-    let deep_left = PaneNodeSnapshot::Branch(BranchSnapshot {
-        direction: crate::app_state::SplitDirection::Vertical,
-        children: vec![
-            (
-                crate::app_state::PaneFlex(0.5),
-                make_terminal_leaf(Some("/a"), true),
-            ),
-            (
-                crate::app_state::PaneFlex(0.5),
-                make_terminal_leaf(Some("/b"), false),
-            ),
-        ],
-    });
-    let snapshot = PaneNodeSnapshot::Branch(BranchSnapshot {
-        direction: crate::app_state::SplitDirection::Horizontal,
-        children: vec![
-            (crate::app_state::PaneFlex(0.7), deep_left),
-            (
-                crate::app_state::PaneFlex(0.3),
-                make_agent_leaf(Some("/c"), false),
-            ),
-        ],
-    });
-
-    let config = tab_config_from_pane_snapshot(&snapshot, None, None);
-
-    // 2 splits + 3 leaves = 5 panes.
-    assert_eq!(config.panes.len(), 5);
-    assert_eq!(config.panes[0].id, "p1"); // root
-    assert_eq!(
-        config.panes[0].children,
-        Some(vec!["p2".to_string(), "p5".to_string()])
-    );
-    assert_eq!(config.panes[1].id, "p2"); // deep_left
-    assert_eq!(config.panes[4].pane_type, Some(TabConfigPaneType::Agent));
-}
-
-#[test]
 fn snapshot_3_way_split() {
     let snapshot = PaneNodeSnapshot::Branch(BranchSnapshot {
         direction: crate::app_state::SplitDirection::Horizontal,
@@ -832,86 +674,6 @@ fn snapshot_3_way_split() {
     assert_eq!(config.panes[1].directory.as_deref(), Some("/a"));
     assert_eq!(config.panes[2].directory.as_deref(), Some("/b"));
     assert_eq!(config.panes[3].directory.as_deref(), Some("/c"));
-}
-
-#[test]
-fn snapshot_round_trip_agent_and_non_terminal_pane_types() {
-    let snapshot = PaneNodeSnapshot::Branch(BranchSnapshot {
-        direction: crate::app_state::SplitDirection::Horizontal,
-        children: vec![
-            (
-                crate::app_state::PaneFlex(0.33),
-                make_terminal_leaf(Some("/term"), true),
-            ),
-            (
-                crate::app_state::PaneFlex(0.33),
-                make_agent_leaf(Some("/agent"), false),
-            ),
-            (
-                crate::app_state::PaneFlex(0.33),
-                make_non_terminal_leaf(false),
-            ),
-        ],
-    });
-
-    let config = tab_config_from_pane_snapshot(&snapshot, Some("Mixed".to_string()), None);
-    let toml_str = toml::to_string_pretty(&config).expect("Should serialize");
-    let parsed: TabConfig = toml::from_str(&toml_str).expect("Should deserialize");
-
-    assert_eq!(parsed.panes.len(), 4);
-    assert_eq!(parsed.panes[1].pane_type, Some(TabConfigPaneType::Terminal));
-    assert_eq!(parsed.panes[1].directory.as_deref(), Some("/term"));
-    assert_eq!(parsed.panes[2].pane_type, Some(TabConfigPaneType::Agent));
-    assert_eq!(parsed.panes[2].directory.as_deref(), Some("/agent"));
-    assert_eq!(parsed.panes[3].pane_type, Some(TabConfigPaneType::Terminal));
-    assert!(parsed.panes[3].directory.is_none());
-}
-
-#[test]
-fn snapshot_round_trip_3_deep_nesting() {
-    let inner = PaneNodeSnapshot::Branch(BranchSnapshot {
-        direction: crate::app_state::SplitDirection::Vertical,
-        children: vec![
-            (
-                crate::app_state::PaneFlex(0.5),
-                make_agent_leaf(Some("/x"), false),
-            ),
-            (
-                crate::app_state::PaneFlex(0.5),
-                make_non_terminal_leaf(true),
-            ),
-        ],
-    });
-    let snapshot = PaneNodeSnapshot::Branch(BranchSnapshot {
-        direction: crate::app_state::SplitDirection::Horizontal,
-        children: vec![
-            (crate::app_state::PaneFlex(0.5), inner),
-            (
-                crate::app_state::PaneFlex(0.5),
-                make_terminal_leaf(Some("/y"), false),
-            ),
-        ],
-    });
-
-    let config = tab_config_from_pane_snapshot(&snapshot, None, None);
-    let toml_str = toml::to_string_pretty(&config).expect("Should serialize");
-    let parsed: TabConfig = toml::from_str(&toml_str).expect("Should deserialize");
-
-    // Verify structural integrity after round-trip.
-    assert_eq!(parsed.panes.len(), 5);
-    // Root split references inner split and leaf.
-    assert_eq!(
-        parsed.panes[0].children,
-        Some(vec!["p2".to_string(), "p5".to_string()])
-    );
-    // Inner split references its two leaves.
-    assert_eq!(
-        parsed.panes[1].children,
-        Some(vec!["p3".to_string(), "p4".to_string()])
-    );
-    assert_eq!(parsed.panes[2].pane_type, Some(TabConfigPaneType::Agent));
-    assert_eq!(parsed.panes[3].pane_type, Some(TabConfigPaneType::Terminal));
-    assert_eq!(parsed.panes[4].pane_type, Some(TabConfigPaneType::Terminal));
 }
 
 // ── is_git_repo ──

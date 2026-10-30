@@ -10,7 +10,7 @@ use warp_core::command::ExitCode;
 use warpui::{AppContext, Entity, ModelContext, SingletonEntity};
 
 use super::{
-    model::block::{AgentInteractionMetadata, Block, SerializedAIMetadata, SerializedBlock},
+    model::block::{Block, SerializedBlock},
     shell::ShellType,
 };
 use crate::{
@@ -22,9 +22,6 @@ use crate::{
     },
 };
 use warp_server_client::ids::{ClientId, HashableId as _, SyncId};
-
-mod up_arrow;
-pub(crate) use up_arrow::UpArrowHistoryConfig;
 
 /// Data model for a history command persisted to sqlite, used as an intermediate representation
 /// between the sqlite schema (sqlite::model::Command) and the [`History`] model.
@@ -41,7 +38,6 @@ pub struct PersistedCommand {
     pub git_branch: Option<String>,
     pub workflow_id: Option<SyncId>,
     pub workflow_command: Option<String>,
-    pub is_agent_executed: bool,
 }
 
 impl From<crate::persistence::model::Command> for PersistedCommand {
@@ -83,7 +79,6 @@ impl From<crate::persistence::model::Command> for PersistedCommand {
                 }
             }),
             workflow_command: command.workflow_command,
-            is_agent_executed: command.is_agent_executed.unwrap_or(false),
         }
     }
 }
@@ -258,20 +253,6 @@ pub struct HistoryEntry {
     workflow_command: Option<String>,
 
     pub is_for_restored_block: bool,
-
-    /// Whether this command was executed by an AI agent.
-    pub is_agent_executed: bool,
-}
-
-fn serialized_block_is_agent_executed(block: &SerializedBlock) -> bool {
-    let Some(ai_metadata) = block.ai_metadata.as_ref() else {
-        return false;
-    };
-
-    serde_json::from_str::<SerializedAIMetadata>(ai_metadata)
-        .ok()
-        .map(AgentInteractionMetadata::from)
-        .is_some_and(|metadata| metadata.requested_command_action_id().is_some())
 }
 
 impl HistoryEntry {
@@ -288,7 +269,6 @@ impl HistoryEntry {
             git_head: None,
             shell_host: None,
             is_for_restored_block: false,
-            is_agent_executed: false,
         }
     }
 
@@ -311,7 +291,6 @@ impl HistoryEntry {
         session: &Session,
         workflow_id: Option<SyncId>,
         workflow_command: Option<String>,
-        is_agent_executed: bool,
     ) -> Self {
         HistoryEntry {
             session_id: Some(session.id()),
@@ -327,7 +306,6 @@ impl HistoryEntry {
             exit_code: None,
             shell_host: active_block.shell_host().clone(),
             is_for_restored_block: false,
-            is_agent_executed,
         }
     }
 
@@ -344,7 +322,6 @@ impl HistoryEntry {
             completed_ts: block.completed_ts().copied(),
             exit_code: Some(block.exit_code()),
             is_for_restored_block: true,
-            is_agent_executed: block.requested_command_action_id().is_some(),
         }
     }
 
@@ -361,7 +338,6 @@ impl HistoryEntry {
             git_head: block.git_head.clone(),
             shell_host: block.shell_host.clone(),
             is_for_restored_block: false,
-            is_agent_executed: serialized_block_is_agent_executed(block),
         }
     }
 
@@ -387,7 +363,6 @@ impl HistoryEntry {
             session_id: _,
             command: _,
             is_for_restored_block: _,
-            is_agent_executed: _,
             pwd,
             start_ts,
             completed_ts: _,
@@ -432,7 +407,6 @@ impl From<PersistedCommand> for HistoryEntry {
             workflow_command: command.workflow_command,
             shell_host: command.shell_host,
             is_for_restored_block: false,
-            is_agent_executed: command.is_agent_executed,
         }
     }
 }

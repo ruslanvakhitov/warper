@@ -24,7 +24,7 @@ pub enum WorkflowSource {
     Global,
     Local,
     Project,
-    AI,
+
     Notebook {
         notebook_id: Option<NotebookId>,
         location: NotebookLocation,
@@ -40,12 +40,12 @@ pub enum WorkflowSelectionSource {
     CommandPalette,
     UniversalSearch,
     Voltron,
-    AI,
+
     Notebook,
-    SlashMenu,
+
     UpArrowHistory,
     WorkflowView,
-    AgentMode,
+
     Undefined,
     Alias,
 }
@@ -129,22 +129,12 @@ impl From<WorkflowId> for SyncId {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum AIWorkflowOrigin {
-    CommandSearch,
-    AgentMode,
-}
-
-/// Wrapper type for a workflow from local files, generated AI output, or a notebook.
+/// A command workflow from local files or a notebook.
 #[derive(Clone, Debug, PartialEq)]
 pub enum WorkflowType {
     /// Saved workflows sourced from local, global, project, app collections, saved locally.
     Local(Workflow),
-    /// Ephemeral/transient workflows created from AI output.
-    AIGenerated {
-        workflow: Workflow,
-        origin: AIWorkflowOrigin,
-    },
+
     /// A workflow that's part of a notebook.
     Notebook(Workflow),
 }
@@ -153,7 +143,6 @@ impl WorkflowType {
     pub fn as_workflow(&self) -> &Workflow {
         match self {
             WorkflowType::Local(workflow) => workflow,
-            WorkflowType::AIGenerated { workflow, .. } => workflow,
             WorkflowType::Notebook(workflow) => workflow,
         }
     }
@@ -162,7 +151,6 @@ impl WorkflowType {
     pub fn take_workflow(self) -> Workflow {
         match self {
             WorkflowType::Local(workflow) => workflow,
-            WorkflowType::AIGenerated { workflow, .. } => workflow,
             WorkflowType::Notebook(workflow) => workflow,
         }
     }

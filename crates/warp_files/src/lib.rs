@@ -5,10 +5,9 @@ use std::collections::HashSet;
 /// when files are loaded, and request that content be saved to disk.
 use std::future::Future;
 use std::io;
-use std::ops::Range;
 use std::pin::Pin;
 use std::rc::Rc;
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
@@ -30,9 +29,6 @@ use warp_util::file::{FileId, FileLoadError};
 use warpui::ModelHandle;
 use warpui::{r#async::SpawnedFutureHandle, Entity, ModelContext, SingletonEntity};
 use watcher::{BulkFilesystemWatcher, BulkFilesystemWatcherEvent};
-
-pub mod text_file_reader;
-pub use text_file_reader::{TextFileReadResult, TextFileSegment};
 
 #[derive(Debug)]
 pub enum FileModelEvent {
@@ -485,80 +481,6 @@ impl FileModel {
         Ok(result)
     }
 
-    /// Reads a text file by async-streaming its lines, respecting a byte budget
-    /// and optional line ranges. Returns [`TextFileReadResult::NotText`] if the
-    /// file is not valid UTF-8.
-    ///
-    /// **Line ending normalization**: `\n` and `\r\n` line endings are normalized
-    /// to `\n` (LF) in the returned content. Classic Mac `\r`-only line endings
-    /// are **not** recognized as line separators (matching `read_line()` behavior).
-    /// A trailing newline at the end of the file is preserved so that
-    /// round-tripping content through this reader and writing it back does not
-    /// silently drop the final newline.
-    ///
-    /// This is a modified version of the loop that [`futures::io::BufReader::lines()`]
-    /// uses internally (i.e. repeated `read_line()` calls with newline stripping),
-    /// but additionally tracks whether each line was terminated by a newline so
-    /// the accumulator can preserve the file's trailing newline.
-    pub async fn read_text_file(
-        path: &Path,
-        max_bytes: usize,
-        requested_ranges: &[Range<usize>],
-        last_modified: Option<SystemTime>,
-    ) -> anyhow::Result<TextFileReadResult> {
-        let file = match async_fs::File::open(path).await {
-            Ok(file) => file,
-            Err(e) => return Err(anyhow::anyhow!(e)),
-        };
-        let mut reader = futures::io::BufReader::new(file);
-
-        let file_name = path.to_string_lossy().to_string();
-        let mut accumulator = text_file_reader::TextFileAccumulator::new(
-            file_name,
-            last_modified,
-            requested_ranges,
-            max_bytes,
-        );
-
-        // Use `read_line()` instead of `lines()` so we can detect whether each
-        // line was terminated by a newline. `lines()` strips this information,
-        // which caused trailing newlines to be silently dropped.
-        let mut line_buf = String::new();
-        loop {
-            line_buf.clear();
-            let bytes_read = match reader.read_line(&mut line_buf).await {
-                Ok(n) => n,
-                Err(e) if e.kind() == std::io::ErrorKind::InvalidData => {
-                    // Not valid UTF-8.
-                    return Ok(TextFileReadResult::NotText);
-                }
-                Err(e) => return Err(anyhow::anyhow!(e)),
-            };
-            if bytes_read == 0 {
-                break; // EOF
-            }
-
-            // Strip the line terminator (`\n` or `\r\n`) and record whether
-            // one was present. Note: `read_line()` only splits on `\n`, so
-            // standalone `\r` (classic Mac) is not treated as a line separator.
-            let has_newline = line_buf.ends_with('\n');
-            if has_newline {
-                line_buf.pop();
-            }
-            if line_buf.ends_with('\r') {
-                line_buf.pop();
-            }
-
-            accumulator.push_line(std::mem::take(&mut line_buf), has_newline);
-        }
-
-        let (segments, bytes_read) = accumulator.finalize();
-        Ok(TextFileReadResult::Segments {
-            segments,
-            bytes_read,
-        })
-    }
-
     pub async fn read_file_as_binary(file_path: &Path) -> Result<Vec<u8>, FileLoadError> {
         if !Self::file_exists(file_path).await {
             return Err(FileLoadError::DoesNotExist);
@@ -656,129 +578,6 @@ impl FileModel {
                     },
                     move |me, write_result: Result<(), FileSaveError>, ctx| {
                         match write_result {
-                            Ok(_) => {
-                                me.set_version(file_id, version);
-                                ctx.emit(FileModelEvent::FileSaved {
-                                    id: file_id,
-                                    version,
-                                })
-                            }
-                            Err(err) => ctx.emit(FileModelEvent::FailedToSave {
-                                id: file_id,
-                                error: Rc::new(err),
-                            }),
-                        };
-                    },
-                );
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Renames a file and also saves its content.
-    // TODO: refactor this against [`FileModel::save`].
-    pub fn rename_and_save(
-        &mut self,
-        file_id: FileId,
-        new_path: PathBuf,
-        content: String,
-        version: ContentVersion,
-        ctx: &mut ModelContext<Self>,
-    ) -> Result<(), FileSaveError> {
-        let file_path = self
-            .file_path(file_id)
-            .ok_or(FileSaveError::NoFilePath(file_id))?;
-
-        ctx.spawn(
-            async move {
-                // Make sure the file we're renaming exists.
-                if let Err(err) = async_fs::metadata(&file_path).await {
-                    return Err(FileSaveError::IOError {
-                        error: err,
-                        path: file_path,
-                    });
-                }
-
-                // Make sure the components of the path we're moving to exists.
-                if let Err(err) = Self::ensure_parent_directories(&new_path).await {
-                    return Err(FileSaveError::IOError {
-                        error: err,
-                        path: new_path,
-                    });
-                }
-
-                // Write the updated contents to the old path first.
-                async_fs::write(&file_path, content).await.map_err(|err| {
-                    FileSaveError::IOError {
-                        error: err,
-                        path: file_path.clone(),
-                    }
-                })?;
-
-                // Now rename.
-                async_fs::rename(&file_path, &new_path)
-                    .await
-                    .map_err(|err| FileSaveError::IOError {
-                        error: err,
-                        path: file_path.clone(),
-                    })
-            },
-            move |me, write_result: Result<(), FileSaveError>, ctx| {
-                match write_result {
-                    Ok(_) => {
-                        me.set_version(file_id, version);
-                        ctx.emit(FileModelEvent::FileSaved {
-                            id: file_id,
-                            version,
-                        })
-                    }
-                    Err(err) => ctx.emit(FileModelEvent::FailedToSave {
-                        id: file_id,
-                        error: Rc::new(err),
-                    }),
-                };
-            },
-        );
-
-        Ok(())
-    }
-
-    /// Deletes the specified file.
-    pub fn delete(
-        &mut self,
-        file_id: FileId,
-        version: ContentVersion,
-        ctx: &mut ModelContext<Self>,
-    ) -> Result<(), FileSaveError> {
-        let backend = self
-            .file_state
-            .get(file_id)
-            .ok_or(FileSaveError::NoFilePath(file_id))?;
-
-        match backend {
-            FileBackend::Local(_) => {
-                let file_path = self
-                    .file_path(file_id)
-                    .ok_or(FileSaveError::NoFilePath(file_id))?;
-
-                ctx.spawn(
-                    async move {
-                        if let Err(err) = Self::ensure_parent_directories(&file_path).await {
-                            return Err(FileSaveError::IOError {
-                                error: err,
-                                path: file_path,
-                            });
-                        }
-                        async_fs::remove_file(&file_path).await.map_err(|err| {
-                            FileSaveError::IOError {
-                                error: err,
-                                path: file_path,
-                            }
-                        })
-                    },
-                    move |me, delete_result: Result<(), FileSaveError>, ctx| {
-                        match delete_result {
                             Ok(_) => {
                                 me.set_version(file_id, version);
                                 ctx.emit(FileModelEvent::FileSaved {

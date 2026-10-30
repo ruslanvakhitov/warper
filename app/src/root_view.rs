@@ -1,13 +1,11 @@
-use crate::ai::blocklist::SerializedBlockListItem;
 use crate::appearance::Appearance;
 use crate::interval_timer::IntervalTimer;
 use crate::launch_configs::launch_config;
-use crate::linear::LinearIssueWork;
+use crate::persistence::SerializedBlockListItem;
 
 use crate::persistence::ModelEvent;
 use crate::settings::QuakeModeSettings;
 use crate::settings_view::flags;
-use crate::settings_view::mcp_servers_page::MCPServersSettingsPage;
 use crate::settings_view::SettingsSection;
 use crate::terminal::available_shells::AvailableShell;
 use crate::terminal::general_settings::GeneralSettings;
@@ -15,7 +13,6 @@ use crate::terminal::keys_settings::KeysSettings;
 use crate::terminal::shell::ShellType;
 use crate::terminal::view::cell_size_and_padding;
 use crate::themes::theme::AnsiColorIdentifier;
-use crate::uri::OpenMCPSettingsArgs;
 use crate::util::bindings::{self, is_binding_pty_compliant};
 use crate::window_settings::WindowSettings;
 use crate::workspace::metadata::LaunchConfigUiLocation;
@@ -208,13 +205,6 @@ pub fn init(app: &mut AppContext) {
         "root_view:move_quake_mode_window_from_screen_change",
         move_quake_mode_window_from_screen_change,
     );
-    #[cfg(feature = "voice_input")]
-    app.add_global_action("root_view:abort_voice_input", abort_voice_input);
-    #[cfg(feature = "voice_input")]
-    app.add_action(
-        "root_view:maybe_stop_active_voice_input",
-        RootView::maybe_stop_active_voice_input,
-    );
     app.add_action(
         "root_view:add_session_at_path",
         RootView::add_session_at_path,
@@ -242,24 +232,6 @@ pub fn init(app: &mut AppContext) {
     app.add_action(
         "root_view:open_settings_page_in_existing_window",
         RootView::open_settings_page_in_existing_window,
-    );
-
-    app.add_global_action(
-        "root_view:open_mcp_settings_in_new_window",
-        open_mcp_settings_in_new_window,
-    );
-    app.add_action(
-        "root_view:open_mcp_settings_in_existing_window",
-        RootView::open_mcp_settings_in_existing_window,
-    );
-
-    app.add_global_action(
-        "root_view:open_linear_issue_work_in_new_window",
-        open_linear_issue_work_in_new_window,
-    );
-    app.add_action(
-        "root_view:open_linear_issue_work_in_existing_window",
-        RootView::open_linear_issue_work_in_existing_window,
     );
 
     app.add_action("root_view:add_file_pane", RootView::add_file_pane);
@@ -747,31 +719,6 @@ fn open_settings_page_in_new_window(section: &SettingsSection, ctx: &mut AppCont
     });
 }
 
-/// MCP servers need to wait for initial load to complete, so we have this action in addition
-/// to the general-purpose [`open_settings_page_in_new_window`].
-fn open_mcp_settings_in_new_window(args: &OpenMCPSettingsArgs, ctx: &mut AppContext) {
-    let _ = args;
-    let root_handle = open_new_window_get_handles(None, ctx).1;
-    root_handle.update(ctx, |root_view, ctx| {
-        root_view.workspace.update(ctx, |_, ctx| {
-            ctx.dispatch_typed_action(&WorkspaceAction::ShowSettingsPage(
-                SettingsSection::AgentMCPServers,
-            ));
-        });
-    });
-}
-
-/// Opens a new window and enters agent view with the Linear issue work prompt.
-fn open_linear_issue_work_in_new_window(args: &LinearIssueWork, ctx: &mut AppContext) {
-    let (_, root_handle) = open_new_window_get_handles(None, ctx);
-    let args = args.clone();
-    root_handle.update(ctx, |root_view, ctx| {
-        root_view.workspace.update(ctx, |workspace, ctx| {
-            workspace.open_linear_issue_work(&args, ctx);
-        });
-    });
-}
-
 /// Opens a new window with a file-based notebook open.
 fn open_new_with_file_notebook(arg: &PathBuf, ctx: &mut AppContext) {
     open_new_with_workspace_source(
@@ -1126,16 +1073,6 @@ fn show_or_hide_non_quake_mode_windows(_: &(), ctx: &mut AppContext) {
     };
 }
 
-#[cfg(feature = "voice_input")]
-fn abort_voice_input(_: &(), ctx: &mut AppContext) {
-    let voice_input = voice_input::VoiceInput::handle(ctx);
-    if voice_input.as_ref(ctx).is_listening() {
-        voice_input.update(ctx, |voice_input, _| {
-            voice_input.abort_listening();
-        });
-    }
-}
-
 #[derive(Clone)]
 pub enum NewWorkspaceSource {
     Empty {
@@ -1155,10 +1092,7 @@ pub enum NewWorkspaceSource {
     NotebookFromFilePath {
         file_path: Option<PathBuf>,
     },
-    AgentSession {
-        options: Box<NewTerminalOptions>,
-        initial_query: Option<String>,
-    },
+
     /// A tab is being transferred from another window via the transferable views framework.
     /// The workspace will create a placeholder tab, which will be replaced by the transferred
     /// PaneGroup after window creation.
@@ -1365,90 +1299,9 @@ impl RootView {
         true
     }
 
-    /// Opens the MCP servers settings page in an existing window.
-    pub fn open_mcp_settings_in_existing_window(
-        &mut self,
-        args: &OpenMCPSettingsArgs,
-        ctx: &mut ViewContext<Self>,
-    ) -> bool {
-        let _ = args;
-        self.workspace.update(ctx, |workspace, ctx| {
-            workspace.open_mcp_servers_page(MCPServersSettingsPage::List, ctx);
-        });
-        let window_id = ctx.window_id();
-        ctx.windows().show_window_and_focus_app(window_id);
-        true
-    }
-
-    /// Opens the Codex modal in an existing window.
-    pub fn open_codex_in_existing_window(&mut self, _: &(), ctx: &mut ViewContext<Self>) -> bool {
-        let window_id = ctx.window_id();
-        self.workspace.update(ctx, |workspace, ctx| {
-            workspace.open_codex_modal(ctx);
-        });
-        ctx.windows().show_window_and_focus_app(window_id);
-        true
-    }
-
-    /// Opens a new tab with agent view for a Linear issue work deeplink.
-    pub fn open_linear_issue_work_in_existing_window(
-        &mut self,
-        args: &LinearIssueWork,
-        ctx: &mut ViewContext<Self>,
-    ) -> bool {
-        let window_id = ctx.window_id();
-        let args = args.clone();
-        self.workspace.update(ctx, |workspace, ctx| {
-            workspace.open_linear_issue_work(&args, ctx);
-        });
-        ctx.windows().show_window_and_focus_app(window_id);
-        true
-    }
-
     pub fn focus(&mut self, ctx: &mut ViewContext<Self>) -> bool {
         ctx.focus(&self.workspace);
         ctx.notify();
-        true
-    }
-
-    /// Stops active voice input, if the configured voice input toggle key is released.
-    #[cfg(feature = "voice_input")]
-    fn maybe_stop_active_voice_input(
-        &mut self,
-        key_code: &warpui::platform::keyboard::KeyCode,
-        ctx: &mut ViewContext<Self>,
-    ) -> bool {
-        use crate::settings::AISettings;
-        use voice_input::{VoiceInput, VoiceInputState, VoiceInputToggledFrom};
-        use warpui::event::KeyState;
-
-        // Check that the released key matches the configured voice input toggle key.
-        let ai_settings = AISettings::as_ref(ctx);
-        if let Some(configured_key_code) = ai_settings.voice_input_toggle_key.value().to_key_code()
-        {
-            if configured_key_code == *key_code {
-                let voice_input = VoiceInput::handle(ctx);
-                // Check if we're actively listening and it was started from a key press.
-                if let VoiceInputState::Listening { enabled_from, .. } =
-                    voice_input.as_ref(ctx).state()
-                {
-                    if matches!(
-                        enabled_from,
-                        VoiceInputToggledFrom::Key {
-                            state: KeyState::Pressed
-                        }
-                    ) {
-                        log::debug!("Voice input key release detected: {key_code:?}");
-                        // Stop listening and proceed to transcription (don't abort).
-                        voice_input.update(ctx, |voice_input, ctx| {
-                            if let Err(e) = voice_input.stop_listening(ctx) {
-                                log::error!("Failed to stop voice input on key release: {e:?}");
-                            }
-                        });
-                    }
-                }
-            }
-        }
         true
     }
 }
@@ -1479,21 +1332,7 @@ impl View for RootView {
         let mut stack = Stack::new();
         stack.add_child(child);
 
-        cfg_if::cfg_if! {
-            if #[cfg(feature = "voice_input")] {
-                use warpui::elements::{EventHandler, DispatchEventResult};
-                EventHandler::new(stack.finish())
-                    .on_modifier_state_changed(|ctx, _app, key_code, key_state| {
-                        if matches!(key_state, warpui::event::KeyState::Released) {
-                            ctx.dispatch_action("root_view:maybe_stop_active_voice_input", *key_code);
-                        }
-                        DispatchEventResult::PropagateToParent
-                    })
-                    .finish()
-            } else {
-                stack.finish()
-            }
-        }
+        stack.finish()
     }
 
     fn keymap_context(&self, app: &AppContext) -> warpui::keymap::Context {

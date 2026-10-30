@@ -595,21 +595,6 @@ pub async fn get_commit_files(_repo_path: &Path, _hash: &str) -> Result<Vec<File
     Err(anyhow!("Local filesystem support is disabled"))
 }
 
-/// Maximum number of characters of diff content to send to AI for commit
-/// message / PR title / PR description generation.
-#[cfg(feature = "local_fs")]
-const MAX_DIFF_CHARS_FOR_AI: usize = 16_000;
-
-/// Per-file cap for untracked-file content we synthesise into the diff sent
-/// to AI. Keeps any one new file from dominating the budget.
-#[cfg(feature = "local_fs")]
-const MAX_UNTRACKED_FILE_BYTES: usize = 4_000;
-
-/// Number of leading bytes examined when classifying an untracked file as
-/// binary, mirroring the heuristic in `count_lines_if_text_file`.
-#[cfg(feature = "local_fs")]
-const BINARY_CHECK_BYTES: usize = 1_024;
-
 /// Maximum number of bytes in a PR title passed to `gh pr create`. GitHub's
 /// hard limit is 256; we cap short of that to leave headroom for an
 /// ellipsis marker. Measured in bytes because it's fed to
@@ -619,8 +604,7 @@ const MAX_PR_TITLE_BYTES: usize = 200;
 
 /// Returns a prefix of `s` whose length is at most `byte_cap` and which ends
 /// on a UTF-8 char boundary. Plain `&s[..byte_cap]` panics when the cut
-/// point lands inside a multi-byte code point, which is reachable in diffs
-/// and source files containing non-ASCII text.
+/// point lands inside a multi-byte code point.
 #[cfg(feature = "local_fs")]
 fn truncate_on_char_boundary(s: &str, byte_cap: usize) -> &str {
     if s.len() <= byte_cap {
@@ -631,102 +615,6 @@ fn truncate_on_char_boundary(s: &str, byte_cap: usize) -> &str {
         cut -= 1;
     }
     &s[..cut]
-}
-
-/// Returns the diff for commit message generation, truncated to avoid token
-/// limits. When `include_unstaged` is true, diffs against HEAD (all
-/// uncommitted changes) and also appends untracked files as synthetic diff
-/// hunks so the LLM has full context even when the commit consists entirely
-/// of new files. When `include_unstaged` is false, diffs only staged changes.
-#[cfg(feature = "local_fs")]
-pub async fn get_diff_for_commit_message(
-    repo_path: &Path,
-    include_unstaged: bool,
-) -> Result<String> {
-    let args: &[&str] = if include_unstaged {
-        &["diff", "HEAD"]
-    } else {
-        &["diff", "--cached"]
-    };
-    let mut diff = run_git_command(repo_path, args).await?;
-
-    // `git diff HEAD` only shows changes to already-tracked files. New files that
-    // haven't been staged yet are invisible to it, so we synthesise diff hunks for
-    // them here — mirroring the logic in `get_file_change_entries`.
-    if include_unstaged {
-        if let Ok(untracked) = run_git_command(
-            repo_path,
-            &["ls-files", "--others", "--exclude-standard", "-z"],
-        )
-        .await
-        {
-            // `-z` separates paths with NUL bytes and disables C-style
-            // quoting, so paths containing spaces or non-ASCII characters
-            // round-trip intact.
-            // Cap the read to cover both the binary-check window and the
-            // synthesised-hunk budget.
-            let read_cap = BINARY_CHECK_BYTES.max(MAX_UNTRACKED_FILE_BYTES);
-            for file_name_bytes in untracked.as_bytes().split(|b| *b == 0) {
-                if file_name_bytes.is_empty() {
-                    continue;
-                }
-                let Ok(file_name) = std::str::from_utf8(file_name_bytes) else {
-                    continue;
-                };
-                let file_path = repo_path.join(file_name);
-                // Async + bounded so a large untracked file doesn't block
-                // the executor or balloon memory.
-                let Ok(file) = tokio::fs::File::open(&file_path).await else {
-                    continue;
-                };
-                let mut bytes = Vec::with_capacity(read_cap);
-                use tokio::io::AsyncReadExt as _;
-                if file
-                    .take(read_cap as u64)
-                    .read_to_end(&mut bytes)
-                    .await
-                    .is_err()
-                {
-                    continue;
-                }
-                let check_len = bytes.len().min(BINARY_CHECK_BYTES);
-                if warp_util::file_type::is_buffer_binary(&bytes[..check_len]) {
-                    continue;
-                }
-                let Ok(content) = std::str::from_utf8(&bytes) else {
-                    continue;
-                };
-                let content = truncate_on_char_boundary(content, MAX_UNTRACKED_FILE_BYTES);
-                let line_count = content.lines().count();
-                diff.push_str(&format!(
-                    "diff --git a/{file_name} b/{file_name}\nnew file mode 100644\n\
-                     --- /dev/null\n+++ b/{file_name}\n@@ -0,0 +1,{line_count} @@\n"
-                ));
-                for line in content.lines() {
-                    diff.push('+');
-                    diff.push_str(line);
-                    diff.push('\n');
-                }
-            }
-        }
-    }
-
-    if diff.len() <= MAX_DIFF_CHARS_FOR_AI {
-        Ok(diff)
-    } else {
-        Ok(format!(
-            "{}\n... (diff truncated)",
-            truncate_on_char_boundary(&diff, MAX_DIFF_CHARS_FOR_AI)
-        ))
-    }
-}
-
-#[cfg(not(feature = "local_fs"))]
-pub async fn get_diff_for_commit_message(
-    _repo_path: &Path,
-    _include_unstaged: bool,
-) -> Result<String> {
-    Err(anyhow!("Local filesystem support is disabled"))
 }
 
 /// Commits changes. If `include_unstaged` is true, stages all changes first via `git add -A`.
@@ -907,69 +795,6 @@ pub async fn get_pr_for_branch(
     Err(anyhow!("Local filesystem support is disabled"))
 }
 
-/// PR-ready diff (detected parent vs remote branch / HEAD), truncated
-/// for AI token limits. Used for PR title/body generation.
-#[cfg(feature = "local_fs")]
-pub async fn get_diff_for_pr(repo_path: &Path, parent_branch: Option<&str>) -> Result<String> {
-    let base = match parent_branch {
-        Some(b) => b.to_string(),
-        None => detect_parent_branch(repo_path).await?,
-    };
-    let current = detect_current_branch(repo_path).await?;
-    let remote_ref = format!("origin/{current}");
-
-    let end_ref = if run_git_command(repo_path, &["rev-parse", "--verify", &remote_ref])
-        .await
-        .is_ok()
-    {
-        remote_ref
-    } else {
-        "HEAD".to_string()
-    };
-
-    let range = format!("{base}..{end_ref}");
-    let mut diff = run_git_command(repo_path, &["diff", &range]).await?;
-    if diff.len() > MAX_DIFF_CHARS_FOR_AI {
-        diff = format!(
-            "{}\n... (diff truncated)",
-            truncate_on_char_boundary(&diff, MAX_DIFF_CHARS_FOR_AI)
-        );
-    }
-    Ok(diff)
-}
-
-#[cfg(not(feature = "local_fs"))]
-pub async fn get_diff_for_pr(_repo_path: &Path, _parent_branch: Option<&str>) -> Result<String> {
-    Err(anyhow!("Local filesystem support is disabled"))
-}
-
-/// Returns commit messages on the current branch not on the detected parent.
-#[cfg(feature = "local_fs")]
-pub async fn get_branch_commit_messages(
-    repo_path: &Path,
-    parent_branch: Option<&str>,
-) -> Result<Vec<String>> {
-    let base = match parent_branch {
-        Some(b) => b.to_string(),
-        None => detect_parent_branch(repo_path).await?,
-    };
-    let range = format!("{base}..HEAD");
-    let output = run_git_command(repo_path, &["log", &range, "--format=%s"]).await?;
-    Ok(output
-        .lines()
-        .filter(|l| !l.is_empty())
-        .map(|l| l.to_string())
-        .collect())
-}
-
-#[cfg(not(feature = "local_fs"))]
-pub async fn get_branch_commit_messages(
-    _repo_path: &Path,
-    _parent_branch: Option<&str>,
-) -> Result<Vec<String>> {
-    Err(anyhow!("Local filesystem support is disabled"))
-}
-
 /// Creates a PR for the current branch (must already be pushed) targeting
 /// the detected parent via `--base`. Falls back to `--fill` when title/body
 /// are `None`.
@@ -1013,7 +838,7 @@ pub async fn create_pr(
     Ok(PrInfo { number, url })
 }
 
-/// Trims an AI-generated PR title to a single line and caps its length.
+/// Trims the supplied PR title to a single line and caps its length.
 #[cfg(feature = "local_fs")]
 fn sanitize_pr_title(raw: &str) -> String {
     let first_line = raw.lines().next().unwrap_or("").trim();

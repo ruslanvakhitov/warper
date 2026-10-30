@@ -33,7 +33,7 @@ use warpui::{
     AppContext, TypedActionView, ViewContext, WeakViewHandle,
 };
 
-/// Limit the keybindings that conflict with the Agent Mode embedded editor.
+/// Restrict editing keybindings when displaying read-only content.
 const NON_EDITABLE_KEYMAP_CONTEXT: &str = "NonEditableKeymapContext";
 
 lazy_static! {
@@ -46,7 +46,7 @@ pub fn init(app: &mut AppContext) {
     use warpui::keymap::macros::*;
 
     let text_entry = id!("CodeEditorView") & !id!("IMEOpen");
-    // We use this to disable some keybindings that would conflict with the Agent Mode embedded editor.
+    // Read-only editors retain navigation and selection bindings.
     let editable_state = text_entry.clone() & !id!(NON_EDITABLE_KEYMAP_CONTEXT);
     app.register_fixed_bindings([
         FixedBinding::new(
@@ -971,21 +971,9 @@ impl TypedActionView for CodeEditorView {
             Cut => self.model.update(ctx, |model, ctx| {
                 model.cut(ctx);
             }),
-            // Note that this is _not_ the only code path that could copy selected text to the clipboard.
-            // This is only for the case when the editor is focused and the copy action gets dispatched directly.
-            // The owner of the editor can also perform a copy by accessing the selected text and copying it to the clipboard.
-            // This is the case when the code block is owned by an AIBlock and unfocused.
-            Copy => {
-                self.model.update(ctx, |model, ctx| {
-                    model.copy(ctx);
-                });
-                // It's possible that the copy action was dispatched to the focused editor even when
-                // the user intended to copy selected text from a parent view (i.e. an `AIBlock`).
-                // The `CopiedEmptyText` event gives the parent view a signal to attempt a copy action.
-                if self.selected_text(ctx).is_none() {
-                    ctx.emit(CodeEditorEvent::CopiedEmptyText);
-                }
-            }
+            Copy => self.model.update(ctx, |model, ctx| {
+                model.copy(ctx);
+            }),
             #[cfg(windows)]
             WindowsCtrlC => self.model.update(ctx, |model, ctx| {
                 model.handle_windows_ctrl_c(ctx);

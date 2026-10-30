@@ -70,14 +70,14 @@ use crate::{
     ui_components::icons::ICON_DIMENSIONS,
     util::{
         bindings::CustomAction,
-        tooltips::{render_tooltip, should_show_open_in_warp_link, TooltipLink, TooltipRedaction},
+        tooltips::{render_tooltip, should_show_open_in_warp_link, TooltipLink},
     },
     view_components::DismissibleToast,
 };
 use warp_server_client::ids::SyncId;
 
 #[cfg(feature = "local_fs")]
-use crate::util::link_detection::{detect_file_paths, get_word_range_at_offset, DetectedLinkType};
+use crate::util::link_detection::{detect_file_paths, get_word_range_at_offset};
 
 #[cfg(feature = "local_fs")]
 use warpui::text::word_boundaries::WordBoundariesPolicy;
@@ -2136,18 +2136,12 @@ impl RichTextEditorView {
                 let absolute_range = search_start + CharOffset::from(link_range.start)
                     ..search_start + CharOffset::from(link_range.end);
                 if absolute_range.contains(&char_offset) {
-                    if let DetectedLinkType::FilePath {
-                        absolute_path,
-                        line_and_column_num,
-                    } = link_type
-                    {
-                        self.hovered_file_path = Some(SelectedFilePath {
-                            range: absolute_range,
-                            path: absolute_path,
-                            line_and_column_num,
-                        });
-                        break;
-                    }
+                    self.hovered_file_path = Some(SelectedFilePath {
+                        range: absolute_range,
+                        path: link_type.absolute_path,
+                        line_and_column_num: link_type.line_and_column_num,
+                    });
+                    break;
                 }
             }
         }
@@ -2453,7 +2447,7 @@ impl RichTextEditorView {
             });
         }
 
-        let tooltip_content = render_tooltip(links, TooltipRedaction::NoRedaction, appearance, ctx);
+        let tooltip_content = render_tooltip(links, appearance);
 
         let hoverable = Hoverable::new(Default::default(), move |_| tooltip_content)
             .with_cursor(Cursor::PointingHand)

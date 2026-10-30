@@ -24,10 +24,9 @@ use crate::notebooks::link::{NotebookLinks, SessionSource};
 use crate::settings::FontSettings;
 use crate::settings_view::keybindings::KeybindingChangedNotifier;
 
-use crate::terminal::keys::TerminalKeybindings;
 use crate::test_util::settings::initialize_settings_for_tests;
 use crate::workspace::ActiveSession;
-use crate::UserWorkspaces;
+
 use crate::{
     search::files::model::FileSearchModel, GlobalResourceHandles, GlobalResourceHandlesProvider,
 };
@@ -73,10 +72,6 @@ fn initialize_editor(
     app.add_singleton_model(repo_metadata::RepoMetadataModel::new);
     app.add_singleton_model(FileSearchModel::new);
     app.add_singleton_model(NotebookKeybindings::new);
-    app.add_singleton_model(TerminalKeybindings::new);
-    #[cfg(feature = "voice_input")]
-    app.add_singleton_model(voice_input::VoiceInput::new);
-    app.add_singleton_model(|ctx| UserWorkspaces::mock(vec![], ctx));
 
     let (window, test_view) = app.add_window(WindowStyle::NotStealFocus, |ctx| {
         let window_id = ctx.window_id();
@@ -547,14 +542,7 @@ fn test_run_command_from_text_selection() {
                 .as_ref(ctx)
                 .selected_command_workflow(ctx)
                 .unwrap();
-            assert_eq!(
-                selected_command
-                    .workflow
-                    .as_workflow()
-                    .command()
-                    .expect("Workflow is Command Workflow"),
-                "echo hi"
-            );
+            assert_eq!(selected_command.workflow.as_workflow().command(), "echo hi");
 
             // If the text cursor was in one command block, but another is selected, cmd-enter
             // should run the selected command.
@@ -566,11 +554,7 @@ fn test_run_command_from_text_selection() {
                 .selected_command_workflow(ctx)
                 .unwrap();
             assert_eq!(
-                selected_command
-                    .workflow
-                    .as_workflow()
-                    .command()
-                    .expect("Workflow is Command Workflow"),
+                selected_command.workflow.as_workflow().command(),
                 "echo hello"
             );
         });

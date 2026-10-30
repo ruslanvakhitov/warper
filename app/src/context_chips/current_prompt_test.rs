@@ -45,6 +45,30 @@ use warp_completer::completer::{CommandExitStatus, CommandOutput};
 
 use super::{ChipUpdateStatus, CurrentPrompt, PromptContext};
 
+fn configure_prompt_only_chips(app: &mut App) {
+    use crate::settings::CLIAgentSettings;
+    use crate::terminal::session_settings::CLIAgentToolbarChipSelection;
+
+    SessionSettings::handle(app).update(app, |settings, ctx| {
+        settings
+            .cli_agent_footer_chip_selection
+            .set_value(
+                CLIAgentToolbarChipSelection::Custom {
+                    left: vec![],
+                    right: vec![],
+                },
+                ctx,
+            )
+            .expect("set empty CLI footer layout");
+    });
+    CLIAgentSettings::handle(app).update(app, |settings, ctx| {
+        settings
+            .should_render_cli_agent_footer
+            .set_value(false, ctx)
+            .expect("disable CLI footer in prompt-only fixture");
+    });
+}
+
 #[test]
 fn test_context_menu_items() {
     App::test((), |mut app| async move {
@@ -246,8 +270,9 @@ fn test_shell_chip_is_disabled_when_required_executable_is_missing() {
         });
         app.add_singleton_model(|_| crate::settings::manager::SettingsManager::default());
         crate::settings::InputSettings::register(&mut app);
-        app.update(crate::settings::AISettings::register_and_subscribe_to_events);
-        app.add_singleton_model(crate::workspaces::user_workspaces::UserWorkspaces::default_mock);
+        app.update(crate::settings::CLIAgentSettings::register_and_subscribe_to_events);
+        configure_prompt_only_chips(&mut app);
+
         #[cfg(windows)]
         app.add_singleton_model(SystemInfo::new);
 
@@ -416,8 +441,9 @@ fn test_github_pr_chip_is_disabled_when_github_cli_is_missing() {
         });
         app.add_singleton_model(|_| crate::settings::manager::SettingsManager::default());
         crate::settings::InputSettings::register(&mut app);
-        app.update(crate::settings::AISettings::register_and_subscribe_to_events);
-        app.add_singleton_model(crate::workspaces::user_workspaces::UserWorkspaces::default_mock);
+        app.update(crate::settings::CLIAgentSettings::register_and_subscribe_to_events);
+        configure_prompt_only_chips(&mut app);
+
         #[cfg(windows)]
         app.add_singleton_model(SystemInfo::new);
 
@@ -498,8 +524,9 @@ fn test_github_pr_chip_empty_success_does_not_set_failure_suppression() {
         });
         app.add_singleton_model(|_| crate::settings::manager::SettingsManager::default());
         crate::settings::InputSettings::register(&mut app);
-        app.update(crate::settings::AISettings::register_and_subscribe_to_events);
-        app.add_singleton_model(crate::workspaces::user_workspaces::UserWorkspaces::default_mock);
+        app.update(crate::settings::CLIAgentSettings::register_and_subscribe_to_events);
+        configure_prompt_only_chips(&mut app);
+
         #[cfg(windows)]
         app.add_singleton_model(SystemInfo::new);
 
@@ -588,8 +615,9 @@ fn test_github_pr_chip_revisiting_empty_result_directory_reruns_and_clears_previ
         });
         app.add_singleton_model(|_| crate::settings::manager::SettingsManager::default());
         crate::settings::InputSettings::register(&mut app);
-        app.update(crate::settings::AISettings::register_and_subscribe_to_events);
-        app.add_singleton_model(crate::workspaces::user_workspaces::UserWorkspaces::default_mock);
+        app.update(crate::settings::CLIAgentSettings::register_and_subscribe_to_events);
+        configure_prompt_only_chips(&mut app);
+
         #[cfg(windows)]
         app.add_singleton_model(SystemInfo::new);
 
@@ -725,8 +753,9 @@ fn test_github_pr_chip_revisiting_failed_directory_uses_failure_suppression() {
         });
         app.add_singleton_model(|_| crate::settings::manager::SettingsManager::default());
         crate::settings::InputSettings::register(&mut app);
-        app.update(crate::settings::AISettings::register_and_subscribe_to_events);
-        app.add_singleton_model(crate::workspaces::user_workspaces::UserWorkspaces::default_mock);
+        app.update(crate::settings::CLIAgentSettings::register_and_subscribe_to_events);
+        configure_prompt_only_chips(&mut app);
+
         #[cfg(windows)]
         app.add_singleton_model(SystemInfo::new);
 
@@ -864,8 +893,9 @@ fn test_github_pr_chip_transient_failure_retries_with_same_fingerprint() {
         });
         app.add_singleton_model(|_| crate::settings::manager::SettingsManager::default());
         crate::settings::InputSettings::register(&mut app);
-        app.update(crate::settings::AISettings::register_and_subscribe_to_events);
-        app.add_singleton_model(crate::workspaces::user_workspaces::UserWorkspaces::default_mock);
+        app.update(crate::settings::CLIAgentSettings::register_and_subscribe_to_events);
+        configure_prompt_only_chips(&mut app);
+
         #[cfg(windows)]
         app.add_singleton_model(SystemInfo::new);
 
@@ -1025,8 +1055,9 @@ fn test_disabling_chips() {
         // Register required singleton models to fix the singleton model error
         app.add_singleton_model(|_| crate::settings::manager::SettingsManager::default());
         crate::settings::InputSettings::register(&mut app);
-        app.update(crate::settings::AISettings::register_and_subscribe_to_events);
-        app.add_singleton_model(crate::workspaces::user_workspaces::UserWorkspaces::default_mock);
+        app.update(crate::settings::CLIAgentSettings::register_and_subscribe_to_events);
+        configure_prompt_only_chips(&mut app);
+
         #[cfg(windows)]
         app.add_singleton_model(SystemInfo::new);
 

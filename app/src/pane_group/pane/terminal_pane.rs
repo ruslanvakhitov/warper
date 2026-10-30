@@ -1,28 +1,15 @@
 //! Implementation of terminal panes.
 #[cfg(feature = "local_fs")]
 use crate::pane_group::CodeSource;
-use std::{collections::HashMap, sync::mpsc::SyncSender};
+use std::sync::mpsc::SyncSender;
 
 use warpui::{
     AppContext, EntityId, ModelHandle, SingletonEntity, ViewContext, ViewHandle, WindowId,
 };
 
 use crate::{
-    ai::{
-        active_agent_views_model::ActiveAgentViewsModel,
-        agent::{conversation::AIConversationId, LifecycleEventType, StartAgentExecutionMode},
-        blocklist::{
-            agent_view::AgentViewEntryOrigin, orchestration_events::OrchestrationEventService,
-            BlocklistAIHistoryModel,
-        },
-        llms::LLMPreferences,
-    },
     app_state::{LeafContents, TerminalPaneSnapshot},
-    pane_group::child_agent::{
-        create_error_child_agent_conversation, create_hidden_child_agent_conversation,
-        HiddenChildAgentConversation,
-    },
-    pane_group::{self, Direction, Event::OpenConversationHistory, PaneGroup},
+    pane_group::{self, Direction, PaneGroup},
     persistence::{BlockCompleted, ModelEvent},
     session_management::SessionNavigationData,
     terminal::cli_agent_sessions::CLIAgentSessionsModel,
@@ -31,14 +18,10 @@ use crate::{
     workspace::{sync_inputs::SyncedInputState, PaneViewLocator},
 };
 
-use super::local_harness_launch::{prepare_local_harness_child_launch, PreparedLocalHarnessLaunch};
 use super::{
     DetachType, PaneConfiguration, PaneContent, PaneId, PaneStackEvent, PaneView, ShareableLink,
     ShareableLinkError, TerminalPaneId,
 };
-#[cfg(feature = "local_fs")]
-use crate::ai::blocklist::BlocklistAIHistoryEvent;
-use warp_core::execution_mode::AppExecutionMode;
 
 pub type TerminalPaneView = PaneView<TerminalView>;
 
@@ -57,30 +40,6 @@ pub struct TerminalPane {
     /// by the `PaneStack`, since the terminal manager is the associated data for
     /// the backing pane view.
     view: ViewHandle<TerminalPaneView>,
-}
-
-fn register_legacy_local_lifecycle_subscription(
-    parent_conversation_id: AIConversationId,
-    child_conversation_id: AIConversationId,
-    lifecycle_subscription: Option<Vec<LifecycleEventType>>,
-    ctx: &mut ViewContext<PaneGroup>,
-) {
-    if let Some(parent_agent_id) = BlocklistAIHistoryModel::as_ref(ctx)
-        .conversation(&parent_conversation_id)
-        .and_then(|conversation| {
-            conversation
-                .server_conversation_token()
-                .map(|token| token.as_str().to_string())
-        })
-    {
-        OrchestrationEventService::handle(ctx).update(ctx, |svc, _| {
-            svc.register_lifecycle_subscription(
-                child_conversation_id,
-                parent_agent_id,
-                lifecycle_subscription,
-            );
-        });
-    }
 }
 
 impl TerminalPane {
@@ -137,10 +96,6 @@ impl TerminalPane {
 
     /// Instructs the SQLite thread to delete blocks for this session.
     pub(in crate::pane_group) fn delete_blocks(&self, ctx: &AppContext) {
-        if !AppExecutionMode::as_ref(ctx).can_save_session() {
-            return;
-        }
-
         if let Some(sender) = &self.model_event_sender {
             let model_event = ModelEvent::DeleteBlocks(self.uuid.clone());
             if let Err(err) = sender.send(model_event) {
@@ -222,40 +177,6 @@ impl PaneContent for TerminalPane {
                 group.send_sync_event_to_session(terminal_pane_id, &event, ctx);
             }
         }
-
-        let terminal_view_id = self.terminal_view(ctx).id();
-
-        #[cfg(feature = "local_fs")]
-        {
-            ctx.subscribe_to_model(
-                &BlocklistAIHistoryModel::handle(ctx),
-                move |group, _, event, ctx| {
-                    let Some(model_event_sender) = group.model_event_sender.clone() else {
-                        return;
-                    };
-
-                    handle_ai_history_event(
-                        event,
-                        terminal_view_id,
-                        terminal_pane_id,
-                        model_event_sender,
-                        ctx,
-                    );
-                },
-            );
-        }
-
-        // Store the pane group entity ID on the agent view controller so the
-        // message bar can perform pane-group-scoped visibility checks.
-        let pane_group_id = ctx.view_id();
-        let terminal_view = self.terminal_view(ctx);
-        let agent_view_controller = terminal_view.as_ref(ctx).agent_view_controller().clone();
-        agent_view_controller.update(ctx, |controller, _ctx| {
-            controller.set_pane_group_id(pane_group_id);
-        });
-        ActiveAgentViewsModel::handle(ctx).update(ctx, |model, ctx| {
-            model.register_agent_view_controller(&agent_view_controller, terminal_view_id, ctx);
-        });
     }
 
     fn detach(
@@ -265,12 +186,6 @@ impl PaneContent for TerminalPane {
         ctx: &mut ViewContext<PaneGroup>,
     ) {
         if matches!(detach_type, DetachType::Closed) {
-            // Only immediately clear conversations and delete blocks if the session is being
-            // permanently closed.
-            BlocklistAIHistoryModel::handle(ctx).update(ctx, |history_model, ctx| {
-                history_model
-                    .clear_conversations_in_terminal_view(self.terminal_view(ctx).id(), ctx);
-            });
             self.delete_blocks(ctx);
         }
 
@@ -285,14 +200,7 @@ impl PaneContent for TerminalPane {
             ctx.unsubscribe_to_view(&view);
         }
 
-        // Notify the active agent views model that the terminal view has been closed
-        // (and that any active views are no longer active). On a `HiddenForClose` detach,
-        // `attach` will re-register via `register_agent_view_controller` when the tab is
-        // restored, so this is safe to run unconditionally.
         let terminal_view_id = self.terminal_view(ctx).id();
-        ActiveAgentViewsModel::handle(ctx).update(ctx, |model, ctx| {
-            model.unregister_agent_view_controller(terminal_view_id, ctx);
-        });
 
         // Clean up any active CLI agent session so its notification is removed.
         // Skip this for moves — the session is still running and will re-register in the new tab.
@@ -305,72 +213,17 @@ impl PaneContent for TerminalPane {
         ctx.unsubscribe_to_model(&pane_stack);
 
         ctx.unsubscribe_to_view(&self.view);
-
-        #[cfg(feature = "local_fs")]
-        {
-            ctx.unsubscribe_to_model(&BlocklistAIHistoryModel::handle(ctx));
-        }
     }
 
     fn snapshot(&self, app: &AppContext) -> LeafContents {
         let view = self.terminal_view(app).as_ref(app);
-        let is_active = view.is_active_session(app);
-
-        // Capture the current input_config from the AI input model
-        let current_input_config = view.input_config(app.as_ref());
-
-        if !view.model.lock().is_conversation_transcript_viewer() {
-            let llm_model_override =
-                LLMPreferences::as_ref(app).get_base_llm_override(self.terminal_view(app).id());
-
-            let active_profile_id = None;
-
-            // Collect all conversation IDs for this terminal view
-            let conversation_ids_to_restore = BlocklistAIHistoryModel::as_ref(app)
-                .all_live_conversations_for_terminal_view(self.terminal_view(app).id())
-                .map(|conversation| conversation.id())
-                .collect();
-
-            // Capture agent view state: if fullscreen, store the active conversation ID
-            let active_conversation_id = view
-                .agent_view_controller()
-                .as_ref(app)
-                .agent_view_state()
-                .display_mode()
-                .filter(|mode| mode.is_fullscreen())
-                .and_then(|_| {
-                    view.agent_view_controller()
-                        .as_ref(app)
-                        .agent_view_state()
-                        .active_conversation_id()
-                });
-
-            LeafContents::Terminal(TerminalPaneSnapshot {
-                uuid: self.uuid.clone(),
-                cwd: view.pwd_if_local(app),
-                is_active,
-                is_read_only: false,
-                shell_launch_data: view.shell_launch_data_if_local(app),
-                input_config: Some(current_input_config),
-                llm_model_override,
-                active_profile_id,
-                conversation_ids_to_restore,
-                active_conversation_id,
-            })
-        } else {
-            LeafContents::Terminal(TerminalPaneSnapshot {
-                uuid: self.uuid.clone(),
-                cwd: None,
-                is_active,
-                is_read_only: false,
-                shell_launch_data: None,
-                input_config: None,
-                llm_model_override: None,
-                active_profile_id: None,
-                conversation_ids_to_restore: vec![],
-                active_conversation_id: None,
-            })
-        }
+        LeafContents::Terminal(TerminalPaneSnapshot {
+            uuid: self.uuid.clone(),
+            cwd: view.pwd_if_local(app),
+            is_active: view.is_active_session(app),
+            is_read_only: false,
+            shell_launch_data: view.shell_launch_data_if_local(app),
+        })
     }
 
     fn has_application_focus(&self, ctx: &mut ViewContext<PaneGroup>) -> bool {
@@ -384,39 +237,8 @@ impl PaneContent for TerminalPane {
 
     fn shareable_link(
         &self,
-        ctx: &mut ViewContext<PaneGroup>,
+        _ctx: &mut ViewContext<PaneGroup>,
     ) -> Result<ShareableLink, ShareableLinkError> {
-        let manager = self.terminal_manager(ctx);
-        let the_model = manager.as_ref(ctx).model();
-        let lock = the_model.lock();
-
-        // Check if this is a conversation transcript viewer
-        if lock.is_conversation_transcript_viewer() {
-            // Try to get the conversation token from the history model
-            let history_model = crate::ai::blocklist::BlocklistAIHistoryModel::handle(ctx);
-            let terminal_view_id = self.terminal_view(ctx).id();
-
-            // Find the conversation for this terminal view
-            // We're assuming the conversation transcript view only has one conversation.
-            // TODO(roland): store conversation id or server conversation token on the model ConversationTranscriptViewerStatus
-            if let Some(conversation) = history_model
-                .as_ref(ctx)
-                .all_live_conversations_for_terminal_view(terminal_view_id)
-                .next()
-            {
-                if let Some(token) = conversation.server_conversation_token() {
-                    let url_string = token.conversation_link();
-                    if let Ok(url) = url::Url::parse(&url_string) {
-                        return Ok(ShareableLink::Pane { url });
-                    }
-                }
-            }
-
-            // If we can't get the conversation link yet (still loading or not available),
-            // return Expected error to preserve the current browser URL
-            return Err(ShareableLinkError::Expected);
-        }
-
         Ok(ShareableLink::Base)
     }
 
@@ -532,9 +354,7 @@ fn handle_terminal_view_event(
             Event::BlockCompleted { block, is_local } => {
                 match group.terminal_session_by_id(pane_id) {
                     Some(pane) => {
-                        if *GeneralSettings::as_ref(ctx).restore_session
-                            && AppExecutionMode::as_ref(ctx).can_save_session()
-                        {
+                        if *GeneralSettings::as_ref(ctx).restore_session {
                             if let Some(sender) = &group.model_event_sender {
                                 let block_completed_event = ModelEvent::SaveBlock(BlockCompleted {
                                     pane_id: pane.session_uuid(),
@@ -600,9 +420,7 @@ fn handle_terminal_view_event(
             Event::OpenPromptEditor => {
                 ctx.emit(pane_group::Event::OpenPromptEditor);
             }
-            Event::OpenAgentToolbarEditor => {
-                ctx.emit(pane_group::Event::OpenAgentToolbarEditor);
-            }
+
             Event::OpenCLIAgentToolbarEditor => {
                 ctx.emit(pane_group::Event::OpenCLIAgentToolbarEditor);
             }
@@ -630,34 +448,11 @@ fn handle_terminal_view_event(
                     },
                 });
             }
-            Event::OpenCodeDiff { view } => {
-                ctx.emit(pane_group::Event::OpenCodeDiff { view: view.clone() });
-            }
+
             Event::OpenCodeReviewPane(arg) => {
                 ctx.emit(pane_group::Event::OpenCodeReviewPane(arg.clone()));
             }
-            Event::OpenCodeReviewPaneAndScrollToComment {
-                open_code_review,
-                comment,
-                diff_mode,
-            } => {
-                ctx.emit(pane_group::Event::OpenCodeReviewPaneAndScrollToComment {
-                    open_code_review: open_code_review.clone(),
-                    comment: comment.clone(),
-                    diff_mode: diff_mode.clone(),
-                });
-            }
-            Event::ImportAllCodeReviewComments {
-                open_code_review,
-                comments,
-                diff_mode,
-            } => {
-                ctx.emit(pane_group::Event::ImportAllCodeReviewComments {
-                    open_code_review: open_code_review.clone(),
-                    comments: comments.clone(),
-                    diff_mode: diff_mode.clone(),
-                });
-            }
+
             Event::ToggleCodeReviewPane(arg) => {
                 ctx.emit(pane_group::Event::ToggleCodeReviewPane(arg.clone()));
             }
@@ -665,15 +460,7 @@ fn handle_terminal_view_event(
                 group.focus_pane(terminal_pane_id.into(), true, ctx);
                 ctx.emit(pane_group::Event::FocusPaneGroup);
             }
-            Event::OpenAIFactCollection { sync_id } => {
-                ctx.emit(pane_group::Event::OpenAIFactCollection {
-                    sync_id: sync_id.clone(),
-                });
-            }
-            Event::SummarizationCancelDialogToggled { is_open } => {
-                group.terminal_with_open_summarization_dialog = is_open.then_some(terminal_pane_id);
-                ctx.notify();
-            }
+
             #[cfg(feature = "local_fs")]
             Event::OpenFileWithTarget {
                 path,
@@ -718,9 +505,7 @@ fn handle_terminal_view_event(
                     local_pane_id: terminal_pane_id,
                 });
             }
-            Event::OpenConversationHistory => {
-                ctx.emit(OpenConversationHistory);
-            }
+
             Event::FileUploadFinished(exit_code) => {
                 ctx.emit(pane_group::Event::FileUploadFinished {
                     local_pane_id: terminal_pane_id,
@@ -753,23 +538,11 @@ fn handle_terminal_view_event(
             Event::OpenThemeChooser => {
                 ctx.emit(pane_group::Event::OpenThemeChooser);
             }
-            Event::OpenMCPSettingsPage { page } => {
-                ctx.emit(pane_group::Event::OpenMCPSettingsPage { page: *page });
-            }
+
             Event::OpenFilesPalette { source } => {
                 ctx.emit(pane_group::Event::OpenFilesPalette { source: *source })
             }
-            Event::OpenAddRulePane => {
-                ctx.emit(crate::pane_group::Event::OpenAddRulePane);
-            }
-            Event::OpenRulesPane => {
-                ctx.emit(crate::pane_group::Event::OpenAIFactCollection { sync_id: None });
-            }
-            Event::OpenAddPromptPane { initial_content } => {
-                ctx.emit(crate::pane_group::Event::OpenAddPromptPane {
-                    initial_content: initial_content.clone(),
-                });
-            }
+
             #[cfg(feature = "local_fs")]
             Event::FileRenamed { old_path, new_path } => {
                 ctx.emit(pane_group::Event::FileRenamed {
@@ -790,375 +563,10 @@ fn handle_terminal_view_event(
                     force_open: *force_open,
                 });
             }
-            Event::ToggleAIDocumentPane {
-                document_id,
-                document_version,
-            } => {
-                if let Some(conversation_id) =
-                    crate::ai::document::ai_document_model::AIDocumentModel::as_ref(ctx)
-                        .get_conversation_id_for_document_id(document_id)
-                {
-                    group.toggle_ai_document_pane(
-                        conversation_id,
-                        *document_id,
-                        *document_version,
-                        ctx,
-                    );
-                }
-            }
-            Event::HideAIDocumentPanes => {
-                group.close_all_ai_document_panes(ctx);
-            }
-            Event::OpenAIDocumentPane {
-                document_id,
-                document_version,
-                is_auto_open,
-            } => {
-                let should_open = if *is_auto_open {
-                    // Auto-open: only open if there's already a visible plan pane
-                    // (to replace it with the newest plan) or if there's enough space.
-                    let has_visible_ai_doc_pane = group
-                        .ai_document_panes()
-                        .any(|pane_id| !group.is_pane_hidden_for_close(pane_id));
 
-                    has_visible_ai_doc_pane
-                        || group
-                            .terminal_view_from_pane_id(terminal_pane_id, ctx)
-                            .is_some_and(|tv| tv.as_ref(ctx).can_auto_open_panel())
-                } else {
-                    // User-triggered: always open.
-                    true
-                };
-
-                if should_open {
-                    if let Some(conversation_id) =
-                        crate::ai::document::ai_document_model::AIDocumentModel::as_ref(ctx)
-                            .get_conversation_id_for_document_id(document_id)
-                    {
-                        group.open_ai_document_pane(
-                            conversation_id,
-                            *document_id,
-                            *document_version,
-                            ctx,
-                        );
-                    }
-                }
-            }
-            Event::OpenAgentProfileEditor { profile_id } => {
-                ctx.emit(pane_group::Event::OpenAgentProfileEditor {
-                    profile_id: *profile_id,
-                });
-            }
-            Event::InsertCodeReviewComments {
-                repo_path,
-                comments,
-                diff_mode,
-                open_code_review,
-            } => {
-                ctx.emit(pane_group::Event::InsertCodeReviewComments {
-                    repo_path: repo_path.to_path_buf(),
-                    comments: comments.to_owned(),
-                    diff_mode: diff_mode.to_owned(),
-                    open_code_review: open_code_review.clone(),
-                });
-            }
-            Event::RevealChildAgent { conversation_id } => {
-                if let Some(&child_pane_id) = group.child_agent_panes.get(conversation_id) {
-                    group.panes.show_pane_for_child_agent(child_pane_id);
-                    group.handle_pane_count_change(ctx);
-                    group.focus_pane(child_pane_id, true, ctx);
-                } else {
-                    log::warn!("No hidden pane found for child conversation {conversation_id:?}");
-                }
-            }
-            Event::StartAgentConversation(request) => {
-                let request = request.clone();
-                match request.execution_mode.clone() {
-                    StartAgentExecutionMode::Local { harness_type: None } => {
-                        if let Some(HiddenChildAgentConversation {
-                            terminal_view: new_terminal_view,
-                            conversation_id,
-                            ..
-                        }) = create_hidden_child_agent_conversation(
-                            group,
-                            pane_id,
-                            request.name,
-                            request.parent_conversation_id,
-                            HashMap::new(),
-                            ctx,
-                        ) {
-                            register_legacy_local_lifecycle_subscription(
-                                request.parent_conversation_id,
-                                conversation_id,
-                                request.lifecycle_subscription,
-                                ctx,
-                            );
-
-                            new_terminal_view.update(ctx, |terminal_view, ctx| {
-                                terminal_view
-                                    .ai_controller()
-                                    .update(ctx, |controller, ctx| {
-                                        controller.send_agent_query_in_conversation(
-                                            request.prompt,
-                                            conversation_id,
-                                            ctx,
-                                        );
-                                    });
-
-                                terminal_view.enter_agent_view(
-                                    None,
-                                    Some(conversation_id),
-                                    AgentViewEntryOrigin::ChildAgent,
-                                    ctx,
-                                );
-                            });
-                        }
-                    }
-                    StartAgentExecutionMode::Local {
-                        harness_type: Some(harness_type),
-                    } => {
-                        let startup_directory =
-                            group.startup_path_for_new_session(Some(terminal_pane_id), ctx);
-                        let parent_pane_id = pane_id;
-                        let request_name = request.name.clone();
-                        let parent_conversation_id = request.parent_conversation_id;
-                        let prompt = request.prompt.clone();
-                        let shell_type = group
-                            .terminal_view_from_pane_id(parent_pane_id, ctx)
-                            .and_then(|terminal_view| {
-                                terminal_view.as_ref(ctx).active_session_shell_type(ctx)
-                            });
-
-                        let _ = ctx.spawn(
-                            async move {
-                                prepare_local_harness_child_launch(
-                                    prompt,
-                                    harness_type,
-                                    shell_type,
-                                    startup_directory,
-                                )
-                                .await
-                            },
-                            move |group, result, ctx| match result {
-                                Ok(launch) => {
-                                    let PreparedLocalHarnessLaunch {
-                                        command,
-                                        env_vars,
-                                        run_id,
-                                        local_run_id,
-                                    } = launch;
-                                    if let Some(HiddenChildAgentConversation {
-                                        terminal_view: new_terminal_view,
-                                        terminal_view_id,
-                                        conversation_id,
-                                        ..
-                                    }) = create_hidden_child_agent_conversation(
-                                        group,
-                                        parent_pane_id,
-                                        request_name.clone(),
-                                        parent_conversation_id,
-                                        env_vars,
-                                        ctx,
-                                    ) {
-                                        BlocklistAIHistoryModel::handle(ctx).update(
-                                            ctx,
-                                            |history_model, ctx| {
-                                                history_model.assign_run_id_for_conversation(
-                                                    conversation_id,
-                                                    run_id,
-                                                    Some(local_run_id),
-                                                    terminal_view_id,
-                                                    ctx,
-                                                );
-                                            },
-                                        );
-
-                                        new_terminal_view.update(ctx, |terminal_view, ctx| {
-                                            terminal_view.execute_command_or_set_pending(
-                                                &command,
-                                                ctx,
-                                            );
-                                            terminal_view.enter_agent_view(
-                                                None,
-                                                Some(conversation_id),
-                                                AgentViewEntryOrigin::ChildAgent,
-                                                ctx,
-                                            );
-                                        });
-                                    } else {
-                                        create_error_child_agent_conversation(
-                                            group,
-                                            parent_pane_id,
-                                            request_name,
-                                            parent_conversation_id,
-                                            "Failed to create a hidden pane for the local child harness."
-                                                .to_string(),
-                                            ctx,
-                                        );
-                                    }
-                                }
-                                Err(error_message) => {
-                                    create_error_child_agent_conversation(
-                                        group,
-                                        parent_pane_id,
-                                        request_name,
-                                        parent_conversation_id,
-                                        error_message,
-                                        ctx,
-                                    );
-                                }
-                            },
-                        );
-                    }
-                    StartAgentExecutionMode::Remote { .. } => {
-                        create_error_child_agent_conversation(
-                            group,
-                            pane_id,
-                            request.name,
-                            request.parent_conversation_id,
-                            "Hosted remote child agents are unavailable in local-only Warper."
-                                .to_string(),
-                            ctx,
-                        );
-                    }
-                }
-            }
             _ => {}
         }
     } else {
         log::warn!("Session {terminal_pane_id:?} not found");
-    }
-}
-
-#[cfg(feature = "local_fs")]
-fn handle_ai_history_event(
-    event: &BlocklistAIHistoryEvent,
-    terminal_view_id: EntityId,
-    terminal_pane_id: TerminalPaneId,
-    model_event_sender: SyncSender<ModelEvent>,
-    ctx: &mut ViewContext<PaneGroup>,
-) {
-    use std::sync::Arc;
-
-    use crate::ai::blocklist::{
-        AIQueryHistoryOutputStatus, PersistedAIInput, PersistedAIInputType,
-    };
-
-    if event
-        .terminal_view_id()
-        .is_some_and(|id| id != terminal_view_id)
-    {
-        return;
-    }
-
-    match event {
-        BlocklistAIHistoryEvent::AppendedExchange {
-            exchange_id,
-            conversation_id,
-            is_hidden,
-            ..
-        }
-        | BlocklistAIHistoryEvent::UpdatedStreamingExchange {
-            exchange_id,
-            conversation_id,
-            is_hidden,
-            ..
-        } => {
-            // Check if session restoration is enabled.
-            if !*GeneralSettings::as_ref(ctx).restore_session
-                || !AppExecutionMode::as_ref(ctx).can_save_session()
-            {
-                return;
-            }
-
-            let Some(conversation) =
-                BlocklistAIHistoryModel::as_ref(ctx).conversation(conversation_id)
-            else {
-                log::warn!("Received event with invalid conversation ID: {conversation_id:?}");
-                return;
-            };
-
-            let Some(exchange) = conversation.exchange_with_id(*exchange_id) else {
-                log::warn!("Received event with invalid exchange ID: {exchange_id:?}");
-                return;
-            };
-
-            // Hidden blocks and passive-only conversations should not be restored, so we skip
-            // them.
-            if *is_hidden || conversation.is_entirely_passive() {
-                return;
-            }
-
-            let persisted_query = PersistedAIInput {
-                start_ts: exchange.start_time,
-                inputs: exchange
-                    .input
-                    .iter()
-                    .filter_map(|input| PersistedAIInputType::try_from(input).ok())
-                    .collect(),
-                exchange_id: exchange.id,
-                conversation_id: *conversation_id,
-                output_status: AIQueryHistoryOutputStatus::from(&exchange.output_status),
-                working_directory: exchange.working_directory.clone(),
-                // TODO(CORE-3546): shell: exchange.shell.clone(),
-                model_id: exchange.model_id.clone(),
-                coding_model_id: exchange.coding_model_id.clone(),
-            };
-            let upsert_ai_query_event = ModelEvent::UpsertAIQuery {
-                query: Arc::new(persisted_query),
-            };
-            let _ = ctx.spawn(
-                // Sending over a sync sender can block the current thread, so we
-                // do this async.
-                async move { model_event_sender.send(upsert_ai_query_event) },
-                move |_, res, _| {
-                    if let Err(err) = res {
-                        log::error!(
-                            "Error sending upsert AI query event for terminal id {terminal_pane_id:?} {err:?}"
-                        );
-                    }
-                },
-            );
-        }
-        BlocklistAIHistoryEvent::ClearedConversationsInTerminalView { .. }
-        | BlocklistAIHistoryEvent::ClearedActiveConversation { .. } => {
-            ctx.emit(pane_group::Event::InvalidatedActiveConversation);
-        }
-        BlocklistAIHistoryEvent::RemoveConversation {
-            conversation_id, ..
-        } => {
-            let conversation_id = conversation_id.to_string();
-            // On remove, delete all related AI query and multi-agent conversation data for this conversation.
-            let _ = ctx.spawn(
-                async move {
-                    model_event_sender.send(ModelEvent::DeleteAIConversation {
-                        conversation_id: conversation_id.clone(),
-                    })?;
-                    model_event_sender.send(ModelEvent::DeleteMultiAgentConversations {
-                        conversation_ids: vec![conversation_id],
-                    })
-                },
-                |_, res, _| {
-                    if let Err(err) = res {
-                        log::error!("Error sending delete events for conversation: {err:?}");
-                    }
-                },
-            );
-        }
-        // DeletedConversation SQL cleanup is handled directly in delete_conversation().
-        BlocklistAIHistoryEvent::DeletedConversation { .. }
-        | BlocklistAIHistoryEvent::StartedNewConversation { .. }
-        | BlocklistAIHistoryEvent::UpdatedConversationStatus { .. }
-        | BlocklistAIHistoryEvent::ReassignedExchange { .. }
-        | BlocklistAIHistoryEvent::SetActiveConversation { .. }
-        | BlocklistAIHistoryEvent::UpdatedTodoList { .. }
-        | BlocklistAIHistoryEvent::UpdatedAutoexecuteOverride { .. }
-        | BlocklistAIHistoryEvent::SplitConversation { .. }
-        | BlocklistAIHistoryEvent::RestoredConversations { .. }
-        | BlocklistAIHistoryEvent::CreatedSubtask { .. }
-        | BlocklistAIHistoryEvent::UpgradedTask { .. }
-        | BlocklistAIHistoryEvent::UpdatedConversationMetadata { .. }
-        | BlocklistAIHistoryEvent::UpdatedConversationArtifacts { .. }
-        | BlocklistAIHistoryEvent::ConversationServerTokenAssigned { .. } => (),
     }
 }

@@ -14,13 +14,10 @@ use crate::search::files::model::FileSearchModel;
 use crate::search::mixer::AddAsyncSourceOptions;
 use crate::search::QueryFilter;
 use crate::session_management::SessionSource;
-use crate::settings::AISettings;
 use warp_core::context_flag::ContextFlag;
 use warp_core::features::FeatureFlag;
 use warpui::keymap::BindingId;
 use warpui::{AppContext, Entity, ModelContext, ModelHandle, SingletonEntity};
-
-use super::conversations;
 
 /// Store of all of the [`crate::search::DataSource`]s for the command palette.
 pub struct DataSourceStore {
@@ -28,8 +25,6 @@ pub struct DataSourceStore {
     sessions_data_source: ModelHandle<navigation::DataSource>,
     launch_config_data_source: ModelHandle<launch_config::DataSource>,
     new_session_data_source: Option<ModelHandle<NewSessionDataSource>>,
-    historical_conversation_data_source: ModelHandle<conversations::DataSource>,
-    all_conversation_data_source: ModelHandle<conversations::DataSource>,
     repo_data_source: ModelHandle<RepoDataSource>,
 }
 
@@ -51,12 +46,6 @@ impl DataSourceStore {
             && cfg!(feature = "local_tty"))
         .then_some(ctx.add_model(|ctx| NewSessionDataSource::new(binding_source, ctx)));
 
-        let historical_conversation_data_source: ModelHandle<conversations::DataSource> =
-            ctx.add_model(|_| conversations::DataSource::historical());
-
-        let all_conversation_data_source: ModelHandle<conversations::DataSource> =
-            ctx.add_model(|_| conversations::DataSource::new());
-
         let repo_data_source = ctx.add_model(|_| RepoDataSource::new());
 
         Self {
@@ -64,8 +53,6 @@ impl DataSourceStore {
             sessions_data_source,
             launch_config_data_source,
             new_session_data_source,
-            historical_conversation_data_source,
-            all_conversation_data_source,
             repo_data_source,
         }
     }
@@ -122,19 +109,6 @@ impl DataSourceStore {
                         run_when_unfiltered: true,
                     },
                     ctx,
-                );
-            }
-
-            // Add conversation search if AI is enabled
-            if AISettings::as_ref(ctx).is_any_ai_enabled(ctx) {
-                mixer.add_sync_source(
-                    self.all_conversation_data_source.clone(),
-                    HashSet::from([QueryFilter::Conversations]),
-                );
-
-                mixer.add_sync_source(
-                    self.historical_conversation_data_source.clone(),
-                    HashSet::from([QueryFilter::HistoricalConversations]),
                 );
             }
 
@@ -214,19 +188,6 @@ impl DataSourceStore {
                 // For project summaries, we would need a project data source to reconstruct the item,
                 // but this is typically handled by the welcome palette, not the command palette.
                 // For now, return None as projects aren't expected in the regular command palette.
-                None
-            }
-            ItemSummary::Conversation { id } => conversations::DataSource::query_result(id, app),
-
-            ItemSummary::NewConversation => {
-                // The new conversation item should not show up in the recent command list,
-                // as its use is specific to the conversation filter.
-                None
-            }
-
-            ItemSummary::ForkConversation => {
-                // The forked conversation item should not show up in the recent command list,
-                // as its use is specific to the conversation filter.
                 None
             }
 

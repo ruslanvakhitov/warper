@@ -1,10 +1,8 @@
-use crate::appearance::Appearance;
 use pathfinder_geometry::vector::vec2f;
-use warp_core::ui::theme::AnsiColorIdentifier;
 use warpui::{
     elements::{
-        ChildAnchor, ConstrainedBox, Container, CornerRadius, Empty, Fill, OffsetPositioning,
-        ParentAnchor, ParentElement as _, ParentOffsetBounds, Radius, Stack,
+        ChildAnchor, ConstrainedBox, Container, Empty, OffsetPositioning, ParentAnchor,
+        ParentElement as _, ParentOffsetBounds, Stack,
     },
     ui_components::components::UiComponentStyles,
     Element,
@@ -32,21 +30,6 @@ impl RedNotificationDot {
             status_element = status_element.with_background(background);
         }
         status_element.finish()
-    }
-
-    pub fn default_styles(appearance: &Appearance) -> UiComponentStyles {
-        let diameter = 8.;
-        UiComponentStyles {
-            width: Some(diameter),
-            height: Some(diameter),
-            border_radius: Some(CornerRadius::with_all(Radius::Percentage(50.))),
-            background: Some(Fill::Solid(
-                AnsiColorIdentifier::Red
-                    .to_ansi_color(&appearance.theme().terminal_colors().normal)
-                    .into(),
-            )),
-            ..Default::default()
-        }
     }
 
     pub fn render_with_offset(

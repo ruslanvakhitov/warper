@@ -57,9 +57,8 @@ pub use settings_value_derive::SettingsValue;
 /// derive attribute (orphan rule).
 ///
 /// **Manual impl with overridden methods** — use when neither the derive
-/// nor the serde output is suitable.  For example,
-/// `AgentModeCommandExecutionPredicate` serializes as a plain regex
-/// string in the file, which neither the derive nor serde would produce.
+/// nor the serde output is suitable, such as a value stored in a different
+/// representation in the settings file.
 pub trait SettingsValue: Serialize + DeserializeOwned {
     /// Converts this value to a JSON representation for the settings file.
     fn to_file_value(&self) -> Value {

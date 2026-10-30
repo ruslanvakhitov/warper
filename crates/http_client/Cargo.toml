@@ -11,17 +11,13 @@ test-util = []
 [dependencies]
 anyhow.workspace = true
 async-compat.workspace = true
-async-stream.workspace = true
 bytes.workspace = true
 cfg-if.workspace = true
 futures.workspace = true
 http.workspace = true
 log.workspace = true
-oauth2.workspace = true
-prevent_sleep.workspace = true
 prost.workspace = true
 reqwest.workspace = true
-reqwest-eventsource.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 serde_urlencoded.workspace = true

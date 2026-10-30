@@ -195,23 +195,6 @@ pub fn default_tab_configs_dir() -> PathBuf {
     base_dir().join("default_tab_configs")
 }
 
-/// Returns whether the path points to a tab config TOML file under one of Warp's
-/// tab config directories.
-#[cfg(feature = "local_fs")]
-pub fn is_tab_config_toml(path: &Path) -> bool {
-    let is_toml = path
-        .extension()
-        .and_then(|extension| extension.to_str())
-        .is_some_and(|extension| extension == "toml");
-    if !is_toml {
-        return false;
-    }
-
-    [tab_configs_dir(), default_tab_configs_dir()]
-        .into_iter()
-        .any(|dir| path.starts_with(dir))
-}
-
 /// Ensures `~/.warp/default_tab_configs/worktree.toml` exists, creating it
 /// from the embedded template if missing. Returns the path to the file.
 #[cfg(feature = "local_fs")]

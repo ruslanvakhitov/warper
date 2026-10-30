@@ -1,32 +1,27 @@
 use super::*;
-use crate::ai::persisted_workspace::PersistedWorkspace;
 use crate::code::editor::view::{CodeEditorRenderOptions, CodeEditorView};
 use crate::code::local_code_editor::LocalCodeEditorView;
 use crate::code_review::comments::{
-    attach_pending_imported_comments, AttachedReviewComment, AttachedReviewCommentTarget,
-    CommentId, CommentOrigin, LineDiffContent, PendingImportedReviewComment,
-    PendingImportedReviewCommentTarget,
+    AttachedReviewComment, AttachedReviewCommentTarget, CommentId, LineDiffContent,
 };
 use crate::code_review::diff_size_limits::DiffSize;
 use crate::code_review::diff_state::{DiffStateModel, FileDiff, GitFileStatus};
 use crate::code_review::editor_state::CodeReviewEditorState;
 use crate::code_review::GlobalCodeReviewModel;
 use crate::pane_group::WorkingDirectoriesModel;
+use crate::project_workspaces::PersistedWorkspace;
 use crate::settings_view::keybindings::KeybindingChangedNotifier;
 use crate::terminal::local_shell::LocalShellState;
 use crate::test_util::settings::initialize_settings_for_tests;
 use crate::vim_registers::VimRegisters;
 use crate::workspace::sync_inputs::SyncedInputState;
 use crate::workspace::ActiveSession;
-use crate::workspaces::user_workspaces::UserWorkspaces;
 use crate::NotebookKeybindings;
-use ai::agent::action::InsertReviewComment;
 use chrono::Local;
 use lsp::LspManagerModel;
 use repo_metadata::repositories::DetectedRepositories;
 use std::path::PathBuf;
 use std::sync::Arc;
-use warp_core::features::FeatureFlag;
 use warp_core::ui::appearance::Appearance;
 use warp_editor::content::buffer::InitialBufferState;
 use warp_editor::render::element::VerticalExpansionBehavior;
@@ -64,11 +59,11 @@ fn initialize_test_app(app: &mut App) {
     app.add_singleton_model(|_| VimRegisters::new());
     app.add_singleton_model(|_| KeybindingChangedNotifier::mock());
     app.add_singleton_model(|_| DetectedRepositories::default());
+    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
     app.add_singleton_model(|_| LspManagerModel::new());
     app.add_singleton_model(|_| LocalShellState::NotLoaded);
     app.add_singleton_model(PersistedWorkspace::new_for_test);
     app.add_singleton_model(|_| GlobalCodeReviewModel);
-    app.add_singleton_model(|ctx| UserWorkspaces::mock(vec![], ctx));
 
     app.add_singleton_model(|_| ActiveSession::default());
     app.add_singleton_model(NotebookKeybindings::new);
@@ -91,7 +86,7 @@ fn create_editor_with_content(app: &mut App, content: &str) -> ViewHandle<LocalC
             editor.reset(InitialBufferState::plain_text(&content), ctx);
         });
 
-        LocalCodeEditorView::new(code_editor_view, None, false, None, ctx)
+        LocalCodeEditorView::new(code_editor_view, ctx)
     });
 
     local_editor
@@ -121,7 +116,7 @@ fn create_editor_with_diff(
             editor.set_base(&base, true, ctx);
         });
 
-        LocalCodeEditorView::new(code_editor_view, None, false, None, ctx)
+        LocalCodeEditorView::new(code_editor_view, ctx)
     });
 
     local_editor
@@ -154,7 +149,6 @@ fn create_line_comment(
         base: None,
         head: None,
         outdated: false,
-        origin: CommentOrigin::Native,
     }
 }
 
@@ -173,7 +167,6 @@ fn create_file_comment(
         base: None,
         head: None,
         outdated: false,
-        origin: CommentOrigin::Native,
     }
 }
 
@@ -187,33 +180,7 @@ fn create_general_comment(comment_content: &str) -> AttachedReviewComment {
         base: None,
         head: None,
         outdated: false,
-        origin: CommentOrigin::Native,
     }
-}
-
-fn make_pending_comment(
-    id: &str,
-    author: &str,
-    body: &str,
-    parent_id: Option<&str>,
-    timestamp: &str,
-    target: PendingImportedReviewCommentTarget,
-) -> PendingImportedReviewComment {
-    let mut pending = PendingImportedReviewComment::try_from(InsertReviewComment {
-        comment_id: id.to_string(),
-        author: author.to_string(),
-        comment_body: body.to_string(),
-        parent_comment_id: parent_id.map(|s| s.to_string()),
-        last_modified_timestamp: timestamp.to_string(),
-        comment_location: None,
-        html_url: None,
-    })
-    .expect("valid pending import conversion");
-
-    // Override the location target since we intentionally use `comment_location: None` above.
-    pending.target = target;
-
-    pending
 }
 
 use crate::view_components::action_button::{ActionButton, NakedTheme};
@@ -399,8 +366,6 @@ fn test_relocate_comments_file_comment_passes_through() {
 #[test]
 fn test_relocate_comments_line_comment_no_matching_editor_marked_outdated() {
     App::test((), |mut app| async move {
-        let _flag_override = FeatureFlag::PRCommentsSlashCommand.override_enabled(true);
-
         // Editor is for "test.txt" but comment is for "other.txt"
         let ctx = TestContext::new(
             &mut app,
@@ -516,136 +481,8 @@ fn test_relocate_comments_line_comment_with_absolute_path() {
 }
 
 #[test]
-fn test_attach_pending_imported_comment_formats_body_and_uses_absolute_path() {
-    let repo_path = PathBuf::from("/repo");
-
-    let pending = make_pending_comment(
-        "1",
-        "alice",
-        "Hello world",
-        None,
-        "2024-01-01T00:00:00Z",
-        PendingImportedReviewCommentTarget::Line {
-            relative_file_path: PathBuf::from("test.txt"),
-            line: EditorLineLocation::Current {
-                line_number: LineCount::from(1),
-                line_range: LineCount::from(1)..LineCount::from(2),
-            },
-            diff_content: LineDiffContent {
-                content: "+line 1".to_string(),
-                lines_added: LineCount::from(1),
-                lines_removed: LineCount::from(0),
-            },
-        },
-    );
-
-    let attached = attach_pending_imported_comments(vec![pending], repo_path.as_path());
-
-    assert_eq!(attached.len(), 1);
-    assert_eq!(attached[0].content, "**@alice**:\nHello world");
-
-    match &attached[0].target {
-        AttachedReviewCommentTarget::Line {
-            absolute_file_path, ..
-        } => {
-            assert_eq!(*absolute_file_path, repo_path.join("test.txt"));
-        }
-        _ => panic!("expected line comment target"),
-    }
-
-    match &attached[0].origin {
-        CommentOrigin::ImportedFromGitHub(details) => {
-            assert_eq!(details.author, "alice");
-            assert_eq!(details.github_comment_id, "1");
-            assert!(details.github_parent_id.is_none());
-        }
-        _ => panic!("expected imported origin"),
-    }
-}
-
-#[test]
-fn test_attach_pending_imported_thread_flattens_depth_first_sorted_by_timestamp() {
-    let repo_path = PathBuf::from("/repo");
-
-    let root = make_pending_comment(
-        "1",
-        "alice",
-        "Root",
-        None,
-        "2024-01-01T00:00:00Z",
-        PendingImportedReviewCommentTarget::Line {
-            relative_file_path: PathBuf::from("test.txt"),
-            line: EditorLineLocation::Current {
-                line_number: LineCount::from(1),
-                line_range: LineCount::from(1)..LineCount::from(2),
-            },
-            diff_content: LineDiffContent {
-                content: "+line 1".to_string(),
-                lines_added: LineCount::from(1),
-                lines_removed: LineCount::from(0),
-            },
-        },
-    );
-
-    // Earlier reply to the root.
-    let reply_early = make_pending_comment(
-        "4",
-        "dana",
-        "Reply early",
-        Some("1"),
-        "2024-01-01T00:30:00Z",
-        PendingImportedReviewCommentTarget::General,
-    );
-
-    // Later reply to the root.
-    let reply_late = make_pending_comment(
-        "2",
-        "bob",
-        "Reply later",
-        Some("1"),
-        "2024-01-01T01:00:00Z",
-        PendingImportedReviewCommentTarget::General,
-    );
-
-    // Reply to the later reply.
-    let reply_nested = make_pending_comment(
-        "3",
-        "charlie",
-        "Nested reply",
-        Some("2"),
-        "2024-01-01T02:00:00Z",
-        PendingImportedReviewCommentTarget::General,
-    );
-
-    let latest_timestamp = reply_nested.last_update_time;
-
-    let attached = attach_pending_imported_comments(
-        vec![reply_late, root, reply_nested, reply_early],
-        repo_path.as_path(),
-    );
-
-    assert_eq!(attached.len(), 1);
-    assert_eq!(
-        attached[0].content,
-        "**@alice**:\nRoot\n---\n**@dana**:\nReply early\n---\n**@bob**:\nReply later\n---\n**@charlie**:\nNested reply"
-    );
-    assert_eq!(attached[0].last_update_time, latest_timestamp);
-
-    match &attached[0].target {
-        AttachedReviewCommentTarget::Line {
-            absolute_file_path, ..
-        } => {
-            assert_eq!(*absolute_file_path, repo_path.join("test.txt"));
-        }
-        _ => panic!("expected root line target to be preserved"),
-    }
-}
-
-#[test]
 fn test_relocate_comments_file_comment_no_matching_editor_marked_outdated() {
     App::test((), |mut app| async move {
-        let _flag_override = FeatureFlag::PRCommentsSlashCommand.override_enabled(true);
-
         // Editor is for "test.txt" but comment is for "other.txt"
         let ctx = TestContext::new(
             &mut app,
@@ -681,8 +518,6 @@ fn test_relocate_comments_file_comment_no_matching_editor_marked_outdated() {
 #[test]
 fn test_relocate_comments_line_removed_marked_outdated() {
     App::test((), |mut app| async move {
-        let _flag_override = FeatureFlag::PRCommentsSlashCommand.override_enabled(true);
-
         // Editor has "line 1\nline 3" (line 2 was removed)
         // Comment was attached to "line 2" which no longer exists
         let file_path = PathBuf::from("test.txt");
@@ -880,8 +715,6 @@ fn test_handle_edit_comment_scrolls_with_buffer() {
 #[test]
 fn test_active_comments_not_marked_outdated() {
     App::test((), |mut app| async move {
-        let _flag_override = FeatureFlag::PRCommentsSlashCommand.override_enabled(true);
-
         let file_path = PathBuf::from("test.txt");
         let ctx = TestContext::new(&mut app, file_path.clone(), "line 1\nline 2\nline 3");
 

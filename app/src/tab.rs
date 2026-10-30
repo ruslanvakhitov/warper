@@ -1,5 +1,3 @@
-use crate::ai::agent::conversation::ConversationStatus;
-use crate::ai::conversation_status_ui::{render_status_element, STATUS_ELEMENT_PADDING};
 use crate::appearance::Appearance;
 /// Tab module contains structures related to Tabs (such as TabData or TabComponent) that simplify
 /// the rendering and management of tabs in general.
@@ -19,7 +17,6 @@ use crate::ui_components::buttons::icon_button;
 use crate::ui_components::color_dot::{render_color_dot, TAB_COLOR_OPTIONS};
 use crate::ui_components::icons::{Icon, ICON_DIMENSIONS};
 use crate::util::color::{coloru_with_opacity, Opacity};
-use crate::util::truncation::truncate_from_end;
 
 use crate::window_settings::WindowSettings;
 use crate::workspace::sync_inputs::SyncedInputState;
@@ -27,7 +24,6 @@ use crate::workspace::tab_settings::{TabCloseButtonPosition, TabSettings};
 use crate::workspace::{
     PaneViewLocator, TabBarDropTargetData, TabBarLocation, TabContextMenuAnchor, WorkspaceAction,
 };
-use crate::BlocklistAIHistoryModel;
 use pathfinder_color::ColorU;
 use pathfinder_geometry::vector::vec2f;
 use serde::{Deserialize, Serialize};
@@ -63,7 +59,6 @@ const WARP_2_TAB_COLOR_OPACITY: Opacity = 25;
 const WARP_2_HOVERED_TAB_COLOR_OPACITY: Opacity = 50;
 const TAB_CLOSE_BUTTON_OPACITY: Opacity = 60;
 const TAB_CLOSE_BUTTON_WIDTH: f32 = 20.0;
-const MAX_TOOLTIP_LENGTH: usize = 80;
 
 const TAB_INDICATOR_SYNCED_COLOR: u32 = 0x4A93FFFF;
 
@@ -482,9 +477,6 @@ enum Indicator {
     Maximized,
     /// We should show a shell indicator for the tab.
     Shell(ShellIndicatorType),
-    Agent {
-        conversation_status: Option<ConversationStatus>,
-    },
 }
 
 impl From<TerminalViewState> for Indicator {
@@ -513,8 +505,6 @@ pub struct TabComponent<'a> {
     close_button_position: TabCloseButtonPosition,
     appearance: &'a Appearance,
     tooltip_message: Option<String>,
-    tooltip_directory: Option<String>,
-    tooltip_git_branch: Option<String>,
     is_drag_target: bool,
     background_opacity: u8,
 }
@@ -609,8 +599,6 @@ impl<'a> TabComponent<'a> {
             Indicator::None
         } else if are_inputs_synced {
             Indicator::Synced
-        } else if let Some(agent) = Self::agent_indicator(tab, ctx) {
-            agent
         } else if let Some(shell_indicator_type) = shell_indicator_type {
             Indicator::Shell(shell_indicator_type)
         } else if has_active_pane_state_indicator {
@@ -621,9 +609,7 @@ impl<'a> TabComponent<'a> {
             Indicator::None
         };
 
-        let tooltip_message = Self::get_tooltip_message(&indicator, tab, ctx);
-        let tooltip_directory = Self::get_tooltip_directory(&indicator, tab, ctx);
-        let tooltip_git_branch = Self::get_tooltip_git_branch(&indicator, tab, ctx);
+        let tooltip_message = Self::get_tooltip_message(tab, ctx);
         let window_id = tab.pane_group.window_id(ctx);
         let background_opacity = WindowSettings::as_ref(ctx)
             .background_opacity
@@ -642,40 +628,9 @@ impl<'a> TabComponent<'a> {
             close_button_position,
             appearance,
             tooltip_message,
-            tooltip_directory,
-            tooltip_git_branch,
             is_drag_target,
             background_opacity,
         }
-    }
-
-    /// Returns the agent indicator for the focused session's active conversation,
-    /// or `None` if there is no non-empty, non-passive conversation to display.
-    /// When a shell command is long-running the status is overridden to
-    /// `InProgress`, matching vertical-tab behavior.
-    fn agent_indicator(tab: &TabData, app: &AppContext) -> Option<Indicator> {
-        let terminal_view = tab.pane_group.as_ref(app).focused_session_view(app)?;
-        let terminal_view_ref = terminal_view.as_ref(app);
-        let is_long_running = terminal_view_ref.is_long_running();
-        let conversation =
-            BlocklistAIHistoryModel::as_ref(app).active_conversation(terminal_view_ref.id())?;
-
-        // Show in-progress indicator when a shell command is running in the AgentView.
-        // This matches vertical-tab behavior.
-        if is_long_running {
-            return Some(Indicator::Agent {
-                conversation_status: Some(ConversationStatus::InProgress),
-            });
-        }
-
-        if conversation.is_empty() || conversation.is_entirely_passive() {
-            return None;
-        }
-
-        let conversation_status = Some(conversation.status().clone());
-        Some(Indicator::Agent {
-            conversation_status,
-        })
     }
 
     /// Determine if this tab is the active tab.
@@ -696,25 +651,8 @@ impl<'a> TabComponent<'a> {
         self.tab.draggable_state.is_dragging()
     }
 
-    /// Whether the tab title comes from an agent conversation rather than the
-    /// terminal (e.g. shell path). Derived from the already-computed indicator
-    /// so the text-clipping direction matches the title content.
-    fn has_ai_conversation_title(&self) -> bool {
-        Self::is_agent_task_indicator(&self.indicator)
-    }
-
     /// Get the tooltip message for tabs - handles both agent tasks and regular tab titles
-    fn get_tooltip_message(
-        indicator: &Indicator,
-        tab: &TabData,
-        ctx: &AppContext,
-    ) -> Option<String> {
-        if Self::is_agent_task_indicator(indicator) {
-            return Self::get_agent_task_tooltip_message(tab, ctx);
-        }
-
-        // If we're not showing the conversation title in the tooltip,
-        // use the original title from the terminal model.
+    fn get_tooltip_message(tab: &TabData, ctx: &AppContext) -> Option<String> {
         let original_title = tab
             .pane_group
             .as_ref(ctx)
@@ -727,85 +665,6 @@ impl<'a> TabComponent<'a> {
         }
 
         None
-    }
-
-    /// Get the task description for the tooltip if this is an agent task
-    /// and the tooltip content would be different from what's displayed in the tab
-    fn get_agent_task_tooltip_message(tab: &TabData, ctx: &AppContext) -> Option<String> {
-        let terminal_view_id = tab
-            .pane_group
-            .as_ref(ctx)
-            .focused_session_view(ctx)
-            .map(|view| view.id())?;
-        let ai_history_model = BlocklistAIHistoryModel::as_ref(ctx);
-        let conversation = ai_history_model.active_conversation(terminal_view_id)?;
-
-        // Don't show tooltip for passive conversations
-        if conversation.is_entirely_passive() {
-            return None;
-        }
-
-        let conversation_title = conversation.title()?;
-        let trimmed_title = conversation_title.trim().to_owned();
-
-        // Truncate tooltip to prevent rendering issues
-        let truncated_name = truncate_from_end(&trimmed_title, MAX_TOOLTIP_LENGTH);
-
-        Some(truncated_name)
-    }
-
-    /// Check if the given indicator is an agent task indicator
-    fn is_agent_task_indicator(indicator: &Indicator) -> bool {
-        matches!(indicator, Indicator::Agent { .. })
-    }
-
-    /// Get the current working directory for the tooltip if this is an agent task
-    fn get_tooltip_directory(
-        indicator: &Indicator,
-        tab: &TabData,
-        ctx: &AppContext,
-    ) -> Option<String> {
-        if !Self::is_agent_task_indicator(indicator) {
-            return None;
-        }
-
-        tab.pane_group
-            .as_ref(ctx)
-            .focused_session_view(ctx)
-            .and_then(|view| {
-                view.as_ref(ctx)
-                    .model
-                    .lock()
-                    .block_list()
-                    .active_block()
-                    .metadata()
-                    .current_working_directory()
-                    .map(|s| s.to_string())
-            })
-    }
-
-    /// Get the git branch for the tooltip if this is an agent task
-    fn get_tooltip_git_branch(
-        indicator: &Indicator,
-        tab: &TabData,
-        ctx: &AppContext,
-    ) -> Option<String> {
-        if !Self::is_agent_task_indicator(indicator) {
-            return None;
-        }
-
-        tab.pane_group
-            .as_ref(ctx)
-            .focused_session_view(ctx)
-            .and_then(|view| {
-                view.as_ref(ctx)
-                    .model
-                    .lock()
-                    .block_list()
-                    .active_block()
-                    .git_branch()
-                    .cloned()
-            })
     }
 
     /// Generate the SavePosition ID for the tab text content
@@ -998,21 +857,6 @@ impl<'a> TabComponent<'a> {
                     .to_warpui_icon(internal_colors::neutral_5(self.appearance.theme()).into())
                     .finish(),
             ),
-            Indicator::Agent {
-                conversation_status,
-            } => {
-                if let Some(status) = conversation_status {
-                    if FeatureFlag::NewTabStyling.is_enabled() {
-                        let icon_size = 22.0 - STATUS_ELEMENT_PADDING * 2.;
-                        Some(render_status_element(status, icon_size, self.appearance))
-                    } else {
-                        Some(status.render_icon(self.appearance).finish())
-                    }
-                } else {
-                    let icon_color = self.appearance.theme().nonactive_ui_text_color();
-                    Some(Icon::Warp.to_warpui_icon(icon_color).finish())
-                }
-            }
         };
 
         icon.map(|icon| {
@@ -1035,7 +879,7 @@ impl<'a> TabComponent<'a> {
     }
 
     fn should_clip_text_start(&self) -> bool {
-        !self.has_custom_title && !self.has_ai_conversation_title()
+        !self.has_custom_title
     }
 
     fn render_tab_container_internal(
@@ -1326,8 +1170,6 @@ impl UiComponent for TabComponent<'_> {
 
         // Extract values before moving self into closure
         let tooltip_text = self.tooltip_message.clone();
-        let tooltip_directory = self.tooltip_directory.clone();
-        let tooltip_git_branch = self.tooltip_git_branch.clone();
         let tab_text_position_id = self.tab_text_position_id();
         let tooltip_mouse_state = self.tab.tooltip_mouse_state.clone();
 
@@ -1340,8 +1182,6 @@ impl UiComponent for TabComponent<'_> {
         // Add tooltip hover on top with delay if we have a tooltip message
         if let Some(tooltip_text) = tooltip_text {
             let tooltip_text_clone = tooltip_text.clone();
-            let tooltip_directory_clone = tooltip_directory.clone();
-            let tooltip_git_branch_clone = tooltip_git_branch.clone();
 
             // Layer the tooltip hover on top
             tab = Hoverable::new(tooltip_mouse_state, move |tooltip_state| {
@@ -1358,81 +1198,7 @@ impl UiComponent for TabComponent<'_> {
                     .with_color(font_color)
                     .finish();
 
-                    let has_extra_info =
-                        tooltip_directory_clone.is_some() || tooltip_git_branch_clone.is_some();
-
-                    let tooltip_content: Box<dyn Element> = if has_extra_info {
-                        let mut column = Flex::column().with_child(title_text);
-
-                        if let Some(directory) = &tooltip_directory_clone {
-                            let folder_icon = Icon::Folder
-                                .to_warpui_icon(ThemeFill::Solid(font_color))
-                                .finish();
-
-                            let directory_row = Flex::row()
-                                .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                                .with_child(
-                                    ConstrainedBox::new(folder_icon)
-                                        .with_height(appearance.ui_font_size())
-                                        .with_width(appearance.ui_font_size())
-                                        .finish(),
-                                )
-                                .with_child(
-                                    Container::new(
-                                        Text::new(
-                                            directory.clone(),
-                                            appearance.ui_font_family(),
-                                            appearance.ui_font_size(),
-                                        )
-                                        .with_color(font_color)
-                                        .finish(),
-                                    )
-                                    .with_margin_left(4.)
-                                    .finish(),
-                                )
-                                .finish();
-
-                            column.add_child(
-                                Container::new(directory_row).with_margin_top(4.).finish(),
-                            );
-                        }
-
-                        if let Some(branch) = &tooltip_git_branch_clone {
-                            let branch_icon = Icon::GitBranch
-                                .to_warpui_icon(ThemeFill::Solid(font_color))
-                                .finish();
-
-                            let branch_row = Flex::row()
-                                .with_cross_axis_alignment(CrossAxisAlignment::Center)
-                                .with_child(
-                                    ConstrainedBox::new(branch_icon)
-                                        .with_height(appearance.ui_font_size())
-                                        .with_width(appearance.ui_font_size())
-                                        .finish(),
-                                )
-                                .with_child(
-                                    Container::new(
-                                        Text::new(
-                                            branch.clone(),
-                                            appearance.ui_font_family(),
-                                            appearance.ui_font_size(),
-                                        )
-                                        .with_color(font_color)
-                                        .finish(),
-                                    )
-                                    .with_margin_left(4.)
-                                    .finish(),
-                                )
-                                .finish();
-
-                            column
-                                .add_child(Container::new(branch_row).with_margin_top(4.).finish());
-                        }
-
-                        column.finish()
-                    } else {
-                        title_text
-                    };
+                    let tooltip_content = title_text;
 
                     let tooltip = Container::new(tooltip_content)
                         .with_background(appearance.theme().tooltip_background())

@@ -10,7 +10,7 @@ fi
 
 scope="${1:-startup}"
 
-endpoint_denylist='(app\.warp\.dev|rtc\.app\.warp\.dev|sessions\.app\.warp\.dev|oz\.warp\.dev|AIza[0-9A-Za-z_-]+|identitytoolkit\.googleapis\.com|securetoken\.googleapis\.com|firebaseapp\.com|rudderstack\.com|rudderlabs|api\.segment\.io|dataplane\.rudderstack|sentry\.io|releases\.warp\.dev|warp-releases|channel_versions\.json|warp\.dev/download|/download/cli)'
+endpoint_denylist='(openrouter\.ai|app\.warp\.dev|rtc\.app\.warp\.dev|sessions\.app\.warp\.dev|oz\.warp\.dev|AIza[0-9A-Za-z_-]+|identitytoolkit\.googleapis\.com|securetoken\.googleapis\.com|firebaseapp\.com|rudderstack\.com|rudderlabs|api\.segment\.io|dataplane\.rudderstack|sentry\.io|releases\.warp\.dev|warp-releases|channel_versions\.json|warp\.dev/download|/download/cli)'
 startup_network_denylist='(ServerApiProvider|CloudModel|TeamUpdateManager|UpdateManager::new|ServerExperiments|AIRequestUsageModel|OpenRouter|openrouter|Rudder|Sentry|sentry::|crash_reporting::init|autoupdate::|reqwest::|ureq::|hyper::Client|tokio_tungstenite|connect_async|TcpStream::connect|UdpSocket::connect|UdpSocket::send_to)'
 hosted_restore_startup_denylist='(current_user_information|user_profiles|firebase_uid|OnboardingAuthState|AuthStateChanged|AmbientAgentTaskId|ambient_agent_task_id|ArtifactDownloadResponse|ArtifactDownloadCommonFields|ScreenshotArtifactResponseData|FileArtifactResponseData|SpawnAgentRequest|TaskStatusUpdate|SendTelemetryToFile|FeatureFlag::SendTelemetryToFile|telemetry_file_name)'
 removed_hosted_surface_denylist='(AgentConversationsModel|ConversationDetailsPanel|ConversationDetailsData|AgentManagementFilters|AgentRunDisplayStatus|BonusGrantNotificationModel|bonus_grants_shown|share_templatable_mcp_server|share_templatable_mcp_server_installation|unshare_templatable_mcp_server|unshare_templatable_mcp_server_installation|MCPJsonTemplate|MCPGalleryTemplate|MCPTemplateVariable|LEGACY_MCP_CREDENTIALS_KEY|get_all_cloud_synced_mcp_servers|MCPGalleryManager|MCPGallery|create_gallery_server_cards|refresh_gallery_cards)'
@@ -26,7 +26,6 @@ common_excluded_globs=(
     --glob '!crates/warp_graphql_schema/**'
     --glob '!**/generated/**'
     --glob '!**/generated_schema/**'
-    --glob '!app/src/ai/agent/api/openrouter.rs'
 )
 
 run_denylist() {
@@ -59,7 +58,6 @@ case "$scope" in
         targets=(
             "app/src/bin/oss.rs"
             "app/src/lib.rs"
-            "app/src/settings/ai_tests.rs"
             "crates/integration/src/bin/integration.rs"
             "crates/warp_core/src/channel"
         )
@@ -88,12 +86,11 @@ Usage: script/check_warper_static_denylist [startup|startup-network|entrypoints|
 
 Checks WARPER-001 local-only guardrails for removed hosted endpoint literals,
 hosted update/download paths, deleted hosted conversation/MCP sharing symbols,
-and high-risk UI/action/deeplink entrypoint roots. OpenRouter files are not
-scanned by the entrypoint or hosted restore/startup symbol checks because
-OpenRouter is explicitly out of scope for WARPER-001 amputation.
+and high-risk UI/action/deeplink entrypoint roots. Built-in AI and model-provider
+integration are removed under WARPER-015.
 
-All modes exclude specs, scripts, tests, generated schema, generated files, and
-OpenRouter implementation files from the scanned runtime surface.
+All modes exclude specs, scripts, tests, generated schema, and generated files
+from the scanned runtime surface.
 
 Modes:
   startup                 Check the local startup/channel/config surfaces used by Warper.

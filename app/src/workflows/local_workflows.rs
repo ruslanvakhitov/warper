@@ -66,10 +66,7 @@ impl LocalWorkflows {
                 return true;
             };
 
-            if let Some(first_token) = workflow
-                .command()
-                .and_then(|command| command.split_ascii_whitespace().next())
-            {
+            if let Some(first_token) = workflow.command().split_ascii_whitespace().next() {
                 // Show any workflows that start with punctuation, as we can't
                 // be sure of what the first executable token is.
                 return first_token.starts_with(|c: char| c.is_ascii_punctuation())
@@ -140,17 +137,7 @@ impl LocalWorkflows {
                     .iter()
                     .map(|workflow| (WorkflowSource::Local, workflow)),
             )
-            .find(|(_, workflow)| {
-                if let Workflow::Command {
-                    command: workflow_command,
-                    ..
-                } = workflow
-                {
-                    workflow_command == command
-                } else {
-                    false
-                }
-            })
+            .find(|(_, workflow)| workflow.command() == command)
             .map(|(workflow_source, workflow)| (workflow_source, workflow.clone()))
     }
 }

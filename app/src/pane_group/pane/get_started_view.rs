@@ -16,19 +16,14 @@ use warpui::{
 };
 
 use crate::{
-    coding_entrypoints::{
-        clone_repo_view::{CloneRepoEvent, CloneRepoView},
-        create_project_view::{CreateProjectEvent, CreateProjectView},
-        project_buttons::{ProjectButtons, ProjectButtonsEvent},
-    },
+    coding_entrypoints::project_buttons::{ProjectButtons, ProjectButtonsEvent},
     pane_group::{
         focus_state::PaneFocusHandle, pane::view, BackingView, PaneConfiguration, PaneEvent,
     },
-    terminal::TerminalView,
     util::bindings::{keybinding_name_to_display_string, BindingGroup, CustomAction},
     view_components::DismissibleToast,
     workspace::ToastStack,
-    workspace::{Workspace, WorkspaceAction},
+    workspace::WorkspaceAction,
 };
 
 pub fn init(app: &mut AppContext) {
@@ -44,21 +39,10 @@ pub fn init(app: &mut AppContext) {
     .with_custom_action(CustomAction::NewTab)]);
 }
 
-#[derive(Debug, Default)]
-enum ActivePage {
-    #[default]
-    Main,
-    CreateProject,
-    CloneRepo,
-}
-
 pub struct GetStartedView {
     pane_configuration: ModelHandle<PaneConfiguration>,
     focus_handle: Option<PaneFocusHandle>,
     project_buttons: ViewHandle<ProjectButtons>,
-    create_project_view: ViewHandle<CreateProjectView>,
-    clone_repo_view: ViewHandle<CloneRepoView>,
-    active_page: ActivePage,
     terminal_session_button: MouseStateHandle,
 }
 
@@ -68,20 +52,10 @@ impl GetStartedView {
         let project_buttons = ctx.add_typed_action_view(ProjectButtons::new);
         ctx.subscribe_to_view(&project_buttons, Self::handle_project_buttons_event);
 
-        let create_project_view =
-            ctx.add_typed_action_view(|ctx| CreateProjectView::new(true, ctx));
-        ctx.subscribe_to_view(&create_project_view, Self::handle_create_project_event);
-
-        let clone_repo_view = ctx.add_typed_action_view(|ctx| CloneRepoView::new(true, ctx));
-        ctx.subscribe_to_view(&clone_repo_view, Self::handle_clone_repo_event);
-
         Self {
             pane_configuration,
             focus_handle: None,
             project_buttons,
-            create_project_view,
-            clone_repo_view,
-            active_page: Default::default(),
             terminal_session_button: Default::default(),
         }
     }
@@ -111,16 +85,6 @@ impl GetStartedView {
                     });
                 }
             },
-            ProjectButtonsEvent::CreateProject => {
-                self.active_page = ActivePage::CreateProject;
-                ctx.focus(&self.create_project_view);
-                ctx.notify();
-            }
-            ProjectButtonsEvent::CloneRepository => {
-                self.active_page = ActivePage::CloneRepo;
-                ctx.focus(&self.clone_repo_view);
-                ctx.notify();
-            }
         }
     }
 
@@ -128,85 +92,9 @@ impl GetStartedView {
         self.pane_configuration.clone()
     }
 
-    fn handle_create_project_event(
-        &mut self,
-        _: ViewHandle<CreateProjectView>,
-        event: &CreateProjectEvent,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        match event {
-            CreateProjectEvent::SubmitPrompt(prompt) => {
-                self.start_create_new_project(prompt.clone(), ctx);
-            }
-            CreateProjectEvent::Cancel => {
-                self.active_page = Default::default();
-                ctx.notify();
-            }
-        }
-    }
-
-    fn handle_clone_repo_event(
-        &mut self,
-        _: ViewHandle<CloneRepoView>,
-        event: &CloneRepoEvent,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        match event {
-            CloneRepoEvent::SubmitPrompt(url) => {
-                self.start_clone_repo(url.clone(), ctx);
-            }
-            CloneRepoEvent::Cancel => {
-                self.active_page = ActivePage::Main;
-                ctx.notify();
-            }
-        }
-    }
-
-    fn start_create_new_project(&mut self, prompt: String, ctx: &mut ViewContext<Self>) {
-        ctx.dispatch_typed_action(&WorkspaceAction::AddTerminalTab {
-            hide_homepage: true,
-        });
-        update_active_terminal(ctx, |terminal, ctx| {
-            terminal.create_new_project(prompt, ctx);
-        });
-
-        self.close(ctx);
-    }
-
-    fn start_clone_repo(&mut self, url: String, ctx: &mut ViewContext<Self>) {
-        ctx.dispatch_typed_action(&WorkspaceAction::AddTerminalTab {
-            hide_homepage: true,
-        });
-        update_active_terminal(ctx, |terminal, ctx| {
-            terminal.agent_clone_repository(url, ctx);
-        });
-
-        self.close(ctx);
-    }
-
     fn render_main_content(&self, app: &AppContext) -> Box<dyn Element> {
         let appearance = Appearance::as_ref(app);
         let theme = appearance.theme();
-
-        match self.active_page {
-            ActivePage::Main => {}
-            ActivePage::CreateProject => {
-                return Align::new(
-                    ConstrainedBox::new(ChildView::new(&self.create_project_view).finish())
-                        .with_max_width(480.)
-                        .finish(),
-                )
-                .finish();
-            }
-            ActivePage::CloneRepo => {
-                return Align::new(
-                    ConstrainedBox::new(ChildView::new(&self.clone_repo_view).finish())
-                        .with_max_width(480.)
-                        .finish(),
-                )
-                .finish();
-            }
-        }
 
         Flex::column()
             .with_cross_axis_alignment(CrossAxisAlignment::Center)
@@ -234,7 +122,7 @@ impl GetStartedView {
                 Container::new(
                     appearance
                         .ui_builder()
-                        .paragraph("The Agentic Development Environment")
+                        .paragraph("A terminal for your development workflow")
                         .with_style(UiComponentStyles {
                             font_size: Some(14.),
                             font_family_id: Some(appearance.monospace_font_family()),
@@ -349,11 +237,7 @@ impl BackingView for GetStartedView {
     }
 
     fn focus_contents(&mut self, ctx: &mut ViewContext<Self>) {
-        match self.active_page {
-            ActivePage::CreateProject => ctx.focus(&self.create_project_view),
-            ActivePage::CloneRepo => ctx.focus(&self.clone_repo_view),
-            ActivePage::Main => ctx.focus(&self.project_buttons),
-        }
+        ctx.focus(&self.project_buttons);
     }
 
     fn render_header_content(
@@ -366,24 +250,5 @@ impl BackingView for GetStartedView {
 
     fn set_focus_handle(&mut self, focus_handle: PaneFocusHandle, _ctx: &mut ViewContext<Self>) {
         self.focus_handle = Some(focus_handle);
-    }
-}
-
-fn update_active_terminal<F, S>(ctx: &mut ViewContext<GetStartedView>, func: F)
-where
-    F: FnOnce(&mut TerminalView, &mut ViewContext<TerminalView>) -> S,
-{
-    let window_id = ctx.window_id();
-    if let Some(workspaces) = ctx.views_of_type::<Workspace>(window_id) {
-        if let Some(workspace) = workspaces.into_iter().next() {
-            workspace.update(ctx, |workspace, ctx| {
-                let pane_group = workspace.active_tab_pane_group();
-                pane_group.update(ctx, |pane_group, ctx| {
-                    if let Some(active_terminal) = pane_group.active_session_view(ctx) {
-                        active_terminal.update(ctx, func);
-                    }
-                });
-            });
-        }
     }
 }

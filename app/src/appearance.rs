@@ -68,19 +68,13 @@ impl AppearanceManager {
             &FontSettings::handle(ctx),
             move |_, event, ctx| match event {
                 FontSettingsChangedEvent::MonospaceFontName { .. } => {
-                    let (font_name, match_fonts) = {
-                        let settings = FontSettings::as_ref(ctx);
-                        let font_name = settings.monospace_font_name.value().clone();
-                        let match_fonts = settings.match_ai_font_to_terminal_font.value();
-                        (font_name, *match_fonts)
-                    };
-
+                    let font_name = FontSettings::as_ref(ctx)
+                        .monospace_font_name
+                        .value()
+                        .clone();
                     if let Some(new_family) = get_or_load_font_family(&font_name, ctx) {
                         Appearance::handle(ctx).update(ctx, |appearance, ctx| {
                             appearance.set_monospace_font_family(new_family, ctx);
-                            if match_fonts {
-                                appearance.set_ai_font_family(new_family, ctx);
-                            }
                         });
                     }
                 }
@@ -104,28 +98,6 @@ impl AppearanceManager {
                     Appearance::handle(ctx).update(ctx, |appearance, ctx| {
                         appearance.set_line_height_ratio(new_line_height_ratio, ctx);
                     });
-                }
-                FontSettingsChangedEvent::AIFontName { .. } => {
-                    let font_name = FontSettings::as_ref(ctx).ai_font_name.value().clone();
-                    if let Some(new_family) = get_or_load_font_family(&font_name, ctx) {
-                        Appearance::handle(ctx).update(ctx, |appearance, ctx| {
-                            appearance.set_ai_font_family(new_family, ctx)
-                        });
-                    }
-                }
-                FontSettingsChangedEvent::MatchAIFontToTerminalFont { .. } => {
-                    let settings = FontSettings::as_ref(ctx);
-                    let match_ai_font_to_terminal_font =
-                        *settings.match_ai_font_to_terminal_font.value();
-                    if match_ai_font_to_terminal_font {
-                        let font_name = settings.monospace_font_name.value().clone();
-
-                        if let Some(new_family) = get_or_load_font_family(&font_name, ctx) {
-                            Appearance::handle(ctx).update(ctx, |appearance, ctx| {
-                                appearance.set_ai_font_family(new_family, ctx)
-                            });
-                        }
-                    }
                 }
                 _ => {}
             },
@@ -385,14 +357,11 @@ fn build_appearance(ctx: &mut AppContext) -> Appearance {
         .monospace_font_name
         .value()
         .clone();
-    let am_font_name = FontSettings::as_ref(ctx).ai_font_name.value().clone();
 
     let monospace_font_family_from_settings = get_or_load_font_family(&monospace_font_name, ctx);
 
     let ui_font_family =
         load_default_ui_font_family(ctx).expect("unable to load default ui font family");
-
-    let am_font_family_from_settings = get_or_load_font_family(&am_font_name, ctx);
 
     let password_font_family =
         load_password_font_family(ctx).expect("unable to load password font family");
@@ -414,7 +383,6 @@ fn build_appearance(ctx: &mut AppContext) -> Appearance {
         monospace_font_weight,
         ui_font_family,
         line_height_ratio,
-        am_font_family_from_settings.unwrap_or(default_monospace_font_family),
         password_font_family,
     )
 }

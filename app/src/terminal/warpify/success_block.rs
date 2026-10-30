@@ -1,9 +1,8 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use crate::ai::agent::ProgrammingLanguage;
-use crate::ai::blocklist::code_block::{render_runnable_code_snippet, CodeSnippetButtonHandles};
 use crate::appearance::Appearance;
+use crate::terminal::code_snippet::{render_runnable_code_snippet, CodeSnippetButtonHandles};
 use crate::terminal::model::terminal_model::SubshellInitializationInfo;
 use crate::terminal::shell::{Shell, ShellType};
 use crate::ui_components::blended_colors;
@@ -238,11 +237,11 @@ impl WarpifySuccessBlock {
             return None;
         }
 
-        let shell_language = ProgrammingLanguage::Shell(auto_warpify_snippet.shell_type);
+        let shell_language = auto_warpify_snippet.shell_type.name();
         let runnable_command = render_runnable_code_snippet(
             &auto_warpify_snippet.output_grid,
             if auto_warpify_snippet.can_write_to_rc {
-                Some(&shell_language)
+                Some(shell_language)
             } else {
                 None
             },

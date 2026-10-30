@@ -5,12 +5,11 @@ use std::{collections::HashMap, ops::Range};
 
 use settings::Setting as _;
 use string_offset::{ByteOffset, CharOffset};
-use warp_core::features::FeatureFlag;
-use warpui::{AppContext, SingletonEntity, ViewContext};
+
+use warpui::{SingletonEntity, ViewContext};
 
 use crate::{
     appearance::Appearance,
-    completer::{EmptyCompletionContext, SessionContext},
     editor::TextStyleOperation,
     settings::InputSettings,
     themes::theme::{AnsiColorIdentifier, AnsiColors},
@@ -23,12 +22,10 @@ pub use warp_completer::{
     ParsedTokensSnapshot,
 };
 
-/// Options to enable/disable command decoration and/or AI input background tasks spawned on input
-/// edits.
+/// Options for command decoration work spawned after input edits.
 #[derive(Default, Clone, Copy)]
 pub struct InputBackgroundJobOptions {
     command_decoration: bool,
-    ai_input_detection: bool,
 }
 
 impl InputBackgroundJobOptions {
@@ -37,15 +34,10 @@ impl InputBackgroundJobOptions {
         self
     }
 
-    pub fn with_ai_input_detection(mut self) -> Self {
-        self.ai_input_detection = true;
-        self
-    }
-
     /// Returns `true` if there are no input background jobs to run. Returns `false` if there is at
     /// least one job to run.
     fn no_jobs_to_run(self) -> bool {
-        !self.command_decoration && !self.ai_input_detection
+        !self.command_decoration
     }
 }
 
@@ -60,11 +52,6 @@ const INVALID_SYMBOLS_COMMAND_ERROR_UNDERLINING: [char; 22] = [
     '>', '?', '!', ',',
 ];
 
-enum CompletionSessionContext {
-    Session(SessionContext),
-    Empty(EmptyCompletionContext),
-}
-
 /// Returns boolean indicating whether we should attempt to red underline
 /// the command or not (this is a stop-gap since our parser doesn't cover
 /// all the edge cases for commands currently e.g. "!!"). We don't want
@@ -78,15 +65,6 @@ fn valid_command_for_error_underline(command: &str) -> bool {
 }
 
 impl Input {
-    fn completion_session_context_or_empty_context(
-        &self,
-        ctx: &AppContext,
-    ) -> CompletionSessionContext {
-        self.completion_session_context(ctx)
-            .map(CompletionSessionContext::Session)
-            .unwrap_or_else(|| CompletionSessionContext::Empty(EmptyCompletionContext::new()))
-    }
-
     /// Whether or not any decorations should be computed and applied to the
     /// input text.
     pub fn should_apply_decorations(&self, ctx: &ViewContext<Self>) -> bool {
@@ -105,57 +83,6 @@ impl Input {
         *InputSettings::as_ref(ctx).error_underlining.value()
     }
 
-    fn run_input_mode_detection(
-        &self,
-        completion_context: SessionContext,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        if let Some(parsed_token) = self.last_parsed_tokens.clone() {
-            let session_id = completion_context.session.id();
-            self.ai_input_model.update(ctx, |ai_input_model, ctx| {
-                ai_input_model.detect_and_set_input_type(
-                    parsed_token,
-                    completion_context,
-                    Some(session_id),
-                    ctx,
-                )
-            })
-        }
-    }
-
-    /// Applies background highlighting to slash command and skill command prefixes that should be
-    /// syntax highlighted.
-    fn apply_slash_command_prefix_highlighting(
-        &mut self,
-        buffer_text: &str,
-        ctx: &mut ViewContext<Self>,
-    ) -> bool {
-        let highlighted_prefix_len = self
-            .slash_command_model
-            .as_ref(ctx)
-            .state()
-            .command_prefix_highlight_len(buffer_text);
-
-        let Some(highlighted_prefix_len) = highlighted_prefix_len else {
-            return false;
-        };
-
-        let theme = Appearance::as_ref(ctx).theme();
-        let color = theme.ansi_fg_magenta();
-        self.editor.update(ctx, |editor, ctx| {
-            editor.update_buffer_styles(
-                vec![CharOffset::from(0)..CharOffset::from(highlighted_prefix_len)],
-                TextStyleOperation::default().set_syntax_color(color),
-                ctx,
-            )
-        });
-        true
-    }
-
-    /// Computes information about the currently-entered command in a background
-    /// task and then uses it to decorate the input, specifically applying
-    /// styles for syntax highlighting and error underlining.
-    /// Includes a short-circuit that lets us clear formatting and return without parsing the input.
     pub fn run_input_background_jobs(
         &mut self,
         mode: InputBackgroundJobOptions,
@@ -164,101 +91,41 @@ impl Input {
         if mode.no_jobs_to_run() {
             return;
         }
-
-        let mut mode = mode;
-
-        // We don't show input command decorations in AI mode, but we keep slash command prefix highlighting.
-        let buffer_text = self.editor.as_ref(ctx).buffer_text(ctx);
-        if self.ai_input_model.as_ref(ctx).is_ai_input_enabled()
-            || (FeatureFlag::AgentView.is_enabled()
-                && self
-                    .slash_command_model
-                    .as_ref(ctx)
-                    .state()
-                    .is_detected_command_or_skill())
+        if crate::terminal::cli_agent_sessions::CLIAgentSessionsModel::as_ref(ctx)
+            .is_input_open(self.terminal_view_id)
         {
             self.clear_decorations(ctx);
-            self.apply_slash_command_prefix_highlighting(&buffer_text, ctx);
-            mode.command_decoration = false;
-
-            // Return early because there are no input background jobs to run.
-            if mode.no_jobs_to_run() {
-                return;
-            }
+            return;
         }
-
-        match self.completion_session_context_or_empty_context(ctx) {
-            CompletionSessionContext::Session(completion_context) => {
-                let editor = self.editor.as_ref(ctx);
-                let buffer_text = editor.buffer_text(ctx);
-
-                if matches!(&self.last_parsed_tokens, Some(last_parsed_tokens) if buffer_text == last_parsed_tokens.buffer_text)
-                {
-                    if mode.ai_input_detection {
-                        self.run_input_mode_detection(completion_context, ctx);
-                    }
-
-                    if mode.command_decoration {
-                        self.apply_decorations(ctx);
-                    }
-
-                    return;
-                }
-
-                if let Some(handle) = self.decorations_future_handle.take() {
-                    handle.abort_handle().abort();
-                }
-
-                let completion_session = completion_context.session.clone();
-
-                self.decorations_future_handle = Some(ctx.spawn_abortable(
+        let Some(completion_context) = self.completion_session_context(ctx) else {
+            return;
+        };
+        let buffer_text = self.editor.as_ref(ctx).buffer_text(ctx);
+        if self
+            .last_parsed_tokens
+            .as_ref()
+            .is_some_and(|parsed| parsed.buffer_text == buffer_text)
+        {
+            self.apply_decorations(ctx);
+            return;
+        }
+        if let Some(handle) = self.decorations_future_handle.take() {
+            handle.abort_handle().abort();
+        }
+        let session = completion_context.session.clone();
+        self.decorations_future_handle =
+            Some(
+                ctx.spawn_abortable(
                     async move {
-                        (
-                            parse_current_commands_and_tokens(buffer_text, &completion_context)
-                                .await,
-                            completion_context,
-                        )
+                        parse_current_commands_and_tokens(buffer_text, &completion_context).await
                     },
-                    move |input, (parsed_tokens, completion_context), ctx| {
-                        input.last_parsed_tokens = Some(parsed_tokens);
-
-                        if mode.ai_input_detection {
-                            input.run_input_mode_detection(completion_context, ctx);
-                        }
-
-                        if mode.command_decoration {
-                            input.apply_decorations(ctx);
-                        }
+                    |input, parsed, ctx| {
+                        input.last_parsed_tokens = Some(parsed);
+                        input.apply_decorations(ctx);
                     },
-                    move |_, _| {
-                        completion_session.cancel_active_commands();
-                    },
-                ));
-            }
-            CompletionSessionContext::Empty(detection_ctx) => {
-                if mode.ai_input_detection {
-                    // No session context available (e.g., shared session viewer).
-                    // Use a dedicated detection context that does not expose top-level commands.
-                    let buffer_text = self.editor.as_ref(ctx).buffer_text(ctx);
-                    let ai_input_model = self.ai_input_model.clone();
-                    ctx.spawn(
-                        async move {
-                            parse_current_commands_and_tokens(buffer_text, &detection_ctx).await
-                        },
-                        move |_input, parsed_tokens, ctx| {
-                            ai_input_model.update(ctx, |model, ctx| {
-                                model.detect_and_set_input_type(
-                                    parsed_tokens,
-                                    EmptyCompletionContext::new(),
-                                    None,
-                                    ctx,
-                                );
-                            });
-                        },
-                    );
-                }
-            }
-        }
+                    move |_, _| session.cancel_active_commands(),
+                ),
+            );
     }
 
     /// Applies error underlining and/or syntax highlighting as appropriate,

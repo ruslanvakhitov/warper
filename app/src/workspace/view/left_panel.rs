@@ -66,6 +66,9 @@ pub enum LeftPanelAction {
 
 #[allow(clippy::large_enum_variant)]
 pub enum LeftPanelEvent {
+    AttachPathAsContext {
+        path: PathBuf,
+    },
     #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
     FileTree(pane_group::Event),
     #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
@@ -486,6 +489,7 @@ impl LeftPanelView {
                     .map(|dirs| dirs.collect())
                     .unwrap_or_default()
             });
+
         let has_terminal_session = active_directories
             .iter()
             .any(|dir| dir.terminal_id.is_some());
@@ -631,9 +635,7 @@ impl LeftPanelView {
                 }));
             }
             FileTreeEvent::AttachAsContext { path } => {
-                ctx.emit(LeftPanelEvent::FileTree(
-                    pane_group::Event::AttachPathAsContext { path: path.clone() },
-                ));
+                ctx.emit(LeftPanelEvent::AttachPathAsContext { path: path.clone() });
             }
             FileTreeEvent::OpenFile {
                 path,

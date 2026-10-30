@@ -32,8 +32,6 @@ fn default_channel_state_has_no_hosted_services() {
 fn default_channel_state_contains_no_hosted_service_material() {
     let state = ChannelState::init();
 
-    assert!(state.config.mcp_static_config.is_none());
-
     let debug = format!("{state:?}");
     for forbidden in [
         concat!("app", ".warp.dev"),
@@ -75,8 +73,6 @@ fn offline_local_startup_config_requires_no_network_credentials() {
 
     assert_eq!(ChannelState::app_id().to_string(), "dev.warper.Warper");
     assert_eq!(ChannelState::logfile_name(), "");
-    assert!(ChannelState::mcp_oauth_provider_by_client_id("any-client").is_none());
-    assert!(ChannelState::mcp_oauth_provider_by_issuer("https://issuer.example").is_none());
 }
 
 fn assert_panics<F, T>(f: F)

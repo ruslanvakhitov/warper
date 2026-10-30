@@ -3,7 +3,7 @@ use warpui::{Entity, ModelContext};
 
 use crate::code::editor::line::EditorLineLocation;
 use crate::code_review::comments::{
-    AttachedReviewComment, AttachedReviewCommentTarget, CommentId, CommentOrigin, LineDiffContent,
+    AttachedReviewComment, AttachedReviewCommentTarget, CommentId, LineDiffContent,
 };
 
 #[derive(Debug, Clone)]
@@ -13,7 +13,6 @@ pub enum PendingCommentEvent {
         id: CommentId,
         line: EditorLineLocation,
         comment_text: String,
-        origin: CommentOrigin,
     },
 }
 

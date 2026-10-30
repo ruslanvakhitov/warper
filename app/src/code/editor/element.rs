@@ -366,7 +366,6 @@ pub struct LineNumberConfig {
     pub font_size: f32,
     pub text_color: ColorU,
     pub highlight_text_color: ColorU,
-    pub starting_line_number: Option<usize>,
 }
 
 struct CommentBox {
@@ -398,7 +397,7 @@ pub struct EditorWrapper<V: EditorView> {
     /// Then we use that upper bound to do the hit testing, which means a parent will always get
     /// events from its children, regardless of whether they are stacks or not.
     child_max_z_index: Option<ZIndex>,
-    /// Display state of the "add as agent context" button shown next to diff hunks.
+    /// Display state of the "add as CLI agent context" button shown next to diff hunks.
     add_hunk_as_context_button: Option<AddAsContextButton>,
     /// Display state of the "revert" button shown next to diff hunks.
     revert_hunk_button: Option<RevertHunkButton>,
@@ -602,8 +601,7 @@ impl<V: EditorView> EditorWrapper<V> {
             let diff_hunk = self.diff_status.diff_hunk(line_count, appearance);
             let is_removal = matches!(diff_hunk, Some(DiffHunkDisplay::Remove(_)));
 
-            let current_line =
-                line_count.as_usize() + line_number_config.starting_line_number.unwrap_or(1);
+            let current_line = line_count.as_usize() + 1;
 
             // If the block is temporary, don't render line number.
             // Currently, all temporary blocks are removal hunks, either from a deleted section,
@@ -1024,7 +1022,7 @@ impl<V: EditorView> EditorWrapper<V> {
         button.finish()
     }
 
-    /// Renders the plus button for adding a diff as Agent context.
+    /// Renders the plus button for adding a diff as external CLI agent context.
     fn render_plus_button(
         &self,
         add_as_context_button: &AddAsContextButton,

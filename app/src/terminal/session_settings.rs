@@ -11,9 +11,9 @@ pub use working_directory_config::*;
 
 use warp_core::settings::{macros::define_settings_group, SupportedPlatforms, SyncToCloud};
 
-use crate::ai::blocklist::agent_view::toolbar_item::AgentToolbarItemKind;
 use crate::context_chips::prompt::PromptSelection;
 use crate::context_chips::ContextChipKind;
+use crate::terminal::cli_agent_toolbar::toolbar_item::AgentToolbarItemKind;
 
 lazy_static! {
     pub static ref DEFAULT_THRESHOLD_FOR_LONG_RUNNING_NOTIFICATION: Duration =
@@ -85,7 +85,7 @@ pub struct NotificationsSettings {
     #[schemars(description = "Whether to notify when a password prompt is detected.")]
     pub is_password_prompt_enabled: bool,
 
-    #[schemars(description = "Whether to notify when an agent task completes.")]
+    #[schemars(description = "Whether to notify when a third-party CLI agent task completes.")]
     pub is_agent_task_completed_enabled: bool,
     #[schemars(description = "Whether to notify when a session needs attention.")]
     pub is_needs_attention_enabled: bool,
@@ -186,56 +186,6 @@ pub trait ToolbarChipSelection {
     settings_value::SettingsValue,
 )]
 #[schemars(
-    description = "Agent toolbar layout configuration.",
-    rename_all = "snake_case"
-)]
-pub enum AgentToolbarChipSelection {
-    #[default]
-    #[schemars(description = "Use the default toolbar layout.")]
-    Default,
-    #[schemars(description = "Use a custom arrangement of toolbar items.")]
-    Custom {
-        left: Vec<AgentToolbarItemKind>,
-        right: Vec<AgentToolbarItemKind>,
-    },
-}
-
-impl ToolbarChipSelection for AgentToolbarChipSelection {
-    fn default_left_items() -> Vec<AgentToolbarItemKind> {
-        AgentToolbarItemKind::default_left()
-    }
-
-    fn default_right_items() -> Vec<AgentToolbarItemKind> {
-        AgentToolbarItemKind::default_right()
-    }
-
-    fn left_items(&self) -> Vec<AgentToolbarItemKind> {
-        match self {
-            Self::Default => Self::default_left_items(),
-            Self::Custom { left, .. } => left.clone(),
-        }
-    }
-
-    fn right_items(&self) -> Vec<AgentToolbarItemKind> {
-        match self {
-            Self::Default => Self::default_right_items(),
-            Self::Custom { right, .. } => right.clone(),
-        }
-    }
-}
-
-#[derive(
-    Clone,
-    Debug,
-    Default,
-    Serialize,
-    Deserialize,
-    PartialEq,
-    Eq,
-    schemars::JsonSchema,
-    settings_value::SettingsValue,
-)]
-#[schemars(
     description = "CLI agent toolbar layout configuration.",
     rename_all = "snake_case"
 )]
@@ -310,13 +260,7 @@ define_settings_group!(SessionSettings, settings: [
         sync_to_cloud: SyncToCloud::Never,
         private: true,
     },
-    should_add_agent_mode_chip: ShouldAddAgentModeChip {
-        type: bool,
-        default: true,
-        supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Never,
-        private: true,
-    },
+
     notifications: Notifications {
         type: NotificationsSettings,
         default: NotificationsSettings::default(),
@@ -338,27 +282,6 @@ define_settings_group!(SessionSettings, settings: [
         private: true,
         storage_key: "GitPromptDirtyIndicator",
     },
-    // TODO: Remove this setting when `FeatureFlag::ProfilesDesignRevamp` is cleaned up.
-    // When ProfilesDesignRevamp is enabled, model selectors are always shown in the prompt.
-    // This setting only controls visibility when ProfilesDesignRevamp is disabled.
-    show_model_selectors_in_prompt: ShowModelSelectorsInPrompt {
-        type: bool,
-        default: true,
-        supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Never,
-        private: false,
-        toml_path: "agents.warp_agent.input.show_model_selectors_in_prompt",
-        description: "Whether to show AI model selectors in the input prompt.",
-    },
-    agent_footer_chip_selection: AgentToolbarChipSelectionSetting {
-        type: AgentToolbarChipSelection,
-        default: AgentToolbarChipSelection::default(),
-        supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Never,
-        private: false,
-        toml_path: "agents.warp_agent.input.agent_toolbar_chip_selection_setting",
-        description: "Controls the layout of context chips in the Agent Mode toolbar.",
-    },
     cli_agent_footer_chip_selection: CLIAgentToolbarChipSelectionSetting {
         type: CLIAgentToolbarChipSelection,
         default: CLIAgentToolbarChipSelection::default(),
@@ -368,15 +291,7 @@ define_settings_group!(SessionSettings, settings: [
         toml_path: "agents.third_party.cli_agent_toolbar_chip_selection_setting",
         description: "Controls the layout of context chips in the CLI Agent toolbar.",
     },
-    notification_toast_duration_secs: NotificationToastDurationSecs {
-        type: u64,
-        default: 8,
-        supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Never,
-        private: false,
-        toml_path: "notifications.toast_duration_secs",
-        description: "How long notification toasts are displayed, in seconds.",
-    },
+
     // Tracks whether the `gh` CLI is installed and authenticated on this machine,
     // used to decide if the GitHub PR chip should be included by default.
     // Not synced because `gh` CLI availability is machine-specific.

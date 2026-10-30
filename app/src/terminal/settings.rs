@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::settings::{AISettings, InputSettings, TerminalSpacing};
+use crate::settings::{InputSettings, TerminalSpacing};
 use settings::{macros::define_settings_group, SupportedPlatforms, SyncToCloud};
 use warpui::{units::Pixels, AppContext, SingletonEntity};
 
@@ -165,16 +165,7 @@ define_settings_group!(TerminalSettings, settings: [
         description: "Controls padding around full-screen terminal applications.",
     },
     // This field should not be referenced directly to check zero state block visibility -- use
-    // the `should_show_zero_state_block()` getter, which also considers global AI enablement.
-    show_terminal_zero_state_block: ShowTerminalZeroStateBlock {
-        type: bool,
-        default: true,
-        supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Never,
-        private: false,
-        toml_path: "terminal.show_terminal_zero_state_block",
-        description: "Whether to show the AI zero-state block in new terminal sessions.",
-    },
+
     osc52_clipboard_access: Osc52ClipboardAccessSetting {
         type: Osc52ClipboardAccess,
         default: Osc52ClipboardAccess::default(),
@@ -193,12 +184,6 @@ impl TerminalSettings {
             SpacingMode::Normal => TerminalSpacing::normal(line_height_ratio, ctx),
             SpacingMode::Compact => TerminalSpacing::compact(line_height_ratio, ctx),
         }
-    }
-
-    /// Whether the terminal zero state block should be shown.
-    /// Checks both the user setting and the global AI enablement.
-    pub fn should_show_zero_state_block(&self, ctx: &AppContext) -> bool {
-        *self.show_terminal_zero_state_block && AISettings::as_ref(ctx).is_any_ai_enabled(ctx)
     }
 
     /// Spacing for the input box.

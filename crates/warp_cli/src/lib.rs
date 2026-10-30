@@ -3,23 +3,10 @@ use std::{env, fmt, path::Path};
 use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 use url::Url;
 
-use crate::agent::OutputFormat;
-use warp_core::channel::ChannelState;
-
 #[cfg(windows)]
 mod process_handle;
 
-pub mod scope;
-pub mod skill;
-
-pub mod agent;
 pub mod completions;
-pub mod config_file;
-pub mod json_filter;
-pub mod mcp;
-pub mod model;
-pub mod provider;
-pub mod secret;
 
 mod environment;
 
@@ -44,41 +31,11 @@ pub struct ParentOpts {
     pub handle: Option<process_handle::ProcessHandle>,
 }
 
-/// Global options that apply to all CLI commands.
-#[derive(Debug, Default, Clone, clap::Args)]
-pub struct GlobalOptions {
-    /// API key for local AI provider requests.
-    #[arg(long = "api-key", global = true, env = "WARP_API_KEY")]
-    pub api_key: Option<String>,
-
-    /// Set the output format.
-    #[arg(
-        long = "output-format",
-        global = true,
-        value_enum,
-        default_value_t = OutputFormat::Pretty,
-        env = "WARP_OUTPUT_FORMAT"
-    )]
-    pub output_format: OutputFormat,
-}
-
 /// Command-line argument parser for the main Warp binary. This is used across all channels.
 #[derive(Debug, Default, Parser, Clone)]
-#[command(
-    name = "warp",
-    display_name = "Warp",
-    about = r#"Warp terminal and local AI tooling
-
-Use the CLI to:
-* Start local agent sessions
-* Manage local MCP servers
-* Inspect available AI models"#
-)]
+#[command(name = "warp", display_name = "Warp", about = "Warper terminal")]
 #[clap(args_conflicts_with_subcommands = true)]
 pub struct Args {
-    #[clap(flatten)]
-    global_options: GlobalOptions,
-
     /// Enable debug mode.
     #[arg(long = "debug", global = true, help = "Enable debug logging")]
     debug: bool,
@@ -118,14 +75,6 @@ impl Args {
     pub fn from_env() -> Self {
         use clap::FromArgMatches as _;
 
-        // Warp-managed secrets are hosted infrastructure and are not part of Warper.
-        let args: Vec<String> = env::args().collect();
-        if args.len() > 1 && args[1] == "secret" {
-            eprintln!("error: unrecognized subcommand 'secret'\n");
-            eprintln!("For more information, try '--help'");
-            std::process::exit(2);
-        }
-
         let command = Self::clap_command();
 
         command
@@ -144,27 +93,7 @@ impl Args {
     ///
     /// IMPORTANT: use this instead of [`CommandFactory::command`], since we customize the command at runtime.
     pub fn clap_command() -> clap::Command {
-        let mut command = <Args as CommandFactory>::command();
-
-        // Hide hosted Warp-managed secrets from help text.
-        command = command.mut_subcommand("secret", |c| c.hide(true));
-
-        // Substitute the actual binary name into help output. Ideally clap would do this for us.
-        let bin_name =
-            binary_name().unwrap_or_else(|| ChannelState::channel().cli_command_name().to_string());
-        command = command.after_help(color_print::cformat!(
-            r#"<bold><underline>Examples:</underline></bold>
-
-  <dim>$</dim> <bold>{bin_name} agent run --prompt "Build anything"</bold>
-
-  <dim>$</dim> <bold>{bin_name} mcp list</bold>
-
-<bold><underline>Learn more:</underline></bold>
-* Use <bold>{bin_name} help</bold> to learn more about each command
-"#
-        ));
-
-        command
+        <Args as CommandFactory>::command()
     }
 
     /// The requested subcommand, if any.
@@ -180,21 +109,6 @@ impl Args {
     /// Extract the main Warp application args.
     pub fn into_app_args(self) -> AppArgs {
         self.args
-    }
-
-    /// Returns the global options.
-    pub fn global_options(&self) -> &GlobalOptions {
-        &self.global_options
-    }
-
-    /// Returns the API key if provided.
-    pub fn api_key(&self) -> Option<&String> {
-        self.global_options.api_key.as_ref()
-    }
-
-    /// Returns the output format.
-    pub fn output_format(&self) -> OutputFormat {
-        self.global_options.output_format
     }
 
     /// Returns true if debug logging is enabled.
@@ -244,40 +158,11 @@ pub enum WorkerCommand {
     },
 }
 
-/// CLI-related subcommands. The command-line interface to Warp isn't a full SDK (e.g. with language bindings),
-/// but it allows scripting some Warp functionality.
-#[derive(Debug, Clone, Subcommand)]
-pub enum CliCommand {
-    /// Run local agent tasks.
-    #[command(subcommand)]
-    Agent(crate::agent::AgentCommand),
-
-    /// Manage MCP servers.
-    #[command(subcommand)]
-    MCP(crate::mcp::MCPCommand),
-
-    /// Manage available models.
-    #[command(subcommand)]
-    Model(crate::model::ModelCommand),
-
-    /// Manage providers.
-    #[command(subcommand)]
-    Provider(crate::provider::ProviderCommand),
-
-    /// Manage secrets.
-    #[command(subcommand)]
-    Secret(Box<crate::secret::SecretCommand>),
-}
-
 /// A subcommand of the main Warp application. This includes all [`WorkerCommand`]s as well as app-specific debugging tools.
 #[derive(Debug, Clone, Subcommand)]
 pub enum Command {
     #[clap(flatten)]
     Worker(WorkerCommand),
-
-    /// Commands that make up the Warp CLI.
-    #[clap(flatten)]
-    CommandLine(Box<CliCommand>),
 
     /// Generate shell completions for your shell to stdout.
     ///
@@ -316,9 +201,7 @@ impl Command {
     pub fn prints_to_stdout(&self) -> bool {
         match self {
             Command::Worker(_) => false,
-            Command::CommandLine(_)
-            | Command::DumpDebugInfo
-            | Command::WarperLocalTerminalSmoke => true,
+            Command::DumpDebugInfo | Command::WarperLocalTerminalSmoke => true,
             Command::Completions { .. } => true,
         }
     }

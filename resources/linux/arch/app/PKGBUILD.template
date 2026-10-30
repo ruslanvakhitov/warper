@@ -1,7 +1,7 @@
 pkgname=warp-terminal@@CHANNEL_SUFFIX@@
 pkgver=@@VERSION@@
 pkgrel=@@RELEASE@@
-pkgdesc="Warper, the local-first agentic terminal"
+pkgdesc="Warper, a local-first terminal"
 arch=('@@ARCH@@')
 url="https://github.com/ruslanvakhitov/warper"
 license=('custom')

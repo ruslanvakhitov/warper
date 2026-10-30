@@ -1,39 +1,11 @@
 use crate::{
-    ai::agent::{CurrentHead, DiffBase},
     code::editor::{line::EditorLineLocation, EditorReviewComment},
+    code_review::context::{CurrentHead, DiffBase},
 };
 use chrono::{DateTime, Local};
 use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
 use warp_editor::render::model::LineCount;
-use warp_multi_agent_api::{self as api};
-
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub enum CommentOrigin {
-    /// Comments originally created in the Warp UI.
-    #[default]
-    Native,
-    /// Comments imported from a GitHub pull request.
-    ImportedFromGitHub(ImportedCommentDetails),
-}
-
-impl CommentOrigin {
-    pub(crate) fn is_imported_from_github(&self) -> bool {
-        matches!(self, Self::ImportedFromGitHub(_))
-    }
-}
-
-/// Imported comment metadata for GitHub-specific fields.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ImportedCommentDetails {
-    pub author: String,
-    /// The GitHub comment ID from the API.
-    pub github_comment_id: String,
-    /// The GitHub parent comment ID if this was a reply.
-    /// Should be None for threaded comments after flattening.
-    pub github_parent_id: Option<String>,
-    pub html_url: Option<String>,
-}
 
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct LineDiffContent {
@@ -102,61 +74,6 @@ pub struct AttachedReviewComment {
     pub base: Option<DiffBase>,
     pub head: Option<CurrentHead>,
     pub outdated: bool,
-    pub origin: CommentOrigin,
-}
-
-impl From<AttachedReviewComment> for api::ReviewComment {
-    fn from(val: AttachedReviewComment) -> Self {
-        let comment_target = match val.target {
-            AttachedReviewCommentTarget::Line {
-                absolute_file_path,
-                content,
-                line,
-            } => {
-                // For now, comments are only attached to a single line.
-                let line_range = line.line_number().map(|lc| {
-                    let line_number = lc.as_usize() as u32;
-                    api::FileContentLineRange {
-                        start: line_number,
-                        end: line_number + 1,
-                    }
-                });
-
-                api::review_comment::CommentTarget::CommentedLine(api::DiffHunk {
-                    file_path: absolute_file_path.to_string_lossy().to_string(),
-                    line_range,
-                    diff_content: content.content,
-                    lines_added: content.lines_added.as_u32(),
-                    lines_removed: content.lines_removed.as_u32(),
-                    current: val.head.to_owned().map(Into::into),
-                    base: val.base.map(Into::into),
-                })
-            }
-            AttachedReviewCommentTarget::File { absolute_file_path } => {
-                api::review_comment::CommentTarget::CommentedFile(
-                    api::review_comment::CommentedFile {
-                        file_path: absolute_file_path.to_string_lossy().to_string(),
-                        current: val.head.to_owned().map(Into::into),
-                        base: val.base.map(Into::into),
-                    },
-                )
-            }
-            AttachedReviewCommentTarget::General => {
-                api::review_comment::CommentTarget::CommentedDiffset(
-                    api::review_comment::CommentedDiffset {
-                        current: val.head.to_owned().map(Into::into),
-                        base: val.base.map(Into::into),
-                    },
-                )
-            }
-        };
-
-        api::ReviewComment {
-            id: val.id.to_string(),
-            comment: val.content,
-            comment_target: Some(comment_target),
-        }
-    }
 }
 
 /// Target for an attached review comment. File paths are always absolute when present.
@@ -211,16 +128,11 @@ impl AttachedReviewComment {
             },
             last_update_time: comment.last_update_time,
             outdated: false,
-            origin: CommentOrigin::Native,
         }
     }
 
     pub fn head(&self) -> Option<&CurrentHead> {
         self.head.as_ref()
-    }
-
-    pub fn origin(&self) -> &CommentOrigin {
-        &self.origin
     }
 }
 

@@ -195,15 +195,6 @@ pub(super) fn get_shell_environment_variables(options: &PtyOptions) -> Vec<u16> 
     environment_block(env.into_iter())
 }
 
-/// Merges the local machine and user env var scopes
-pub fn get_user_and_system_env_variable(key: &str) -> Option<OsString> {
-    let mut env: BTreeMap<OsString, EnvEntry> = BTreeMap::new();
-    add_local_machine_env(&mut env);
-    add_user_env(&mut env);
-    env.get(&map_key(key.into()))
-        .map(|entry| entry.value.clone())
-}
-
 fn add_local_machine_env(env: &mut BTreeMap<OsString, EnvEntry>) {
     let Ok(sys_env) = RegKey::predef(HKEY_LOCAL_MACHINE)
         .open_subkey("System\\CurrentControlSet\\Control\\Session Manager\\Environment")

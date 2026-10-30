@@ -1,19 +1,6 @@
+use crate::project_workspaces::PersistedWorkspace;
 use crate::terminal::cli_agent_sessions::CLIAgentSessionsModel;
 use crate::{
-    ai::{
-        active_agent_views_model::ActiveAgentViewsModel,
-        blocklist::BlocklistAIHistoryModel,
-        document::ai_document_model::AIDocumentModel,
-        execution_profiles::profiles::AIExecutionProfilesModel,
-        llms::LLMPreferences,
-        mcp::{
-            templatable_manager::TemplatableMCPServerManager, FileBasedMCPManager, FileMCPWatcher,
-        },
-        outline::RepoOutlines,
-        persisted_workspace::PersistedWorkspace,
-        restored_conversations::RestoredAgentConversations,
-        skills::SkillManager,
-    },
     context_chips::prompt::Prompt,
     experiments,
     network::NetworkStatus,
@@ -24,10 +11,7 @@ use crate::{
     suggestions::ignored_suggestions_model::IgnoredSuggestionsModel,
     system::SystemStats,
     terminal::history::History,
-    terminal::{
-        alt_screen_reporting::AltScreenReporting, keys::TerminalKeybindings,
-        local_tty::spawner::PtySpawner,
-    },
+    terminal::{alt_screen_reporting::AltScreenReporting, local_tty::spawner::PtySpawner},
     test_util::settings::initialize_settings_for_tests,
     undo_close::UndoCloseStack,
     warp_managed_paths_watcher::WarpManagedPathsWatcher,
@@ -35,7 +19,6 @@ use crate::{
     workspace::{
         sync_inputs::SyncedInputState, ActiveSession, OneTimeModalModel, WorkspaceRegistry,
     },
-    workspaces::user_workspaces::UserWorkspaces,
     GlobalResourceHandles, GlobalResourceHandlesProvider,
 };
 #[cfg(feature = "local_fs")]
@@ -46,10 +29,6 @@ use watcher::HomeDirectoryWatcher;
 
 use super::*;
 use crate::terminal::resizable_data::ResizableData;
-use ai::{
-    index::full_source_code_embedding::manager::CodebaseIndexManager,
-    project_context::model::ProjectContextModel,
-};
 use pathfinder_geometry::rect::RectF;
 use warpui::windowing::{state::ApplicationStage, WindowManager};
 use warpui::{
@@ -62,17 +41,13 @@ fn initialize_app(app: &mut App) {
     app.add_singleton_model(|_ctx| PtySpawner::new_for_test());
     app.add_singleton_model(|_| NetworkStatus::new());
     app.add_singleton_model(|_| SystemStats::new());
-    app.add_singleton_model(UserWorkspaces::default_mock);
 
-    // Initialize file-based MCP dependencies.
+    // Register project directory watchers.
     app.add_singleton_model(|_| DetectedRepositories::default());
     app.add_singleton_model(HomeDirectoryWatcher::new_for_test);
     app.add_singleton_model(DirectoryWatcher::new);
     app.add_singleton_model(WarpManagedPathsWatcher::new_for_testing);
-    app.add_singleton_model(FileMCPWatcher::new);
-    app.add_singleton_model(|_| FileBasedMCPManager::default());
 
-    app.add_singleton_model(|_| TemplatableMCPServerManager::default());
     app.add_singleton_model(|_| Appearance::mock());
     app.add_singleton_model(PrivacySettings::mock);
     app.add_singleton_model(|_ctx| SyncedInputState::mock());
@@ -83,41 +58,26 @@ fn initialize_app(app: &mut App) {
     let global_resources = GlobalResourceHandles::mock(app);
     app.add_singleton_model(|_| GlobalResourceHandlesProvider::new(global_resources.clone()));
     app.add_singleton_model(|_| KeybindingChangedNotifier::new());
-    app.add_singleton_model(TerminalKeybindings::new);
-    app.add_singleton_model(|_| BlocklistAIHistoryModel::new_for_test());
+
     app.add_singleton_model(|_| CLIAgentSessionsModel::new());
-    app.add_singleton_model(|_| ActiveAgentViewsModel::new());
-    app.add_singleton_model(|ctx| {
-        AIExecutionProfilesModel::new(&crate::LaunchMode::new_for_unit_test(), ctx)
-    });
-    app.add_singleton_model(LLMPreferences::new);
-    #[cfg(feature = "voice_input")]
-    app.add_singleton_model(voice_input::VoiceInput::new);
+
     #[cfg(feature = "local_fs")]
     app.add_singleton_model(RepoMetadataModel::new);
-    app.add_singleton_model(SkillManager::new);
+
     app.add_singleton_model(FileSearchModel::new);
     app.add_singleton_model(|_| crate::code_review::git_status_update::GitStatusUpdateModel::new());
-    app.add_singleton_model(RepoOutlines::new_for_test);
+
     crate::terminal::available_shells::register(app);
     app.update(experiments::init);
     AltScreenReporting::register(app);
-    app.add_singleton_model(|ctx| {
-        CodebaseIndexManager::new_for_test(
-            std::sync::Arc::new(
-                ::ai::index::full_source_code_embedding::store_client::MockStoreClient,
-            ),
-            ctx,
-        )
-    });
+
     app.add_singleton_model(|ctx| PersistedWorkspace::new(vec![], HashMap::new(), None, ctx));
-    app.add_singleton_model(|_| ProjectContextModel::default());
-    app.add_singleton_model(|_| RestoredAgentConversations::new(vec![]));
+
     app.add_singleton_model(OneTimeModalModel::new);
     app.add_singleton_model(|_| WorkspaceRegistry::new());
     app.add_singleton_model(UndoCloseStack::new);
     app.add_singleton_model(|_| IgnoredSuggestionsModel::new(vec![]));
-    app.add_singleton_model(AIDocumentModel::new);
+
     app.add_singleton_model(|_| History::new(vec![]));
 }
 
@@ -312,39 +272,6 @@ fn test_pane_focus_on_close() {
             panes.close_pane(third_pane_id, ctx);
             assert_eq!(second_pane_id, panes.focused_pane_id(ctx));
         })
-    });
-}
-
-#[test]
-fn test_insert_hidden_child_agent_pane_keeps_focus_and_active_session() {
-    App::test((), |mut app| async move {
-        initialize_app(&mut app);
-        let pane_group = mock_pane_group(&mut app, Default::default());
-
-        pane_group.update(&mut app, |panes, ctx| {
-            let parent_pane_id = get_newly_created_pane_id(panes, &[]);
-            let initial_pane_count = panes.pane_count();
-            let initial_visible_count = panes.visible_pane_count();
-            let initial_active_session = panes.active_session_id(ctx);
-
-            let child_pane_id = panes.insert_terminal_pane_hidden_for_child_agent(
-                parent_pane_id,
-                HashMap::new(),
-                ctx,
-            );
-
-            assert_eq!(panes.pane_count(), initial_pane_count + 1);
-            assert_eq!(panes.visible_pane_count(), initial_visible_count);
-            assert!(panes.has_pane_id(child_pane_id.into()));
-
-            // The new child pane should remain hidden and not affect visible ordering.
-            assert_eq!(panes.pane_id_by_index(0), Some(parent_pane_id));
-            assert_eq!(panes.pane_id_by_index(1), None);
-
-            // Creating a hidden child pane should not steal focus or active session.
-            assert_eq!(panes.focused_pane_id(ctx), parent_pane_id);
-            assert_eq!(panes.active_session_id(ctx), initial_active_session);
-        });
     });
 }
 

@@ -24,7 +24,6 @@ Does not validate:
   - launching the macOS .app bundle
   - enforcing an OS-level outbound network block
   - manual live UI terminal creation, pane splitting, or settings edits
-  - OpenRouter behavior
 
 This does not require the integration-test crate or Cocoa GUI services.
 USAGE

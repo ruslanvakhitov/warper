@@ -31,12 +31,11 @@ use warp_core::semantic_selection::SemanticSelection;
 use super::{
     app_icon::AppIconSettings, app_installation_detection::UserAppInstallDetectionSettings,
     cloud_preferences::LocalPreferencesSettings, initializer::SettingsInitializer,
-    native_preference::NativePreferenceSettings, AISettings, AccessibilitySettings,
-    AliasExpansionSettings, AppEditorSettings, BlockVisibilitySettings, ChangelogSettings,
-    CodeSettings, DebugSettings, EmacsBindingsSettings, FontSettings, FontSettingsChangedEvent,
-    GPUSettings, InputBoxType, InputModeSettings, InputSettings, LocalPrivacySettings,
-    PaneSettings, SameLinePromptBlockSettings, ScrollSettings, SelectionSettings, SshSettings,
-    ThemeSettings, VimBannerSettings,
+    native_preference::NativePreferenceSettings, AccessibilitySettings, AliasExpansionSettings,
+    AppEditorSettings, BlockVisibilitySettings, CLIAgentSettings, ChangelogSettings, CodeSettings,
+    DebugSettings, EmacsBindingsSettings, FontSettings, FontSettingsChangedEvent, GPUSettings,
+    InputBoxType, InputModeSettings, InputSettings, PaneSettings, SameLinePromptBlockSettings,
+    ScrollSettings, SelectionSettings, SshSettings, ThemeSettings, VimBannerSettings,
 };
 
 pub struct UserDefaultsOnStartup {
@@ -70,7 +69,7 @@ pub fn register_all_settings(ctx: &mut AppContext) {
     GPUSettings::register(ctx);
     ChangelogSettings::register(ctx);
     GeneralSettings::register(ctx);
-    AISettings::register_and_subscribe_to_events(ctx);
+    CLIAgentSettings::register_and_subscribe_to_events(ctx);
     ScrollSettings::register(ctx);
     SelectionSettings::register(ctx);
     InputModeSettings::register(ctx);
@@ -78,7 +77,6 @@ pub fn register_all_settings(ctx: &mut AppContext) {
     AccessibilitySettings::register(ctx);
     NativePreferenceSettings::register(ctx);
     LocalPreferencesSettings::register(ctx);
-    LocalPrivacySettings::register(ctx);
     UserAppInstallDetectionSettings::register(ctx);
     AppIconSettings::register(ctx);
     AppEditorSettings::register(ctx);

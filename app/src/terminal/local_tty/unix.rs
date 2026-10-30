@@ -1,15 +1,9 @@
 //! TTY related functionality.
-use crate::terminal::bootstrap::raw_init_shell_script_for_shell;
 use crate::terminal::cli_agent_sessions::event::current_protocol_version;
-use crate::terminal::local_tty::docker_sandbox::{
-    DockerSandboxShellStarter, DOCKER_SANDBOX_HOME_DIR,
-};
 use crate::terminal::local_tty::shell::{
     extra_path_entries, ssh_socket_dir, DirectShellStarter, ShellStarter,
 };
-use crate::terminal::model::session::command_executor::shell_escape_single_quotes;
 use crate::terminal::shell::ShellType;
-use crate::ASSETS;
 use warp_core::features::FeatureFlag;
 
 use crate::report_if_error;
@@ -34,14 +28,11 @@ use command::blocking::Command;
 use std::{
     collections::HashMap,
     ffi::{CStr, OsString},
-    fs::{DirBuilder, File},
+    fs::File,
     io,
     mem::MaybeUninit,
-    os::unix::{
-        fs::DirBuilderExt,
-        io::{AsRawFd, FromRawFd, RawFd},
-    },
-    path::{Path, PathBuf},
+    os::unix::io::{AsRawFd, FromRawFd, RawFd},
+    path::PathBuf,
     ptr,
 };
 use warp_core::channel::ChannelState;
@@ -64,42 +55,6 @@ fn make_pty(size: winsize) -> Result<(RawFd, RawFd)> {
     }
 
     Ok((ends.master, ends.slave))
-}
-
-fn docker_sandbox_run_args(starter: &DockerSandboxShellStarter) -> Vec<std::ffi::OsString> {
-    let init_dir = starter.init_dir();
-    let init_path = starter.init_path();
-    let workspace_dir = starter.workspace_dir();
-    let mount_arg = format!("{}:ro", init_dir.display());
-    // Single-quote the init path in the bash command so paths containing
-    // spaces (e.g. macOS's `~/Library/Application Support/...`) don't get
-    // split on whitespace when bash parses the `-c <cmd>` string.
-    let init_path_quoted = format!(
-        "'{}'",
-        shell_escape_single_quotes(&init_path.to_string_lossy(), ShellType::Bash)
-    );
-    let bash_cmd = format!(
-        "cd {DOCKER_SANDBOX_HOME_DIR} && exec bash --rcfile {init_path_quoted} --noprofile",
-    );
-
-    let mut args = vec![std::ffi::OsString::from("run")];
-    // Override sbx's default agent image with the environment's base image
-    // when one is provided. `None` means "use sbx's default image".
-    if let Some(base_image) = starter.base_image() {
-        args.push(std::ffi::OsString::from("--template"));
-        args.push(std::ffi::OsString::from(base_image));
-    }
-    args.extend([
-        std::ffi::OsString::from("--name"),
-        std::ffi::OsString::from(starter.sandbox_name()),
-        std::ffi::OsString::from("shell"),
-        workspace_dir.into_os_string(),
-        std::ffi::OsString::from(mount_arg),
-        std::ffi::OsString::from("--"),
-        std::ffi::OsString::from("-c"),
-        std::ffi::OsString::from(bash_cmd),
-    ]);
-    args
 }
 
 #[derive(Debug)]
@@ -173,16 +128,6 @@ pub struct PtySpawnResult {
 }
 
 pub(super) fn spawn(options: PtyOptions) -> Result<PtySpawnInfo> {
-    // Docker sandbox sessions require sandbox-specific preparation
-    // (writing the init script, creating workspace dirs) and a very
-    // different `Command` shape (`sbx run` launching a container).
-    // Dispatch early; both paths converge on `spawn_command_in_pty`
-    // for the shared PTY/pre_exec setup.
-    if let ShellStarter::DockerSandbox(docker_starter) = &options.shell_starter {
-        let docker_starter = docker_starter.clone();
-        return spawn_docker_sandbox(options, docker_starter);
-    }
-
     let PtyOptions {
         size,
         window_id,
@@ -372,16 +317,12 @@ fn build_host_shell_command(
     builder
 }
 
-/// Shared PTY setup used by both host-shell and Docker-sandbox sessions.
+/// Sets up and spawns a shell process in a PTY.
 ///
 /// Takes a fully-built `Command` and wraps it in the PTY/`pre_exec`
 /// setup: creates the pty pair, applies termios, installs the child
 /// process setup hook (signals, stdio, controlling terminal, close_fds,
 /// Linux OOM rebias), and spawns the command.
-///
-/// The `pre_exec` hook has accumulated years of subtle bug fixes
-/// (signal mask handling, TIOCSCTTY cast, etc.); keeping a single copy
-/// ensures future fixes automatically apply to every session type.
 fn spawn_command_in_pty(
     mut command: Command,
     size: &SizeInfo,
@@ -472,20 +413,12 @@ fn spawn_command_in_pty(
             if is_isolated {
                 // If running in a sandbox on Linux, adjust the OOM score
                 // to make the child process more likely to be killed than the parent process
-                // in case of OOM. If the Warp process is killed while hosting an ambient
-                // agent, its shared session will abruptly end with no user-visible error.
-                // Instead, we want to kill whatever process the agent spawned that's using
-                // lots of memory. This gives the agent a chance to gracefully fail.
+                // in case of OOM.
                 //
                 // Try to open /proc/self/oom_score_adj and set it to a positive value.
                 // Valid values are between -1000 and 1000, where lower values are less likely
                 // to be killed. Don't propagate errors, as this is best-effort.
                 //
-                // For Docker sandbox sessions this is effectively a no-op: the
-                // container enforces memory limits via its own cgroup, so this
-                // rebias on the host-side `sbx` process does not influence the
-                // in-container OOM killer. We leave it in the shared path anyway
-                // so the fork-side setup stays identical across session types.
                 let oom_score_path = c"/proc/self/oom_score_adj";
                 let fd = libc::open(oom_score_path.as_ptr(), libc::O_WRONLY);
                 if fd >= 0 {
@@ -674,199 +607,6 @@ unsafe fn set_nonblocking(fd: c_int) {
 
     let res = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK);
     assert_eq!(res, 0);
-}
-
-/// Spawn the PTY for a Docker sandbox session.
-///
-/// Performs sandbox-specific preparation (writes the init script,
-/// creates per-sandbox host scratch dirs) and then delegates to the
-/// shared [`spawn_command_in_pty`] helper so PTY/`pre_exec` setup stays
-/// identical to the host-shell path.
-fn spawn_docker_sandbox(
-    options: PtyOptions,
-    docker_starter: DockerSandboxShellStarter,
-) -> Result<PtySpawnInfo> {
-    // Prepare sandbox bootstrap assets (init script + dedicated host
-    // workspace) before building the command. The sandbox container
-    // itself is created + attached in a single step via `sbx run` when
-    // the PTY process spawns below.
-    if let Err(e) = prepare_docker_sandbox(&docker_starter) {
-        log::error!("Failed to prepare Docker sandbox: {e}");
-        return Err(Error::msg(format!("Docker sandbox setup failed: {e}")));
-    }
-
-    let PtyOptions {
-        size,
-        window_id,
-        shell_starter: _,
-        start_dir: _,
-        env_vars,
-        enable_ssh_wrapper,
-        shell_debug_mode,
-        honor_ps1,
-        close_fds,
-    } = options;
-
-    let command = build_docker_sandbox_command(
-        &docker_starter,
-        window_id,
-        env_vars,
-        enable_ssh_wrapper,
-        shell_debug_mode,
-        honor_ps1,
-    );
-
-    spawn_command_in_pty(command, &size, close_fds)
-}
-
-/// Builds the `Command` for a Docker-sandbox PTY session: `sbx run`
-/// invocation with sandbox-specific args and host-side environment
-/// variables.
-///
-/// Does not perform any PTY-level setup; hand the returned `Command`
-/// to [`spawn_command_in_pty`].
-fn build_docker_sandbox_command(
-    docker_starter: &DockerSandboxShellStarter,
-    window_id: Option<usize>,
-    env_vars: HashMap<OsString, OsString>,
-    enable_ssh_wrapper: bool,
-    shell_debug_mode: bool,
-    honor_ps1: bool,
-) -> Command {
-    let mut buf = [0; 1024];
-    let pw = get_pw_entry(&mut buf);
-
-    log::info!(
-        "Starting Docker sandbox via {}",
-        docker_starter.logical_shell_path().display()
-    );
-
-    let mut builder = Command::new(docker_starter.logical_shell_path());
-    for arg in docker_sandbox_run_args(docker_starter) {
-        builder.arg(arg);
-    }
-
-    let home_dir = std::env::var("HOME").unwrap_or_else(|_| pw.dir.to_owned());
-
-    // Environment variables set on the host-side `sbx` process.
-    //
-    // TODO(advait): audit this list. It currently mirrors what the
-    // pre-refactor host-shell `spawn` set when the starter happened to
-    // be a Docker sandbox, so behaviour is unchanged from before the
-    // split. Many of these (e.g. `WARP_USE_SSH_WRAPPER`,
-    // `SSH_SOCKET_DIR`, `HISTFILESIZE`, `WARP_IS_LOCAL_SHELL_SESSION`)
-    // are set on the *host* `sbx` process and may or may not propagate
-    // into the container depending on `sbx`'s env passthrough rules.
-    // Once we've validated what the container bootstrap actually needs,
-    // we can trim this list down to the variables the in-container bash
-    // session actually consumes.
-    builder.env("LOGNAME", pw.name);
-    builder.env("USER", pw.name);
-    builder.env("HOME", &home_dir);
-    builder.env("TERM", "xterm-256color");
-    builder.env("TERM_PROGRAM", "WarpTerminal");
-    builder.env("COLORTERM", "truecolor");
-    builder.env_remove("DESKTOP_STARTUP_ID");
-    if let Some(version) = ChannelState::app_version() {
-        builder.env("TERM_PROGRAM_VERSION", version);
-        builder.env("WARP_CLIENT_VERSION", version);
-    } else {
-        builder.env("WARP_CLIENT_VERSION", "local");
-    }
-    builder.env("SHELL", docker_starter.logical_shell_path());
-    if let Some(window_id) = window_id {
-        builder.env("WINDOWID", format!("{window_id}"));
-    }
-    builder.env(
-        "WARP_USE_SSH_WRAPPER",
-        if enable_ssh_wrapper { "1" } else { "0" },
-    );
-    builder.env("SSH_SOCKET_DIR", ssh_socket_dir());
-    builder.env("WARP_IS_LOCAL_SHELL_SESSION", "1");
-    if FeatureFlag::HOANotifications.is_enabled() {
-        builder.env(
-            "WARP_CLI_AGENT_PROTOCOL_VERSION",
-            current_protocol_version().to_string(),
-        );
-    }
-    if shell_debug_mode {
-        builder.env("WARP_SHELL_DEBUG_MODE", "1");
-    }
-    builder.env("WARP_HONOR_PS1", if honor_ps1 { "1" } else { "0" });
-    let path_append = extra_path_entries()
-        .map(|p| p.to_string_lossy().into_owned())
-        .join(":");
-    builder.env("WARP_PATH_APPEND", path_append);
-    // Sandbox shell is always bash (per the container image convention),
-    // matching the host-shell path's behavior for bash shells.
-    let sentinel_value = "57265949261";
-    builder.env("HISTFILESIZE", sentinel_value);
-    builder.env("WARP_INITIAL_HISTFILESIZE", sentinel_value);
-    // Intentionally do NOT set `WARP_INITIAL_WORKING_DIR` for sandboxes:
-    // the container's init script cds into the sandbox home dir, not
-    // the host's startup dir.
-
-    // Apply any caller-provided environment overrides last, so they win.
-    for (key, value) in env_vars {
-        builder.env(key, value);
-    }
-
-    builder.current_dir(home_dir);
-
-    builder
-}
-
-/// Prepare the Docker sandbox before spawning the PTY:
-/// 1. Write the bash init script to the per-sandbox host init dir.
-/// 2. Create a dedicated empty per-sandbox host workspace so `sbx run shell`
-///    does not mount the user's current working tree or home directory into
-///    the sandbox.
-///
-/// Both paths are derived from `starter.sandbox_id` so multiple concurrent
-/// Warp panes/sandboxes don't race on or share the same host directories.
-///
-/// The actual sandbox creation + attachment happens via
-/// `sbx run --name warp-sandbox-<id> shell WORKSPACE ... -- -c "cd /home/agent && exec bash --rcfile ..."`
-/// when the PTY process is spawned.
-///
-/// TODO(advait): Wire up cleanup on pane close. Today, closing a Docker
-/// sandbox pane leaves behind (1) the per-sandbox host init + workspace dirs
-/// under the Warp cache dir, and (2) the stopped `warp-sandbox-<id>`
-/// container. Both are per-sandbox so they don't clobber each other, but
-/// they accumulate over repeated sessions. The right hook is likely on the
-/// PTY/pane lifecycle (alongside `Pty::kill`) and should:
-///   - `sbx rm --force warp-sandbox-<id>` to drop the container,
-///   - `fs::remove_dir_all` on `starter.init_dir()` and
-///     `starter.workspace_dir()` to reclaim host disk.
-/// Tracking as a follow-up.
-fn prepare_docker_sandbox(starter: &DockerSandboxShellStarter) -> Result<()> {
-    // Build each per-sandbox subdirectory with mode 0700 so other local users
-    // cannot traverse into them, which (combined with the parent living under
-    // the per-user Warp cache dir rather than `/tmp`) prevents the init
-    // script from being read or symlink-attacked by anyone other than the
-    // Warp user. The file itself is left at the default mode so the
-    // container's shell (which may run as a different uid than the host
-    // user) can still read it via `--rcfile`.
-    let mk_owner_only_dir = |path: &Path| -> Result<()> {
-        DirBuilder::new()
-            .recursive(true)
-            .mode(0o700)
-            .create(path)
-            .with_context(|| format!("create sandbox dir {}", path.display()))
-    };
-
-    // 1. Write the init script to this sandbox's dedicated host init dir.
-    let init_script =
-        raw_init_shell_script_for_shell(ShellType::Bash, &ASSETS, starter.session_id());
-    let init_dir = starter.init_dir();
-    mk_owner_only_dir(&init_dir)?;
-    std::fs::write(starter.init_path(), init_script).context("write sandbox init script")?;
-    // 2. Create this sandbox's dedicated empty primary workspace so the
-    // sandbox does not inherit access to the user's home directory or the
-    // current local repository by default.
-    mk_owner_only_dir(&starter.workspace_dir())?;
-
-    Ok(())
 }
 
 /// A set of platform helper utilities copied directly from std::sys.
