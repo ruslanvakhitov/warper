@@ -1,15 +1,12 @@
-//! Manages how we write to and read from our SQLite database for our AI features.
+//! Persists terminal command blocks.
 
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 
-use chrono::{Local, NaiveDateTime, TimeZone};
 use diesel::{prelude::*, result::Error, sqlite::SqliteConnection};
 
-use itertools::Itertools;
-
-use crate::ai::blocklist::{PersistedAIInput, SerializedBlockListItem};
-use crate::terminal::model::block::{SerializedAgentViewVisibility, SerializedBlock};
-use crate::{app_state::PaneUuid, persistence::schema::ai_queries};
+use super::SerializedBlockListItem;
+use crate::app_state::PaneUuid;
+use crate::terminal::model::block::SerializedBlock;
 
 use super::model::Block;
 use super::{model, schema};
@@ -18,113 +15,7 @@ const MAX_TERMINAL_BLOCKS_TO_PERSIST_PER_SESSION: i64 = 100;
 
 type PersistedBlocks = HashMap<PaneUuid, Vec<SerializedBlockListItem>>;
 
-/// An AI query read from the SQLite DB.
-#[derive(Identifiable, Insertable, Queryable, Selectable)]
-#[diesel(table_name = ai_queries)]
-#[diesel(primary_key(id))]
-pub(super) struct AIQuery {
-    pub(super) id: i32,
-    pub(super) exchange_id: String,
-    pub(super) conversation_id: String,
-    pub(super) start_ts: NaiveDateTime,
-    pub(super) output_status: String,
-    pub(super) input: String,
-    pub(super) working_directory: Option<String>,
-    pub(super) model_id: String,
-    pub(super) coding_model_id: String,
-
-    // Planning model selection is deprecated and unused.
-    #[allow(unused)]
-    pub(super) planning_model_id: String,
-}
-
-impl TryFrom<AIQuery> for PersistedAIInput {
-    type Error = anyhow::Error;
-
-    fn try_from(value: AIQuery) -> Result<Self, Self::Error> {
-        Ok(Self {
-            start_ts: Local.from_utc_datetime(&value.start_ts),
-            inputs: serde_json::from_str(&value.input)?,
-            exchange_id: value.exchange_id.try_into()?,
-            conversation_id: value.conversation_id.try_into()?,
-            output_status: serde_json::from_str(&value.output_status)?,
-            working_directory: value.working_directory,
-            model_id: value.model_id.into(),
-            coding_model_id: value.coding_model_id.into(),
-        })
-    }
-}
-
-/// A new AI query to be inserted into the SQLite DB.
-#[derive(Insertable, AsChangeset)]
-#[diesel(table_name = ai_queries)]
-#[diesel(treat_none_as_null = true)]
-pub(super) struct NewAIQuery {
-    pub(super) exchange_id: String,
-    pub(super) conversation_id: String,
-    pub(super) start_ts: NaiveDateTime,
-    pub(super) output_status: String,
-    pub(super) input: String,
-    pub(super) working_directory: Option<String>,
-    pub(super) model_id: String,
-}
-
-impl TryFrom<&PersistedAIInput> for NewAIQuery {
-    type Error = anyhow::Error;
-
-    fn try_from(value: &PersistedAIInput) -> Result<Self, Self::Error> {
-        Ok(Self {
-            start_ts: value.start_ts.naive_utc(),
-            input: serde_json::to_string(&value.inputs)?,
-            working_directory: value.working_directory.clone(),
-            exchange_id: value.exchange_id.to_string(),
-            conversation_id: value.conversation_id.to_string(),
-            output_status: serde_json::to_string(&value.output_status)?,
-            model_id: value.model_id.clone().into(),
-        })
-    }
-}
-
-pub(super) fn read_ai_queries(
-    conn: &mut SqliteConnection,
-) -> Result<Vec<PersistedAIInput>, diesel::result::Error> {
-    // Only load at most 100 AI queries; there's a very low chance that the user
-    // will ever try rerunning AI queries older than this duration and loading
-    // all AI queries in perpetuity has performance implications on app startup.
-    // TOOD(alokedesai): Consider loading all AI queries by paginating the SQL query.
-    const MAX_AI_QUERIES_TO_READ: i64 = 100;
-    Ok(schema::ai_queries::table
-        .select(AIQuery::as_select())
-        .order_by(schema::ai_queries::columns::start_ts.desc())
-        .limit(MAX_AI_QUERIES_TO_READ)
-        .load::<AIQuery>(conn)?
-        .into_iter()
-        .filter_map(|ai_query| PersistedAIInput::try_from(ai_query).ok())
-        .rev()
-        .collect_vec())
-}
-
-pub(super) fn upsert_ai_query(
-    conn: &mut SqliteConnection,
-    query: Arc<PersistedAIInput>,
-) -> anyhow::Result<()> {
-    use schema::ai_queries::dsl::*;
-
-    let new_ai_query = NewAIQuery::try_from(query.as_ref())?;
-
-    Ok(conn.transaction::<_, Error, _>(|conn| {
-        diesel::insert_into(ai_queries)
-            .values(&new_ai_query)
-            .on_conflict(exchange_id)
-            .do_update()
-            .set(&new_ai_query)
-            .execute(conn)?;
-
-        Ok(())
-    })?)
-}
-
-/// Returns the most recent [`MAX_BLOCK_COUNT_PER_SESSION`] block list items for each session. The
+/// Returns the most recent [`MAX_TERMINAL_BLOCKS_TO_PERSIST_PER_SESSION`] block list items for each session. The
 /// items are in chronological order.
 pub(super) fn get_all_restored_blocks(
     conn: &mut SqliteConnection,
@@ -241,12 +132,7 @@ fn create_block<'a>(
         user: block.shell_host.as_ref().map(|host| host.user.as_str()),
         host: block.shell_host.as_ref().map(|host| host.hostname.as_str()),
         prompt_snapshot: block.prompt_snapshot.as_ref(),
-        ai_metadata: block.ai_metadata.as_ref(),
         is_local: Some(is_local),
-        agent_view_visibility: block
-            .agent_view_visibility
-            .as_ref()
-            .and_then(|v| serde_json::to_string(v).ok()),
     }
 }
 
@@ -257,36 +143,4 @@ pub(super) fn delete_blocks(conn: &mut SqliteConnection, pane_id: Vec<u8>) -> Re
             .execute(conn)?;
         Ok(())
     })
-}
-
-pub(super) fn update_block_agent_view_visibility(
-    conn: &mut SqliteConnection,
-    target_block_id: &str,
-    visibility: &SerializedAgentViewVisibility,
-) -> anyhow::Result<()> {
-    use schema::blocks::dsl::*;
-    let visibility_json = serde_json::to_string(visibility)?;
-    diesel::update(blocks.filter(block_id.eq(target_block_id)))
-        .set(agent_view_visibility.eq(visibility_json))
-        .execute(conn)?;
-    Ok(())
-}
-
-pub(super) fn delete_ai_conversation(
-    conn: &mut SqliteConnection,
-    conversation_id_str: &str,
-) -> anyhow::Result<()> {
-    use schema::ai_queries::dsl as queries_dsl;
-
-    conn.transaction::<_, Error, _>(|conn| {
-        // Delete the AI query
-        diesel::delete(
-            queries_dsl::ai_queries.filter(queries_dsl::conversation_id.eq(conversation_id_str)),
-        )
-        .execute(conn)?;
-
-        Ok(())
-    })?;
-
-    Ok(())
 }

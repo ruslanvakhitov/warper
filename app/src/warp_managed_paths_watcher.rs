@@ -1,4 +1,3 @@
-use dirs::home_dir;
 use notify_debouncer_full::notify::{RecursiveMode, WatchFilter};
 use repo_metadata::RepositoryUpdate;
 use repo_metadata::TargetFile;
@@ -33,43 +32,14 @@ pub(crate) fn ensure_warp_watch_roots_exist() {
         }
     }
 }
-pub(crate) fn warp_home_config_dir() -> Option<PathBuf> {
-    warp_core::paths::warp_home_config_dir()
-}
 
-pub(crate) fn warp_home_skills_dir() -> Option<PathBuf> {
-    warp_core::paths::warp_home_skills_dir()
-}
-pub(crate) fn warp_home_mcp_config_file_path() -> Option<PathBuf> {
-    warp_core::paths::warp_home_mcp_config_file_path()
-}
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct WarpMcpConfigPath {
-    pub(crate) root_path: PathBuf,
-    pub(crate) config_path: PathBuf,
-}
-
-pub(crate) fn warp_managed_skill_dirs() -> Vec<PathBuf> {
-    warp_home_skills_dir().into_iter().collect()
-}
-pub(crate) fn warp_managed_mcp_config_path() -> Option<WarpMcpConfigPath> {
-    Some(WarpMcpConfigPath {
-        root_path: home_dir()?,
-        config_path: warp_home_mcp_config_file_path()?,
-    })
-}
 pub(crate) fn repository_update_touches_path(update: &RepositoryUpdate, path: &Path) -> bool {
     repository_update_paths(update).any(|candidate| candidate == path)
 }
 pub(crate) fn repository_update_touches_prefix(update: &RepositoryUpdate, prefix: &Path) -> bool {
     repository_update_paths(update).any(|candidate| candidate.starts_with(prefix))
 }
-pub(crate) fn filter_repository_update_by_prefix(
-    update: &RepositoryUpdate,
-    prefix: &Path,
-) -> Option<RepositoryUpdate> {
-    filter_repository_update(update, |path| path.starts_with(prefix))
-}
+
 fn repository_update_paths(update: &RepositoryUpdate) -> impl Iterator<Item = &Path> {
     update
         .added
@@ -81,56 +51,7 @@ fn repository_update_paths(update: &RepositoryUpdate) -> impl Iterator<Item = &P
             [to_target.path.as_path(), from_target.path.as_path()]
         }))
 }
-fn filter_repository_update(
-    update: &RepositoryUpdate,
-    keep_path: impl Fn(&Path) -> bool,
-) -> Option<RepositoryUpdate> {
-    let mut filtered = RepositoryUpdate {
-        commit_updated: update.commit_updated,
-        index_lock_detected: update.index_lock_detected,
-        ..Default::default()
-    };
 
-    for target in &update.added {
-        if keep_path(&target.path) {
-            filtered.added.insert(target.clone());
-        }
-    }
-
-    for target in &update.modified {
-        if keep_path(&target.path) {
-            filtered.modified.insert(target.clone());
-        }
-    }
-
-    for target in &update.deleted {
-        if keep_path(&target.path) {
-            filtered.deleted.insert(target.clone());
-        }
-    }
-
-    for (to_target, from_target) in &update.moved {
-        let keep_to = keep_path(&to_target.path);
-        let keep_from = keep_path(&from_target.path);
-
-        match (keep_to, keep_from) {
-            (true, true) => {
-                filtered
-                    .moved
-                    .insert(to_target.clone(), from_target.clone());
-            }
-            (true, false) => {
-                filtered.added.insert(to_target.clone());
-            }
-            (false, true) => {
-                filtered.deleted.insert(from_target.clone());
-            }
-            (false, false) => {}
-        }
-    }
-
-    (!filtered.is_empty()).then_some(filtered)
-}
 fn filesystem_event_to_repository_update(event: &BulkFilesystemWatcherEvent) -> RepositoryUpdate {
     RepositoryUpdate {
         added: event
@@ -217,42 +138,6 @@ impl WarpManagedPathsWatcher {
                     "Warper config directory",
                 );
             }
-            if let Some(warp_home_skills_dir) = warp_home_skills_dir() {
-                if warp_home_skills_dir.exists()
-                    && !warp_home_skills_dir.starts_with(&data_dir)
-                    && (!should_register_config_local_dir
-                        || !warp_home_skills_dir.starts_with(&config_local_dir))
-                {
-                    Self::register_path(
-                        ctx,
-                        &watcher,
-                        warp_home_skills_dir,
-                        WatchFilter::accept_all(),
-                        RecursiveMode::Recursive,
-                        "Warper home skills directory",
-                    );
-                }
-            }
-            if let (Some(warp_home_config_dir), Some(warp_home_mcp_config_path)) =
-                (warp_home_config_dir(), warp_home_mcp_config_file_path())
-            {
-                if warp_home_config_dir.exists()
-                    && !warp_home_config_dir.starts_with(&data_dir)
-                    && (!should_register_config_local_dir
-                        || !warp_home_config_dir.starts_with(&config_local_dir))
-                {
-                    Self::register_path(
-                        ctx,
-                        &watcher,
-                        warp_home_config_dir,
-                        WatchFilter::with_filter(Arc::new(move |path| {
-                            path == warp_home_mcp_config_path
-                        })),
-                        RecursiveMode::NonRecursive,
-                        "Warper home MCP config directory",
-                    );
-                }
-            }
         }
 
         Self { _watcher: watcher }
@@ -297,94 +182,3 @@ impl Entity for WarpManagedPathsWatcher {
 }
 
 impl SingletonEntity for WarpManagedPathsWatcher {}
-
-#[cfg(test)]
-mod tests {
-    use dirs::home_dir;
-    use std::collections::{HashMap, HashSet};
-    use std::path::PathBuf;
-
-    use repo_metadata::{RepositoryUpdate, TargetFile};
-
-    use super::{
-        filter_repository_update_by_prefix, warp_home_mcp_config_file_path, warp_home_skills_dir,
-        warp_managed_mcp_config_path, warp_managed_skill_dirs,
-    };
-
-    #[test]
-    fn warp_managed_skill_dirs_contains_only_warp_home_path() {
-        let dirs = warp_managed_skill_dirs();
-        match warp_home_skills_dir() {
-            Some(warp_home_skills_dir) => assert_eq!(dirs, vec![warp_home_skills_dir]),
-            None => assert!(dirs.is_empty()),
-        }
-    }
-
-    #[test]
-    fn warp_managed_mcp_config_path_contains_only_warp_home_path() {
-        match (
-            home_dir(),
-            warp_home_mcp_config_file_path(),
-            warp_managed_mcp_config_path(),
-        ) {
-            (Some(home_dir), Some(warp_home_mcp_config_path), Some(path)) => {
-                assert_eq!(path.root_path, home_dir);
-                assert_eq!(path.config_path, warp_home_mcp_config_path);
-            }
-            (_, _, None) => {}
-            _ => panic!("Expected Warper MCP path when home directory is available"),
-        }
-    }
-
-    #[test]
-    fn filter_repository_update_by_prefix_keeps_only_matching_paths() {
-        let skills_dir = PathBuf::from("/tmp/.warp-local/skills");
-        let other_dir = PathBuf::from("/tmp/.warp-local/worktrees/repo");
-        let skill_file = skills_dir.join("deploy").join("SKILL.md");
-        let other_file = other_dir.join("README.md");
-
-        let update = RepositoryUpdate {
-            added: HashSet::from([
-                TargetFile::new(skill_file.clone(), false),
-                TargetFile::new(other_file.clone(), false),
-            ]),
-            modified: HashSet::new(),
-            deleted: HashSet::new(),
-            moved: HashMap::new(),
-            commit_updated: false,
-            index_lock_detected: false,
-        };
-
-        let filtered =
-            filter_repository_update_by_prefix(&update, &skills_dir).expect("expected update");
-
-        assert!(filtered.contains_added_or_modified(&TargetFile::new(skill_file, false)));
-        assert!(!filtered.contains_added_or_modified(&TargetFile::new(other_file, false)));
-    }
-
-    #[test]
-    fn filter_repository_update_by_prefix_converts_cross_boundary_moves() {
-        let skills_dir = PathBuf::from("/tmp/.warp-local/skills");
-        let skill_file = skills_dir.join("deploy").join("SKILL.md");
-        let ignored_file = PathBuf::from("/tmp/.warp-local/worktrees/repo/SKILL.md");
-
-        let update = RepositoryUpdate {
-            added: HashSet::new(),
-            modified: HashSet::new(),
-            deleted: HashSet::new(),
-            moved: HashMap::from([(
-                TargetFile::new(skill_file.clone(), false),
-                TargetFile::new(ignored_file, false),
-            )]),
-            commit_updated: false,
-            index_lock_detected: false,
-        };
-
-        let filtered =
-            filter_repository_update_by_prefix(&update, &skills_dir).expect("expected update");
-
-        assert!(filtered.contains_added_or_modified(&TargetFile::new(skill_file, false)));
-        assert!(filtered.moved.is_empty());
-        assert!(filtered.deleted.is_empty());
-    }
-}
