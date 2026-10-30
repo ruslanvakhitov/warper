@@ -10,5 +10,4 @@ Description: Warper command line interface
  The Warper CLI is a tool for launching and managing local Warper command line workflows.
  Use the CLI to:
  * Open Warper from scripts
- * Start local agent workflows
  * Manage local command line integrations

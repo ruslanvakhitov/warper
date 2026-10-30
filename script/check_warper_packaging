@@ -35,7 +35,7 @@ trap 'rm -rf "$expected_target_dir"' EXIT
 resolved_app_path="$(
   WARP_BIN_NAME=warp-oss \
   WARP_CHANNEL=oss \
-  FEATURES=release_bundle,gui,nld_improvements \
+  FEATURES=release_bundle,gui \
   CARGO_TARGET_DIR="$expected_target_dir" \
   script/macos/run --dont-open --print-app-path
 )"
