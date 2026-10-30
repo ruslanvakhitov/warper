@@ -13,7 +13,6 @@ use crate::terminal::writeable_pty;
 use child::ChildExitWatcher;
 use conpty_api::ConptyApiError;
 use environment::get_shell_environment_variables;
-pub use environment::get_user_and_system_env_variable;
 use std::ffi::{OsStr, OsString};
 use std::os::windows::ffi::OsStrExt;
 use std::os::windows::io::FromRawHandle as _;
