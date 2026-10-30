@@ -26,30 +26,24 @@ publish = false
 
 [workspace.dependencies]
 # Local workspace crates. This lets us reference them in other crates without specifying a path.
-ai = { path = "crates/ai" }
 app-installation-detection = { path = "crates/app-installation-detection" }
 asset_cache = { path = "crates/asset_cache" }
 asset_macro = { path = "crates/asset_macro" }
 channel_versions = { path = "crates/channel_versions", default-features = false }
 command = { path = "crates/command" }
 command-signatures-v2 = { path = "crates/command-signatures-v2" }
-computer_use = { path = "crates/computer_use" }
-field_mask = { path = "crates/field_mask" }
 fuzzy_match = { path = "crates/fuzzy_match" }
 handlebars = { path = "crates/handlebars" }
 http_client = { path = "crates/http_client" }
 http_server = { path = "crates/http_server" }
-input_classifier = { path = "crates/input_classifier" }
 integration = { path = "crates/integration" }
 ipc = { path = "crates/ipc" }
 jsonrpc = { path = "crates/jsonrpc" }
 languages = { path = "crates/languages" }
 lsp = { path = "crates/lsp" }
 markdown_parser = { path = "crates/markdown_parser" }
-natural_language_detection = { path = "crates/natural_language_detection" }
 node_runtime = { path = "crates/node_runtime" }
 persistence = { path = "crates/persistence" }
-prevent_sleep = { path = "crates/prevent_sleep" }
 repo_metadata = { path = "crates/repo_metadata" }
 settings = { path = "crates/settings" }
 settings_value = { path = "crates/settings_value", default-features = false }
@@ -61,7 +55,6 @@ syntax_tree = { path = "crates/syntax_tree" }
 ui_components = { path = "crates/ui_components" }
 vim = { path = "crates/vim" }
 virtual-fs = { path = "crates/virtual_fs" }
-voice_input = { path = "crates/voice_input" }
 warp = { path = "app" }
 warp_cli = { path = "crates/warp_cli" }
 warp_completer = { path = "crates/warp_completer" }
@@ -72,7 +65,6 @@ warp_files = { path = "crates/warp_files" }
 warp_isolation_platform = { path = "crates/isolation_platform" }
 warp_js = { path = "crates/warp_js" }
 warp_logging = { path = "crates/warp_logging" }
-warp_managed_secrets = { path = "crates/managed_secrets" }
 warp_ripgrep = { path = "crates/warp_ripgrep" }
 warp_server_client = { path = "crates/warp_server_client" }
 warp_terminal = { path = "crates/warp_terminal" }
@@ -94,7 +86,6 @@ async-channel = "2.3.1"
 async-compat = "0.2.5"
 async-io = "2.4.0"
 async-process = "2.3.0"
-async-stream = "0.3.5"
 async-task = "4.2.0"
 async-trait = "0.1.89"
 async-fs = "2.1.2"
@@ -167,10 +158,6 @@ nix = { version = "0.26.4", default-features = false, features = ["signal"] }
 notify-debouncer-full = { git = "https://github.com/warpdotdev/notify", rev = "f3afcda3058941e17e09689afea40e2a2db057e0" }
 nom = "7.1.1"
 num-traits = "0.2"
-# We disable default features as the "rustls-tls" feature enables the reqwest
-# feature of the same name, which itself enables the "rustls-tls-webpki-roots"
-# feature, whereas we want to use native roots instead.
-oauth2 = { version = "5.0.0", default-features = false, features = ["reqwest"] }
 openh264 = "0.8"
 static_assertions = "1.1.0"
 url = "2.5.4"
@@ -190,8 +177,6 @@ pin-project = "1.0.10"
 pprof = "0.15.0"
 prost = "0.14.3"
 prost-build = "0.14.3"
-prost-reflect = "0.16.3"
-prost-types = "0.14.3"
 rand = "0.8.2"
 rangemap = "1.3.0"
 reqwest = { version = "0.12.28", default-features = false, features = [
@@ -206,7 +191,6 @@ reqwest = { version = "0.12.28", default-features = false, features = [
   "stream",
   "system-proxy",
 ] }
-reqwest-eventsource = "0.6.0"
 resvg = "0.47.0"
 rust-embed = { version = "8.7.0", features = ["include-exclude"] }
 rustc-hash = "2.1.1"
@@ -274,7 +258,6 @@ version-compare = "0.1"
 vte = { git = "https://github.com/warpdotdev/vte.git", rev = "4b399c87b63ba88f45709edaa6383fc519f6c900", default-features = false }
 walkdir = "2"
 warp-workflows = { git = "https://github.com/warpdotdev/workflows", rev = "793a98ddda6ef19682aed66364faebd2829f0e01" }
-warp_multi_agent_api = { git = "https://github.com/warpdotdev/warp-proto-apis.git", rev = "78a78f21a75432bf0141e396fb318bf1694e47f0" }
 # Disable default features to disable support for WebGPU. We enable all other
 # default features of wgpu.
 wgpu = { version = "29.0.1", default-features = false, features = [
@@ -325,7 +308,6 @@ typed-path = "0.10.0"
 streaming-iterator = "0.1.0"
 derivative = "2.2.0"
 parquet = { version = "55.0.0", features = ["arrow"] }
-rmcp = { git = "https://github.com/warpdotdev/rmcp.git", rev = "c0f65dc441af7d714b9c453ac5e7ef641451abe3" }
 
 # Comment this to disable building with debug symbols
 # Building with debug symbols generates a dsym which we can use to get
@@ -362,10 +344,9 @@ pprof_util.opt-level = 3
 # Vastly improve runtime performance of some font and text layout logic
 # at the cost of a small increase in compile time for this crate.
 ttf-parser.opt-level = 3
-# Improve the performance of Agent Mode diff application, particularly in tests.
+# Improve text matching performance.
 strsim.opt-level = 3
-# Improve performance of SSE stream parsing.
-eventsource-stream.opt-level = 3
+# Improve parser performance.
 memchr.opt-level = 3
 nom.opt-level = 3
 # Improve performance of core runtime components slightly.
@@ -430,13 +411,5 @@ objc = { git = "https://github.com/warpdotdev/rust-objc.git", rev = "5b656827fa9
 pathfinder_simd = { git = "https://github.com/warpdotdev/pathfinder.git", rev = "34128a129ca6aee168fbc5060a4f21b4f7e486a9" }
 yaml-rust = { git = "https://github.com/warpdotdev/yaml-rust.git", rev = "51684719d0102ca85ff4b21cec39877a0c669e19" }
 
-tink-core = { git = "https://github.com/warpdotdev/tink-rust", branch = "warpdotdev/main" }
-tink-proto = { git = "https://github.com/warpdotdev/tink-rust", branch = "warpdotdev/main" }
-tink-hybrid = { git = "https://github.com/warpdotdev/tink-rust", branch = "warpdotdev/main" }
-
 tikv-jemallocator = { git = "https://github.com/warpdotdev/jemallocator.git", rev = "2ee30bfdf7059223b54810e4ea6c666f0a379e0b" }
 tikv-jemalloc-sys = { git = "https://github.com/warpdotdev/jemallocator.git", rev = "2ee30bfdf7059223b54810e4ea6c666f0a379e0b" }
-
-[patch."https://github.com/warpdotdev/warp-proto-apis.git"]
-# Uncomment for local development of warp-proto-apis
-# warp_multi_agent_api = { path = "../warp-proto-apis/apis/multi_agent/v1/gen/rust" }

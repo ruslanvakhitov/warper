@@ -11,28 +11,4 @@ pub struct ChannelConfig {
 
     /// The name of the file to which logs should be written.
     pub logfile_name: Cow<'static, str>,
-
-    /// Configuration for statically-bundled MCP OAuth credentials.
-    pub mcp_static_config: Option<McpStaticConfig>,
-}
-
-/// Configuration for statically-bundled MCP OAuth credentials.
-///
-/// These are credentials for OAuth providers where dynamic client registration
-/// is not supported and we instead ship pre-registered client IDs and secrets.
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct McpStaticConfig {
-    /// Per-provider OAuth credentials.
-    pub providers: Vec<McpOAuthProviderConfig>,
-}
-
-/// A single OAuth provider's credentials for MCP authentication.
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct McpOAuthProviderConfig {
-    /// The issuer URL of the OAuth provider (e.g. `https://github.com/login/oauth`).
-    pub issuer: Cow<'static, str>,
-    /// The OAuth client ID registered for this channel.
-    pub client_id: Cow<'static, str>,
-    /// The OAuth client secret registered for this channel.
-    pub client_secret: Cow<'static, str>,
 }

@@ -393,12 +393,7 @@ fn init_internal(
         )));
         base_logger.format(format_for_file_output);
     } else {
-        // Agent mode eval outputs are written to stdout but redirected to a file, so we don't want terminal styling.
-        if cfg!(feature = "agent_mode_evals") {
-            base_logger.write_style(env_logger::WriteStyle::Never);
-        } else {
-            base_logger.write_style(env_logger::WriteStyle::Always);
-        }
+        base_logger.write_style(env_logger::WriteStyle::Always);
         base_logger.format(format_for_terminal_output);
     }
 
