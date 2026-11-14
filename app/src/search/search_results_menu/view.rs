@@ -11,13 +11,16 @@ use warpui::elements::{
     ConstrainedBox, Container, Empty, Flex, ParentElement, SavePosition, ScrollStateHandle,
     Scrollable, ScrollableElement, ScrollbarWidth, Text, UniformList, UniformListState,
 };
-
+use warpui::ui_components::components::{UiComponent, UiComponentStyles};
 use warpui::{
     Action, AppContext, Element, Entity, ModelHandle, SingletonEntity, View, ViewContext,
     ViewHandle, WeakViewHandle,
 };
 
 use super::styles::{ESTIMATED_RESULT_HEIGHT, MAX_DISPLAYED_RESULT_COUNT};
+
+const HEADER_HORIZONTAL_PADDING: f32 = 16.;
+const HEADER_VERTICAL_PADDING: f32 = 4.;
 
 #[derive(Clone, Copy)]
 pub struct SearchResultsMenuConfig {
@@ -48,6 +51,7 @@ pub enum SearchResultsViewEvent<T: Action + Clone> {
 }
 
 pub struct SearchResultsMenuView<T: Action + Clone> {
+    // Search results components (following AIContextMenu pattern)
     search_bar: ViewHandle<SearchBar<T>>,
     search_bar_state: ModelHandle<SearchBarState<T>>,
     scroll_state: ScrollStateHandle,
@@ -64,6 +68,7 @@ impl<T: Action + Clone> SearchResultsMenuView<T> {
         query_result_renderer: CreateQueryResultRendererFn<T>,
         ctx: &mut ViewContext<Self>,
     ) -> Self {
+        // Set up SearchBar system (following AIContextMenu pattern)
         let search_bar_state = ctx.add_model(|_ctx| {
             SearchBarState::new(SearchResultOrdering::TopDown)
                 .with_max_results(config.max_search_results)
@@ -219,6 +224,7 @@ impl<T: Action + Clone> SearchResultsMenuView<T> {
         });
     }
 
+    // TODO(moira): refactor to shared component with AIContextMenu
     fn handle_search_bar_event(&mut self, event: &SearchBarEvent<T>, ctx: &mut ViewContext<Self>) {
         match event {
             SearchBarEvent::ResultSelected { index } => {
@@ -270,12 +276,41 @@ impl<T: Action + Clone> SearchResultsMenuView<T> {
     }
 
     /// Render the search results using ScrollableMenu
+    // TODO(moira): refactor to shared component with AIContextMenu
     pub fn render_search_results(&self, app: &AppContext) -> Box<dyn Element> {
         let state = self.search_bar_state.as_ref(app);
         let selected_index = state.selected_index();
         let query_result_renderers = state.query_result_renderers();
 
+        let active_filter = state.active_visible_query_filter();
+        let appearance = Appearance::as_ref(app);
+
         let mut column = Flex::column();
+
+        if let Some(title) = active_filter.and_then(renderable_title_name) {
+            column.add_child(
+                Container::new(
+                    appearance
+                        .ui_builder()
+                        .span(title)
+                        .with_style(UiComponentStyles {
+                            font_color: Some(
+                                appearance
+                                    .theme()
+                                    .sub_text_color(appearance.theme().background())
+                                    .into(),
+                            ),
+                            font_size: Some(12.),
+                            ..Default::default()
+                        })
+                        .build()
+                        .finish(),
+                )
+                .with_padding_bottom(HEADER_VERTICAL_PADDING)
+                .with_horizontal_padding(HEADER_HORIZONTAL_PADDING)
+                .finish(),
+            );
+        }
 
         column.add_child(match query_result_renderers {
             Some(query_result_renderers) if query_result_renderers.is_empty() => {
@@ -301,4 +336,12 @@ impl<T: Action + Clone> View for SearchResultsMenuView<T> {
     fn render(&self, app: &AppContext) -> Box<dyn Element> {
         self.render_search_results(app)
     }
+}
+
+fn renderable_title_name(query_filter: QueryFilter) -> Option<&'static str> {
+    if matches!(query_filter, QueryFilter::AgentModeWorkflows) {
+        return Some("Prompts");
+    }
+
+    None
 }

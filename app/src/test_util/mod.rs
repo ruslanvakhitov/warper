@@ -1,3 +1,4 @@
+pub mod ai_agent_tasks;
 pub mod blockgrid;
 pub mod settings;
 pub mod terminal;

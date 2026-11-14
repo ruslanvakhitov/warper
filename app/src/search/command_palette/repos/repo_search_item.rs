@@ -1,4 +1,4 @@
-use crate::project_workspaces::metadata::WorkspaceMetadata;
+use ai::workspace::WorkspaceMetadata;
 use fuzzy_match::FuzzyMatchResult;
 use ordered_float::OrderedFloat;
 use std::path::Path;

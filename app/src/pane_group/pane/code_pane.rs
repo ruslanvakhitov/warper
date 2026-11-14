@@ -151,7 +151,9 @@ impl PaneContent for CodePane {
                         }
                     }
                 }
-
+                CodeViewEvent::RunTabConfigSkill { path } => {
+                    ctx.emit(crate::pane_group::Event::RunTabConfigSkill { path: path.clone() });
+                }
                 CodeViewEvent::OpenLspLogs { log_path } => {
                     ctx.emit(crate::pane_group::Event::OpenLspLogs {
                         log_path: log_path.clone(),

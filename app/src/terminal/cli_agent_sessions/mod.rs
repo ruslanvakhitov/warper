@@ -6,6 +6,8 @@ use std::collections::{HashMap, HashSet};
 
 use warpui::{Entity, EntityId, ModelContext, ModelHandle, SingletonEntity};
 
+use crate::ai::blocklist::InputConfig;
+
 use self::listener::CLIAgentSessionListener;
 use super::CLIAgent;
 use event::{CLIAgentEvent, CLIAgentEventType};
@@ -16,6 +18,19 @@ pub enum CLIAgentSessionStatus {
     InProgress,
     Success,
     Blocked { message: Option<String> },
+}
+
+impl CLIAgentSessionStatus {
+    pub fn to_conversation_status(&self) -> crate::ai::agent::conversation::ConversationStatus {
+        use crate::ai::agent::conversation::ConversationStatus;
+        match self {
+            CLIAgentSessionStatus::InProgress => ConversationStatus::InProgress,
+            CLIAgentSessionStatus::Success => ConversationStatus::Success,
+            CLIAgentSessionStatus::Blocked { message } => ConversationStatus::Blocked {
+                blocked_action: message.clone().unwrap_or_default(),
+            },
+        }
+    }
 }
 
 /// Rich context accumulated from CLI agent session events.
@@ -40,6 +55,10 @@ pub enum CLIAgentInputState {
     Open {
         /// How this session was opened (for telemetry).
         entrypoint: CLIAgentInputEntrypoint,
+        /// The input config that was active before opening rich input.
+        previous_input_config: InputConfig,
+        /// Whether the previous lock state was established while the input buffer was empty.
+        previous_was_lock_set_with_empty_buffer: bool,
     },
 }
 
@@ -378,6 +397,8 @@ impl CLIAgentSessionsModel {
         &mut self,
         terminal_view_id: EntityId,
         entrypoint: CLIAgentInputEntrypoint,
+        previous_input_config: InputConfig,
+        previous_was_lock_set_with_empty_buffer: bool,
         should_auto_toggle_input: bool,
         ctx: &mut ModelContext<Self>,
     ) {
@@ -386,7 +407,11 @@ impl CLIAgentSessionsModel {
         };
 
         let previous_input_state = session.input_state;
-        session.input_state = CLIAgentInputState::Open { entrypoint };
+        session.input_state = CLIAgentInputState::Open {
+            entrypoint,
+            previous_input_config,
+            previous_was_lock_set_with_empty_buffer,
+        };
         session.should_auto_toggle_input = should_auto_toggle_input;
 
         ctx.emit(CLIAgentSessionsModelEvent::InputSessionChanged {
@@ -428,7 +453,8 @@ impl CLIAgentSessionsModel {
         ctx: &mut ModelContext<Self>,
     ) {
         let agent = session.agent;
-        // Close rich input before replacing the session.
+        // Close any open rich input before replacing, so subscribers can
+        // restore input config before the session ends.
         self.close_input(terminal_view_id, false, ctx);
         if let Some(old) = self.sessions.insert(terminal_view_id, session) {
             ctx.emit(CLIAgentSessionsModelEvent::Ended {

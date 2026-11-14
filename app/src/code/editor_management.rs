@@ -3,11 +3,14 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use crate::ai::skills::SkillOpenOrigin;
+use ai::skills::SkillReference;
 use serde::{Deserialize, Serialize};
 use warp_util::path::LineAndColumnArg;
-use warpui::{AppContext, Entity, EntityId, SingletonEntity, ViewHandle, WindowId};
+use warpui::{AppContext, Entity, EntityId, ModelContext, SingletonEntity, ViewHandle, WindowId};
 
 use crate::{
+    ai::agent::AIAgentActionId,
     code_review::code_review_view::CodeReviewView,
     pane_group::{PaneGroup, PaneId},
     workspace::PaneViewLocator,
@@ -111,11 +114,20 @@ pub enum CodeSource {
         range_start: Option<LineAndColumnArg>,
         range_end: Option<LineAndColumnArg>,
     },
-
+    /// Opened from an active AI agent conversation.
+    AIAction { id: AIAgentActionId },
+    /// Opened from project rules (WARP.md) file.
+    ProjectRules { path: PathBuf },
     /// Opened from file tree.
     FileTree { path: PathBuf },
     /// Opened from macOS Finder via "Open With".
     Finder { path: PathBuf },
+    /// Opened from a skill.
+    Skill {
+        reference: SkillReference,
+        path: PathBuf,
+        origin: SkillOpenOrigin,
+    },
 }
 
 impl CodeSource {
@@ -124,17 +136,35 @@ impl CodeSource {
             Self::New {
                 default_directory, ..
             } => default_directory.as_ref(),
-            Self::Link { .. } | Self::FileTree { .. } | Self::Finder { .. } => None,
+            Self::Link { .. }
+            | Self::AIAction { .. }
+            | Self::ProjectRules { .. }
+            | Self::FileTree { .. }
+            | Self::Finder { .. }
+            | Self::Skill { .. } => None,
         }
     }
 
     pub fn path(&self) -> Option<PathBuf> {
         match self {
-            Self::New { .. } => None,
-            Self::Link { path, .. } | Self::FileTree { path } | Self::Finder { path } => {
-                Some(path.clone())
-            }
+            Self::New { .. } | Self::AIAction { .. } => None,
+            Self::Link { path, .. }
+            | Self::ProjectRules { path }
+            | Self::FileTree { path }
+            | Self::Finder { path }
+            | Self::Skill { path, .. } => Some(path.clone()),
         }
+    }
+
+    /// Returns true if this is a bundled skill that should be read-only.
+    pub fn is_bundled_skill(&self) -> bool {
+        matches!(
+            self,
+            Self::Skill {
+                reference: SkillReference::BundledSkillId(_),
+                ..
+            }
+        )
     }
 
     pub fn omit_line_col(&self) -> CodeSource {
@@ -154,10 +184,20 @@ impl CodeSource {
         match self {
             Self::New { .. } => "new",
             Self::Link { .. } => "link",
-
+            Self::AIAction { .. } => "ai_action",
+            Self::ProjectRules { .. } => "project_rules",
             Self::FileTree { .. } => "file_tree",
             Self::Finder { .. } => "finder",
+            Self::Skill { .. } => "skill",
         }
+    }
+
+    /// Returns `true` if this source should be restored across app restarts.
+    ///
+    /// `AIAction` is ephemeral (tied to a live conversation) and should not
+    /// be restored.
+    pub fn is_restorable(&self) -> bool {
+        !matches!(self, Self::AIAction { .. })
     }
 }
 
@@ -168,8 +208,14 @@ struct CodePaneData {
     locator: PaneViewLocator,
 }
 
+#[allow(dead_code)]
+pub enum CodeManagerEvent {
+    EditCompleted { action_id: AIAgentActionId },
+}
+
 /// Singleton model for managing the state of open code panes. It is responsible for
 /// 1) Allow caller to find an open code pane if exists.
+/// 2) Allow other sources to listen for events emitted when code pane is closed.
 #[derive(Default)]
 pub struct CodeManager {
     source_to_pane_data: HashMap<CodeSource, CodePaneData>,
@@ -216,10 +262,23 @@ impl CodeManager {
             })
             .map(|(_, data)| data.locator)
     }
+
+    #[allow(dead_code)]
+    pub fn complete_pending_diffs(&mut self, source: CodeSource, ctx: &mut ModelContext<Self>) {
+        if !self.source_to_pane_data.contains_key(&source) {
+            log::warn!("Trying to complete an edit on a source that doesn't exist");
+        }
+
+        let CodeSource::AIAction { id } = source else {
+            return;
+        };
+
+        ctx.emit(CodeManagerEvent::EditCompleted { action_id: id })
+    }
 }
 
 impl Entity for CodeManager {
-    type Event = ();
+    type Event = CodeManagerEvent;
 }
 
 impl SingletonEntity for CodeManager {}

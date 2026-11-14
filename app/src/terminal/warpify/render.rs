@@ -1,3 +1,4 @@
+use crate::ai::blocklist::inline_action::inline_action_icons;
 use crate::ui_components::blended_colors;
 use markdown_parser::{FormattedText, FormattedTextFragment, FormattedTextLine};
 use pathfinder_color::ColorU;
@@ -86,16 +87,10 @@ pub fn header_row(
 }
 
 fn green_check_icon(appearance: &Appearance, size: f32) -> Box<dyn Element> {
-    ConstrainedBox::new(
-        Icon::new(
-            crate::ui_components::icons::Icon::Check.into(),
-            appearance.theme().terminal_colors().normal.green,
-        )
-        .finish(),
-    )
-    .with_max_height(size)
-    .with_max_width(size)
-    .finish()
+    ConstrainedBox::new(inline_action_icons::green_check_icon(appearance).finish())
+        .with_max_height(size)
+        .with_max_width(size)
+        .finish()
 }
 
 /// UI helper to render the ssh command that caused the warpification prompt.

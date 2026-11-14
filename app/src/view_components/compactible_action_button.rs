@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
 use crate::{
+    ai::blocklist::inline_action::inline_action_icons::icon_size,
     ui_components::icons::Icon,
     view_components::action_button::{
-        ActionButton, ActionButtonTheme, ButtonSize, KeystrokeSource,
+        ActionButton, ActionButtonTheme, AdjoinedSide, ButtonSize, KeystrokeSource,
     },
-    view_components::status_icons::icon_size,
 };
 use warp_core::ui::appearance::Appearance;
 use warpui::{
@@ -19,6 +19,9 @@ const BUTTON_MARGIN: f32 = 8.;
 
 // Size switch thresholds for responsive button behavior
 pub const SMALL_SIZE_SWITCH_THRESHOLD: f32 = 400.0;
+pub const MEDIUM_SIZE_SWITCH_THRESHOLD: f32 = 500.0;
+pub const LARGE_SIZE_SWITCH_THRESHOLD: f32 = 600.0;
+pub const XLARGE_SIZE_SWITCH_THRESHOLD: f32 = 650.0;
 
 /// Stores normal and compact (i.e. without a keybinding display) versions of action buttons
 /// for use in views that need to display buttons in different modes.
@@ -84,6 +87,46 @@ impl CompactibleActionButton {
         }
     }
 
+    pub fn set_label<T: View>(&mut self, label: String, ctx: &mut ViewContext<T>) {
+        self.expanded_button.update(ctx, |button, ctx| {
+            button.set_label(label.clone(), ctx);
+        });
+        self.compact_button.update(ctx, |button, ctx| {
+            button.set_tooltip(Some(label), ctx);
+        });
+    }
+
+    pub fn set_keybinding<T: View>(
+        &mut self,
+        keybinding: Option<KeystrokeSource>,
+        ctx: &mut ViewContext<T>,
+    ) {
+        self.expanded_button.update(ctx, |button, ctx| {
+            button.set_keybinding(keybinding.clone(), ctx);
+        });
+
+        self.compact_button.update(ctx, |button, ctx| {
+            if let Some(keybinding) = keybinding {
+                button.set_tooltip_sublabel(keybinding.displayed(ctx), ctx);
+            } else {
+                button.set_tooltip_sublabel(None::<String>, ctx);
+            }
+        });
+    }
+
+    pub fn set_adjoined_side<T: View>(
+        &mut self,
+        adjoined_side: AdjoinedSide,
+        ctx: &mut ViewContext<T>,
+    ) {
+        self.compact_button.update(ctx, |button, ctx| {
+            button.set_adjoined_side(adjoined_side, ctx);
+        });
+        self.expanded_button.update(ctx, |button, ctx| {
+            button.set_adjoined_side(adjoined_side, ctx);
+        });
+    }
+
     pub fn compact_button(&self) -> &ViewHandle<ActionButton> {
         &self.compact_button
     }
@@ -102,9 +145,14 @@ impl RenderCompactibleActionButton for CompactibleActionButton {
     }
 }
 
-/// Renders compact and expanded rows for a caller to switch between.
+/// Render both compact and expanded button rows
+/// and then switch between them based on the container width.
 pub fn render_compact_and_regular_button_rows(
     buttons: Vec<&dyn RenderCompactibleActionButton>,
+    // None when we don't want to show the expansion icon at all.
+    expansion_icon_state: Option<bool>,
+    appearance: &Appearance,
+    app: &AppContext,
 ) -> (Box<dyn Element>, Box<dyn Element>) {
     let (full_buttons, compact_buttons) = buttons
         .iter()
@@ -116,8 +164,23 @@ pub fn render_compact_and_regular_button_rows(
         })
         .unzip();
 
-    let full_row = render_button_row(full_buttons);
-    let compact_row = render_button_row(compact_buttons);
+    let mut full_row = render_button_row(full_buttons);
+    let mut compact_row = render_button_row(compact_buttons);
+
+    if let Some(expansion_icon_state) = expansion_icon_state {
+        full_row.add_child(render_expansion_icon(
+            expansion_icon_state,
+            false,
+            appearance,
+            app,
+        ));
+        compact_row.add_child(render_expansion_icon(
+            expansion_icon_state,
+            false,
+            appearance,
+            app,
+        ));
+    }
 
     (full_row.finish(), compact_row.finish())
 }
@@ -141,13 +204,18 @@ fn render_button_row(buttons: Vec<Box<dyn Element>>) -> Flex {
 
 pub fn render_expansion_icon(
     expanded: bool,
+    expands_upwards: bool,
     appearance: &Appearance,
     app: &AppContext,
 ) -> Box<dyn Element> {
     ConstrainedBox::new(
         warpui::elements::Icon::new(
             if expanded {
-                Icon::ChevronDown.into()
+                if expands_upwards {
+                    Icon::ChevronUp.into()
+                } else {
+                    Icon::ChevronDown.into()
+                }
             } else {
                 Icon::ChevronRight.into()
             },

@@ -1,4 +1,6 @@
 pub mod action;
+pub mod ai_context_menu;
+mod ai_queries;
 pub(crate) mod async_snapshot_data_source;
 pub mod binding_source;
 pub mod command_palette;
@@ -15,6 +17,7 @@ pub mod result_renderer;
 mod search_bar;
 pub mod search_results_menu;
 pub mod searcher;
+pub mod slash_command_menu;
 pub mod welcome_palette;
 mod workflows;
 

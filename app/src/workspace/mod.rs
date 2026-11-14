@@ -2,6 +2,7 @@ mod action;
 mod active_session;
 #[cfg(target_os = "macos")]
 mod cli_install;
+pub mod delete_conversation_confirmation_dialog;
 mod global_actions;
 pub mod header_toolbar_editor;
 pub mod header_toolbar_item;
@@ -11,12 +12,15 @@ pub mod metadata;
 mod native_modal;
 mod one_time_modal_model;
 mod registry;
+pub mod rewind_confirmation_dialog;
 pub mod sync_inputs;
 pub mod tab_settings;
 mod toast_stack;
 pub mod util;
 pub mod view;
 
+use crate::ai::blocklist::metadata::AgentModeEntrypoint;
+use crate::ai::blocklist::NEW_AGENT_PANE_LABEL;
 use crate::channel::{Channel, ChannelState};
 use crate::code;
 use crate::features::FeatureFlag;
@@ -40,10 +44,13 @@ use warpui::keymap::{BindingDescription, EditableBinding};
 use warpui::AppContext;
 
 pub use action::{
-    CommandSearchOptions, InitContent, TabContextMenuAnchor, VerticalTabsPaneContextMenuTarget,
-    WorkspaceAction,
+    CommandSearchOptions, InitContent, RestoreConversationLayout, TabContextMenuAnchor,
+    VerticalTabsPaneContextMenuTarget, WorkspaceAction,
 };
 pub use active_session::ActiveSession;
+pub use global_actions::{
+    ForkAIConversationParams, ForkFromExchange, ForkedConversationDestination,
+};
 pub use util::{active_terminal_in_window, PaneViewLocator, TabMovement};
 pub use view::{
     Workspace, NEW_SESSION_MENU_BUTTON_POSITION_ID, NEW_TAB_BUTTON_POSITION_ID,
@@ -57,9 +64,10 @@ pub fn panel_header_corner_radius() -> warpui::elements::CornerRadius {
 
 use crate::workspace::view::{
     LEFT_PANEL_GLOBAL_SEARCH_BINDING_NAME, LEFT_PANEL_PROJECT_EXPLORER_BINDING_NAME,
-    NEW_TAB_BINDING_NAME, NEW_TERMINAL_TAB_BINDING_NAME, OPEN_GLOBAL_SEARCH_BINDING_NAME,
-    TOGGLE_PROJECT_EXPLORER_BINDING_NAME, TOGGLE_RIGHT_PANEL_BINDING_NAME,
-    TOGGLE_TAB_CONFIGS_MENU_BINDING_NAME, TOGGLE_VERTICAL_TABS_PANEL_BINDING_NAME,
+    NEW_AGENT_TAB_BINDING_NAME, NEW_TAB_BINDING_NAME, NEW_TERMINAL_TAB_BINDING_NAME,
+    OPEN_GLOBAL_SEARCH_BINDING_NAME, TOGGLE_PROJECT_EXPLORER_BINDING_NAME,
+    TOGGLE_RIGHT_PANEL_BINDING_NAME, TOGGLE_TAB_CONFIGS_MENU_BINDING_NAME,
+    TOGGLE_VERTICAL_TABS_PANEL_BINDING_NAME,
 };
 pub use one_time_modal_model::OneTimeModalModel;
 pub use registry::WorkspaceRegistry;
@@ -73,8 +81,11 @@ pub fn init(app: &mut AppContext) {
     modal::init(app);
     native_modal::init(app);
     lightbox_view::init(app);
+    rewind_confirmation_dialog::init(app);
+    delete_conversation_confirmation_dialog::init(app);
     crate::tab_configs::remove_confirmation_dialog::init(app);
     tab_configs::session_config_modal::init(app);
+    view::codex_modal::init(app);
     view::global_search::view::GlobalSearchView::init(app);
     view::right_panel::RightPanelView::init(app);
     header_toolbar_editor::init(app);
@@ -107,6 +118,12 @@ pub fn init(app: &mut AppContext) {
 
     if ChannelState::enable_debug_features() {
         app.register_editable_bindings([
+            EditableBinding::new(
+                "workspace:log_review_comment_send_status_for_active_tab",
+                "[Debug] Log review comment send status for active tab",
+                WorkspaceAction::LogReviewCommentSendStatusForActiveTab,
+            )
+            .with_context_predicate(id!("Workspace")),
             EditableBinding::new("workspace:panic", "Trigger a panic", WorkspaceAction::Panic)
                 .with_context_predicate(id!("Workspace")),
             EditableBinding::new(
@@ -124,6 +141,12 @@ pub fn init(app: &mut AppContext) {
         #[cfg(debug_assertions)]
         {
             app.register_editable_bindings([
+                EditableBinding::new(
+                    "workspace:debug_reset_aws_bedrock_login_banner_dismissed",
+                    "[Debug] Un-dismiss AWS login banner",
+                    WorkspaceAction::DebugResetAwsBedrockLoginBannerDismissed,
+                )
+                .with_context_predicate(id!("Workspace")),
                 EditableBinding::new(
                     "workspace:install_opencode_warp_plugin",
                     "[Debug] Install OpenCode Warper plugin",
@@ -503,6 +526,16 @@ pub fn init(app: &mut AppContext) {
         .with_custom_action(CustomAction::NewTerminalTab)
         .with_enabled(|| ContextFlag::CreateNewSession.is_enabled()),
         EditableBinding::new(
+            NEW_AGENT_TAB_BINDING_NAME,
+            BindingDescription::new("New Agent Tab"),
+            WorkspaceAction::AddAgentTab,
+        )
+        .with_group(bindings::BindingGroup::WarpAi.as_str())
+        .with_custom_action(CustomAction::NewAgentTab)
+        .with_context_predicate(
+            id!("Workspace") & id!(flags::IS_ANY_AI_ENABLED) & !id!("Workspace_PaneDragging"),
+        ),
+        EditableBinding::new(
             TOGGLE_RIGHT_PANEL_BINDING_NAME,
             BindingDescription::new("Toggle code review")
                 .with_custom_description(bindings::MAC_MENUS_CONTEXT, "Toggle Code Review"),
@@ -800,6 +833,19 @@ pub fn init(app: &mut AppContext) {
         ]);
     }
 
+    app.register_editable_bindings([EditableBinding::new(
+        "workspace:new_agent_pane",
+        *NEW_AGENT_PANE_LABEL,
+        WorkspaceAction::NewPaneInAgentMode {
+            entrypoint: AgentModeEntrypoint::NewPaneBinding,
+            zero_state_prompt_suggestion_type: None,
+        },
+    )
+    .with_enabled(|| FeatureFlag::AgentMode.is_enabled())
+    .with_context_predicate(id!("Workspace") & id!(flags::IS_ANY_AI_ENABLED))
+    .with_group(bindings::BindingGroup::WarpAi.as_str())
+    .with_custom_action(CustomAction::NewAgentModePane)]);
+
     app.register_editable_bindings([
         EditableBinding::new(
             "workspace:shift_focus_left",
@@ -817,15 +863,40 @@ pub fn init(app: &mut AppContext) {
         .with_key_binding("cmdorctrl-shift-)"),
     ]);
 
+    app.register_editable_bindings([
+        EditableBinding::new(
+            "workspace:open_repository",
+            BindingDescription::new("Open repository")
+                .with_custom_description(bindings::MAC_MENUS_CONTEXT, "Open Repository"),
+            WorkspaceAction::OpenRepository { path: None },
+        )
+        .with_context_predicate(id!("Workspace"))
+        .with_custom_action(CustomAction::OpenRepository)
+        .with_group(bindings::BindingGroup::Folders.as_str()),
+        EditableBinding::new(
+            "workspace:open_ai_fact_collection",
+            BindingDescription::new("Open AI Rules")
+                .with_custom_description(bindings::MAC_MENUS_CONTEXT, "Open AI Rules"),
+            WorkspaceAction::OpenAIFactCollection,
+        )
+        .with_enabled(|| FeatureFlag::AIRules.is_enabled())
+        .with_custom_action(CustomAction::OpenAIFactCollection)
+        .with_context_predicate(id!("Workspace") & id!(flags::IS_ANY_AI_ENABLED))
+        .with_group(bindings::BindingGroup::WarpAi.as_str()),
+    ]);
+
     app.register_editable_bindings([EditableBinding::new(
-        "workspace:open_repository",
-        BindingDescription::new("Open repository")
-            .with_custom_description(bindings::MAC_MENUS_CONTEXT, "Open Repository"),
-        WorkspaceAction::OpenRepository { path: None },
+        "workspace:open_mcp_servers",
+        BindingDescription::new("Open MCP Servers")
+            .with_custom_description(bindings::MAC_MENUS_CONTEXT, "Open MCP Servers"),
+        WorkspaceAction::OpenMCPServerCollection,
     )
-    .with_context_predicate(id!("Workspace"))
-    .with_custom_action(CustomAction::OpenRepository)
-    .with_group(bindings::BindingGroup::Folders.as_str())]);
+    .with_enabled(|| {
+        FeatureFlag::McpServer.is_enabled() && ContextFlag::ShowMCPServers.is_enabled()
+    })
+    .with_custom_action(CustomAction::OpenMCPServerCollection)
+    .with_context_predicate(id!("Workspace") & id!(flags::IS_ANY_AI_ENABLED))
+    .with_group(bindings::BindingGroup::WarpAi.as_str())]);
 
     add_open_setting_pages_as_editable_binding(app);
     add_overflow_menu_items_as_editable_binding(app);
@@ -845,6 +916,13 @@ fn add_open_setting_pages_as_editable_binding(app: &mut AppContext) {
         .with_context_predicate(id!("Workspace"))
         .with_group(bindings::BindingGroup::Settings.as_str())
         .with_custom_action(CustomAction::ShowSettings),
+        EditableBinding::new(
+            "workspace:show_settings_openrouter_page",
+            "Open Settings: OpenRouter",
+            WorkspaceAction::ShowSettingsPage(SettingsSection::Account),
+        )
+        .with_context_predicate(id!("Workspace"))
+        .with_group(bindings::BindingGroup::Settings.as_str()),
         EditableBinding::new(
             "workspace:show_settings_appearance_page",
             BindingDescription::new("Open Settings: Appearance")
@@ -897,9 +975,24 @@ fn add_open_setting_pages_as_editable_binding(app: &mut AppContext) {
         .with_group(bindings::BindingGroup::Settings.as_str())
         .with_context_predicate(id!("Workspace")),
         EditableBinding::new(
+            "workspace:show_ai_settings_page",
+            BindingDescription::new("Open Settings: AI"),
+            WorkspaceAction::ShowSettingsPage(SettingsSection::WarpAgent),
+        )
+        .with_enabled(|| FeatureFlag::AgentMode.is_enabled())
+        .with_group(bindings::BindingGroup::Settings.as_str())
+        .with_context_predicate(id!("Workspace")),
+        EditableBinding::new(
             "workspace:show_settings_code_page",
             BindingDescription::new("Open Settings: Code"),
-            WorkspaceAction::ShowSettingsPage(SettingsSection::Projects),
+            WorkspaceAction::ShowSettingsPage(SettingsSection::CodeIndexing),
+        )
+        .with_group(bindings::BindingGroup::Settings.as_str())
+        .with_context_predicate(id!("Workspace")),
+        EditableBinding::new(
+            "workspace:show_mcp_servers_settings_page",
+            BindingDescription::new("Open Settings: MCP Servers"),
+            WorkspaceAction::ShowSettingsPage(SettingsSection::MCPServers),
         )
         .with_group(bindings::BindingGroup::Settings.as_str())
         .with_context_predicate(id!("Workspace")),

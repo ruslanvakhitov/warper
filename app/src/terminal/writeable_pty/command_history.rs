@@ -28,6 +28,8 @@ pub fn update_command_history(
         return;
     }
 
+    let is_agent_executed = event.source.is_ai_command();
+
     let session_ref = &*session;
     History::handle(ctx).update(ctx, move |history, _| {
         history.append_commands(
@@ -38,6 +40,7 @@ pub fn update_command_history(
                 session_ref,
                 event.workflow_id.to_owned(),
                 event.workflow_command.to_owned(),
+                is_agent_executed,
             )],
         )
     });
@@ -58,6 +61,7 @@ pub fn update_command_history(
                 git_branch: active_block
                     .git_branch()
                     .map(|git_branch| git_branch.to_owned()),
+                is_agent_executed,
             },
         };
         ctx.background_executor()

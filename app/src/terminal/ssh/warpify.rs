@@ -3,7 +3,7 @@ use markdown_parser::{FormattedText, FormattedTextFragment, FormattedTextLine};
 use warp_core::ui::theme::WarpTheme;
 use warpui::assets::asset_cache::{AssetCache, AssetState};
 
-use super::script_controls::render_requested_action_body_text;
+use crate::ai::blocklist::inline_action::requested_action::RenderableAction;
 use crate::appearance::Appearance;
 use crate::terminal::shell::ShellType;
 use crate::terminal::warpify;
@@ -107,12 +107,10 @@ impl View for SshWarpifyBlock {
 
         content.add_child(
             Container::new(
-                render_requested_action_body_text(
-                    self.ssh_command.as_str().into(),
-                    appearance.ui_font_family(),
-                    app,
-                )
-                .finish(),
+                RenderableAction::new(&self.ssh_command, app)
+                    .with_background_color(theme.background().into_solid())
+                    .render(app)
+                    .finish(),
             )
             .with_margin_top(16.)
             .finish(),

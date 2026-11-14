@@ -22,6 +22,7 @@ use warpui::text_layout::ClipConfig;
 use warpui::{AppContext, Element};
 
 use crate::appearance::Appearance;
+use crate::search::ai_context_menu::safe_truncate;
 use crate::search::ItemHighlightState;
 use warpui::SingletonEntity;
 
@@ -289,15 +290,4 @@ fn calculate_highlight_indices(
     }
 
     (item_name_highlights, path_highlights)
-}
-
-fn safe_truncate(value: &mut String, byte_limit: usize) {
-    if byte_limit >= value.len() {
-        return;
-    }
-    let mut end = byte_limit;
-    while !value.is_char_boundary(end) {
-        end -= 1;
-    }
-    value.truncate(end);
 }

@@ -21,7 +21,8 @@ use crate::workflows::{WorkflowSource, WorkflowType};
 /// Holds workflow data for a `WorkflowSearchItem`, used to read workflow fields
 /// during rendering and to produce an `AcceptedWorkflow` payload on selection.
 ///
-/// Local workflows carry their command data directly.
+/// Local and AI-generated workflows carry owned data because they do not live
+/// in a hosted object model.
 #[derive(Clone, Debug)]
 pub enum WorkflowIdentity {
     Local(Box<WorkflowType>),
@@ -102,9 +103,13 @@ impl SearchItem for WorkflowSearchItem {
     ) -> Box<dyn Element> {
         Container::new(
             ConstrainedBox::new(
-                Icon::Workflow
-                    .to_warpui_icon(highlight_state.icon_fill(appearance))
-                    .finish(),
+                if self.workflow_data().is_agent_mode_workflow() {
+                    Icon::Prompt
+                } else {
+                    Icon::Workflow
+                }
+                .to_warpui_icon(highlight_state.icon_fill(appearance))
+                .finish(),
             )
             .with_width(appearance.monospace_font_size())
             .with_height(appearance.monospace_font_size())

@@ -108,7 +108,7 @@ impl SearchItem for ProjectSearchItem {
 
         render_search_item_icon(
             appearance,
-            UiIcon::Folder,
+            UiIcon::NewConversation,
             icon_color.into_solid(),
             highlight_state,
         )
@@ -133,7 +133,7 @@ impl SearchItem for ProjectSearchItem {
     }
 
     fn accept_result(&self) -> CommandPaletteItemAction {
-        CommandPaletteItemAction::OpenProject {
+        CommandPaletteItemAction::NewConversationInProject {
             path: self.path.clone(),
             project_name: self.name.clone(),
         }

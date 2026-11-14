@@ -550,13 +550,14 @@ where
         .finish()
 }
 
-/// Session types offered by the new-session picker.
-pub fn visible_session_types() -> Vec<SessionType> {
-    use crate::terminal::CLIAgent;
-    vec![
-        SessionType::Terminal,
-        SessionType::CliAgent(CLIAgent::Claude),
-        SessionType::CliAgent(CLIAgent::Codex),
-        SessionType::CliAgent(CLIAgent::Gemini),
-    ]
+/// All possible session types, in display order.
+const ALL_SESSION_TYPES: &[SessionType] = &[SessionType::Agent, SessionType::Terminal];
+
+/// Returns the session types to display, filtering out local Agent Mode when AI is disabled.
+pub fn visible_session_types(show_agent: bool) -> Vec<SessionType> {
+    ALL_SESSION_TYPES
+        .iter()
+        .filter(|st| show_agent || !matches!(st, SessionType::Agent))
+        .copied()
+        .collect()
 }

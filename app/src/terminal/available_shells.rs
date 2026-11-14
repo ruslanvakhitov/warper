@@ -65,6 +65,21 @@ enum Config {
     MSYS2(LocalConfig),
     #[cfg_attr(not(feature = "local_tty"), allow(dead_code))]
     Custom(LocalConfig),
+    /// A shell running inside a Docker sandbox via `sbx run`.
+    ///
+    /// Unlike local shells, we don't pick the shell binary or path here: the
+    /// shell that actually runs comes from the container image. This mirrors
+    /// how [`Config::Wsl`] carries just the distro name and defers the shell
+    /// choice to WSL itself.
+    #[cfg_attr(not(feature = "local_tty"), allow(dead_code))]
+    DockerSandbox {
+        /// Path to the `sbx` CLI binary on the host.
+        sbx_path: PathBuf,
+        /// Base Docker image to use when creating the sandbox (passed as
+        /// `sbx run --template <image>`). `None` means "use sbx's default
+        /// image".
+        base_image: Option<String>,
+    },
 }
 
 // The concept of specifying an available shell does not exist on non-local filesystems. So we allow
@@ -111,6 +126,7 @@ impl AvailableShell {
             },
             Config::Wsl { distro } => Cow::from(distro),
             Config::Custom(_) => Cow::from("Custom"),
+            Config::DockerSandbox { .. } => Cow::from("Docker Sandbox"),
         }
     }
 
@@ -127,6 +143,7 @@ impl AvailableShell {
             Config::Custom(LocalConfig {
                 executable_path, ..
             }) => Cow::from(format!("Custom: {}", executable_path.display())),
+            Config::DockerSandbox { .. } => Cow::from("Docker Sandbox"),
         }
     }
 
@@ -138,6 +155,7 @@ impl AvailableShell {
             Config::KnownLocal(config) | Config::MSYS2(config) => config.command.clone(),
             Config::Wsl { .. } => "WSL".to_string(),
             Config::Custom(_) => "Custom".to_string(),
+            Config::DockerSandbox { .. } => "DockerSandbox".to_string(),
         }
     }
 
@@ -168,6 +186,7 @@ impl AvailableShell {
             Config::MSYS2(LocalConfig {
                 executable_path, ..
             }) => format!("{} ({})", self.short_name(), executable_path.display()),
+            Config::DockerSandbox { .. } => "Docker Sandbox".to_string(),
         }
     }
 
@@ -210,6 +229,7 @@ impl AvailableShell {
     /// | [`Config::Wsl`]            | No         | [`ShellLaunchData::WSL`]           |
     /// | [`Config::Custom`]         | Yes        | [`ShellLaunchData::Executable`]    |
     /// | [`Config::MSYS2`]          | No         | [`ShellLaunchData::MSYS2`]         |
+    /// | [`Config::DockerSandbox`]  | No         | [`ShellLaunchData::DockerSandbox`] |
     ///
     /// For `KnownLocal` and `Custom` we validate that the executable path
     /// is still valid.
@@ -243,6 +263,13 @@ impl AvailableShell {
             Config::MSYS2(local_config) => Some(ShellLaunchData::MSYS2 {
                 executable_path: local_config.executable_path.clone(),
                 shell_type: local_config.shell_type,
+            }),
+            Config::DockerSandbox {
+                sbx_path,
+                base_image,
+            } => Some(ShellLaunchData::DockerSandbox {
+                sbx_path: sbx_path.clone(),
+                base_image: base_image.clone(),
             }),
         }
     }
@@ -296,6 +323,20 @@ impl AvailableShell {
             })),
         }
     }
+
+    pub(crate) fn new_docker_sandbox_shell(sbx_path: PathBuf, base_image: Option<String>) -> Self {
+        Self {
+            id: None,
+            state: Arc::new(Config::DockerSandbox {
+                sbx_path,
+                base_image,
+            }),
+        }
+    }
+
+    pub fn is_docker_sandbox(&self) -> bool {
+        matches!(self.state.as_ref(), Config::DockerSandbox { .. })
+    }
 }
 
 impl From<AvailableShell> for NewSessionShell {
@@ -312,6 +353,13 @@ impl From<AvailableShell> for NewSessionShell {
             Config::MSYS2(local_config) => {
                 NewSessionShell::MSYS2(local_config.executable_path.display().to_string())
             }
+            // Docker sandbox isn't a persistable "preferred shell" today —
+            // it's always launched on-demand via a tab action or slash
+            // command. Round-trip through settings falls back to the system
+            // default.
+            // TODO(advait): If we ever let users pin the sandbox as their
+            // default shell, add a `NewSessionShell::DockerSandbox` variant.
+            Config::DockerSandbox { .. } => NewSessionShell::SystemDefault,
         }
     }
 }
@@ -329,6 +377,10 @@ impl From<AvailableShell> for StartupShell {
             Config::MSYS2(local_config) => {
                 StartupShell::from(Some(local_config.shell_type.name().to_string()))
             }
+            // See the matching comment on `From<AvailableShell> for
+            // NewSessionShell`: the sandbox isn't persistable as a startup
+            // shell today, so fall back to default.
+            Config::DockerSandbox { .. } => StartupShell::Default,
         }
     }
 }
@@ -885,7 +937,10 @@ impl AvailableShells {
                 let command = match shell.state.as_ref() {
                     Config::KnownLocal(LocalConfig { command, .. })
                     | Config::MSYS2(LocalConfig { command, .. }) => command.as_str(),
-                    Config::Custom(_) | Config::SystemDefault | Config::Wsl { .. } => {
+                    Config::Custom(_)
+                    | Config::SystemDefault
+                    | Config::Wsl { .. }
+                    | Config::DockerSandbox { .. } => {
                         return false;
                     }
                 };

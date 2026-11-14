@@ -26,6 +26,7 @@ const MENU_WIDTH: f32 = 300.0;
 const MENU_MAX_HEIGHT: f32 = 260.0;
 
 pub struct NodeVersionPopupView {
+    install_button: ViewHandle<ActionButton>,
     install_latest_node_button: ViewHandle<ActionButton>,
     has_nvm: bool,
     versions: Vec<String>,
@@ -37,6 +38,7 @@ pub struct NodeVersionPopupView {
 #[derive(Debug, Clone)]
 pub enum NodeVersionPopupAction {
     ClosePopup,
+    InstallNvm,
     InstallLatestNodeVersion,
     SelectVersion { version: String },
 }
@@ -44,6 +46,7 @@ pub enum NodeVersionPopupAction {
 #[derive(Debug, Clone)]
 pub enum NodeVersionPopupEvent {
     Close,
+    InstallNvm,
     InstallLatestNodeVersion,
     SelectVersion { version: String },
 }
@@ -73,6 +76,13 @@ impl NodeVersionPopupView {
         model_events: &ModelHandle<ModelEventDispatcher>,
         ctx: &mut ViewContext<Self>,
     ) -> Self {
+        let install_button = ctx.add_typed_action_view(|_ctx| {
+            ActionButton::new("Install nvm", SecondaryTheme)
+                .with_icon(icons::Icon::Terminal)
+                .on_click(|ctx| {
+                    ctx.dispatch_typed_action(NodeVersionPopupAction::InstallNvm);
+                })
+        });
         let install_latest_node_button = ctx.add_typed_action_view(|_ctx| {
             ActionButton::new("nvm install node", SecondaryTheme)
                 .with_icon(icons::Icon::Terminal)
@@ -116,6 +126,7 @@ impl NodeVersionPopupView {
         });
 
         Self {
+            install_button,
             install_latest_node_button,
             has_nvm,
             versions,
@@ -195,6 +206,8 @@ impl NodeVersionPopupView {
             .with_horizontal_padding(24.)
             .finish(),
         );
+
+        col.add_child(ChildView::new(&self.install_button).finish());
 
         ConstrainedBox::new(col.finish())
             .with_max_width(MENU_WIDTH)
@@ -403,6 +416,7 @@ impl TypedActionView for NodeVersionPopupView {
     fn handle_action(&mut self, action: &Self::Action, ctx: &mut ViewContext<Self>) {
         match action {
             NodeVersionPopupAction::ClosePopup => ctx.emit(NodeVersionPopupEvent::Close),
+            NodeVersionPopupAction::InstallNvm => ctx.emit(NodeVersionPopupEvent::InstallNvm),
             NodeVersionPopupAction::InstallLatestNodeVersion => {
                 ctx.emit(NodeVersionPopupEvent::InstallLatestNodeVersion)
             }

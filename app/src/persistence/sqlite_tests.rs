@@ -32,16 +32,19 @@ fn test_deduplicate_snapshots() {
         active_window_index: Some(1),
         block_lists: Default::default(),
         windows: Default::default(),
+        running_mcp_servers: Default::default(),
     };
     let snapshot_2 = AppState {
         active_window_index: Some(2),
         block_lists: Default::default(),
         windows: Default::default(),
+        running_mcp_servers: Default::default(),
     };
     let snapshot_3 = AppState {
         active_window_index: Some(3),
         block_lists: Default::default(),
         windows: Default::default(),
+        running_mcp_servers: Default::default(),
     };
 
     let original_events = vec![
@@ -98,6 +101,11 @@ fn test_terminal_window_snapshot(vertical_tabs_panel_open: bool) -> WindowSnapsh
                     }),
                     is_active: true,
                     is_read_only: false,
+                    input_config: None,
+                    llm_model_override: None,
+                    active_profile_id: None,
+                    conversation_ids_to_restore: vec![],
+                    active_conversation_id: None,
                 }),
             }),
             default_directory_color: None,
@@ -131,6 +139,7 @@ fn test_sqlite_round_trips_vertical_tabs_panel_open() {
         ],
         active_window_index: Some(1),
         block_lists: Default::default(),
+        running_mcp_servers: Default::default(),
     };
 
     save_app_state(&mut conn, &app_state).expect("app state should save");
@@ -172,6 +181,11 @@ fn test_sqlite_round_trips_custom_vertical_tabs_title() {
                         }),
                         is_active: true,
                         is_read_only: false,
+                        input_config: None,
+                        llm_model_override: None,
+                        active_profile_id: None,
+                        conversation_ids_to_restore: vec![],
+                        active_conversation_id: None,
                     }),
                 }),
                 default_directory_color: None,
@@ -192,6 +206,7 @@ fn test_sqlite_round_trips_custom_vertical_tabs_title() {
         }],
         active_window_index: Some(0),
         block_lists: Default::default(),
+        running_mcp_servers: Default::default(),
     };
 
     save_app_state(&mut conn, &app_state).expect("app state should save");
@@ -260,6 +275,7 @@ fn test_sqlite_round_trips_code_pane_with_multiple_tabs() {
         }],
         active_window_index: Some(0),
         block_lists: Default::default(),
+        running_mcp_servers: Default::default(),
     };
 
     save_app_state(&mut conn, &app_state).expect("app state should save");

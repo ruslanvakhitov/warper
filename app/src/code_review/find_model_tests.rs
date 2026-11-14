@@ -10,6 +10,7 @@ use crate::test_util::settings::initialize_settings_for_tests;
 use crate::vim_registers::VimRegisters;
 use crate::workspace::sync_inputs::SyncedInputState;
 use crate::workspace::ActiveSession;
+use crate::workspaces::user_workspaces::UserWorkspaces;
 use crate::NotebookKeybindings;
 use repo_metadata::repositories::DetectedRepositories;
 use std::path::PathBuf;
@@ -145,6 +146,7 @@ fn initialize_test_app(app: &mut App) {
     app.add_singleton_model(|_| KeybindingChangedNotifier::mock());
     app.add_singleton_model(|_| DetectedRepositories::default());
     app.add_singleton_model(|_| GlobalCodeReviewModel);
+    app.add_singleton_model(|ctx| UserWorkspaces::mock(vec![], ctx));
 
     app.add_singleton_model(|_| ActiveSession::default());
     app.add_singleton_model(NotebookKeybindings::new);
@@ -204,7 +206,7 @@ fn create_editor_with_content(app: &mut App, content: &str) -> ViewHandle<LocalC
             editor.reset(InitialBufferState::plain_text(&content), ctx);
         });
 
-        LocalCodeEditorView::new(code_editor_view, ctx)
+        LocalCodeEditorView::new(code_editor_view, None, false, None, ctx)
     });
 
     local_editor

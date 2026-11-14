@@ -11,7 +11,7 @@ use std::{io::sink, sync::Arc};
 use warp_core::command::ExitCode;
 use warpui::r#async::executor::Background;
 
-use crate::persistence::SerializedBlockListItem;
+use crate::ai::blocklist::SerializedBlockListItem;
 use crate::terminal::{
     color::{self, Colors},
     event_listener::ChannelEventListener,
@@ -135,11 +135,12 @@ impl<'a> TestBlockListBuilder<'a> {
             self.honor_ps1,
             false, /* is_inverted */
             ObfuscateSecrets::No,
+            false, /* should_collect_ai_ugc */
         );
         // This is usually done by the terminal manager after constructing the blocklist,
         // but we have tests assuming the separator exists.
         if self.restored_blocks.is_some() {
-            block_list.append_session_restoration_separator_to_block_list();
+            block_list.append_session_restoration_separator_to_block_list(false);
         }
         block_list
     }
@@ -219,6 +220,8 @@ impl TestBlockBuilder {
             self.block_index,
             self.honor_ps1,
             ObfuscateSecrets::No,
+            false, /* should_collect_ai_ugc */
+            None,
         )
     }
 }

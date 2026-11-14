@@ -7,6 +7,7 @@ use crate::appearance::Appearance;
 use crate::search::command_palette::FilterChipRenderer;
 
 use crate::search::QueryFilter;
+use crate::settings::AISettings;
 use std::collections::HashMap;
 use warpui::elements::{Container, Flex, MouseStateHandle, ParentElement, Shrinkable, Wrap};
 use warpui::{
@@ -75,7 +76,7 @@ impl ZeroState {
 
     /// Returns the set of valid query filters for this zero state view.
     fn valid_query_filters(
-        _app: &AppContext,
+        app: &AppContext,
         window_id: WindowId,
     ) -> impl Iterator<Item = QueryFilter> {
         let mut valid_filters = vec![];
@@ -87,6 +88,10 @@ impl ZeroState {
 
         if ContextFlag::LaunchConfigurations.is_enabled() {
             valid_filters.push(QueryFilter::LaunchConfigurations);
+        }
+
+        if AISettings::as_ref(app).is_any_ai_enabled(app) {
+            valid_filters.push(QueryFilter::Conversations);
         }
 
         let _ = window_id;

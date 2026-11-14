@@ -48,7 +48,7 @@ impl HeaderToolbarItemKind {
     }
 
     /// Whether this item is supported on the current platform/configuration
-    /// (feature flags and compile-time features).
+    /// (feature flags, compile-time features, AI enabled, auth state).
     /// Does not check user show/hide preferences — use `is_available` for that.
     pub fn is_supported(&self, app: &AppContext) -> bool {
         match self {

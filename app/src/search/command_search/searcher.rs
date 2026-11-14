@@ -14,7 +14,8 @@ pub struct AcceptedHistoryItem {
 
 /// Payload for `AcceptWorkflow`: identifies which workflow was selected.
 ///
-/// Command workflows carry their data directly.
+/// Local/AI-generated workflows carry owned data since hosted workflow sources
+/// were removed by WARPER-001.
 #[derive(Clone, Debug)]
 pub enum AcceptedWorkflow {
     Local {
@@ -37,6 +38,12 @@ pub enum CommandSearchItemAction {
 
     /// The user accepted a workflow search item.
     AcceptWorkflow(AcceptedWorkflow),
+
+    /// The user accepted the AI query search item with this query text.
+    AcceptAIQuery(String),
+
+    /// The user requested to run the AI query search item with this query text.
+    RunAIQuery(String),
 }
 
 #[cfg(test)]

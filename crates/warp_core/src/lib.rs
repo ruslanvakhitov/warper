@@ -4,6 +4,7 @@ pub mod channel;
 pub mod command;
 pub mod context_flag;
 pub mod errors;
+pub mod execution_mode;
 pub mod features;
 pub mod interval_timer;
 #[cfg(target_os = "macos")]

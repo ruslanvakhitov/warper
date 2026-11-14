@@ -1,5 +1,6 @@
 use crate::{
     config::{lsp_uri_to_path, LanguageId},
+    server_repo_watcher::LspRepoWatcher,
     supported_servers::LSPServerType,
     types::{
         DefinitionLocation, DocumentVersion, HoverResult, Location, ReferenceLocation,
@@ -26,6 +27,7 @@ use std::{
         Arc,
     },
 };
+use warp_core::features::FeatureFlag;
 use warpui::SingletonEntity;
 use warpui::{r#async::executor::Background, Entity, ModelContext};
 
@@ -96,6 +98,7 @@ pub struct LspServerModel {
     // Tasks are keyed by their progress token and removed when they finish.
     in_progress_tasks: HashMap<String, BackgroundTaskInfo>,
     diagnostics_by_path: HashMap<PathBuf, DocumentDiagnostics>,
+    pub(crate) repo_watcher: LspRepoWatcher,
 }
 
 #[derive(Debug, Clone)]
@@ -168,7 +171,11 @@ impl LspServerModel {
             config,
             in_progress_tasks: HashMap::new(),
             diagnostics_by_path: HashMap::new(),
+            repo_watcher: LspRepoWatcher::new(),
         }
+    }
+    pub(crate) fn repo_watcher_mut(&mut self) -> &mut LspRepoWatcher {
+        &mut self.repo_watcher
     }
 
     /// Returns the unique identifier for this language server instance.
@@ -284,6 +291,10 @@ impl LspServerModel {
                                 background_executor: ctx.background_executor(),
                             };
 
+                            if FeatureFlag::LSPAsATool.is_enabled() {
+                                me.repo_watcher.ensure(&me.config, ctx);
+                            }
+
                             ctx.emit(LspEvent::Started);
                         }
                         Err(e) => {
@@ -308,6 +319,10 @@ impl LspServerModel {
     pub fn stop(&mut self, manually_stopped: bool, ctx: &mut ModelContext<Self>) -> Result<()> {
         match &self.server_state {
             LspState::Available { service, .. } => {
+                if FeatureFlag::LSPAsATool.is_enabled() {
+                    self.repo_watcher.teardown(ctx);
+                }
+
                 let service = service.clone();
                 self.server_state = LspState::Stopping { manually_stopped };
                 ctx.spawn(async move { service.shutdown().await }, |me, _, ctx| {
@@ -368,6 +383,10 @@ impl LspServerModel {
 
         match &self.server_state {
             LspState::Available { service, .. } => {
+                if FeatureFlag::LSPAsATool.is_enabled() {
+                    self.repo_watcher.teardown(ctx);
+                }
+
                 let service = service.clone();
                 self.server_state = LspState::Stopping {
                     manually_stopped: false,

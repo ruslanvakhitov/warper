@@ -17,3 +17,4 @@ pub use comments::EditorCommentsModel;
 pub use comments::EditorReviewComment;
 pub(crate) use diff::{add_color, remove_color};
 pub use element::GutterHoverTarget;
+pub use nav_bar::NavBarBehavior;

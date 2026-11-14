@@ -1,5 +1,6 @@
 use warp::{
     integration_testing::{
+        agent_mode::AgentViewState,
         step::new_step_with_default_assertions,
         terminal::{
             assert_active_block_output_for_single_terminal_in_tab, assert_input_editor_contents,
@@ -165,7 +166,7 @@ pub fn test_input_reporting_posix_shells() -> Builder {
                             .block_at(start_index + BlockIndex::from(4))
                             .expect("Block should exist");
                         if next_block.is_background() {
-                            async_assert!(next_block.is_empty())
+                            async_assert!(next_block.is_empty(&AgentViewState::Inactive))
                         } else {
                             async_assert_eq!(next_block.index(), blocks.active_block_index())
                         }

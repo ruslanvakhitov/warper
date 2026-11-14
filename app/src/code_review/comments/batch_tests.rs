@@ -4,7 +4,8 @@ use warpui::App;
 
 use crate::code::editor::line::EditorLineLocation;
 use crate::code_review::comments::{
-    AttachedReviewComment, AttachedReviewCommentTarget, LineDiffContent, ReviewCommentBatch,
+    AttachedReviewComment, AttachedReviewCommentTarget, CommentOrigin, LineDiffContent,
+    ReviewCommentBatch,
 };
 
 fn line_comment(file_path: &str, line_number: usize, content: &str) -> AttachedReviewComment {
@@ -27,6 +28,7 @@ fn line_comment(file_path: &str, line_number: usize, content: &str) -> AttachedR
         base: None,
         head: None,
         outdated: false,
+        origin: CommentOrigin::Native,
     }
 }
 
@@ -162,6 +164,7 @@ fn editor_comments_for_file_includes_only_line_comments() {
             base: None,
             head: None,
             outdated: false,
+            origin: CommentOrigin::Native,
         };
 
         model.update(&mut app, |batch, ctx| {
