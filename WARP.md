@@ -55,7 +55,7 @@ A Rust terminal emulator with a custom UI framework called **WarpUI**.
 **Main App** (`app/`):
 
 - Terminal emulation and shell management (`terminal/`)
-- AI integration via OpenRouter (`ai/`) — the server-tied AI assistant paths from upstream are removed or stubbed in this fork
+- Third-party CLI-agent integration (`terminal/cli_agent*`) — built-in AI and model-provider integration are removed
 - Settings and preferences (`settings/`)
 - Workspace and session management (`workspace/`)
 

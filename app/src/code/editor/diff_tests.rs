@@ -371,26 +371,6 @@ fn test_diff_count_before_line() {
     });
 }
 
-#[test]
-fn test_unified_diff() {
-    use warpui::App;
-    App::test((), |_| async move {
-        let diff = DiffModel::retrieve_unified_diff_internal(
-            MultilineStr::try_new("Hello World\nThis is the second line.\nThis is the third.")
-                .unwrap(),
-            MultilineStr::try_new(
-                "Hallo Welt\nThis is the second line.\nThis is life.\nMoar and more",
-            )
-            .unwrap(),
-            "test.rs",
-        )
-        .await;
-        assert_eq!(diff.unified_diff, "--- test.rs\n+++ test.rs\n@@ -1,3 +1,4 @@\n-Hello World\n+Hallo Welt\n This is the second line.\n-This is the third.\n+This is life.\n+Moar and more\n");
-        assert_eq!(diff.lines_added, 3);
-        assert_eq!(diff.lines_removed, 2);
-    });
-}
-
 /// Test coalesce_replacements with a case where the `similar` library is known
 /// to produce duplicate deletion and insertion hunks for what is logically a replacement.
 #[test]

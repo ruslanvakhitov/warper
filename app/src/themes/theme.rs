@@ -379,12 +379,9 @@ impl Default for SelectedSystemThemes {
 
 #[derive(Copy, Clone, Debug)]
 pub struct PromptColors {
-    pub input_prompt_conversation_management: ColorU,
     pub input_prompt_pwd: ColorU,
     pub input_prompt_git: ColorU,
     pub input_prompt_branch: ColorU,
-    pub input_prompt_agent_mode_hint: ColorU,
-    pub input_prompt_agent_mode_tasks: ColorU,
     pub input_prompt_dirty_color: ColorU,
     pub input_prompt_virtual_env: ColorU,
     pub input_prompt_user_and_host: ColorU,
@@ -400,11 +397,8 @@ pub struct PromptColors {
 impl From<WarpTheme> for PromptColors {
     fn from(theme: WarpTheme) -> Self {
         PromptColors {
-            input_prompt_conversation_management: theme.terminal_colors().normal.white.into(),
             input_prompt_pwd: theme.terminal_colors().normal.magenta.into(),
             input_prompt_git: theme.terminal_colors().normal.green.into(),
-            input_prompt_agent_mode_hint: theme.terminal_colors().normal.yellow.into(),
-            input_prompt_agent_mode_tasks: theme.terminal_colors().normal.yellow.into(),
             input_prompt_branch: theme.terminal_colors().normal.yellow.into(),
             input_prompt_dirty_color: theme.terminal_colors().normal.green.into(),
             input_prompt_virtual_env: theme.terminal_colors().normal.yellow.into(),

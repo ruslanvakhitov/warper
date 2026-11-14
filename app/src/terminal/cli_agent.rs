@@ -7,7 +7,6 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::Path;
 
-use ai::skills::SkillProvider;
 use enum_iterator::Sequence;
 use markdown_parser::parse_markdown;
 use pathfinder_color::ColorU;
@@ -17,8 +16,13 @@ use warp_editor::content::{buffer::Buffer, markdown::MarkdownStyle};
 
 use warpui::AppContext;
 
-use crate::ai::agent::{AgentReviewCommentBatch, DiffSetHunk};
-use crate::ai::blocklist::CLAUDE_ORANGE;
+use crate::code_review::context::{DiffSetHunk, ReviewCommentPacket};
+const CLAUDE_ORANGE: ColorU = ColorU {
+    r: 0xd9,
+    g: 0x77,
+    b: 0x57,
+    a: 255,
+};
 use crate::code::editor::line::EditorLineLocation;
 use crate::code_review::comments::AttachedReviewCommentTarget;
 use crate::ui_components::icons::Icon;
@@ -179,42 +183,6 @@ impl CLIAgent {
         }
     }
 
-    /// Returns the skill providers whose skills this CLI agent can natively interpret.
-    /// When the CLI agent rich input is open, only skills from these providers are shown
-    /// in the slash menu. Returns an empty slice for agents with no known skills support.
-    pub fn supported_skill_providers(&self) -> &'static [SkillProvider] {
-        match self {
-            CLIAgent::Claude => &[SkillProvider::Claude],
-            CLIAgent::Codex => &[
-                SkillProvider::Agents,
-                SkillProvider::Claude,
-                SkillProvider::Codex,
-            ],
-            CLIAgent::OpenCode => &[
-                SkillProvider::OpenCode,
-                SkillProvider::Agents,
-                SkillProvider::Claude,
-            ],
-            CLIAgent::Gemini => &[SkillProvider::Agents, SkillProvider::Gemini],
-            CLIAgent::Amp => &[SkillProvider::Agents],
-            CLIAgent::Copilot => &[SkillProvider::Agents, SkillProvider::Copilot],
-            CLIAgent::Droid => &[SkillProvider::Droid, SkillProvider::Agents],
-            CLIAgent::Pi => &[SkillProvider::Agents],
-            CLIAgent::Auggie => &[SkillProvider::Agents],
-            CLIAgent::CursorCli => &[SkillProvider::Agents],
-            CLIAgent::Unknown => &[],
-        }
-    }
-
-    /// Returns the prefix character used for skill invocations by this CLI agent.
-    /// Most agents use `/` (e.g. `/skill-name`), but Codex uses `$` (e.g. `$skill-name`).
-    pub fn skill_command_prefix(&self) -> &'static str {
-        match self {
-            CLIAgent::Codex => "$",
-            _ => "/",
-        }
-    }
-
     /// Whether this CLI agent supports the `!` bash mode prefix in the rich input.
     /// When `true`, typing `!` in the CLI agent rich input activates shell mode with
     /// decorations, completions, and error underlining.
@@ -316,7 +284,7 @@ impl CLIAgent {
 /// Line ranges are written `L<start>-L<end>` where both ends are **inclusive**.
 /// Instructs the agent to run `git diff` for deleted-line context rather than
 /// inlining the full diff.
-pub fn build_review_prompt(review: &AgentReviewCommentBatch) -> String {
+pub fn build_review_prompt(review: &ReviewCommentPacket) -> String {
     let mut text = String::from(
         "Please address the following code review comments. \
          Run `git diff` (or `git diff HEAD`) to see the full context of any changes, \
@@ -378,7 +346,7 @@ pub fn build_review_prompt(review: &AgentReviewCommentBatch) -> String {
 }
 
 /// Builds the same code review text for clipboard export that `Send to Agent` sends.
-pub fn build_review_clipboard_packet(review: &AgentReviewCommentBatch) -> String {
+pub fn build_review_clipboard_packet(review: &ReviewCommentPacket) -> String {
     build_review_prompt(review)
 }
 

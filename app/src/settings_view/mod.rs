@@ -1,7 +1,5 @@
 use crate::pane_group::focus_state::PaneFocusHandle;
-use crate::settings_view::mcp_servers_page::MCPServersSettingsPage;
 use crate::{
-    ai::execution_profiles::profiles::ClientProfileId,
     appearance::Appearance,
     editor::{
         EditorView, Event as EditorEvent, PropagateAndNoOpNavigationKeys, SingleLineEditorOptions,
@@ -11,8 +9,7 @@ use crate::{
     pane_group::{
         pane::view, BackingView, Direction, PaneConfiguration, PaneEvent, SplitPaneState,
     },
-    settings::{AISettings, BlockVisibilitySettings, SettingsFileError},
-    settings_view::mcp_servers_page::MCPServersSettingsPageEvent,
+    settings::{BlockVisibilitySettings, SettingsFileError},
     terminal::{model::blockgrid::BlockGrid, SizeInfo},
     ui_components::icons,
     util::bindings::{keybinding_name_to_display_string, BindingGroup, CustomAction},
@@ -21,15 +18,15 @@ use crate::{
     GlobalResourceHandlesProvider,
 };
 use about_page::AboutPageView;
-use ai_page::{AISettingsPageAction, AISettingsPageEvent, AISettingsPageView, AISubpage};
 use appearance_page::{AppearancePageAction, AppearanceSettingsPageView};
+use cli_agents_page::{
+    CLIAgentSettingsPageAction, CLIAgentSettingsPageEvent, CLIAgentSettingsPageView,
+};
 use code_page::CodeSubpage;
 use code_page::{CodeSettingsPageAction, CodeSettingsPageEvent};
 use features_page::{FeaturesPageView, FeaturesSettingsPageEvent};
 use itertools::Itertools as _;
 use keybindings::KeybindingsView;
-use main_page::{MainPageAction, MainSettingsPageEvent, MainSettingsPageView};
-use mcp_servers_page::MCPServersSettingsPageView;
 use nav::{SettingsNavItem, SettingsUmbrella};
 use pathfinder_geometry::vector::Vector2F;
 use privacy_page::{PrivacyPageView, PrivacyPageViewEvent};
@@ -64,17 +61,13 @@ use warpui::{
 };
 
 mod about_page;
-mod ai_page;
 mod appearance_page;
+mod cli_agents_page;
 mod code_page;
 mod directory_color_add_picker;
-mod execution_profile_view;
 mod features;
 mod features_page;
 pub mod keybindings;
-mod main_page;
-pub mod mcp_servers;
-pub mod mcp_servers_page;
 mod nav;
 pub mod pane_manager;
 mod privacy;
@@ -82,10 +75,9 @@ mod privacy_page;
 mod settings_file_footer;
 pub(crate) mod settings_page;
 mod warpify_page;
-pub(crate) use ai_page::cli_agent_settings_widget_id;
+pub(crate) use cli_agents_page::cli_agent_settings_widget_id;
 pub use code_page::CodeSettingsPageView;
 pub use features_page::FeaturesPageAction;
-pub use main_page::handle_experiment_change;
 pub use privacy_page::PrivacyPageAction;
 pub use settings_page::{
     render_body_item_label, render_info_icon, render_input_list, render_separator, AdditionalInfo,
@@ -129,14 +121,8 @@ pub enum SettingsViewEvent {
         message: String,
         flavor: ToastFlavor,
     },
-    OpenAIFactCollection,
-    OpenMCPServerCollection,
-    OpenExecutionProfileEditor(ClientProfileId),
     OpenLspLogs {
         log_path: PathBuf,
-    },
-    OpenProjectRulesPane {
-        rule_paths: Vec<PathBuf>,
     },
 }
 
@@ -145,31 +131,15 @@ pub enum SettingsViewEvent {
 pub enum SettingsSection {
     About,
     #[default]
-    Account,
-    MCPServers,
     Appearance,
     Features,
     Keybindings,
     Privacy,
     Warpify,
-    /// Internal backing-page identifier for AISettingsPageView. Multiple subpages
-    /// (WarpAgent, AgentProfiles, Knowledge, ThirdPartyCLIAgents) share this single
-    /// backing page, so this variant is needed as the key in `settings_pages`.
-    /// External callers should navigate to a specific subpage (e.g. `WarpAgent`) instead.
-    AI,
-    // ── Agents umbrella subpages ──
-    WarpAgent,
-    AgentProfiles,
-    AgentMCPServers,
-    Knowledge,
     ThirdPartyCLIAgents,
-    /// Internal backing-page identifier for CodeSettingsPageView. Multiple subpages
-    /// (CodeIndexing, EditorAndCodeReview) share this single backing page,
-    /// so this variant is needed as the key in `settings_pages`.
-    /// External callers should navigate to a specific subpage instead.
     Code,
     // ── Code umbrella subpages ──
-    CodeIndexing,
+    Projects,
     EditorAndCodeReview,
 }
 
@@ -179,15 +149,9 @@ use std::fmt::{self, Display};
 impl Display for SettingsSection {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            SettingsSection::Account => write!(f, "OpenRouter"),
             SettingsSection::Keybindings => write!(f, "Keyboard shortcuts"),
-            SettingsSection::MCPServers => write!(f, "MCP Servers"),
-            SettingsSection::WarpAgent => write!(f, "Warper Agent"),
-            SettingsSection::AgentProfiles => write!(f, "Profiles"),
-            SettingsSection::AgentMCPServers => write!(f, "MCP servers"),
-            SettingsSection::Knowledge => write!(f, "Knowledge"),
             SettingsSection::ThirdPartyCLIAgents => write!(f, "Third party CLI agents"),
-            SettingsSection::CodeIndexing => write!(f, "Indexing and projects"),
+            SettingsSection::Projects => write!(f, "Projects and language servers"),
             SettingsSection::EditorAndCodeReview => write!(f, "Editor and Code Review"),
             _ => write!(f, "{self:?}"),
         }
@@ -205,54 +169,27 @@ impl SettingsSection {
 
     /// Returns true if this section is a subpage under any umbrella.
     pub fn is_subpage(&self) -> bool {
-        self.is_ai_subpage() || self.is_code_subpage()
-    }
-
-    /// Returns true if this section is a subpage under the "Agents" umbrella.
-    pub fn is_ai_subpage(&self) -> bool {
-        matches!(
-            self,
-            Self::WarpAgent
-                | Self::AgentProfiles
-                | Self::AgentMCPServers
-                | Self::Knowledge
-                | Self::ThirdPartyCLIAgents
-        )
+        self.is_code_subpage()
     }
 
     /// Returns true if this section is a subpage under the "Code" umbrella.
     pub fn is_code_subpage(&self) -> bool {
-        matches!(self, Self::CodeIndexing | Self::EditorAndCodeReview)
+        matches!(self, Self::Projects | Self::EditorAndCodeReview)
     }
 
     /// Maps subpage sections back to their parent page section for page lookup.
     /// Non-subpage sections return themselves.
     pub fn parent_page_section(&self) -> Self {
         match self {
-            // AgentMCPServers renders the standalone MCPServers page directly.
-            Self::AgentMCPServers => Self::MCPServers,
-            // All other AI subpages render within the AI page.
-            s if s.is_ai_subpage() => Self::AI,
             // Code subpages render within the Code page.
             s if s.is_code_subpage() => Self::Code,
             other => *other,
         }
     }
 
-    /// The ordered list of AI subpage sections shown under the Agents umbrella.
-    pub fn ai_subpages() -> &'static [Self] {
-        &[
-            Self::WarpAgent,
-            Self::AgentProfiles,
-            Self::AgentMCPServers,
-            Self::Knowledge,
-            Self::ThirdPartyCLIAgents,
-        ]
-    }
-
     /// The ordered list of Code subpage sections shown under the Code umbrella.
     pub fn code_subpages() -> &'static [Self] {
-        &[Self::CodeIndexing, Self::EditorAndCodeReview]
+        &[Self::Projects, Self::EditorAndCodeReview]
     }
 }
 
@@ -262,21 +199,14 @@ impl FromStr for SettingsSection {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "About" => Ok(Self::About),
-            "Account" | "OpenRouter" => Ok(Self::Account),
-            "AI" => Ok(Self::AI),
-            "MCP Servers" => Ok(Self::MCPServers),
             "Appearance" => Ok(Self::Appearance),
             "Code" => Ok(Self::Code),
             "Features" => Ok(Self::Features),
             "Keyboard shortcuts" => Ok(Self::Keybindings),
             "Privacy" => Ok(Self::Privacy),
             "Warpify" => Ok(Self::Warpify),
-            "Warp Agent" | "Warper Agent" => Ok(Self::WarpAgent),
-            "Profiles" | "AgentProfiles" => Ok(Self::AgentProfiles),
-            "MCP servers" | "AgentMCPServers" => Ok(Self::AgentMCPServers),
-            "Knowledge" => Ok(Self::Knowledge),
             "Third party CLI agents" | "ThirdPartyCLIAgents" => Ok(Self::ThirdPartyCLIAgents),
-            "Indexing and projects" | "CodeIndexing" => Ok(Self::CodeIndexing),
+            "Projects and language servers" | "Projects" => Ok(Self::Projects),
             "Editor and Code Review" | "EditorAndCodeReview" => Ok(Self::EditorAndCodeReview),
             _ => Err(()),
         }
@@ -357,13 +287,9 @@ pub mod flags {
     pub const SYNC_ALL_PANES_IN_CURRENT_TAB: &str = "Sync_All_Panes_In_Current_Tab";
     pub const USE_AUDIBLE_BELL_CONTEXT_FLAG: &str = "Use_Audible_Terminal_Bell";
     pub const SHOW_INPUT_HINT_TEXT_CONTEXT_FLAG: &str = "Show_Input_Hint_text";
-    pub const SHOW_AGENT_TIPS_FLAG: &str = "Show_Agent_Tips";
-    pub const USE_AGENT_FOOTER_FLAG: &str = "Use_Agent_Footer";
     pub const THINKING_DISPLAY_SHOW_AND_COLLAPSE: &str = "Thinking_Display_ShowAndCollapse";
     pub const THINKING_DISPLAY_ALWAYS_SHOW: &str = "Thinking_Display_AlwaysShow";
     pub const THINKING_DISPLAY_NEVER_SHOW: &str = "Thinking_Display_NeverShow";
-    pub const SHOW_TERMINAL_INPUT_MESSAGE_LINE_FLAG: &str = "Show_Terminal_Input_Message_Line";
-    pub const SLASH_COMMANDS_IN_TERMINAL_FLAG: &str = "Slash_Commands_In_Terminal";
     pub const AUTOSUGGESTIONS_ENABLED_FLAG: &str = "Autosuggestions_Enabled";
     pub const AUTOSUGGESTION_KEYBINDING_HINT_FLAG: &str = "Hide_Autosuggestion_Keybinding_Hint";
     pub const PREFER_LOW_POWER_GPU_FLAG: &str = "Prefer_Low_Power_GPU";
@@ -373,48 +299,20 @@ pub mod flags {
     pub const IN_BAND_GENERATORS_FLAG: &str = "In_Band_Generators_Enabled";
     pub const WARP_SAME_LINE_PROMPT_FLAG: &str = "Warp_Same_Line_Prompt_Enabled";
     pub const DEBUG_NETWORK_ONLINE_FLAG: &str = "Network_Status_Online";
-    pub const AI_INPUT_AUTODETECTION_FLAG: &str = "AI_Input_Autodetection";
-    pub const NLD_IN_TERMINAL_FLAG: &str = "NLD_In_Terminal";
-    pub const INTELLIGENT_AUTOSUGGESTIONS_FLAG: &str = "Intelligent_Autosuggestions";
-    pub const PROMPT_SUGGESTIONS_FLAG: &str = "Prompt_Suggestions";
-    pub const CODE_SUGGESTIONS_FLAG: &str = "Code_Suggestions";
-    pub const NATURAL_LANGUAGE_AUTOSUGGESTIONS_FLAG: &str = "Natural_Language_Autosuggestions";
-    pub const SHARED_BLOCK_TITLE_GENERATION_FLAG: &str = "Shared_Block_Title_Generation";
     pub const DEBUG_SHOW_MEMORY_STATS_FLAG: &str = "Debug_Memory_Statistics";
     pub const ALLOW_NATIVE_WAYLAND: &str = "Allow_Native_Wayland";
-    pub const IS_ANY_AI_ENABLED: &str = "IsAnyAIEnabled";
-    pub const IS_ACTIVE_AI_ENABLED: &str = "IsActiveAIEnabled";
-    pub const IS_VOICE_INPUT_ENABLED: &str = "IsVoiceInputEnabled";
-    pub const IS_BLOCK_AI_SUMMARIES_ENABLED: &str = "IsBlockAISummariesEnabled";
-    pub const IS_CODEBASE_INDEXING_ENABLED: &str = "IsCodebaseIndexingEnabled";
-    pub const IS_AUTOINDEXING_ENABLED: &str = "IsAutoIndexingEnabled";
     pub const LIGATURE_RENDERING_CONTEXT_FLAG: &str = "Ligature_Rendering_Enabled";
     pub const HAS_SETTINGS_TO_IMPORT_FLAG: &str = "HasSettingsToImport";
     /// The user's setting enabled UDI, but we may show a classic input (e.g. ssh/subshell warpification)
     pub const UNIVERSAL_DEVELOPER_INPUT_ENABLED: &str = "UniversalDeveloperInputEnabled";
-    pub const AGENT_MODE_INPUT: &str = "InputAgentMode";
     pub const TERMINAL_MODE_INPUT: &str = "InputTerminalMode";
     pub const WARP_IS_DEFAULT_TERMINAL: &str = "WarpIsDefaultTerminal";
-    pub const PASSIVE_CODE_DIFF_KEYBINDINGS_ENABLED: &str = "PassiveCodeDiffKeybindingsEnabled";
-    /// When set, ctrl-enter should accept a prompt suggestion rather than insert a newline.
-    /// This flag is set by the terminal Input when there's a pending passive code diff.
-    pub const CTRL_ENTER_ACCEPTS_PROMPT_SUGGESTION: &str = "CtrlEnterAcceptsPromptSuggestion";
-    pub const HAS_PENDING_PROMPT_SUGGESTION: &str = "HasPendingPromptSuggestion";
-    pub const ACTIVE_AGENT_VIEW: &str = "ActiveAgentView";
-    pub const ACTIVE_INLINE_AGENT_VIEW: &str = "ActiveInlineAgentView";
-    /// When set, ctrl-enter should be the active binding to enter agent view.
-    ///
-    /// This is true on linux and windows.
-    pub const CTRL_ENTER_ENTERS_AGENT_VIEW: &str = "CtrlEnterEntersAgentView";
-    pub const AGENT_VIEW_ENABLED: &str = "FeatureFlag.AgentView";
     pub const LOCKED_INPUT: &str = "LockedInput";
-    pub const OPEN_INLINE_CONVERSATION_MENU: &str = "OpenInlineConversationMenu";
     pub const EMPTY_INPUT_BUFFER: &str = "EmptyInputBuffer";
     pub const CLI_AGENT_RICH_INPUT_OPEN: &str = "CLIAgentRichInputOpen";
     pub const CLI_AGENT_FOOTER_ENABLED: &str = "CLIAgentFooterEnabled";
     pub const CLI_AGENT_RICH_INPUT_CHIP_ENABLED: &str = "CLIAgentRichInputChipEnabled";
     // Tools panel settings
-    pub const SHOW_CONVERSATION_HISTORY: &str = "ShowConversationHistory";
     pub const SHOW_PROJECT_EXPLORER: &str = "ShowProjectExplorer";
     pub const SHOW_GLOBAL_SEARCH: &str = "ShowGlobalSearch";
 }
@@ -424,13 +322,10 @@ pub fn init_actions_from_parent_view<T: Action + Clone>(
     context: &ContextPredicate,
     builder: fn(SettingsAction) -> T,
 ) {
-    main_page::init_actions_from_parent_view(app, context, builder);
     appearance_page::init_actions_from_parent_view(app, context, builder);
     features_page::init_actions_from_parent_view(app, context, builder);
     warpify_page::init_actions_from_parent_view(app, context, builder);
     privacy_page::init_actions_from_parent_view(app, context, builder);
-    ai_page::init_actions_from_parent_view(app, context, builder);
-    code_page::init_actions_from_parent_view(app, context, builder);
 
     if ChannelState::enable_debug_features() || cfg!(windows) {
         ToggleSettingActionPair::add_toggle_setting_action_pairs_as_bindings(
@@ -735,11 +630,10 @@ pub enum DebugSettingsAction {
 pub enum SettingsAction {
     SelectAndRefresh(SettingsSection),
     ToggleUmbrella(usize),
-    MainPageToggle(MainPageAction),
     AppearancePageToggle(AppearancePageAction),
     FeaturesPageToggle(FeaturesPageAction),
     PrivacyPageToggle(PrivacyPageAction),
-    AI(AISettingsPageAction),
+    CLIAgents(CLIAgentSettingsPageAction),
     Code(CodeSettingsPageAction),
     WarpifyPageToggle(WarpifyPageAction),
     Tab,
@@ -881,16 +775,14 @@ fn next_stop_index(current: usize, len: usize, direction: CycleDirection) -> usi
 macro_rules! update_page {
     ($handle:expr, $update:expr, $ctx:expr) => {
         match $handle {
-            SettingsPageViewHandle::Main(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::Appearance(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::Features(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::Keybindings(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::Warpify(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::Privacy(handle) => $ctx.update_view(handle, $update),
-            SettingsPageViewHandle::AI(handle) => $ctx.update_view(handle, $update),
+            SettingsPageViewHandle::CLIAgents(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::About(handle) => $ctx.update_view(handle, $update),
             SettingsPageViewHandle::Code(handle) => $ctx.update_view(handle, $update),
-            SettingsPageViewHandle::MCPServers(handle) => $ctx.update_view(handle, $update),
         }
     };
 }
@@ -907,8 +799,6 @@ pub struct SettingsView {
     context_menu_state: Option<Vector2F>,
     /// Sidebar navigation items (pages + umbrellas).
     nav_items: Vec<SettingsNavItem>,
-    /// Handle to the AI settings page, used to switch subpage modes.
-    ai_page_handle: ViewHandle<AISettingsPageView>,
     /// Handle to the Code settings page, used to switch subpage modes.
     code_page_handle: ViewHandle<CodeSettingsPageView>,
     /// Per-subpage search match results. Populated during search so that
@@ -932,12 +822,6 @@ impl SettingsView {
         let pane_configuration = ctx.add_model(|_ctx| PaneConfiguration::new("Settings"));
 
         let global_resource_handles = GlobalResourceHandlesProvider::as_ref(ctx).get().clone();
-        // Main settings page with accounts info
-        let main_page_handle = ctx.add_typed_action_view(MainSettingsPageView::new);
-        ctx.subscribe_to_view(&main_page_handle, |me, _, event, ctx| {
-            me.handle_main_page_event(event, ctx);
-        });
-
         // Appearance & themes page
         let appearance_page_handle = ctx.add_typed_action_view(AppearanceSettingsPageView::new);
         ctx.subscribe_to_view(&appearance_page_handle, |me, _, event, ctx| {
@@ -956,11 +840,9 @@ impl SettingsView {
         // About page
         let about_page_handle = ctx.add_view(AboutPageView::new);
 
-        // AI page
-        let ai_page_handle = ctx.add_typed_action_view(AISettingsPageView::new);
-        let ai_page_handle_for_nav = ai_page_handle.clone();
-        ctx.subscribe_to_view(&ai_page_handle, |me, _, event, ctx| {
-            me.handle_ai_page_event(event, ctx);
+        let cli_agents_page_handle = ctx.add_typed_action_view(CLIAgentSettingsPageView::new);
+        ctx.subscribe_to_view(&cli_agents_page_handle, |me, _, event, ctx| match event {
+            CLIAgentSettingsPageEvent::FocusModal => ctx.focus(&me.search_editor),
         });
 
         // Keybindings page
@@ -981,12 +863,6 @@ impl SettingsView {
         let privacy_page_handle = ctx.add_typed_action_view(PrivacyPageView::new);
         ctx.subscribe_to_view(&privacy_page_handle, |me, _, event, ctx| {
             me.handle_privacy_page_event(event, ctx);
-        });
-
-        // MCP Servers page
-        let mcp_servers_page_handle = ctx.add_typed_action_view(MCPServersSettingsPageView::new);
-        ctx.subscribe_to_view(&mcp_servers_page_handle, |me, _, event, ctx| {
-            me.handle_mcp_servers_page_event(event, ctx);
         });
 
         let font_family = Appearance::as_ref(ctx).ui_font_family();
@@ -1018,30 +894,22 @@ impl SettingsView {
         });
 
         let settings_pages = vec![
-            SettingsPage::new(main_page_handle),
-            SettingsPage::new(ai_page_handle),
+            SettingsPage::new(cli_agents_page_handle),
             SettingsPage::new(code_page_handle),
             SettingsPage::new(appearance_page_handle),
             SettingsPage::new(features_page_handle),
             SettingsPage::new(keybindings_handle),
             SettingsPage::new(warpify_page_handle),
-            SettingsPage::new(mcp_servers_page_handle),
             SettingsPage::new(privacy_page_handle),
             SettingsPage::new(about_page_handle),
         ];
 
-        // Build sidebar nav items. AI page is presented as an "Agents" umbrella
-        // with subpages; the actual AI SettingsPage is hidden from direct sidebar listing.
         let mut nav_items = vec![
-            SettingsNavItem::Page(SettingsSection::Account),
-            SettingsNavItem::Umbrella(SettingsUmbrella::new(
-                "Agents",
-                SettingsSection::ai_subpages().to_vec(),
-            )),
+            SettingsNavItem::Page(SettingsSection::ThirdPartyCLIAgents),
             SettingsNavItem::Umbrella(SettingsUmbrella::new(
                 "Code",
                 vec![
-                    SettingsSection::CodeIndexing,
+                    SettingsSection::Projects,
                     SettingsSection::EditorAndCodeReview,
                 ],
             )),
@@ -1056,8 +924,7 @@ impl SettingsView {
         // Resolve the initial page: map internal backing-page sections to their default subpage.
         let requested_page = page.filter(|section| !section.is_removed_hosted_surface());
         let initial_page = match requested_page {
-            Some(SettingsSection::AI) => SettingsSection::WarpAgent,
-            Some(SettingsSection::Code) => SettingsSection::CodeIndexing,
+            Some(SettingsSection::Code) => SettingsSection::Projects,
             Some(section) if section.is_subpage() => section,
             other => other.unwrap_or_default(),
         };
@@ -1087,7 +954,6 @@ impl SettingsView {
             context_menu,
             context_menu_state: Default::default(),
             nav_items,
-            ai_page_handle: ai_page_handle_for_nav,
             code_page_handle: code_page_handle_for_nav,
             subpage_filter: HashMap::new(),
             settings_file_error: None,
@@ -1159,25 +1025,7 @@ impl SettingsView {
                         }
                     }
 
-                    // Run per-subpage filtering for pages with multiple subpages.
-                    // For each AI subpage, temporarily switch to that subpage's
-                    // widget set and run the filter to get a subpage-specific result.
                     self.subpage_filter.clear();
-                    for &subpage_section in SettingsSection::ai_subpages() {
-                        if subpage_section == SettingsSection::AgentMCPServers {
-                            // AgentMCPServers has its own backing page; handled below.
-                            continue;
-                        }
-                        if let Some(subpage) = AISubpage::from_section(subpage_section) {
-                            self.ai_page_handle.update(ctx, |view, ctx| {
-                                view.set_active_subpage(Some(subpage), ctx);
-                            });
-                            let match_data = self
-                                .ai_page_handle
-                                .update(ctx, |view, ctx| view.update_filter(&search_query, ctx));
-                            self.subpage_filter.insert(subpage_section, match_data);
-                        }
-                    }
                     // Do the same for Code subpages.
                     for &subpage_section in SettingsSection::code_subpages() {
                         if let Some(subpage) = CodeSubpage::from_section(subpage_section) {
@@ -1203,13 +1051,10 @@ impl SettingsView {
                 }
 
                 // Run the standard page-level filter (needed for non-subpage pages
-                // and for subpages with their own backing page like AgentMCPServers).
-                // Switch AI/Code to all-widgets mode so standalone backing page
+                // and subpages with their own backing page).
+                // Switch to all-widgets mode so standalone backing page
                 // filter is correct for pages_filter.
                 if is_search_active {
-                    self.ai_page_handle.update(ctx, |view, ctx| {
-                        view.set_active_subpage(None, ctx);
-                    });
                     self.code_page_handle.update(ctx, |view, ctx| {
                         view.set_active_subpage(None, ctx);
                     });
@@ -1230,13 +1075,6 @@ impl SettingsView {
                 // Restore the active subpage after filtering.
                 if is_search_active {
                     let current = self.current_settings_page;
-                    if current.is_ai_subpage() && current != SettingsSection::AgentMCPServers {
-                        if let Some(subpage) = AISubpage::from_section(current) {
-                            self.ai_page_handle.update(ctx, |view, ctx| {
-                                view.set_active_subpage(Some(subpage), ctx);
-                            });
-                        }
-                    }
                     if current.is_code_subpage() {
                         if let Some(subpage) = CodeSubpage::from_section(current) {
                             self.code_page_handle.update(ctx, |view, ctx| {
@@ -1256,7 +1094,7 @@ impl SettingsView {
                                     .map(|md| md.is_truthy())
                                     .unwrap_or_else(|| {
                                         // Subpages with their own backing page
-                                        // (e.g. AgentMCPServers, CloudEnvironments)
+                                        // with standalone settings pages.
                                         // fall back to pages_filter.
                                         let backing = subpage_section.parent_page_section();
                                         self.settings_pages
@@ -1420,14 +1258,6 @@ impl SettingsView {
             .collect();
     }
 
-    fn handle_main_page_event(
-        &mut self,
-        _event: &MainSettingsPageEvent,
-        _ctx: &mut ViewContext<Self>,
-    ) {
-        // Hosted account/signup events are absent in Warper.
-    }
-
     fn handle_appearance_page_event(
         &mut self,
         event: &SettingsPageEvent,
@@ -1478,23 +1308,6 @@ impl SettingsView {
         }
     }
 
-    fn handle_mcp_servers_page_event(
-        &mut self,
-        event: &MCPServersSettingsPageEvent,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        match event {
-            MCPServersSettingsPageEvent::ShowModal => {
-                // Modal rendering is handled in get_modal_content_for_page
-                ctx.notify();
-            }
-            MCPServersSettingsPageEvent::HideModal => {
-                // Modal rendering is handled in get_modal_content_for_page
-                ctx.notify();
-            }
-        }
-    }
-
     pub fn search_for_keybinding(&mut self, keybinding_name: &str, ctx: &mut ViewContext<Self>) {
         self.set_and_refresh_current_page(SettingsSection::Keybindings, ctx);
 
@@ -1503,21 +1316,6 @@ impl SettingsView {
                 view_handle.update(ctx, |view, ctx| {
                     view.search_for_binding(keybinding_name, ctx);
                 })
-            }
-        }
-    }
-
-    fn handle_ai_page_event(&mut self, event: &AISettingsPageEvent, ctx: &mut ViewContext<Self>) {
-        match event {
-            AISettingsPageEvent::FocusModal => ctx.focus(&self.search_editor),
-            AISettingsPageEvent::OpenAIFactCollection => {
-                ctx.emit(SettingsViewEvent::OpenAIFactCollection)
-            }
-            AISettingsPageEvent::OpenMCPServerCollection => {
-                ctx.emit(SettingsViewEvent::OpenMCPServerCollection)
-            }
-            AISettingsPageEvent::OpenExecutionProfileEditor(profile_id) => {
-                ctx.emit(SettingsViewEvent::OpenExecutionProfileEditor(*profile_id));
             }
         }
     }
@@ -1533,11 +1331,6 @@ impl SettingsView {
                     log_path: log_path.clone(),
                 });
             }
-            CodeSettingsPageEvent::OpenProjectRules { rule_paths } => {
-                ctx.emit(SettingsViewEvent::OpenProjectRulesPane {
-                    rule_paths: rule_paths.clone(),
-                });
-            }
         }
     }
 
@@ -1546,7 +1339,7 @@ impl SettingsView {
     }
 
     fn current_settings_page(&self) -> Option<&SettingsPage> {
-        // For AI subpages, the backing SettingsPage has section == AI.
+        // Resolve code subpages to their backing page.
         let lookup_section = self.current_settings_page.parent_page_section();
         self.settings_pages
             .iter()
@@ -1574,12 +1367,11 @@ impl SettingsView {
         // Map internal backing-page sections to their default subpage.
         // External callers should use subpage variants directly.
         let section = match section {
-            SettingsSection::AI => SettingsSection::WarpAgent,
-            SettingsSection::Code => SettingsSection::CodeIndexing,
+            SettingsSection::Code => SettingsSection::Projects,
             other => other,
         };
 
-        // For AI subpages, the backing page is the AI page. Check it exists.
+        // Check the backing page exists.
         let page_section = section.parent_page_section();
         if self.settings_page(page_section).is_none() {
             return;
@@ -1604,13 +1396,6 @@ impl SettingsView {
         // When navigating to a subpage, update the backing page's active subpage mode
         // and auto-expand the umbrella containing it.
         if section.is_subpage() {
-            // AI subpages: update the AI page's subpage mode.
-            if section.is_ai_subpage() && section != SettingsSection::AgentMCPServers {
-                let subpage = AISubpage::from_section(section);
-                self.ai_page_handle.update(ctx, |view, ctx| {
-                    view.set_active_subpage(subpage, ctx);
-                });
-            }
             // Code subpages: update the Code page's subpage mode.
             if section.is_code_subpage() {
                 let subpage = CodeSubpage::from_section(section);
@@ -1656,33 +1441,14 @@ impl SettingsView {
 
     fn should_render_page(&self, settings_page: &SettingsPage, app: &AppContext) -> bool {
         match &settings_page.view_handle {
-            SettingsPageViewHandle::Main(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::Keybindings(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::Features(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::Appearance(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::About(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::Privacy(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::Warpify(v) => v.as_ref(app).should_render(app),
-            SettingsPageViewHandle::AI(v) => v.as_ref(app).should_render(app),
-            SettingsPageViewHandle::MCPServers(v) => v.as_ref(app).should_render(app),
+            SettingsPageViewHandle::CLIAgents(v) => v.as_ref(app).should_render(app),
             SettingsPageViewHandle::Code(v) => v.as_ref(app).should_render(app),
-        }
-    }
-
-    /// Open the MCP servers page, optionally to list page or edit page.
-    pub fn open_mcp_servers_page(
-        &mut self,
-        page: MCPServersSettingsPage,
-        ctx: &mut ViewContext<Self>,
-    ) {
-        // Navigate to the AgentMCPServers subpage (under the Agents umbrella).
-        self.set_and_refresh_current_page(SettingsSection::AgentMCPServers, ctx);
-        if let Some(mcp_page) = self.settings_page(SettingsSection::MCPServers) {
-            if let SettingsPageViewHandle::MCPServers(view) = &mcp_page.view_handle {
-                view.update(ctx, |view, ctx| {
-                    view.update_page(page, ctx);
-                })
-            }
         }
     }
 
@@ -1850,9 +1616,7 @@ impl SettingsView {
             SettingsPageViewHandle::Privacy(view) => {
                 view.read(app, |view, _| view.get_modal_content())
             }
-            SettingsPageViewHandle::MCPServers(view) => {
-                view.read(app, |view, _| view.get_modal_content(app))
-            }
+
             _ => None,
         }
     }
@@ -1938,8 +1702,7 @@ impl View for SettingsView {
         let settings_pages = self.filtered_pages(app).collect_vec();
         let appearance = Appearance::as_ref(app);
 
-        // For AI subpages, the backing SettingsPage has a different section
-        // (e.g. AgentMCPServers -> MCPServers).
+        // Subpages may use a parent section as their backing settings page.
         let content_page_section = self.current_settings_page.parent_page_section();
         let (page, current_page_handle) = if settings_pages.is_empty() {
             (self.render_search_zero_state(appearance), None)
@@ -2065,7 +1828,6 @@ impl View for SettingsView {
             footer_kind,
             appearance,
             self.settings_file_error.as_ref(),
-            AISettings::as_ref(app).is_any_ai_enabled(app),
             &self.footer_mouse_states,
         );
 
@@ -2161,8 +1923,6 @@ impl TypedActionView for SettingsView {
         match action {
             SettingsAction::SelectAndRefresh(section) => {
                 self.set_and_refresh_current_page_internal(*section, false, true, ctx);
-
-                if *section == SettingsSection::MCPServers {}
             }
             SettingsAction::ToggleUmbrella(nav_index) => {
                 if let Some(SettingsNavItem::Umbrella(umbrella)) =
@@ -2172,15 +1932,7 @@ impl TypedActionView for SettingsView {
                     ctx.notify();
                 }
             }
-            SettingsAction::MainPageToggle(main_page_action) => {
-                if let Some(main_page) = self.settings_page(SettingsSection::Account) {
-                    if let SettingsPageViewHandle::Main(view) = &main_page.view_handle {
-                        view.update(ctx, |view, ctx| {
-                            view.handle_action(main_page_action, ctx);
-                        })
-                    }
-                }
-            }
+
             SettingsAction::AppearancePageToggle(appearance_action) => {
                 if let Some(appearance_page) = self.settings_page(SettingsSection::Appearance) {
                     if let SettingsPageViewHandle::Appearance(view) = &appearance_page.view_handle {
@@ -2208,11 +1960,11 @@ impl TypedActionView for SettingsView {
                     }
                 }
             }
-            SettingsAction::AI(ai_action) => {
-                if let Some(ai_page) = self.settings_page(SettingsSection::AI) {
-                    if let SettingsPageViewHandle::AI(view) = &ai_page.view_handle {
+            SettingsAction::CLIAgents(cli_action) => {
+                if let Some(ai_page) = self.settings_page(SettingsSection::ThirdPartyCLIAgents) {
+                    if let SettingsPageViewHandle::CLIAgents(view) = &ai_page.view_handle {
                         view.update(ctx, |view, ctx| {
-                            view.handle_action(ai_action, ctx);
+                            view.handle_action(cli_action, ctx);
                         })
                     }
                 }

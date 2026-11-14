@@ -9,9 +9,9 @@ use crate::search::QueryFilter;
 use crate::settings::CtrlTabBehavior;
 use crate::terminal::keys_settings::KeysSettings;
 use crate::themes::theme::WarpTheme;
-use crate::view_components::DismissibleToast;
+
 use crate::workspace::metadata::LaunchConfigUiLocation;
-use crate::ToastStack;
+
 use lazy_static::lazy_static;
 use warp_util::path::LineAndColumnArg;
 
@@ -34,7 +34,7 @@ use crate::palette::PaletteMode;
 use crate::root_view::OpenLaunchConfigArg;
 use crate::search::command_palette::data_sources::DataSourceStore;
 use crate::session_management::SessionSource;
-use crate::workspace::{active_terminal_in_window, ForkedConversationDestination, WorkspaceAction};
+use crate::workspace::WorkspaceAction;
 use warp_server_client::ids::SyncId;
 use warpui::elements::{
     Align, Border, ChildView, Clipped, ClippedScrollStateHandle, ClippedScrollable, ConstrainedBox,
@@ -389,7 +389,6 @@ impl View {
                 | (PaletteMode::Navigation, QueryFilter::Sessions)
                 | (PaletteMode::LaunchConfig, QueryFilter::LaunchConfigurations)
                 | (PaletteMode::Files, QueryFilter::Files)
-                | (PaletteMode::Conversations, QueryFilter::Conversations)
         )
     }
 
@@ -730,14 +729,7 @@ impl View {
                         self.set_active_query_filter(QueryFilter::Files, ctx);
                         return;
                     }
-                    Some(WorkspaceAction::TogglePalette {
-                        mode: PaletteMode::Conversations,
-                        source: _,
-                    }) => {
-                        self.reset(ctx);
-                        self.set_active_query_filter(QueryFilter::Conversations, ctx);
-                        return;
-                    }
+
                     Some(WorkspaceAction::TogglePalette {
                         mode: PaletteMode::Command,
                         source: _,
@@ -769,59 +761,7 @@ impl View {
                     );
                 }
             }
-            CommandPaletteItemAction::NavigateToConversation {
-                pane_view_locator,
-                window_id,
-                conversation_id,
-                terminal_view_id,
-            } => {
-                let should_block = {
-                    window_id
-                        .and_then(|window_id| {
-                            active_terminal_in_window(window_id, ctx, |terminal_view, ctx| {
-                                !terminal_view
-                                    .ai_context_model()
-                                    .as_ref(ctx)
-                                    .can_start_new_conversation()
-                            })
-                        })
-                        .unwrap_or(false)
-                };
 
-                if should_block {
-                    if let Some(window_id) = window_id {
-                        ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
-                            toast_stack.add_ephemeral_toast(
-                                DismissibleToast::error(
-                                    "Cannot switch conversations while agent is monitoring a command."
-                                        .to_string(),
-                                ),
-                                window_id,
-                                ctx,
-                            );
-                        });
-                    }
-                    return;
-                }
-
-                ctx.dispatch_typed_action(&WorkspaceAction::RestoreOrNavigateToConversation {
-                    pane_view_locator,
-                    window_id,
-                    conversation_id,
-                    terminal_view_id,
-                    restore_layout: None,
-                });
-            }
-            CommandPaletteItemAction::ForkConversation { conversation_id } => {
-                ctx.dispatch_typed_action(&WorkspaceAction::ForkAIConversation {
-                    conversation_id,
-                    fork_from_exchange: None,
-                    summarize_after_fork: false,
-                    summarization_prompt: None,
-                    initial_prompt: None,
-                    destination: ForkedConversationDestination::SplitPane,
-                });
-            }
             CommandPaletteItemAction::OpenLaunchConfiguration {
                 open_in_active_window,
                 config,
@@ -891,59 +831,9 @@ impl View {
                 ctx.emit(Event::InvokeEnvironmentVariables { id })
             }
             CommandPaletteItemAction::OpenNotebook { id } => ctx.emit(Event::OpenNotebook { id }),
-            CommandPaletteItemAction::NewConversationInProject {
-                path: _,
-                project_name,
-            } => {
-                // AcceptProject is handled by the welcome palette, not the regular command palette.
-                // This case should not normally be reached in the command palette context, but we
-                // include it for completeness. If this somehow gets executed, we'll just log it.
-                log::warn!(
-                    "OpenProjectConvo action unexpectedly handled in command palette for project: {project_name}"
-                );
-            }
-            CommandPaletteItemAction::NewConversation => {
-                let window_id = match self.binding_source.as_ref(ctx) {
-                    BindingSource::View { window_id, .. } => *window_id,
-                    BindingSource::None => return,
-                };
 
-                let (terminal_view_id, can_start_new_conversation) = {
-                    let terminal_view_id =
-                        active_terminal_in_window(window_id, ctx, |terminal_view, _| {
-                            terminal_view.id()
-                        });
-
-                    let should_block =
-                        active_terminal_in_window(window_id, ctx, |terminal_view, ctx| {
-                            !terminal_view
-                                .ai_context_model()
-                                .as_ref(ctx)
-                                .can_start_new_conversation()
-                        })
-                        .unwrap_or(false);
-
-                    (terminal_view_id, should_block)
-                };
-
-                if can_start_new_conversation {
-                    ToastStack::handle(ctx).update(ctx, |toast_stack, ctx| {
-                        toast_stack.add_ephemeral_toast(
-                            DismissibleToast::error(
-                                "Cannot start a new conversation while agent is monitoring a command.".to_string(),
-                            ),
-                            window_id,
-                            ctx,
-                        );
-                    });
-                    return;
-                }
-
-                if let Some(terminal_view_id) = terminal_view_id {
-                    ctx.dispatch_typed_action(&WorkspaceAction::StartNewConversation {
-                        terminal_view_id,
-                    });
-                }
+            CommandPaletteItemAction::OpenProject { path, .. } => {
+                ctx.dispatch_typed_action(&WorkspaceAction::OpenRepository { path: Some(path) });
             }
             CommandPaletteItemAction::NoOp => {
                 // No-op action (used for non-interactable separator items that don't do anything on click).

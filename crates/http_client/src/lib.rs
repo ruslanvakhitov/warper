@@ -1,21 +1,16 @@
 use async_compat::{Compat, CompatExt};
-use async_stream::stream;
 use bytes::Bytes;
-use futures::{Stream, StreamExt};
+use futures::Stream;
 use http::HeaderValue;
 use http::header::HeaderName;
 pub use http::{HeaderMap, StatusCode, header::AUTHORIZATION};
 use reqwest::IntoUrl;
-use reqwest_eventsource::RequestBuilderExt;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
-use std::future::Future;
-use std::pin::Pin;
+use std::fmt;
 use std::time::Duration;
-use std::{fmt, future};
 use warp_core::{
     channel::{Channel, ChannelState},
-    execution_mode,
     operating_system_info::OperatingSystemInfo,
     report_error,
 };
@@ -36,9 +31,6 @@ pub mod headers {
 
     /// Custom Warp header indicating the linux kernel version. This is only sent from Linux.
     pub(crate) const WARP_OS_LINUX_KERNEL_VERSION: &str = "X-Warp-OS-Linux-Kernel-Version";
-
-    /// Custom Warp header indicating the client role.
-    pub(crate) const WARP_CLIENT_ID: &str = "X-Warp-Client-ID";
 }
 
 /// The environment variable containing extra HTTP headers to attach to requests.
@@ -70,11 +62,6 @@ pub type RequestHookFn = Box<dyn Fn(&reqwest::Request, &Option<String>) + 'stati
 /// reference to the inbound response object.
 pub type ResponseHookFn = Box<dyn Fn(&reqwest::Response) + 'static + Send + Sync>;
 
-pub type EventSourceStream = futures::stream::BoxStream<
-    'static,
-    Result<reqwest_eventsource::Event, reqwest_eventsource::Error>,
->;
-
 /// A custom request builder that is a wrapper around a `request::RequestBuilder`. Ensures any async
 /// call to the underyling `reqwest::RequestBuilder` are properly adapted to run outside of a Tokio
 /// context via a call to `compat`.
@@ -84,14 +71,11 @@ pub struct RequestBuilder<'a> {
 
     // The JSON payload of the request, if any, serialized to a pretty-printed String.
     serialized_payload: Option<String>,
-
-    prevent_sleep_reason: Option<&'static str>,
 }
 
 pub struct Request {
     wrapped: reqwest::Request,
     serialized_payload: Option<String>,
-    prevent_sleep_reason: Option<&'static str>,
 }
 
 /// A wrapper around a `reqwest::Response` that ensures any async calls to the underlying `Response`
@@ -126,7 +110,6 @@ impl Client {
             // never be making real requests in tests.
             .tls_built_in_native_certs(false)
             .tls_built_in_root_certs(false)
-            .tls_built_in_webpki_certs(false)
             // Disable proxy usage in tests, as loading system proxy configuration can be
             // slow.
             .no_proxy();
@@ -158,7 +141,6 @@ impl Client {
             wrapped,
             client: self,
             serialized_payload: None,
-            prevent_sleep_reason: None,
         };
 
         if include_warp_headers {
@@ -208,11 +190,6 @@ impl Client {
     }
 
     fn add_warp_http_headers(mut builder: RequestBuilder) -> RequestBuilder {
-        // Include the client ID header.
-        if let Some(client_id) = execution_mode::current_client_id() {
-            builder = builder.header(headers::WARP_CLIENT_ID, client_id);
-        }
-
         // If there's an app version, include it as an HTTP request header.
         if let Some(app_version) = ChannelState::app_version() {
             builder = builder.header(headers::CLIENT_RELEASE_VERSION_HEADER_KEY, app_version);
@@ -286,14 +263,11 @@ impl Client {
         let Request {
             wrapped: request,
             serialized_payload,
-            prevent_sleep_reason,
         } = request;
 
         if let Some(before_response_send_fn) = &self.before_request_sent {
             before_response_send_fn(&request, &serialized_payload);
         }
-
-        let _guard = prevent_sleep_reason.map(prevent_sleep::prevent_sleep);
 
         let result = Compat::new(async { self.wrapped.execute(request).await }).await?;
 
@@ -314,7 +288,6 @@ impl<'a> RequestBuilder<'a> {
         let request = self.wrapped.build().map(|request| Request {
             wrapped: request,
             serialized_payload: self.serialized_payload,
-            prevent_sleep_reason: self.prevent_sleep_reason,
         });
         (self.client, request)
     }
@@ -355,44 +328,6 @@ impl<'a> RequestBuilder<'a> {
             serialized_payload: serialized.ok(),
             ..self
         }
-    }
-
-    /// Sends the request to the endpoint, which is assumed to be a streaming server-sent-events
-    /// endpoint, and returns a corresponding `EventSource`.
-    pub fn eventsource(self) -> EventSourceStream {
-        let mut stream = self
-            .wrapped
-            .eventsource()
-            .expect("Request type for SSE endpoint must be cloneable.");
-
-        let stream = stream! {
-            // Wrap the stream with async-compat since reqwest requires Tokio.
-            while let Some(event) = stream.next().compat().await {
-                match event {
-                    Ok(event) => {
-                        yield Ok(event);
-                    }
-                    Err(err) => {
-                        yield Err(err);
-                        stream.close();
-                    }
-                }
-            }
-        };
-        let stream = stream.take_while(|event| {
-            if let Err(reqwest_eventsource::Error::StreamEnded) = event {
-                return future::ready(false);
-            }
-            future::ready(true)
-        });
-
-        // Wrap the stream in one that holds onto a prevent_sleep guard, if one is required here.
-        let stream = prevent_sleep::Stream::wrap(
-            stream,
-            self.prevent_sleep_reason.map(prevent_sleep::prevent_sleep),
-        );
-
-        stream.boxed()
     }
 
     pub fn basic_auth<U, P>(self, username: U, password: Option<P>) -> RequestBuilder<'a>
@@ -455,17 +390,6 @@ impl<'a> RequestBuilder<'a> {
         Self {
             wrapped: self.wrapped.form(form),
             serialized_payload,
-            ..self
-        }
-    }
-
-    /// Prevents the system from sleeping due to idle while this request is in progress.
-    ///
-    /// The provided reason will be used in user-visible logging, so make sure it is
-    /// descriptive and reasonably formatted (e.g. "Agent mode request in-progress").
-    pub fn prevent_sleep(self, reason: &'static str) -> RequestBuilder<'a> {
-        Self {
-            prevent_sleep_reason: Some(reason),
             ..self
         }
     }
@@ -539,44 +463,5 @@ impl Response {
 
     pub fn url(&self) -> &reqwest::Url {
         self.0.url()
-    }
-}
-
-/// Adapter to use our HTTP client wrapper with [`oauth2`]. This is modeled on the [`reqwest`]
-/// implementation of [`oauth2::AsyncHttpClient`].
-impl<'c> oauth2::AsyncHttpClient<'c> for Client {
-    type Error = oauth2::HttpClientError<reqwest::Error>;
-
-    type Future =
-        Pin<Box<dyn Future<Output = Result<oauth2::HttpResponse, Self::Error>> + Send + Sync + 'c>>;
-
-    fn call(&'c self, request: oauth2::HttpRequest) -> Self::Future {
-        Box::pin(async move {
-            let include_warp_headers = Self::include_warp_http_headers(request.uri().to_string());
-            let builder = reqwest::RequestBuilder::from_parts(
-                self.wrapped.clone(),
-                request.try_into().map_err(Box::new)?,
-            );
-
-            let response = self
-                .builder(builder, include_warp_headers)
-                .send()
-                .await
-                .map_err(Box::new)?;
-
-            let mut builder = ::http::Response::builder().status(response.status());
-            {
-                builder = builder.version(response.0.version());
-            }
-
-            for (name, value) in response.0.headers().iter() {
-                builder = builder.header(name, value);
-            }
-
-            let response_body = response.bytes().await.map_err(Box::new)?.to_vec();
-            builder
-                .body(response_body)
-                .map_err(oauth2::HttpClientError::Http)
-        })
     }
 }

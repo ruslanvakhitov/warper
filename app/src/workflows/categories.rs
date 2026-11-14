@@ -622,17 +622,13 @@ impl CategoriesView {
     ) -> HashMap<WorkflowTag, Vec<Arc<WorkflowType>>> {
         let mut categories_map = HashMap::new();
         workflows.into_iter().for_each(|workflow| {
-            if workflow
-                .as_workflow()
-                .tags()
-                .is_none_or(|tags| tags.is_empty())
-            {
+            if workflow.as_workflow().tags().is_empty() {
                 categories_map
                     .entry(WorkflowTag::Untagged)
                     .or_insert_with(Vec::new)
                     .push(workflow)
-            } else if let Some(tags) = workflow.as_workflow().tags() {
-                tags.iter().for_each(|tag| {
+            } else {
+                workflow.as_workflow().tags().iter().for_each(|tag| {
                     categories_map
                         .entry(WorkflowTag::Tagged {
                             tag_name: tag.to_owned(),
@@ -770,10 +766,11 @@ impl CategoriesView {
             (_, Some(match_result)) => WorkflowMatchType::Command { match_result },
             (_, _) => {
                 // Neither the name of the command were matched. Check if any tags match.
-                let contains_tag = workflow.as_workflow().tags().is_some_and(|tags| {
-                    tags.iter()
-                        .any(|tag| tag.to_ascii_lowercase().contains(text))
-                });
+                let contains_tag = workflow
+                    .as_workflow()
+                    .tags()
+                    .iter()
+                    .any(|tag| tag.to_ascii_lowercase().contains(text));
 
                 if contains_tag {
                     WorkflowMatchType::Tag

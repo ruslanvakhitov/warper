@@ -1,8 +1,13 @@
 use std::rc::Rc;
 
-use crate::ai::blocklist::inline_action::requested_action::{ENTER_KEYSTROKE, ESCAPE_KEYSTROKE};
-use crate::ai::blocklist::inline_action::requested_script::{self, RequestedScriptMouseStates};
-use crate::ai::blocklist::inline_action::requested_script::{RequestedScriptStatus, TitledScript};
+use std::sync::LazyLock;
+use warpui::keymap::Keystroke;
+static ENTER_KEYSTROKE: LazyLock<Keystroke> =
+    LazyLock::new(|| Keystroke::parse("enter").expect("valid Enter key"));
+static ESCAPE_KEYSTROKE: LazyLock<Keystroke> =
+    LazyLock::new(|| Keystroke::parse("escape").expect("valid Escape key"));
+use super::script_preview::{self as requested_script, RequestedScriptMouseStates};
+use super::script_preview::{RequestedScriptStatus, TitledScript};
 use crate::appearance::Appearance;
 use crate::terminal::model::ansi::SystemDetails;
 use crate::terminal::model::escape_sequences;

@@ -35,9 +35,6 @@ pub fn current_shell_starter_and_version() -> (DirectShellStarter, String) {
             ShellStarter::MSYS2(_) => {
                 todo!("We don't yet support integration tests for MSYS2")
             }
-            ShellStarter::DockerSandbox(_) => {
-                todo!("We don't yet support integration tests for Docker sandbox shells")
-            }
         },
         ShellStarterSource::Environment(starter)
         | ShellStarterSource::UserDefault(starter)

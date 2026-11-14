@@ -93,37 +93,10 @@ impl FilterChipRenderer for QueryFilter {
     }
 
     fn icon_color(&self, appearance: &Appearance) -> ColorU {
-        match self {
-            QueryFilter::History
-            | QueryFilter::NaturalLanguage
-            | QueryFilter::Actions
-            | QueryFilter::Sessions
-            | QueryFilter::LaunchConfigurations
-            | QueryFilter::PromptHistory
-            | QueryFilter::Files
-            | QueryFilter::Commands
-            | QueryFilter::Blocks
-            | QueryFilter::Code
-            | QueryFilter::Rules
-            | QueryFilter::Repos
-            | QueryFilter::DiffSets
-            | QueryFilter::StaticSlashCommands
-            | QueryFilter::Skills
-            | QueryFilter::BaseModels
-            | QueryFilter::FullTerminalUseModels
-            | QueryFilter::CurrentDirectoryConversations => appearance
-                .theme()
-                .main_text_color(appearance.theme().surface_2())
-                .into_solid(),
-            QueryFilter::Conversations | QueryFilter::HistoricalConversations => appearance
-                .theme()
-                .main_text_color(appearance.theme().surface_2())
-                .into_solid(),
-            QueryFilter::Workflows | QueryFilter::AgentModeWorkflows => appearance
-                .theme()
-                .main_text_color(appearance.theme().surface_2())
-                .into_solid(),
-        }
+        appearance
+            .theme()
+            .main_text_color(appearance.theme().surface_2())
+            .into_solid()
     }
 }
 

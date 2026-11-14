@@ -1642,7 +1642,7 @@ impl NotebooksEditorModel {
     /// This gets the current markdown, applies the diffs, and then resets the editor with the new markdown.
     pub fn apply_diffs(
         &mut self,
-        diffs: Vec<ai::diff_validation::DiffDelta>,
+        diffs: Vec<crate::code::diff_validation::DiffDelta>,
         ctx: &mut ModelContext<Self>,
     ) {
         // Get current markdown content

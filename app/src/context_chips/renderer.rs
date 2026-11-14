@@ -92,18 +92,18 @@ impl Renderer {
         availability: ChipAvailability,
         appearance: &Appearance,
     ) -> Option<Self> {
-        Self::default_from_kind_with_agent_view(chip_kind, availability, false, appearance)
+        Self::default_from_kind_with_cli_footer_style(chip_kind, availability, false, appearance)
     }
 
-    pub fn default_from_kind_with_agent_view(
+    pub fn default_from_kind_with_cli_footer_style(
         chip_kind: ContextChipKind,
         availability: ChipAvailability,
-        is_in_agent_view: bool,
+        is_cli_footer: bool,
         appearance: &Appearance,
     ) -> Option<Self> {
         let chip = chip_kind.to_chip()?;
         let placeholder_value = chip_kind.placeholder_value();
-        let styles = chip_kind.default_styles(appearance, is_in_agent_view);
+        let styles = chip_kind.default_styles(appearance, is_cli_footer);
         Some(Self::new(
             chip_kind,
             chip,

@@ -1,17 +1,6 @@
-use crate::ai::agent::DiffSetHunk;
 use crate::code_review::diff_state::{DiffLineType, FileDiff};
 use std::collections::HashMap;
 use warp_editor::render::model::LineCount;
-
-cfg_if::cfg_if! {
-    if #[cfg(feature = "local_fs")] {
-        use std::path::Path;
-        use crate::ai::agent::{AIAgentAttachment, CurrentHead, DiffBase};
-        use crate::ai::blocklist::BlocklistAIContextModel;
-        use crate::code_review::{diff_state::DiffMode, DiffSetScope};
-        use warpui::{AppContext, ModelHandle};
-    }
-}
 
 /// Converts file diffs into a HashMap of file paths to DiffSetHunks
 /// If repo_path is provided, file paths will be relative to the repo root
@@ -67,64 +56,48 @@ where
     file_diffs
 }
 
-/// Creates attachment reference and key for a set of changes based on scope and diff mode
-#[cfg(feature = "local_fs")]
-pub fn create_attachment_reference_and_key(
-    scope: &DiffSetScope,
-    diff_mode: &DiffMode,
-    main_branch_name: Option<&str>,
-    repo_path: &Path,
-) -> (String, String) {
-    match scope {
-        DiffSetScope::All => {
-            let diff_set_description = match diff_mode {
-                DiffMode::Head => "uncommitted changes".to_string(),
-                DiffMode::MainBranch => {
-                    let main_branch = main_branch_name.unwrap_or("main");
-                    format!("diffset against {main_branch}")
-                }
-                DiffMode::OtherBranch(branch_name) => {
-                    format!("diffset against {branch_name}")
-                }
-            };
-            let key = diff_set_description.clone();
-            (format!("<change:{key}>"), key)
-        }
-        DiffSetScope::File(file_path) => {
-            let relative_path = if file_path.is_absolute() {
-                file_path
-                    .strip_prefix(repo_path)
-                    .unwrap_or(file_path)
-                    .to_path_buf()
-            } else {
-                file_path.clone()
-            };
-            let key = relative_path.display().to_string();
-            (format!("<change:{key}>"), key)
+/// Git reference displayed by manual code review.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum CurrentHead {
+    BranchName(String),
+    HeadlessCommitSha(String),
+}
+
+impl CurrentHead {
+    pub fn title(&self) -> String {
+        match self {
+            Self::BranchName(name) => name.clone(),
+            Self::HeadlessCommitSha(sha) => {
+                format!("Commit {}", sha.chars().take(7).collect::<String>())
+            }
         }
     }
 }
 
-/// Registers a DiffSet attachment with the AI controller
-/// This encapsulates the common logic for creating and registering diff attachments
-#[cfg(feature = "local_fs")]
-pub fn register_diffset_attachment(
-    ai_context_model: &ModelHandle<BlocklistAIContextModel>,
-    attachment_key: String,
-    file_diffs: HashMap<String, Vec<DiffSetHunk>>,
-    current: Option<CurrentHead>,
-    base: DiffBase,
-    ctx: &mut AppContext,
-) {
-    // Create the DiffSet attachment
-    let attachment = AIAgentAttachment::DiffSet {
-        file_diffs,
-        current,
-        base,
-    };
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum DiffBase {
+    BranchName(String),
+    HeadlessCommitSha(String),
+    UncommittedChanges,
+}
 
-    // Register the attachment with the AI controller
-    ai_context_model.update(ctx, |context_model, _| {
-        context_model.register_diff_hunk_attachment(attachment_key, attachment);
-    });
+/// Diff context supplied to a third-party CLI agent.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct DiffSetHunk {
+    pub line_range: std::ops::Range<LineCount>,
+    pub diff_content: String,
+    pub lines_added: u32,
+    pub lines_removed: u32,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ReviewCommentPacket {
+    pub comments: Vec<super::comments::AttachedReviewComment>,
+    pub diff_set: HashMap<String, Vec<DiffSetHunk>>,
+}
+
+impl ReviewCommentPacket {
+    pub fn review_comments(&self) -> super::comments::ReviewCommentBatch {
+        super::comments::ReviewCommentBatch::from_comments(self.comments.clone())
+    }
 }

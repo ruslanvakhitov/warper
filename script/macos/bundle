@@ -328,7 +328,6 @@ if [[ $RELEASE_CHANNEL = "local" ]]; then
     BUNDLE_ID="dev.warp.Warp-Local"
     WARP_APP_NAME="WarpLocal"
     WARP_SCHEME_NAME="warplocal"
-    FEATURES="$FEATURES,agent_mode_debug"
     # For local builds, use development bundled frameworks.
     export FRAMEWORK_OVERRIDE="dev"
 elif [[ $RELEASE_CHANNEL = "dev" ]]; then
@@ -336,7 +335,6 @@ elif [[ $RELEASE_CHANNEL = "dev" ]]; then
     BUNDLE_ID="dev.warp.Warp-Dev"
     WARP_APP_NAME="WarpDev"
     WARP_SCHEME_NAME="warpdev"
-    FEATURES="$FEATURES,agent_mode_debug"
     # Enable heap usage tracking & profiling using jemalloc through pprof.
     FEATURES="$FEATURES,jemalloc_pprof,heap_usage_tracking"
     # For dev builds, use development bundled frameworks.
@@ -383,7 +381,7 @@ if [[ "$ARTIFACT" == cli ]]; then
   OPEN_AFTER_BUNDLE=false
   FEATURES="$FEATURES,standalone"
 elif [[ "$ARTIFACT" == app ]]; then
-  FEATURES="$FEATURES,gui,nld_improvements"
+  FEATURES="$FEATURES,gui"
 fi
 
 if [[ $UNIVERSAL_BINARY = true ]]; then

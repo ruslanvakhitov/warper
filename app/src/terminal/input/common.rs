@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use crate::{
     appearance::Appearance,
-    settings::{AISettings, InputSettings},
     terminal::{
         input::{Input, InputAction, InputSuggestionsMode, MenuPositioning},
         view::{TerminalAction, PADDING_LEFT},
@@ -12,7 +11,7 @@ use crate::{
 use pathfinder_geometry::vector::vec2f;
 use vim::vim::{VimMode, VimState};
 use warp_completer::completer::Description;
-use warp_core::features::FeatureFlag;
+
 use warpui::{
     elements::{
         AnchorPair, Border, ChildAnchor, ConstrainedBox, Container, CornerRadius,
@@ -23,22 +22,10 @@ use warpui::{
     fonts::Weight,
     presenter::ChildView,
     ui_components::components::{UiComponent, UiComponentStyles},
-    AppContext, SingletonEntity, ViewHandle,
+    AppContext, ViewHandle,
 };
 
-/// Whether the terminal input message bar should be shown.
-///
-/// The message bar is hidden when AI is disabled, the user has turned it off in settings,
-/// or the session is a shared ambient agent session.
-pub(super) fn should_show_terminal_input_message_bar(app: &AppContext) -> bool {
-    FeatureFlag::AgentView.is_enabled()
-        && !FeatureFlag::AgentViewPromptChip.is_enabled()
-        && InputSettings::as_ref(app).is_terminal_input_message_bar_enabled()
-        && AISettings::as_ref(app).is_any_ai_enabled(app)
-}
-
 /// Renders vim status bar
-/// Used by: agent.rs, terminal.rs, universal.rs, legacy.rs
 pub(super) fn render_vim_status(vim_state: &VimState, appearance: &Appearance) -> Container {
     let theme = appearance.theme();
     let ansi_colors = theme.terminal_colors().bright;
@@ -138,7 +125,7 @@ pub(super) fn wrap_input_with_terminal_padding_and_focus_handler(
 
         EventHandler::new(flex_row.finish())
             .on_left_mouse_down(move |ctx, _, _| {
-                ctx.dispatch_typed_action(TerminalAction::ClearSelectionsWhenShellMode);
+                ctx.dispatch_typed_action(TerminalAction::ClearSelections);
                 ctx.dispatch_typed_action(InputAction::FocusInputBox);
                 DispatchEventResult::StopPropagation
             })
@@ -279,7 +266,7 @@ pub(super) fn add_input_suggestions_overlays(
                     appearance,
                     menu_positioning,
                     command.clone(),
-                    dynamic_enum_status.clone(),
+                    *dynamic_enum_status,
                     suggestions,
                 ),
                 OffsetPositioning::from_axes(
@@ -298,29 +285,6 @@ pub(super) fn add_input_suggestions_overlays(
                 ),
             );
         }
-        InputSuggestionsMode::AIContextMenu { .. } => {
-            input.render_ai_context_menu(stack, &menu_positioning, app);
-        }
-        // SlashCommandsMenu is rendered separately via inline_slash_commands_menu_view
-        InputSuggestionsMode::SlashCommands => {}
-        // Conversation menu is rendered separately via inline_conversation_menu_view
-        InputSuggestionsMode::ConversationMenu => {}
-        // Model selector is rendered separately via inline_model_selector_view
-        InputSuggestionsMode::ModelSelector => {}
-        // Profile selector is rendered separately via inline_profile_selector_view
-        InputSuggestionsMode::ProfileSelector => {}
-        // Prompts menu is rendered separately via inline_prompts_menu_view
-        InputSuggestionsMode::PromptsMenu => {}
-        // Skill menu is rendered separately via inline_skill_selector_view
-        InputSuggestionsMode::SkillMenu => {}
-        // User query menu is rendered separately via user_query_menu_view
-        InputSuggestionsMode::UserQueryMenu { .. } => {}
-        // Inline history menu is rendered separately via inline_history_menu_view
-        InputSuggestionsMode::InlineHistoryMenu { .. } => {}
-        // Repos menu is rendered separately via inline_repos_menu_view
-        InputSuggestionsMode::IndexedReposMenu => {}
-        // Plan menu is rendered separately via inline_plan_menu_view
-        InputSuggestionsMode::PlanMenu { .. } => {}
         InputSuggestionsMode::Closed => {}
     }
 }

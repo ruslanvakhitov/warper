@@ -1,10 +1,6 @@
 use warpui::{prelude::ChildView, Element, EntityId, View, ViewContext, ViewHandle};
 
 use crate::{
-    ai::{
-        agent::{conversation::AIConversationId, AIAgentExchangeId},
-        blocklist::{agent_view::AgentViewEntryOrigin, AIBlock},
-    },
     env_vars::env_var_collection_block::EnvVarCollectionBlock,
     terminal::{
         block_list_viewport::ScrollPositionUpdate,
@@ -16,8 +12,6 @@ use crate::{
         TerminalView,
     },
 };
-
-use super::{InitStepBlock, InitStepKind};
 
 /// Specifies where to insert rich content in the blocklist.
 #[derive(Clone, Copy, Debug)]
@@ -35,25 +29,6 @@ pub enum RichContentInsertionPosition {
     PinToBottom,
 }
 
-/// Metadata for an AI block rich content.
-#[derive(Clone, Debug)]
-pub struct AIBlockMetadata {
-    /// The ID corresponding to the `AIAgentExchange` represented in this block.
-    pub exchange_id: AIAgentExchangeId,
-    /// The ID of the conversation to which this block belongs.
-    pub conversation_id: AIConversationId,
-    /// The ViewHandle for the AI block.
-    pub ai_block_handle: ViewHandle<AIBlock>,
-}
-
-/// Metadata for an agent view entry rich content.
-#[derive(Clone, Debug)]
-pub struct AgentViewEntryMetadata {
-    pub conversation_id: AIConversationId,
-    /// The origin when this block was created (not the current session origin).
-    pub origin: AgentViewEntryOrigin,
-}
-
 /// Wrapper type to hold rich content views and allow generating typed `ChildView` instances
 /// on-demand. The `ChildView`s are then passed to the `BlockListElement` to be used when
 /// displaying rich content.
@@ -64,24 +39,13 @@ pub struct RichContent {
     /// Optional rich content view-specific metadata to be passed to the `BlocklistElement` for
     /// rendering.
     metadata: Option<RichContentMetadata>,
-
-    /// The conversation ID of the active agent view when this rich content was created, if any.
-    /// This is used to determine visibility when switching between agent view conversations.
-    /// Rich content created within an agent view should only be visible when that conversation
-    /// is active.
-    agent_view_conversation_id: Option<AIConversationId>,
 }
 
 impl RichContent {
     /// Create a new `RichContent` using a ViewHandle. The RichContent type will continue to own
     /// the ViewHandle for its lifetime, ensuring that the underlying View remains active.
     ///
-    /// `ai_conversation_id` should be the active agent view conversation ID if this content is
-    /// being created within an agent view, or `None` if created in terminal mode.
-    pub fn new<V: View>(
-        handle: ViewHandle<V>,
-        agent_view_conversation_id: Option<AIConversationId>,
-    ) -> Self {
+    pub fn new<V: View>(handle: ViewHandle<V>) -> Self {
         let view_id = handle.id();
         // By `move`ing the handle into the closure, the closure will own the handle and keep it
         // alive for the duration. This also allows us to generate any number of necessary
@@ -92,34 +56,12 @@ impl RichContent {
             view_id,
             element_builder,
             metadata: None,
-            agent_view_conversation_id,
         }
     }
 
     pub fn with_metadata(mut self, metadata: RichContentMetadata) -> Self {
         self.metadata = Some(metadata);
         self
-    }
-
-    /// Returns the conversation ID of the agent view this content was created in, if any.
-    pub fn agent_view_conversation_id(&self) -> Option<AIConversationId> {
-        self.agent_view_conversation_id
-    }
-
-    /// Updates the associated agent view conversation id with this rich content item.
-    pub fn update_agent_view_conversation_id(
-        &mut self,
-        new_agent_view_conversation_id: AIConversationId,
-    ) {
-        self.agent_view_conversation_id = Some(new_agent_view_conversation_id);
-    }
-
-    /// Sets the associated agent view conversation id for this rich content item.
-    pub fn set_agent_view_conversation_id(
-        &mut self,
-        agent_view_conversation_id: Option<AIConversationId>,
-    ) {
-        self.agent_view_conversation_id = agent_view_conversation_id;
     }
 
     /// Build a new `ChildView` element for this rich content
@@ -140,65 +82,6 @@ impl RichContent {
         self.metadata.as_mut()
     }
 
-    pub fn is_ai_block(&self) -> bool {
-        matches!(self.metadata, Some(RichContentMetadata::AIBlock(_)))
-    }
-
-    pub fn is_usage_footer(&self) -> bool {
-        matches!(self.metadata, Some(RichContentMetadata::UsageFooter))
-    }
-
-    pub fn is_agent_view_entry(&self) -> bool {
-        matches!(self.metadata, Some(RichContentMetadata::AgentViewEntry(_)))
-    }
-
-    pub fn is_inline_agent_view_header(&self) -> bool {
-        matches!(
-            self.metadata,
-            Some(RichContentMetadata::InlineAgentViewHeader)
-        )
-    }
-
-    pub fn is_agent_view_zero_state(&self) -> bool {
-        matches!(self.metadata, Some(RichContentMetadata::AgentViewZeroState))
-    }
-
-    pub fn is_pending_user_query(&self) -> bool {
-        matches!(self.metadata, Some(RichContentMetadata::PendingUserQuery))
-    }
-
-    pub fn is_init_step(&self) -> bool {
-        matches!(self.metadata, Some(RichContentMetadata::InitStep { .. }))
-    }
-
-    pub fn init_step_kind(&self) -> Option<InitStepKind> {
-        match &self.metadata {
-            Some(RichContentMetadata::InitStep { step_kind, .. }) => Some(*step_kind),
-            _ => None,
-        }
-    }
-
-    pub fn init_step_block_handle(&self) -> Option<&ViewHandle<InitStepBlock>> {
-        match &self.metadata {
-            Some(RichContentMetadata::InitStep { block_handle, .. }) => Some(block_handle),
-            _ => None,
-        }
-    }
-
-    pub fn ai_block_metadata(&self) -> Option<&AIBlockMetadata> {
-        match &self.metadata {
-            Some(RichContentMetadata::AIBlock(metadata)) => Some(metadata),
-            _ => None,
-        }
-    }
-
-    pub fn agent_view_entry_metadata(&self) -> Option<&AgentViewEntryMetadata> {
-        match &self.metadata {
-            Some(RichContentMetadata::AgentViewEntry(metadata)) => Some(metadata),
-            _ => None,
-        }
-    }
-
     pub(super) fn to_block_list_element_render_params(
         &self,
     ) -> (EntityId, Box<dyn Element>, Option<RichContentMetadata>) {
@@ -209,12 +92,6 @@ impl RichContent {
 /// `RichContent` view-specific metadata required for rendering in the `BlocklistElement`.
 #[derive(Clone, Debug)]
 pub enum RichContentMetadata {
-    AIBlock(AIBlockMetadata),
-    UsageFooter,
-    InitStep {
-        step_kind: InitStepKind,
-        block_handle: ViewHandle<InitStepBlock>,
-    },
     EnvVarCollectionBlock {
         env_var_collection_block_handle: ViewHandle<EnvVarCollectionBlock>,
     },
@@ -230,12 +107,9 @@ pub enum RichContentMetadata {
     WarpifySuccessBlock {
         bootstrap_success_block_handle: ViewHandle<WarpifySuccessBlock>,
     },
-    AgentViewEntry(AgentViewEntryMetadata),
-    InlineAgentViewHeader,
-    AgentViewZeroState,
+
     TerminalViewZeroState,
     PluginInstructionsBlock,
-    PendingUserQuery,
 }
 
 impl TerminalView {
@@ -256,44 +130,7 @@ impl TerminalView {
         position: RichContentInsertionPosition,
         ctx: &mut ViewContext<Self>,
     ) {
-        // Agent view entry blocks, inline agent view headers, and terminal zero state blocks
-        // should not be associated with any conversation, as they always belong in the top-level
-        // terminal view and should be hidden while agent view is active.
-        let is_agent_view_scoped_terminal_content = matches!(
-            metadata,
-            Some(
-                RichContentMetadata::AgentViewEntry(_)
-                    | RichContentMetadata::InlineAgentViewHeader
-                    | RichContentMetadata::TerminalViewZeroState
-            )
-        );
-        let is_use_agent_footer = handle.id() == self.use_agent_footer.id();
-
-        let (agent_view_conversation_id, should_hide) = if is_agent_view_scoped_terminal_content {
-            (None, self.agent_view_controller.as_ref(ctx).is_active())
-        } else if is_use_agent_footer {
-            (
-                self.agent_view_controller
-                    .as_ref(ctx)
-                    .agent_view_state()
-                    .fullscreen_conversation_id(),
-                false,
-            )
-        } else {
-            (
-                self.agent_view_controller
-                    .as_ref(ctx)
-                    .agent_view_state()
-                    .active_conversation_id(),
-                false,
-            )
-        };
-        let item = RichContentItem::new(
-            content_type,
-            handle.id(),
-            agent_view_conversation_id,
-            should_hide,
-        );
+        let item = RichContentItem::new(content_type, handle.id());
 
         match position {
             RichContentInsertionPosition::Append {
@@ -318,13 +155,11 @@ impl TerminalView {
             }
         }
 
-        let mut rich_content = RichContent::new(handle, agent_view_conversation_id);
+        let mut rich_content = RichContent::new(handle);
         if let Some(metadata) = metadata {
             rich_content = rich_content.with_metadata(metadata);
         }
         self.rich_content_views.push(rich_content);
-
-        self.update_input_prompt_suggestions_banner_state(ctx);
 
         // Scroll to bottom
         self.update_scroll_position_locking(ScrollPositionUpdate::AfterRichBlockInserted, ctx);

@@ -8,9 +8,9 @@ No. Warper has no account system. There is no sign-in, no sign-up, no anonymous 
 
 Locally. See the **Local data** section of [README.md](README.md) for paths.
 
-## What AI providers can I use?
+## Does Warper have a built-in AI agent?
 
-OpenRouter. Configure it in Settings or via the `OPENROUTER_API_KEY` and `OPENROUTER_MODEL` environment variables. Your key is stored in the local keychain.
+No. Run a third-party CLI agent such as Codex, Claude Code, or Gemini CLI in the terminal. Configure models, credentials, tools, and skills in that agent.
 
 ## Is this an official Warp.dev build?
 
@@ -24,7 +24,7 @@ If the bug also reproduces in upstream Warp, please file it there too — they h
 
 ## Does Warper send anything over the network?
 
-Only when you explicitly cause it to. The BYOK AI helper calls OpenRouter when invoked. Beyond that, no telemetry, no crash reporting, no remote config fetch, no Drive sync, no autoupdate ping.
+Warper has no model-provider integration, telemetry upload, hosted crash reporting, remote config fetch, Drive sync, or autoupdate ping. Programs you run in the terminal, including third-party CLI agents, make their own network requests.
 
 ## Can I use Codex, Claude Code, or Gemini CLI inside Warper?
 

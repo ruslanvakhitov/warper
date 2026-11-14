@@ -158,27 +158,7 @@ fn new_command_executor_for_local_tty_session(
         IsLegacySSHSession::Yes { .. }
     );
 
-    let shell_needs_in_band_executor = session_info.shell.force_in_band_command_executor();
-    // Docker sandbox sessions run commands inside the container; the host-side
-    // LocalCommandExecutor has no way to reach into the sandbox, so generators
-    // must go through the session's in-band executor (which rides on the live
-    // PTY that is already attached to the container).
-    //
-    // TODO(advait): For production this should be a dedicated
-    // `SandboxCommandExecutor` that runs generators via
-    // `sbx exec warp-sandbox-<id> -- sh -c "<cmd>"` (analogous to
-    // how `LocalCommandExecutor` spawns fresh subprocesses for the
-    // host-shell path). That would avoid serializing generators
-    // through the user's live PTY (slower, blocked by long-running
-    // foreground commands, and has to dodge line-editor state) and
-    // instead run them as fresh, parallelizable processes inside the
-    // container — the same semantics host shells get today.
-    let launch_data_needs_in_band_executor = matches!(
-        session_info.launch_data,
-        Some(ShellLaunchData::DockerSandbox { .. })
-    );
-    let force_use_in_band_generators = shell_needs_in_band_executor
-        || launch_data_needs_in_band_executor
+    let force_use_in_band_generators = session_info.shell.force_in_band_command_executor()
         || *are_in_band_generators_for_all_sessions_enabled_debug_setting;
 
     match &session_info.session_type {
@@ -193,25 +173,7 @@ fn new_command_executor_for_local_tty_session(
                     Some(executable_path.to_owned()),
                     shell_type,
                 )),
-                // Docker sandbox sessions should already be routed to the
-                // in-band executor via `launch_data_needs_in_band_executor`
-                // above, so this arm is only reached if that routing drifts
-                // (e.g. a feature flag/debug setting disables it). Rather
-                // than panic in user-facing code, log loudly and fall back
-                // to a no-op executor so the sandbox session still runs;
-                // generators won't work but the PTY stays healthy.
-                Some(ShellLaunchData::DockerSandbox { .. }) => {
-                    debug_assert!(
-                        false,
-                        "Docker sandbox sessions should be routed through the in-band executor"
-                    );
-                    log::error!(
-                        "Docker sandbox session reached the local-executor branch; \
-                         falling back to a no-op command executor. \
-                         `launch_data_needs_in_band_executor` routing may have drifted."
-                    );
-                    Arc::new(NoOpCommandExecutor::new())
-                }
+
                 Some(ShellLaunchData::MSYS2 {
                     executable_path, ..
                 }) => {

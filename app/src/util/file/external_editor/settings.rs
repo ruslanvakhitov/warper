@@ -113,39 +113,5 @@ define_settings_group!(EditorSettings, settings: [
         toml_path: "code.editor.prefer_tabbed_editor_view",
         description: "Whether to prefer opening files in a tabbed editor view.",
     },
-    open_conversation_layout_preference: OpenConversationLayoutPreference {
-        type: OpenConversationPreference,
-        default: OpenConversationPreference::NewTab,
-        supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Never,
-        private: false,
-        toml_path: "agents.warp_agent.other.open_conversation_layout_preference",
-        description: "Whether to open agent conversations in a new tab or a split pane.",
-    },
+
 ]);
-
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    Serialize,
-    Deserialize,
-    PartialEq,
-    Eq,
-    schemars::JsonSchema,
-    settings_value::SettingsValue,
-)]
-#[schemars(
-    description = "How to open agent conversations.",
-    rename_all = "snake_case"
-)]
-pub enum OpenConversationPreference {
-    NewTab,
-    SplitPane,
-}
-
-impl OpenConversationPreference {
-    pub fn is_new_tab(&self) -> bool {
-        matches!(self, Self::NewTab)
-    }
-}

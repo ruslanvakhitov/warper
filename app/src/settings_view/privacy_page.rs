@@ -61,7 +61,7 @@ const FONT_SIZE: f32 = 12.;
 
 const SAFE_MODE_TITLE: &str = "Secret redaction";
 static SAFE_MODE_DESCRIPTION: LazyLock<&'static str> = LazyLock::new(|| {
-    "When this setting is enabled, Warp will scan terminal blocks and agent prompts for \
+    "When this setting is enabled, Warp will scan terminal blocks for \
         potential sensitive information before local display or local persistence. \
         You can customize this list via regexes."
 });

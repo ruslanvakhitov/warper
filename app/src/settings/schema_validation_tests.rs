@@ -73,3 +73,30 @@ fn file_defaults_validate_against_schema() {
         failures.join("\n")
     );
 }
+
+#[test]
+fn agent_settings_schema_exposes_external_cli_integration() {
+    let agent_settings: Vec<_> = entries()
+        .into_iter()
+        .filter(|entry| {
+            !entry.is_private
+                && entry
+                    .hierarchy
+                    .is_some_and(|path| path == "agents" || path.starts_with("agents."))
+        })
+        .collect();
+    assert!(
+        !agent_settings.is_empty(),
+        "CLI-agent settings must remain available"
+    );
+    for entry in agent_settings {
+        assert!(
+            entry.hierarchy.is_some_and(|path| {
+                path == "agents.third_party" || path.starts_with("agents.third_party.")
+            }),
+            "Built-in agent setting remains in the public schema: {}.{}",
+            entry.hierarchy.unwrap_or_default(),
+            entry.storage_key,
+        );
+    }
+}

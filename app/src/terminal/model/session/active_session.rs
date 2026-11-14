@@ -1,14 +1,11 @@
 use std::sync::Arc;
 use warpui::{AppContext, Entity, ModelContext, ModelHandle};
 
-use crate::{
-    ai::execution_context::WarpAiExecutionContext,
-    terminal::{
-        model::session::SessionsEvent,
-        model_events::{ModelEvent, ModelEventDispatcher},
-        shell::ShellType,
-        ShellLaunchData,
-    },
+use crate::terminal::{
+    model::session::SessionsEvent,
+    model_events::{ModelEvent, ModelEventDispatcher},
+    shell::ShellType,
+    ShellLaunchData,
 };
 
 use super::{Session, SessionType, Sessions};
@@ -82,11 +79,6 @@ impl ActiveSession {
 
     pub fn current_working_directory(&self) -> Option<&String> {
         self.current_working_directory.as_ref()
-    }
-
-    /// Returns the `WarpAiExecutionContext` for the active session.
-    pub fn ai_execution_environment(&self, app: &AppContext) -> Option<WarpAiExecutionContext> {
-        self.session(app).as_ref().map(WarpAiExecutionContext::new)
     }
 }
 

@@ -2,13 +2,11 @@ use std::borrow::Cow;
 
 use warpui::{App, AssetProvider, View, ViewHandle, WindowId};
 
-pub mod agent_mode;
 pub mod assertions;
 pub mod block;
 pub mod block_filtering;
 pub mod clipboard;
 pub mod code_review;
-pub mod codebase_context;
 pub mod command_palette;
 pub mod command_search;
 pub mod context_chips;

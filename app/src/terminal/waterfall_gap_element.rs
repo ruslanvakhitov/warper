@@ -2,13 +2,10 @@ use pathfinder_geometry::vector::{vec2f, Vector2F};
 use warpui::elements::ZIndex;
 use warpui::event::ModifiersState;
 use warpui::units::{IntoLines, IntoPixels, Pixels};
-use warpui::ModelHandle;
 use warpui::{
     elements::{ScrollData, ScrollableElement},
     AppContext, Element, EventContext, SizeConstraint,
 };
-
-use crate::terminal::input::inline_menu::InlineMenuPositioner;
 
 use super::{block_list_element::BlockListMenuSource, view::TerminalAction};
 
@@ -62,8 +59,6 @@ pub struct WaterfallGapElement {
     /// Standard element size and origin fields
     origin: Option<warpui::elements::Point>,
     size: Option<Vector2F>,
-
-    inline_menu_positioner: ModelHandle<InlineMenuPositioner>,
 }
 
 impl WaterfallGapElement {
@@ -76,7 +71,6 @@ impl WaterfallGapElement {
         line_height_px: Pixels,
         scroll_top_px: Pixels,
         pane_height_px: Pixels,
-        inline_menu_positioner: ModelHandle<InlineMenuPositioner>,
     ) -> Self {
         Self {
             block_list_element,
@@ -91,7 +85,6 @@ impl WaterfallGapElement {
             child_max_z_index: None,
             scroll_top_px,
             pane_height_px,
-            inline_menu_positioner,
         }
     }
 
@@ -151,22 +144,11 @@ impl Element for WaterfallGapElement {
         let input_size = self.input_element.layout(constraint, ctx, app);
         self.laid_out_input_size_px = Some(input_size);
 
-        // See the doc comments on `blocklist_top_inset_when_in_waterfall_mode` method for context.
-        //
-        // Basically, when the inline menu is open, the visible height of the blocklist should be
-        // reduced by the height of the inline menu.
-        let blocklist_inset_accounting_for_inline_menu = self
-            .inline_menu_positioner
-            .as_ref(app)
-            .blocklist_top_inset_when_in_waterfall_mode(app);
-
         // Calculate the height after the scroll position of the blocklist without
         // the gap - this is the height the block list element would like to take
         // up in the viewport.
-        let visible_block_list_height_px = self.block_list_height_px
-            - self.scroll_top_px
-            - self.gap_size_px.y().into_pixels()
-            - blocklist_inset_accounting_for_inline_menu.unwrap_or_default();
+        let visible_block_list_height_px =
+            self.block_list_height_px - self.scroll_top_px - self.gap_size_px.y().into_pixels();
 
         // Calculate the max height it could take up, which is a function of the pane height
         // and input size.
@@ -268,7 +250,7 @@ impl Element for WaterfallGapElement {
 }
 
 impl ScrollableElement for WaterfallGapElement {
-    fn scroll_data(&self, app: &AppContext) -> Option<warpui::elements::ScrollData> {
+    fn scroll_data(&self, _app: &AppContext) -> Option<warpui::elements::ScrollData> {
         // You might be wondering - 'what is this blocklist top inset'?
         //
         // This is the height of the inline menu when it is open and rendered above the input.
@@ -284,12 +266,7 @@ impl ScrollableElement for WaterfallGapElement {
         //
         // Basically, for the purposes of scroll logic, we "pretend" that the inline menu is not
         // there, and things work as intended.
-        let total_size = self.block_list_height_px + self.laid_out_input_size_px?.y().into_pixels()
-            - self
-                .inline_menu_positioner
-                .as_ref(app)
-                .blocklist_top_inset_when_in_waterfall_mode(app)
-                .unwrap_or_default();
+        let total_size = self.block_list_height_px + self.laid_out_input_size_px?.y().into_pixels();
         Some(ScrollData {
             scroll_start: self.scroll_top_px,
             visible_px: self.size?.y().into_pixels(),

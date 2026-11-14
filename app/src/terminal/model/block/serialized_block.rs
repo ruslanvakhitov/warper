@@ -1,12 +1,5 @@
-use std::collections::HashSet;
-
-use crate::ai::agent::conversation::AIConversationId;
-use crate::ai::agent::task::TaskId;
-use crate::ai::agent::AIAgentActionId;
-use crate::ai::blocklist::block::cli_controller::LongRunningCommandControlState;
 use crate::terminal::model::block::{
-    has_block_failed, AgentViewVisibility, Block, BlockState, PromptInfo,
-    MAX_SERIALIZED_STYLIZED_OUTPUT_LINES,
+    has_block_failed, Block, BlockState, PromptInfo, MAX_SERIALIZED_STYLIZED_OUTPUT_LINES,
 };
 use crate::terminal::model::session::SessionId;
 use crate::terminal::model::BlockId;
@@ -16,130 +9,6 @@ use chrono::{DateTime, Local, TimeZone as _};
 use serde::{Deserialize, Serialize};
 use serde_bytes_repr::{ByteFmtDeserializer, ByteFmtSerializer};
 use warp_core::command::ExitCode;
-
-use super::AgentInteractionMetadata;
-
-/// Serialization-stable representation of [`AgentViewVisibility`].
-///
-/// This type decouples the persisted format from the in-app format, allowing
-/// internal changes to `AgentViewVisibility` without breaking serialization.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub enum SerializedAgentViewVisibility {
-    Terminal {
-        #[serde(default)]
-        pending_conversation_ids: HashSet<AIConversationId>,
-        conversation_ids: HashSet<AIConversationId>,
-    },
-    Agent {
-        #[serde(alias = "conversation_id")]
-        origin_conversation_id: AIConversationId,
-        #[serde(default)]
-        pending_other_conversation_ids: HashSet<AIConversationId>,
-        #[serde(default)]
-        other_conversation_ids: HashSet<AIConversationId>,
-    },
-}
-
-impl From<AgentViewVisibility> for SerializedAgentViewVisibility {
-    fn from(value: AgentViewVisibility) -> Self {
-        match value {
-            AgentViewVisibility::Terminal {
-                pending_conversation_ids,
-                conversation_ids,
-            } => SerializedAgentViewVisibility::Terminal {
-                pending_conversation_ids,
-                conversation_ids,
-            },
-            AgentViewVisibility::Agent {
-                origin_conversation_id,
-                pending_other_conversation_ids,
-                other_conversation_ids,
-            } => SerializedAgentViewVisibility::Agent {
-                origin_conversation_id,
-                pending_other_conversation_ids,
-                other_conversation_ids,
-            },
-        }
-    }
-}
-
-impl From<SerializedAgentViewVisibility> for AgentViewVisibility {
-    fn from(value: SerializedAgentViewVisibility) -> Self {
-        match value {
-            SerializedAgentViewVisibility::Terminal {
-                pending_conversation_ids,
-                conversation_ids,
-            } => AgentViewVisibility::Terminal {
-                pending_conversation_ids,
-                conversation_ids,
-            },
-            SerializedAgentViewVisibility::Agent {
-                origin_conversation_id,
-                pending_other_conversation_ids,
-                other_conversation_ids,
-            } => AgentViewVisibility::Agent {
-                origin_conversation_id,
-                pending_other_conversation_ids,
-                other_conversation_ids,
-            },
-        }
-    }
-}
-
-fn default_as_true() -> bool {
-    true
-}
-
-/// Blocklist AI metadata associated with this block.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct SerializedAIMetadata {
-    /// The ID of the `AIAgentAction` associated with this block's requested command execution.
-    /// This is optional because not all AI-related blocks are associated with a requested command.
-    #[serde(alias = "action_id")]
-    requested_command_action_id: Option<AIAgentActionId>,
-
-    /// The ID of the conversation to which this action belongs.
-    conversation_id: AIConversationId,
-
-    subagent_task_id: Option<TaskId>,
-
-    /// State governing user/agent interaction with the command in this block.
-    long_running_control_state: Option<LongRunningCommandControlState>,
-
-    /// `true` if the agent has previously written to this block.
-    has_agent_written_to_block: bool,
-
-    /// `true` if this block should be hidden from the user (as is the case with AI-requested
-    /// commands, for example).
-    #[serde(default = "default_as_true", skip)]
-    should_hide_block: bool,
-}
-
-impl From<AgentInteractionMetadata> for SerializedAIMetadata {
-    fn from(value: AgentInteractionMetadata) -> Self {
-        SerializedAIMetadata {
-            requested_command_action_id: value.requested_command_action_id().cloned(),
-            conversation_id: *value.conversation_id(),
-            subagent_task_id: value.subagent_task_id().cloned(),
-            long_running_control_state: value.long_running_control_state().cloned(),
-            has_agent_written_to_block: value.has_agent_written_to_block(),
-            should_hide_block: value.should_hide_block(),
-        }
-    }
-}
-
-impl From<SerializedAIMetadata> for AgentInteractionMetadata {
-    fn from(value: SerializedAIMetadata) -> Self {
-        AgentInteractionMetadata::new(
-            value.requested_command_action_id,
-            value.conversation_id,
-            value.subagent_task_id,
-            value.long_running_control_state,
-            value.has_agent_written_to_block,
-            value.should_hide_block,
-        )
-    }
-}
 
 #[derive(Clone, Debug, Serialize, Default, Deserialize, PartialEq)]
 pub struct SerializedBlock {
@@ -195,16 +64,9 @@ pub struct SerializedBlock {
     /// is different from PS1 and RPROMPT1
     pub prompt_snapshot: Option<String>,
 
-    /// JSON-serialized representation of [`SerializedAIMetadata`].
-    pub ai_metadata: Option<String>,
-
     /// Whether this block was created locally (true) or remotely (false)
     #[serde(default)]
     pub is_local: Option<bool>,
-
-    /// Tracks which views (terminal and/or agent conversations) this block should be visible in.
-    #[serde(default)]
-    pub agent_view_visibility: Option<SerializedAgentViewVisibility>,
 }
 
 impl SerializedBlock {
@@ -305,12 +167,6 @@ impl From<&Block> for SerializedBlock {
             prompt_snapshot,
         };
 
-        let ai_metadata = block
-            .agent_interaction_metadata()
-            .cloned()
-            .map(Into::<SerializedAIMetadata>::into)
-            .and_then(|metadata| serde_json::to_string(&metadata).ok());
-
         SerializedBlock {
             id: block.id.clone(),
             stylized_command,
@@ -334,9 +190,7 @@ impl From<&Block> for SerializedBlock {
             session_id: block.session_id,
             shell_host: block.shell_host.clone(),
             prompt_snapshot: prompt_info.prompt_snapshot,
-            ai_metadata,
             is_local: None,
-            agent_view_visibility: Some(block.agent_view_visibility().clone().into()),
         }
     }
 }
@@ -369,11 +223,7 @@ impl From<crate::persistence::model::Block> for SerializedBlock {
             session_id: None,
             is_background: block.is_background,
             prompt_snapshot: block.prompt_snapshot,
-            ai_metadata: block.ai_metadata,
             is_local: block.is_local,
-            agent_view_visibility: block
-                .agent_view_visibility
-                .and_then(|json| serde_json::from_str(&json).ok()),
         }
     }
 }

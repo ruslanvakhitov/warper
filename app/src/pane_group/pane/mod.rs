@@ -8,16 +8,10 @@
 //! The [`PaneContent`] interface requires implementers to maintain a [`PaneId`] for their pane.
 //! The [`PaneId`] must be created via a [`PaneView<BackingView>`]. The [`PaneId`] is consequently
 //! used to render a [`PaneView`] which internally renders the pane, including the [`BackingView`].
-pub(super) mod ai_document_pane;
-pub(super) mod ai_fact_pane;
-pub(super) mod code_diff_pane;
-pub(super) mod code_diff_pane_model;
 pub(super) mod code_pane;
-pub(super) mod execution_profile_editor_pane;
 pub(super) mod file_pane;
 pub(super) mod get_started_pane;
 pub(super) mod get_started_view;
-pub(super) mod local_harness_launch;
 pub(super) mod settings_pane;
 pub(super) mod terminal_pane;
 pub mod view;
@@ -30,11 +24,6 @@ use crate::pane_group::focus_state::PaneFocusHandle;
 use crate::pane_group::pane::get_started_view::GetStartedView;
 use crate::view_components::action_button::ActionButton;
 use crate::{
-    ai::execution_profiles::editor::ExecutionProfileEditorView,
-    ai::{
-        ai_document_view::AIDocumentView, blocklist::inline_action::code_diff_view::CodeDiffView,
-        facts::AIFactView,
-    },
     code::view::CodeView,
     menu::MenuItem,
     notebooks::file::FileNotebookView,
@@ -128,14 +117,12 @@ pub(crate) enum IPaneType {
     Terminal,
     File,
     Code,
-    CodeDiff,
+
     Settings,
-    AIFact,
-    AIDocument,
-    ExecutionProfileEditor,
+
     GetStarted,
     Welcome,
-    DeferredPlaceholder,
+
     /// A pane type only for tests.
     #[cfg(test)]
     Dummy,
@@ -147,14 +134,12 @@ impl Display for IPaneType {
             IPaneType::Terminal => write!(f, "Terminal"),
             IPaneType::File => write!(f, "File"),
             IPaneType::Code => write!(f, "Code"),
-            IPaneType::CodeDiff => write!(f, "Code Diff"),
+
             IPaneType::Settings => write!(f, "Settings"),
-            IPaneType::AIFact => write!(f, "AI Fact"),
-            IPaneType::AIDocument => write!(f, "AI Document"),
-            IPaneType::ExecutionProfileEditor => write!(f, "Execution Profile Editor"),
+
             IPaneType::GetStarted => write!(f, "GetStarted"),
             IPaneType::Welcome => write!(f, "Welcome"),
-            IPaneType::DeferredPlaceholder => write!(f, "Placeholder"),
+
             #[cfg(test)]
             IPaneType::Dummy => write!(f, "Dummy"),
         }
@@ -192,31 +177,9 @@ impl PaneId {
         Self::new_from_ctx(IPaneType::Code, ctx)
     }
 
-    /// Creates a [`PaneId`] from a [`ViewContext<PaneView<CodeDiffView>>`]
-    pub fn from_code_diff_pane_ctx(ctx: &ViewContext<PaneView<CodeDiffView>>) -> Self {
-        Self::new_from_ctx(IPaneType::CodeDiff, ctx)
-    }
-
     /// Creates a [`PaneId`] from a [`ViewContext<PaneView<SettingsView>>`]
     pub fn from_settings_pane_ctx(ctx: &ViewContext<PaneView<SettingsView>>) -> Self {
         Self::new_from_ctx(IPaneType::Settings, ctx)
-    }
-
-    /// Creates a [`PaneId`] from a [`ViewContext<PaneView<AIFactView>>`]
-    pub fn from_ai_fact_pane_ctx(ctx: &ViewContext<PaneView<AIFactView>>) -> Self {
-        Self::new_from_ctx(IPaneType::AIFact, ctx)
-    }
-
-    /// Creates a [`PaneId`] from a [`ViewContext<PaneView<AIDocumentView>>`]
-    pub fn from_ai_document_pane_ctx(ctx: &ViewContext<PaneView<AIDocumentView>>) -> Self {
-        Self::new_from_ctx(IPaneType::AIDocument, ctx)
-    }
-
-    /// Creates a [`PaneId`] from a [`ViewContext<PaneView<ExecutionProfileEditorView>>`]
-    pub fn from_execution_profile_editor_pane_ctx(
-        ctx: &ViewContext<PaneView<ExecutionProfileEditorView>>,
-    ) -> Self {
-        Self::new_from_ctx(IPaneType::ExecutionProfileEditor, ctx)
     }
 
     pub fn from_welcome_pane_ctx(ctx: &ViewContext<PaneView<WelcomeView>>) -> Self {
@@ -244,41 +207,12 @@ impl PaneId {
         Self::new(IPaneType::Code, code_pane_view)
     }
 
-    /// Creates a [`PaneId`] from a [`PaneView<CodeDiffView>`] entity ID.
-    pub fn from_code_diff_pane_view(
-        code_diff_pane_view: &ViewHandle<PaneView<CodeDiffView>>,
-    ) -> Self {
-        Self::new(IPaneType::CodeDiff, code_diff_pane_view)
-    }
-
     /// Creates a [`PaneId`] from a [`PaneView<EnvironmentsPageView>`] entity ID.
     /// Creates a [`PaneId`] from a [`PaneView<SettingsView>`] entity ID.
     pub fn from_settings_pane_view(
         settings_pane_view: &ViewHandle<PaneView<SettingsView>>,
     ) -> Self {
         Self::new(IPaneType::Settings, settings_pane_view)
-    }
-
-    /// Creates a [`PaneId`] from a [`PaneView<AIFactView>`] entity ID.
-    pub fn from_ai_fact_pane_view(ai_fact_pane_view: &ViewHandle<PaneView<AIFactView>>) -> Self {
-        Self::new(IPaneType::AIFact, ai_fact_pane_view)
-    }
-
-    /// Creates a [`PaneId`] from a [`PaneView<AIDocumentView>`] entity ID.
-    pub fn from_ai_document_pane_view(
-        ai_document_pane_view: &ViewHandle<PaneView<AIDocumentView>>,
-    ) -> Self {
-        Self::new(IPaneType::AIDocument, ai_document_pane_view)
-    }
-
-    /// Creates a [`PaneId`] from a [`PaneView<ExecutionProfileEditorView>`] entity ID.
-    pub fn from_execution_profile_editor_pane_view(
-        execution_profile_editor_pane_view: &ViewHandle<PaneView<ExecutionProfileEditorView>>,
-    ) -> Self {
-        Self::new(
-            IPaneType::ExecutionProfileEditor,
-            execution_profile_editor_pane_view,
-        )
     }
 
     pub fn from_get_started_pane_view(
@@ -289,14 +223,6 @@ impl PaneId {
 
     pub fn from_welcome_pane_view(welcome_pane_view: &ViewHandle<PaneView<WelcomeView>>) -> Self {
         Self::new(IPaneType::Welcome, welcome_pane_view)
-    }
-
-    #[cfg_attr(not(feature = "local_fs"), allow(dead_code))]
-    pub(super) fn deferred_placeholder_pane_id() -> Self {
-        Self(IPaneId {
-            pane_type: IPaneType::DeferredPlaceholder,
-            pane_view_id: warpui::EntityId::new(),
-        })
     }
 
     /// Creates a [`PaneId`] for a dummy pane.
@@ -337,10 +263,6 @@ impl PaneId {
         matches!(self.0.pane_type, IPaneType::File)
     }
 
-    pub fn is_code_diff_pane(&self) -> bool {
-        matches!(self.0.pane_type, IPaneType::CodeDiff)
-    }
-
     /// Renders the child view backing this pane.
     pub fn render(self, app: &AppContext) -> Box<dyn Element> {
         let mut element = match self.0.pane_type {
@@ -353,29 +275,18 @@ impl PaneId {
             IPaneType::Code => {
                 ChildView::<PaneView<CodeView>>::with_id(self.0.pane_view_id).finish()
             }
-            IPaneType::CodeDiff => {
-                ChildView::<PaneView<CodeDiffView>>::with_id(self.0.pane_view_id).finish()
-            }
+
             IPaneType::Settings => {
                 ChildView::<PaneView<SettingsView>>::with_id(self.0.pane_view_id).finish()
             }
-            IPaneType::AIFact => {
-                ChildView::<PaneView<AIFactView>>::with_id(self.0.pane_view_id).finish()
-            }
-            IPaneType::AIDocument => {
-                ChildView::<PaneView<AIDocumentView>>::with_id(self.0.pane_view_id).finish()
-            }
-            IPaneType::ExecutionProfileEditor => {
-                ChildView::<PaneView<ExecutionProfileEditorView>>::with_id(self.0.pane_view_id)
-                    .finish()
-            }
+
             IPaneType::GetStarted => {
                 ChildView::<PaneView<GetStartedView>>::with_id(self.0.pane_view_id).finish()
             }
             IPaneType::Welcome => {
                 ChildView::<PaneView<WelcomeView>>::with_id(self.0.pane_view_id).finish()
             }
-            IPaneType::DeferredPlaceholder => warpui::elements::Empty::new().finish(),
+
             #[cfg(test)]
             IPaneType::Dummy => warpui::elements::Empty::new().finish(),
         };
@@ -967,11 +878,7 @@ pub enum PaneEvent {
         host_id: HostId,
         indexed_path: String,
     },
-    /// Split the current pane into two. If `initial_query` is `Some` fill the new pane's input with
-    /// its value.
-    NewPaneInAIMode {
-        initial_query: Option<String>,
-    },
+
     ClearHoveredTabIndex,
     #[cfg(feature = "local_fs")]
     ReplaceWithCodePane {

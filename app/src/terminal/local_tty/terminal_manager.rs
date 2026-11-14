@@ -1,4 +1,3 @@
-use crate::ai::aws_credentials::AwsCredentialRefresher as _;
 use crate::terminal::model::terminal_model::ExitReason;
 use crate::terminal::shell::ShellName;
 use crate::terminal::TerminalManager as _;
@@ -18,9 +17,7 @@ use pathfinder_geometry::vector::Vector2F;
 use settings::Setting as _;
 use warpui::{AppContext, ModelContext, ModelHandle, SingletonEntity, ViewHandle, WindowId};
 
-use crate::ai::active_agent_views_model::ActiveAgentViewsModel;
-use crate::ai::blocklist::{InputConfig, SerializedBlockListItem};
-use crate::terminal::view::ConversationRestorationInNewPaneType;
+use crate::persistence::SerializedBlockListItem;
 
 use crate::banner::BannerState;
 use crate::context_chips::current_prompt::CurrentPrompt;
@@ -144,13 +141,11 @@ impl TerminalManager {
         env_vars: HashMap<OsString, OsString>,
         resources: TerminalViewResources,
         restored_blocks: Option<&Vec<SerializedBlockListItem>>,
-        conversation_restoration: Option<ConversationRestorationInNewPaneType>,
         user_default_shell_unsupported_banner_model_handle: ModelHandle<BannerState>,
         initial_size: Vector2F,
         model_event_sender: Option<SyncSender<ModelEvent>>,
         window_id: WindowId,
         chosen_shell: Option<AvailableShell>,
-        initial_input_config: Option<InputConfig>,
         ctx: &mut AppContext,
     ) -> ModelHandle<Box<dyn crate::terminal::TerminalManager>> {
         // Create all the necessary channels we need for communication.
@@ -173,11 +168,6 @@ impl TerminalManager {
         let model_events =
             ctx.add_model(|ctx| ModelEventDispatcher::new(events_rx, sessions.clone(), ctx));
 
-        // Have ApiKeyManager subscribe to block completion events for AWS credential refresh
-        ai::api_keys::ApiKeyManager::handle(ctx).update(ctx, |manager, ctx| {
-            manager.register_model_event_dispatcher(&model_events, ctx);
-        });
-
         let preferred_shell = chosen_shell.unwrap_or_else(|| {
             AvailableShells::handle(ctx)
                 .read(ctx, |shells, ctx| shells.get_user_preferred_shell(ctx))
@@ -185,20 +175,7 @@ impl TerminalManager {
 
         let wsl_name_or_shell_starter = ShellStarter::init(preferred_shell.clone());
 
-        // If we have explicit restored_blocks, prioritize those (these come from db on startup).
-        // Otherwise if there's a conversation we're restoring, get blocks from those.
-        let all_restored_blocks =
-            restored_blocks
-                .cloned()
-                .or_else(|| match &conversation_restoration {
-                    Some(ConversationRestorationInNewPaneType::Historical {
-                        conversation, ..
-                    })
-                    | Some(ConversationRestorationInNewPaneType::Forked { conversation, .. }) => {
-                        Some(conversation.to_serialized_blocklist_items())
-                    }
-                    _ => None,
-                });
+        let all_restored_blocks = restored_blocks.cloned();
 
         // Create the terminal model with all restored blocks
         let model = terminal_manager::create_terminal_model(
@@ -241,23 +218,7 @@ impl TerminalManager {
         let has_restored_command_blocks = all_restored_blocks
             .as_ref()
             .is_some_and(|blocks| !blocks.is_empty());
-        let has_conversation_restoration = matches!(
-            &conversation_restoration,
-            Some(
-                ConversationRestorationInNewPaneType::Startup { .. }
-                    | ConversationRestorationInNewPaneType::Historical { .. }
-            )
-        );
-        let is_historical = matches!(
-            &conversation_restoration,
-            Some(ConversationRestorationInNewPaneType::Historical { .. })
-        );
-        // Create the view.
         let cloned_model = model.clone();
-        let should_use_live_appearance = conversation_restoration
-            .as_ref()
-            .map(|restoration| restoration.should_use_live_appearance())
-            .unwrap_or(false);
         let view = ctx.add_typed_action_view(window_id, |ctx| {
             let size_info = cloned_model.lock().block_list().size().to_owned();
             TerminalView::new(
@@ -270,25 +231,16 @@ impl TerminalManager {
                 colors,
                 model_event_sender.clone(),
                 prompt_type.clone(),
-                initial_input_config,
-                conversation_restoration,
                 Some(inactive_pty_reads_rx.clone()),
                 ctx,
             )
         });
 
-        // We need to append the session restoration separator to the block list if there are any
-        // restored blocks (command blocks or AI conversations) to show.
-        // Add separator if we have restored command blocks or we're restoring from historical or startup.
-        let should_show_restoration_separator = (has_conversation_restoration
-            || has_restored_command_blocks)
-            && !should_use_live_appearance;
-
-        if should_show_restoration_separator {
+        if has_restored_command_blocks {
             model
                 .lock()
                 .block_list_mut()
-                .append_session_restoration_separator_to_block_list(is_historical);
+                .append_session_restoration_separator_to_block_list();
         }
 
         wire_up_pty_controller_with_view(
@@ -304,12 +256,6 @@ impl TerminalManager {
             if let SessionSettingsChangedEvent::HonorPS1 { .. } = event {
                 let _ = *SessionSettings::as_ref(ctx).honor_ps1;
             }
-        });
-
-        let terminal_view_id = view.id();
-        let agent_view_controller = view.as_ref(ctx).agent_view_controller().clone();
-        ActiveAgentViewsModel::handle(ctx).update(ctx, |model, ctx| {
-            model.register_agent_view_controller(&agent_view_controller, terminal_view_id, ctx);
         });
 
         #[cfg(windows)]
@@ -441,10 +387,7 @@ impl TerminalManager {
                 executable_path: shell_starter.logical_shell_path().to_owned(),
                 shell_type: shell_starter.shell_type(),
             },
-            ShellStarter::DockerSandbox(docker_starter) => ShellLaunchData::Executable {
-                executable_path: docker_starter.logical_shell_path().to_owned(),
-                shell_type: docker_starter.shell_type(),
-            },
+
             ShellStarter::Wsl(shell_starter) => ShellLaunchData::WSL {
                 distro: shell_starter.distribution().to_owned(),
             },
@@ -464,7 +407,7 @@ impl TerminalManager {
         // args. For zsh and MSYS2, enqueue_init_script injects this same ID.
         let generated_session_id = match &shell_starter {
             ShellStarter::Direct(starter) | ShellStarter::MSYS2(starter) => starter.session_id(),
-            ShellStarter::DockerSandbox(starter) => starter.session_id(),
+
             ShellStarter::Wsl(starter) => starter.session_id(),
         };
         self.model()

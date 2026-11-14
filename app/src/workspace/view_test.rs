@@ -1,17 +1,10 @@
 use super::*;
-use crate::ai::blocklist::{BlocklistAIHistoryModel, BlocklistAIPermissions};
-use crate::ai::document::ai_document_model::AIDocumentModel;
-use crate::ai::execution_profiles::profiles::AIExecutionProfilesModel;
-use crate::ai::llms::LLMPreferences;
-use crate::ai::outline::RepoOutlines;
-use crate::ai::persisted_workspace::PersistedWorkspace;
-use crate::ai::restored_conversations::RestoredAgentConversations;
-use crate::ai::skills::SkillManager;
 use crate::context_chips::prompt::Prompt;
 use crate::editor::Event;
 use crate::gpu_state::GPUState;
 use crate::network::NetworkStatus;
 use crate::pane_group::{Direction, PaneGroupAction, PaneId};
+use crate::project_workspaces::PersistedWorkspace;
 use crate::suggestions::ignored_suggestions_model::IgnoredSuggestionsModel;
 #[cfg(feature = "local_fs")]
 use crate::user_config::tab_configs_dir;
@@ -32,17 +25,12 @@ use crate::settings_view::DisplayCount;
 use crate::system::SystemStats;
 use crate::tab_configs::tab_config::{TabConfigPaneNode, TabConfigPaneType};
 use crate::terminal::history::History;
-use crate::terminal::keys::TerminalKeybindings;
+
 #[cfg(windows)]
 use crate::util::traffic_lights::windows::RendererState;
-use crate::workspaces::user_workspaces::UserWorkspaces;
 
 use crate::terminal::local_tty::spawner::PtySpawner;
 
-use crate::ai::active_agent_views_model::ActiveAgentViewsModel;
-use crate::ai::mcp::{
-    templatable_manager::TemplatableMCPServerManager, FileBasedMCPManager, FileMCPWatcher,
-};
 use crate::terminal::cli_agent_sessions::CLIAgentSessionsModel;
 use crate::test_util::settings::initialize_settings_for_tests;
 use crate::undo_close::UndoCloseSettings;
@@ -51,8 +39,6 @@ use crate::workflows::local_workflows::LocalWorkflows;
 use crate::workspace::OneTimeModalModel;
 use crate::{experiments, workspace, GlobalResourceHandlesProvider};
 
-use ai::index::full_source_code_embedding::manager::CodebaseIndexManager;
-use ai::project_context::model::ProjectContextModel;
 use pane_group::{SplitPaneState, TerminalPaneId};
 use terminal::view::ActiveSessionState;
 use warp_editor::editor::NavigationKey;
@@ -67,7 +53,7 @@ fn initialize_app(app: &mut App) {
     app.add_singleton_model(|_| Prompt::mock());
     app.add_singleton_model(|_| NetworkStatus::new());
     app.add_singleton_model(|_| SystemStats::new());
-    app.add_singleton_model(UserWorkspaces::default_mock);
+
     app.add_singleton_model(|_| Appearance::mock());
     app.add_singleton_model(AppearanceManager::new);
     app.add_singleton_model(|_| DisplayCount::mock());
@@ -79,30 +65,18 @@ fn initialize_app(app: &mut App) {
     app.add_singleton_model(UndoCloseStack::new);
     app.add_singleton_model(|_| ActiveSession::default());
     app.add_singleton_model(|_| WorkspaceToastStack);
-    app.add_singleton_model(TerminalKeybindings::new);
-    app.add_singleton_model(|_| BlocklistAIHistoryModel::new_for_test());
+
     app.add_singleton_model(|_| CLIAgentSessionsModel::new());
-    app.add_singleton_model(|_| ActiveAgentViewsModel::new());
-    app.add_singleton_model(LLMPreferences::new);
+
     app.add_singleton_model(|_| SettingsPaneManager::new());
-    // Initialize file-based MCP dependencies.
+    // Register project directory watchers.
     app.add_singleton_model(|_| DetectedRepositories::default());
     app.add_singleton_model(HomeDirectoryWatcher::new_for_test);
     app.add_singleton_model(DirectoryWatcher::new);
     app.add_singleton_model(WarpManagedPathsWatcher::new_for_testing);
-    app.add_singleton_model(FileMCPWatcher::new);
-    app.add_singleton_model(|_| FileBasedMCPManager::default());
 
-    app.add_singleton_model(|_| TemplatableMCPServerManager::default());
-    app.add_singleton_model(|ctx| {
-        AIExecutionProfilesModel::new(&crate::LaunchMode::new_for_unit_test(), ctx)
-    });
-    app.add_singleton_model(RepoOutlines::new_for_test);
-    #[cfg(feature = "voice_input")]
-    app.add_singleton_model(voice_input::VoiceInput::new);
-    app.add_singleton_model(BlocklistAIPermissions::new);
     app.add_singleton_model(|_| GPUState::new());
-    app.add_singleton_model(|_| RestoredAgentConversations::new(vec![]));
+
     app.add_singleton_model(OneTimeModalModel::new);
     let global_resource_handles = GlobalResourceHandles::mock(app);
     app.add_singleton_model(|_| GlobalResourceHandlesProvider::new(global_resource_handles));
@@ -127,23 +101,9 @@ fn initialize_app(app: &mut App) {
 
     app.update(experiments::init);
 
-    app.add_singleton_model(|ctx| {
-        CodebaseIndexManager::new_for_test(
-            std::sync::Arc::new(
-                ::ai::index::full_source_code_embedding::store_client::MockStoreClient,
-            ),
-            ctx,
-        )
-    });
     app.add_singleton_model(|ctx| PersistedWorkspace::new(vec![], HashMap::new(), None, ctx));
-    app.add_singleton_model(|_| ProjectContextModel::default());
-    app.add_singleton_model(AIDocumentModel::new);
-    app.add_singleton_model(|_| History::new(vec![]));
 
-    // Registered after `HomeDirectoryWatcher`, `DirectoryWatcher`,
-    // `WarpManagedPathsWatcher`, `DetectedRepositories`, and `RepoMetadataModel`
-    // because `SkillWatcher::new` subscribes to all of them.
-    app.add_singleton_model(SkillManager::new);
+    app.add_singleton_model(|_| History::new(vec![]));
 
     // Make sure to initialize the keybindings so that they are available for subviews
     app.update(workspace::init);

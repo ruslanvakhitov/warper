@@ -7,10 +7,8 @@ use warpui::platform::FullscreenState;
 
 use warpui::AppContext;
 
-use crate::ai::agent::conversation::AIConversationId;
-use crate::ai::blocklist::InputConfig;
-use crate::ai::blocklist::SerializedBlockListItem;
 use crate::code::editor_management::CodeSource;
+use crate::persistence::SerializedBlockListItem;
 use crate::root_view::quake_mode_window_id;
 use crate::settings_view::SettingsSection;
 use crate::tab::SelectedTabColor;
@@ -25,7 +23,6 @@ pub struct AppState {
     pub windows: Vec<WindowSnapshot>,
     pub active_window_index: Option<usize>,
     pub block_lists: Arc<HashMap<PaneUuid, Vec<SerializedBlockListItem>>>,
-    pub running_mcp_servers: Vec<uuid::Uuid>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -112,13 +109,10 @@ pub struct LeafSnapshot {
 pub enum LeafContents {
     Terminal(TerminalPaneSnapshot),
     Notebook(NotebookPaneSnapshot),
-    AIDocument(AIDocumentPaneSnapshot),
     Code(CodePaneSnapShot),
     EnvVarCollection(EnvVarCollectionPaneSnapshot),
     Workflow(WorkflowPaneSnapshot),
     Settings(SettingsPaneSnapshot),
-    AIFact(AIFactPaneSnapshot),
-    ExecutionProfileEditor,
     CodeReview(CodeReviewPaneSnapshot),
     /// An entrypoint pane type to launch other pane types from a search palette. The default view
     /// when creating a tab.
@@ -144,13 +138,10 @@ impl LeafContents {
         match self {
             LeafContents::Terminal(_)
             | LeafContents::Notebook(_)
-            | LeafContents::AIDocument(_)
             | LeafContents::Code(_)
             | LeafContents::EnvVarCollection(_)
             | LeafContents::Workflow(_)
             | LeafContents::Settings(_)
-            | LeafContents::AIFact(_)
-            | LeafContents::ExecutionProfileEditor
             | LeafContents::CodeReview(_)
             | LeafContents::Welcome { .. }
             | LeafContents::GetStarted => true,
@@ -166,13 +157,6 @@ pub struct TerminalPaneSnapshot {
     pub shell_launch_data: Option<ShellLaunchData>,
     pub is_active: bool,
     pub is_read_only: bool,
-    pub input_config: Option<InputConfig>,
-    pub llm_model_override: Option<String>,
-    pub active_profile_id: Option<SyncId>,
-    pub conversation_ids_to_restore: Vec<AIConversationId>,
-    /// The active conversation ID if the agent view was open in fullscreen mode.
-    /// When `Some`, the agent view should be restored to fullscreen for this conversation.
-    pub active_conversation_id: Option<AIConversationId>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -187,16 +171,6 @@ pub enum NotebookPaneSnapshot {
         /// The path to the local file that was open in this pane. This may be `None` if
         /// the pane contained an unreadable file.
         path: Option<PathBuf>,
-    },
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum AIDocumentPaneSnapshot {
-    Local {
-        document_id: String,
-        version: i32,
-        content: Option<String>,
-        title: Option<String>,
     },
 }
 
@@ -240,11 +214,6 @@ pub enum SettingsPaneSnapshot {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum AIFactPaneSnapshot {
-    Personal,
-}
-
-#[derive(Clone, Debug, PartialEq)]
 pub enum CodeReviewPaneSnapshot {
     Local {
         terminal_uuid: Vec<u8>,
@@ -256,7 +225,6 @@ pub enum CodeReviewPaneSnapshot {
 pub enum LeftPanelDisplayedTab {
     FileTree,
     GlobalSearch,
-    ConversationListView,
 }
 
 impl From<ToolPanelView> for LeftPanelDisplayedTab {
@@ -332,7 +300,6 @@ pub fn get_app_state(app: &AppContext) -> AppState {
         windows,
         active_window_index,
         block_lists: Default::default(),
-        running_mcp_servers: Vec::new(),
     }
 }
 

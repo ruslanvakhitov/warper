@@ -1,10 +1,10 @@
 mod accessibility;
-pub mod ai;
 mod alias_expansion;
 pub mod app_icon;
 pub mod app_installation_detection;
 mod block_visibility;
 mod changelog;
+pub mod cli_agents;
 mod code;
 mod debug;
 mod editor;
@@ -39,10 +39,10 @@ mod code_tests;
 mod schema_validation_tests;
 
 pub use accessibility::*;
-pub use ai::*;
 pub use alias_expansion::*;
 pub use block_visibility::*;
 pub use changelog::*;
+pub use cli_agents::*;
 pub use code::*;
 pub use debug::*;
 pub use editor::*;

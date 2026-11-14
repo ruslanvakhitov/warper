@@ -30,7 +30,6 @@ log = { workspace = true }
 lsp-types = "0.97.0"
 node_runtime = { workspace = true }
 nix = { workspace = true }
-repo_metadata.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 sha2 = { workspace = true }

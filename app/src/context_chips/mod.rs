@@ -182,8 +182,6 @@ pub enum ContextChipKind {
     #[serde(alias = "RemoteLogin")]
     Ssh,
     Subshell,
-    /// A chip that shows the plan and todo list for the current conversation.
-    AgentPlanAndTodoList,
 }
 
 impl ContextChipKind {
@@ -354,17 +352,12 @@ impl ContextChipKind {
                 builtins::subshell,
                 RefreshConfig::OnDemandOnly,
             )),
-            Self::AgentPlanAndTodoList => Some(ContextChip::builtin(
-                "Agent Plan and Todo List",
-                |_| Some(ChipValue::Text(String::new())),
-                RefreshConfig::OnDemandOnly,
-            )),
         }
     }
 
     /// Whether the context chip has a copyable value.
     pub fn is_copyable(&self) -> bool {
-        !matches!(self, Self::AgentPlanAndTodoList)
+        true
     }
 
     /// Returns a generator to be used for the first fetch of
@@ -406,17 +399,12 @@ impl ContextChipKind {
             Self::SvnDirtyItems => ChipValue::Text("3".to_string()),
             Self::Ssh => ChipValue::Text("alice@127.0.0.1".to_string()),
             Self::Subshell => ChipValue::Text("bash".to_string()),
-            Self::AgentPlanAndTodoList => ChipValue::Text("Plan and Todo List".to_string()),
         }
     }
 
-    pub fn default_styles(
-        &self,
-        appearance: &Appearance,
-        is_in_agent_view: bool,
-    ) -> RendererStyles {
-        if is_in_agent_view {
-            return RendererStyles::new(agent_view_chip_color(appearance), Properties::default());
+    pub fn default_styles(&self, appearance: &Appearance, is_cli_footer: bool) -> RendererStyles {
+        if is_cli_footer {
+            return RendererStyles::new(cli_footer_chip_color(appearance), Properties::default());
         }
         let prompt_colors: PromptColors = appearance.theme().clone().into();
 
@@ -438,7 +426,7 @@ impl ContextChipKind {
             Self::SvnDirtyItems => prompt_colors.input_prompt_svn,
             Self::Ssh => prompt_colors.input_prompt_ssh,
             Self::Subshell => prompt_colors.input_prompt_subshell,
-            Self::AgentPlanAndTodoList => prompt_colors.input_prompt_agent_mode_hint,
+
             Self::Custom { .. } => ColorU::new(255, 255, 255, 255),
         };
 
@@ -531,17 +519,10 @@ impl ContextChipKind {
             Self::GitDiffStats | Self::SvnDirtyItems => Some(Icon::File),
             Self::GithubPullRequest => Some(Icon::Github),
             Self::KubernetesContext => Some(Icon::Globe),
-            Self::AgentPlanAndTodoList => Some(Icon::CheckSkinny),
+
             Self::Custom { .. } => None,
         }
     }
-}
-
-/// Returns the set of chips that are available for use in the agent footer.
-pub fn agent_footer_available_chips() -> Vec<ContextChipKind> {
-    let mut chips = available_chips();
-    chips.push(ContextChipKind::AgentPlanAndTodoList);
-    chips
 }
 
 /// TODO: this needs to also fetch the custom chips from sqlite
@@ -624,7 +605,7 @@ pub fn chips_to_string(chips: impl Iterator<Item = ChipResult>) -> String {
     prompt
 }
 
-pub(crate) fn agent_view_chip_color(appearance: &Appearance) -> ColorU {
+pub(crate) fn cli_footer_chip_color(appearance: &Appearance) -> ColorU {
     let theme = appearance.theme();
     theme
         .sub_text_color(blended_colors::neutral_1(theme).into())
@@ -638,10 +619,10 @@ pub fn render_text_from_kind(
     text: &mut Text,
     kind: ContextChipKind,
     value: String,
-    is_in_agent_view: bool,
+    is_cli_footer: bool,
     appearance: &Appearance,
 ) {
-    let styles = kind.default_styles(appearance, is_in_agent_view);
+    let styles = kind.default_styles(appearance, is_cli_footer);
     let prompt_colors: PromptColors = appearance.theme().clone().into();
 
     // Keep in sync with `ContextChipKind::display_value`
@@ -649,7 +630,7 @@ pub fn render_text_from_kind(
         ContextChipKind::ShellGitBranch => {
             text.add_text_with_highlights(
                 "git:(",
-                if is_in_agent_view {
+                if is_cli_footer {
                     styles.value_color
                 } else {
                     prompt_colors.input_prompt_git
@@ -660,7 +641,7 @@ pub fn render_text_from_kind(
         ContextChipKind::SvnBranch => {
             text.add_text_with_highlights(
                 "svn:(",
-                if is_in_agent_view {
+                if is_cli_footer {
                     styles.value_color
                 } else {
                     prompt_colors.input_prompt_svn
@@ -671,7 +652,7 @@ pub fn render_text_from_kind(
         ContextChipKind::SvnDirtyItems => {
             text.add_text_with_highlights(
                 "±",
-                if is_in_agent_view {
+                if is_cli_footer {
                     styles.value_color
                 } else {
                     prompt_colors.input_prompt_svn
@@ -682,12 +663,12 @@ pub fn render_text_from_kind(
         ContextChipKind::KubernetesContext => {
             text.add_text_with_highlights(
                 "⎈ ",
-                if is_in_agent_view {
+                if is_cli_footer {
                     styles.value_color
                 } else {
                     prompt_colors.input_prompt_kubernetes
                 },
-                if is_in_agent_view {
+                if is_cli_footer {
                     styles.font_properties
                 } else {
                     Properties::default().weight(Weight::Thin)
@@ -703,7 +684,7 @@ pub fn render_text_from_kind(
         ContextChipKind::ShellGitBranch => {
             text.add_text_with_highlights(
                 ")",
-                if is_in_agent_view {
+                if is_cli_footer {
                     styles.value_color
                 } else {
                     prompt_colors.input_prompt_git
@@ -714,7 +695,7 @@ pub fn render_text_from_kind(
         ContextChipKind::SvnBranch => {
             text.add_text_with_highlights(
                 ")",
-                if is_in_agent_view {
+                if is_cli_footer {
                     styles.value_color
                 } else {
                     prompt_colors.input_prompt_svn

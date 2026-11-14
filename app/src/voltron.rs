@@ -82,7 +82,6 @@ pub enum VoltronFeatureViewHandle {
 /// Enum used to identify the item in Voltron.
 #[derive(Clone, PartialEq, Eq, Copy, Debug)]
 pub enum VoltronItem {
-    AiCommands,
     Workflows,
     History,
 }
@@ -90,7 +89,6 @@ pub enum VoltronItem {
 impl VoltronItem {
     pub fn as_str(&self) -> &'static str {
         match self {
-            VoltronItem::AiCommands => "A.I. Command Search",
             VoltronItem::Workflows => "Workflows",
             VoltronItem::History => "History Search",
         }

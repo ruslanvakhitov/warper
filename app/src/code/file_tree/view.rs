@@ -2210,6 +2210,7 @@ impl FileTreeView {
         &self,
         item: &FileTreeItem,
         id: &FileTreeIdentifier,
+        has_cli_agent: bool,
     ) -> Vec<MenuItem<FileTreeAction>> {
         let is_remote = self.is_remote_item(id);
 
@@ -2303,7 +2304,7 @@ impl FileTreeView {
             }
         }
 
-        if self.has_terminal_session {
+        if has_cli_agent {
             if !items.is_empty() {
                 items.push(MenuItem::Separator);
             }
@@ -2932,7 +2933,10 @@ impl TypedActionView for FileTreeView {
                 self.context_menu_state = Some(ContextMenuState {
                     position: *position,
                 });
-                let menu_items = self.context_menu_items(item, id);
+                let has_cli_agent =
+                    crate::workspace::util::get_context_target_terminal_view(ctx.window_id(), ctx)
+                        .is_some();
+                let menu_items = self.context_menu_items(item, id, has_cli_agent);
                 self.context_menu.update(ctx, move |menu, ctx| {
                     menu.set_items(menu_items, ctx);
                     ctx.notify();

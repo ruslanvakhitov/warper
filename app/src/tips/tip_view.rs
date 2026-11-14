@@ -146,12 +146,7 @@ impl TipsView {
                 TipAction::HistorySearch,
                 ctx,
             ),
-            TipItem::new(
-                "AI Command Search".to_string(),
-                "Generate shell commands with natural language.".to_string(),
-                TipAction::AiCommandSearch,
-                ctx,
-            ),
+
             TipItem::new(
                 "Theme Picker".to_string(),
                 "Make Warper your own by choosing a built-in theme. Or create your own.".to_string(),

@@ -17,7 +17,6 @@ use crate::{
     terminal::{
         available_shells::AvailableShell,
         bootstrap::{generate_session_id, init_shell_script_for_shell},
-        local_tty::docker_sandbox::DockerSandboxShellStarter,
         shell::{ShellName, ShellType},
         ShellLaunchData,
     },
@@ -61,11 +60,6 @@ pub enum ShellStarter {
     /// Bootstrap the shell through WSL.
     Wsl(WslShellStarter),
     MSYS2(DirectShellStarter),
-    /// Bootstrap a shell running inside a Docker sandbox via `sbx run`.
-    /// The final `sbx` args are computed at PTY spawn time so we can include
-    /// the resolved workspace path, read-only init-script mount, and base
-    /// Docker image (`--template <base_image>`).
-    DockerSandbox(DockerSandboxShellStarter),
 }
 
 impl ShellStarter {
@@ -134,30 +128,6 @@ impl ShellStarter {
                             shell_type,
                             session_id,
                         }))
-                        .into(),
-                    );
-                }
-                ShellLaunchData::DockerSandbox {
-                    sbx_path,
-                    base_image,
-                } => {
-                    // The sandbox runs `sbx` on the host; the actual shell
-                    // lives inside the container (conventionally bash). We
-                    // still thread a `DirectShellStarter` with `shell_type =
-                    // Bash` through so existing code that asks for the
-                    // "shell type" of the session gets a sensible answer.
-                    return Some(
-                        ShellStarterSource::Override(ShellStarter::DockerSandbox(
-                            DockerSandboxShellStarter::new(
-                                DirectShellStarter {
-                                    args: Vec::new(),
-                                    shell_path: sbx_path,
-                                    shell_type: ShellType::Bash,
-                                    session_id: generate_session_id(),
-                                },
-                                base_image,
-                            ),
-                        ))
                         .into(),
                     );
                 }
@@ -273,7 +243,7 @@ impl ShellStarter {
     pub fn shell_type(&self) -> ShellType {
         match self {
             ShellStarter::Direct(starter) | ShellStarter::MSYS2(starter) => starter.shell_type(),
-            ShellStarter::DockerSandbox(starter) => starter.shell_type(),
+
             ShellStarter::Wsl(starter) => starter.shell_type(),
         }
     }
@@ -282,14 +252,10 @@ impl ShellStarter {
         matches!(self, ShellStarter::MSYS2(_))
     }
 
-    pub fn is_docker_sandbox(&self) -> bool {
-        matches!(self, ShellStarter::DockerSandbox(_))
-    }
-
     fn display_name(&self) -> &str {
         match self {
             Self::Direct(starter) => starter.display_name(),
-            Self::DockerSandbox(starter) => starter.display_name(),
+
             Self::Wsl(starter) => starter.distribution(),
             Self::MSYS2(starter) => {
                 if starter
@@ -312,9 +278,7 @@ impl ShellStarter {
             Self::Direct(starter) | Self::MSYS2(starter) => {
                 starter.logical_shell_path().to_string_lossy().into_owned()
             }
-            Self::DockerSandbox(starter) => {
-                starter.logical_shell_path().to_string_lossy().into_owned()
-            }
+
             Self::Wsl(starter) => starter.distribution().to_owned(),
         }
     }

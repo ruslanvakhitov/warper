@@ -35,7 +35,6 @@ fn single_tab_snapshot(root: PaneNodeSnapshot) -> AppState {
         }],
         active_window_index: Some(0),
         block_lists: Default::default(),
-        running_mcp_servers: Default::default(),
     }
 }
 
@@ -56,7 +55,6 @@ fn multi_tab_snapshot(active_tab_index: usize, tabs: Vec<TabSnapshot>) -> AppSta
         }],
         active_window_index: Some(0),
         block_lists: Default::default(),
-        running_mcp_servers: Default::default(),
     }
 }
 
@@ -90,11 +88,6 @@ fn test_config_from_snapshot_flattens_single_pane() {
                         is_active: true,
                         is_read_only: false,
                         shell_launch_data: None,
-                        input_config: None,
-                        llm_model_override: None,
-                        active_profile_id: None,
-                        conversation_ids_to_restore: vec![],
-                        active_conversation_id: None,
                     }),
                 }),
             ),
@@ -130,11 +123,6 @@ fn test_config_from_snapshot_filters_panes() {
                         is_active: true,
                         is_read_only: false,
                         shell_launch_data: None,
-                        input_config: None,
-                        llm_model_override: None,
-                        active_profile_id: None,
-                        conversation_ids_to_restore: vec![],
-                        active_conversation_id: None,
                     }),
                 }),
             ),
@@ -160,11 +148,6 @@ fn test_config_from_snapshot_filters_panes() {
                         is_active: true,
                         is_read_only: false,
                         shell_launch_data: None,
-                        input_config: None,
-                        llm_model_override: None,
-                        active_profile_id: None,
-                        conversation_ids_to_restore: vec![],
-                        active_conversation_id: None,
                     }),
                 }),
             ),
@@ -241,11 +224,6 @@ fn test_config_with_active_tab_index() {
                                 is_active: true,
                                 is_read_only: false,
                                 shell_launch_data: None,
-                                input_config: None,
-                                llm_model_override: None,
-                                active_profile_id: None,
-                                conversation_ids_to_restore: vec![],
-                                active_conversation_id: None,
                             }),
                         }),
                     )],
@@ -304,11 +282,6 @@ fn test_config_with_active_tab_index_and_filtered_tabs() {
                                 is_active: true,
                                 is_read_only: false,
                                 shell_launch_data: None,
-                                input_config: None,
-                                llm_model_override: None,
-                                active_profile_id: None,
-                                conversation_ids_to_restore: vec![],
-                                active_conversation_id: None,
                             }),
                         }),
                     )],
@@ -345,11 +318,6 @@ fn test_config_with_active_tab_being_filtered() {
                                 is_active: true,
                                 is_read_only: false,
                                 shell_launch_data: None,
-                                input_config: None,
-                                llm_model_override: None,
-                                active_profile_id: None,
-                                conversation_ids_to_restore: vec![],
-                                active_conversation_id: None,
                             }),
                         }),
                     )],
@@ -383,4 +351,51 @@ fn test_config_with_active_tab_being_filtered() {
 
     let template = LaunchConfig::from_snapshot("Test".into(), &state);
     assert_eq!(template.windows[0].active_tab_index, None)
+}
+
+#[test]
+fn removed_agent_launch_modes_report_supported_terminal_mode() {
+    for mode in ["agent", "cloud"] {
+        let node = serde_json::json!({"cwd": "/tmp", "pane_mode": mode});
+        let error = serde_json::from_value::<PaneTemplateType>(node)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains(mode), "{error}");
+        assert!(error.contains("terminal"), "{error}");
+    }
+}
+
+#[test]
+fn terminal_launch_layouts_keep_commands_shells_and_splits() {
+    let layout = serde_json::json!({
+        "split_direction": "vertical",
+        "panes": [
+            {"cwd": "/tmp", "commands": [{"exec": "codex"}], "shell": "zsh"},
+            {"cwd": "/tmp", "pane_mode": "terminal"}
+        ]
+    });
+    let parsed: PaneTemplateType = serde_json::from_value(layout).unwrap();
+    let PaneTemplateType::PaneBranchTemplate {
+        split_direction,
+        panes,
+    } = parsed
+    else {
+        panic!("Expected a split layout");
+    };
+    assert_eq!(split_direction, super::SplitDirection::Vertical);
+    assert_eq!(panes.len(), 2);
+    let PaneTemplateType::PaneTemplate {
+        cwd,
+        commands,
+        shell,
+        pane_mode,
+        ..
+    } = &panes[0]
+    else {
+        panic!("Expected a terminal pane");
+    };
+    assert_eq!(cwd, &PathBuf::from("/tmp"));
+    assert_eq!(commands[0].exec, "codex");
+    assert_eq!(shell.as_deref(), Some("zsh"));
+    assert_eq!(*pane_mode, PaneMode::Terminal);
 }

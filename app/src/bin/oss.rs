@@ -15,7 +15,6 @@ fn main() -> Result<()> {
         ChannelConfig {
             app_id: AppId::new("dev", "warper", "Warper"),
             logfile_name: "warper.log".into(),
-            mcp_static_config: None,
         },
     );
     if cfg!(debug_assertions) {

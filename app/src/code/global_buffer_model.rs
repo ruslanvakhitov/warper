@@ -492,40 +492,6 @@ impl GlobalBufferModel {
         })
     }
 
-    /// Rename a file and save its content via FileModel.
-    #[cfg(feature = "local_fs")]
-    pub fn rename_and_save(
-        &self,
-        file_id: FileId,
-        new_path: PathBuf,
-        content: String,
-        version: ContentVersion,
-        ctx: &mut ModelContext<Self>,
-    ) -> Result<(), FileSaveError> {
-        FileModel::handle(ctx).update(ctx, |file_model, ctx| {
-            file_model.rename_and_save(file_id, new_path, content, version, ctx)
-        })
-    }
-
-    /// Delete a file via FileModel.
-    #[cfg(feature = "local_fs")]
-    pub fn delete(
-        &self,
-        file_id: FileId,
-        version: ContentVersion,
-        ctx: &mut ModelContext<Self>,
-    ) -> Result<(), FileSaveError> {
-        FileModel::handle(ctx).update(ctx, |file_model, ctx| {
-            file_model.delete(file_id, version, ctx)
-        })
-    }
-
-    /// Remove a tracked buffer, cleaning up FileModel and LSP state.
-    /// Used when a new file is deleted before ever being saved to a permanent location.
-    pub fn remove(&mut self, file_id: FileId, ctx: &mut ModelContext<Self>) {
-        self.cleanup_file_id(file_id, ctx);
-    }
-
     /// Look up the file path for a tracked buffer.
     pub fn file_path(&self, file_id: FileId) -> Option<&Path> {
         self.path_to_id

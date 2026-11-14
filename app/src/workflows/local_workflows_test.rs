@@ -23,7 +23,7 @@ fn test_filter_global_workflows_for_session() {
             local_workflows
                 .global_workflows(Some(Arc::new(session)))
                 .for_each(|workflow| {
-                    let command = workflow.command().expect("Workflow is Command Workflow");
+                    let command = workflow.command();
                     assert!(
                         command.starts_with("tr")
                             || command.starts_with(|c: char| c.is_ascii_punctuation()),

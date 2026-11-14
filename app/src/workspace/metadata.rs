@@ -7,11 +7,9 @@ pub enum PaletteSource {
     CtrlTab { shift_pressed_initially: bool },
     QuitModal,
     IntegrationTest,
-    ConversationManager,
     ContextChip,
     PaneHeader,
     RecentsViewAll,
-    AgentTip,
     TitleBarSearchBar,
 }
 

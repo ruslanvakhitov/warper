@@ -1,9 +1,6 @@
-use super::{
-    AttachedReviewComment, AttachedReviewCommentTarget, CommentId, PendingImportedReviewComment,
-};
-use crate::{code::editor::EditorReviewComment, code_review::diff_state::DiffMode};
-use std::{collections::HashMap, path::Path};
-use warp_core::features::FeatureFlag;
+use super::{AttachedReviewComment, AttachedReviewCommentTarget, CommentId};
+use crate::code::editor::EditorReviewComment;
+use std::path::Path;
 use warp_editor::render::model::LineCount;
 use warpui::{Entity, ModelContext};
 
@@ -16,9 +13,6 @@ pub enum ReviewCommentBatchEvent {
 pub struct ReviewCommentBatch {
     /// Comments that are attached to local editors and visible to the user.
     pub comments: Vec<AttachedReviewComment>,
-    /// Imported comments waiting for editors and diffs to load before they can be displayed to the user.
-    /// Comments are grouped by base branch.
-    pending_imported_comments: HashMap<DiffMode, Vec<PendingImportedReviewComment>>,
 }
 
 impl Entity for ReviewCommentBatch {
@@ -27,10 +21,7 @@ impl Entity for ReviewCommentBatch {
 
 impl ReviewCommentBatch {
     pub fn from_comments(comments: Vec<AttachedReviewComment>) -> Self {
-        Self {
-            comments,
-            pending_imported_comments: HashMap::new(),
-        }
+        Self { comments }
     }
 
     pub(crate) fn get_review_comment_by_id(&self, id: CommentId) -> Option<&AttachedReviewComment> {
@@ -96,13 +87,7 @@ impl ReviewCommentBatch {
 
     pub(crate) fn editor_comments_for_file(&self, file: &Path) -> Vec<EditorReviewComment> {
         self.file_comments(file)
-            .filter(|comment| {
-                if FeatureFlag::PRCommentsSlashCommand.is_enabled() {
-                    !comment.outdated
-                } else {
-                    true
-                }
-            })
+            .filter(|comment| !comment.outdated)
             .filter_map(|comment| EditorReviewComment::try_from(comment.clone()).ok())
             .collect()
     }
@@ -115,21 +100,6 @@ impl ReviewCommentBatch {
         self.upsert_comments_inner(vec![comment]);
         ctx.emit(ReviewCommentBatchEvent::Changed {
             should_reposition_comments: false,
-        });
-    }
-
-    #[cfg(feature = "local_fs")]
-    pub(crate) fn upsert_imported_comments(
-        &mut self,
-        comments: Vec<AttachedReviewComment>,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        if comments.is_empty() {
-            return;
-        }
-        self.upsert_comments_inner(comments);
-        ctx.emit(ReviewCommentBatchEvent::Changed {
-            should_reposition_comments: true,
         });
     }
 
@@ -188,37 +158,6 @@ impl ReviewCommentBatch {
         ctx.emit(ReviewCommentBatchEvent::Changed {
             should_reposition_comments: false,
         });
-    }
-
-    /// Stores imported comments that are waiting for diffs and editors to load before they can be flattened,
-    /// relocated, and inserted into `comments`.
-    #[cfg(feature = "local_fs")]
-    pub(crate) fn add_pending_imported_comments(
-        &mut self,
-        comments: Vec<PendingImportedReviewComment>,
-        base_branch: DiffMode,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        self.pending_imported_comments
-            .entry(base_branch)
-            .or_default()
-            .extend(comments);
-        ctx.emit(ReviewCommentBatchEvent::Changed {
-            should_reposition_comments: true,
-        });
-    }
-
-    /// Takes all pending imported comments for the given diff mode, leaving the pending list empty.
-    /// Used when diffs have loaded and comments can be relocated.
-    pub(crate) fn take_pending_imported_comments_for_branch(
-        &mut self,
-        branch: &DiffMode,
-    ) -> Vec<PendingImportedReviewComment> {
-        if let Some(pending_comments) = self.pending_imported_comments.get_mut(branch) {
-            std::mem::take(pending_comments)
-        } else {
-            Vec::new()
-        }
     }
 }
 

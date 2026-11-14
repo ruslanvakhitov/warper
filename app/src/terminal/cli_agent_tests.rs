@@ -11,11 +11,11 @@ use super::{
     build_diff_hunk_prompt, build_review_clipboard_packet, build_review_prompt,
     build_selection_line_range_prompt, build_selection_substring_prompt, CLIAgent,
 };
-use crate::ai::agent::{AgentReviewCommentBatch, DiffSetHunk};
 use crate::code::editor::line::EditorLineLocation;
 use crate::code_review::comments::{
-    AttachedReviewComment, AttachedReviewCommentTarget, CommentOrigin, LineDiffContent,
+    AttachedReviewComment, AttachedReviewCommentTarget, LineDiffContent,
 };
+use crate::code_review::context::{DiffSetHunk, ReviewCommentPacket};
 
 /// Helper to build an alias map from pairs.
 fn aliases(pairs: &[(&str, &str)]) -> HashMap<SmolStr, String> {
@@ -42,12 +42,11 @@ fn make_comment(
         base: None,
         head: None,
         outdated,
-        origin: CommentOrigin::Native,
     }
 }
 
-fn batch(comments: Vec<AttachedReviewComment>) -> AgentReviewCommentBatch {
-    AgentReviewCommentBatch {
+fn batch(comments: Vec<AttachedReviewComment>) -> ReviewCommentPacket {
+    ReviewCommentPacket {
         comments,
         diff_set: HashMap::new(),
     }

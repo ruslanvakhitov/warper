@@ -15,7 +15,6 @@ use warpui::{
     TypedActionView, View, ViewContext, ViewHandle,
 };
 
-use crate::editor::AutosuggestionType;
 use crate::search::data_source::{Query, QueryResult};
 use crate::search::mixer::SearchMixer;
 use crate::search::result_renderer::QueryResultIndex;
@@ -948,9 +947,6 @@ impl<T: Action + Clone> SearchBar<T> {
                             editor.set_autosuggestion(
                                 suggestion,
                                 AutosuggestionLocation::EndOfBuffer,
-                                AutosuggestionType::Command {
-                                    was_intelligent_autosuggestion: false,
-                                },
                                 ctx,
                             );
                         } else {

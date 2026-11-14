@@ -13,7 +13,7 @@ use warpui::{
 };
 
 use crate::{
-    appearance::Appearance, settings::ai::DefaultSessionMode, tab_configs::TabConfig,
+    appearance::Appearance, settings::DefaultSessionMode, tab_configs::TabConfig,
     terminal::available_shells::AvailableShell, workspace::WorkspaceAction,
 };
 
@@ -23,7 +23,7 @@ const SIDECAR_PADDING: f32 = 12.;
 /// Describes what the sidecar is showing, which determines which buttons appear.
 #[derive(Clone, Debug)]
 pub(crate) enum SidecarItemKind {
-    /// A built-in item (Terminal, a specific shell, or Agent).
+    /// A built-in item (Terminal, a specific shell, or a CLI agent).
     BuiltIn {
         name: String,
         default_mode: DefaultSessionMode,

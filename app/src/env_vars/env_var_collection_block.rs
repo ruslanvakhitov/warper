@@ -1,8 +1,8 @@
 use crate::{
-    ai::agent::icons::{yellow_running_icon, yellow_stop_icon},
     view_components::compactible_action_button::{
         CompactibleActionButton, RenderCompactibleActionButton, SMALL_SIZE_SWITCH_THRESHOLD,
     },
+    view_components::status_icons::{yellow_running_icon, yellow_stop_icon},
 };
 use lazy_static::lazy_static;
 use parking_lot::RwLock;
@@ -24,12 +24,6 @@ use warpui::{
 };
 
 use crate::{
-    ai::blocklist::block::view_impl::{CONTENT_HORIZONTAL_PADDING, CONTENT_ITEM_VERTICAL_MARGIN},
-    ai::blocklist::inline_action::inline_action_header::INLINE_ACTION_HORIZONTAL_PADDING,
-    ai::blocklist::inline_action::inline_action_header::{
-        ExpandedConfig, HeaderConfig, InteractionMode,
-    },
-    ai::blocklist::inline_action::inline_action_icons::{self},
     appearance::Appearance,
     settings::InputModeSettings,
     terminal::{
@@ -38,6 +32,9 @@ use crate::{
     },
     ui_components::blended_colors,
     view_components::action_button::{ButtonSize, KeystrokeSource, NakedTheme, PrimaryTheme},
+    view_components::collapsible_header::INLINE_ACTION_HORIZONTAL_PADDING,
+    view_components::collapsible_header::{ExpandedConfig, HeaderConfig, InteractionMode},
+    view_components::status_icons as inline_action_icons,
 };
 
 /// The vertical padding applied to the env var collection block's content body.
@@ -458,3 +455,7 @@ impl TypedActionView for EnvVarCollectionBlock {
         }
     }
 }
+
+const CONTENT_HORIZONTAL_PADDING: f32 = 20.;
+
+const CONTENT_ITEM_VERTICAL_MARGIN: f32 = 16.;

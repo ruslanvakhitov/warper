@@ -16,10 +16,8 @@ use crate::{
 };
 
 use super::{
-    super::{DefaultSessionModeBehavior, Direction},
-    view::PaneView,
-    DetachType, PaneConfiguration, PaneContent, PaneGroup, PaneId, ShareableLink,
-    ShareableLinkError,
+    super::Direction, view::PaneView, DetachType, PaneConfiguration, PaneContent, PaneGroup,
+    PaneId, ShareableLink, ShareableLinkError,
 };
 
 pub struct FilePane {
@@ -101,8 +99,6 @@ fn subscribe_to_link_model(
                 Some(pane_id),
                 None,
                 Some(path.clone()),
-                None,
-                DefaultSessionModeBehavior::Apply,
                 ctx,
             );
         }

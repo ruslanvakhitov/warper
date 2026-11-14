@@ -904,3 +904,21 @@ directory = "~/a"
         panic!("Expected fallback PaneTemplate");
     }
 }
+
+#[test]
+fn removed_agent_pane_types_report_supported_terminal_type() {
+    for pane_type in ["agent", "cloud"] {
+        let config = format!(
+            r#"name = "Unsupported pane"
+[[panes]]
+id = "main"
+type = "{pane_type}"
+"#
+        );
+        let error = toml::from_str::<TabConfig>(&config)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains(pane_type), "{error}");
+        assert!(error.contains("terminal"), "{error}");
+    }
+}

@@ -4,10 +4,6 @@ use std::sync::Arc;
 
 use warp_util::path::LineAndColumnArg;
 
-use crate::ai::agent::conversation::AIConversationId;
-use crate::ai::agent::AIAgentExchangeId;
-use crate::ai::blocklist::metadata::AgentModeEntrypoint;
-use crate::ai::document::ai_document_model::{AIDocumentId, AIDocumentVersion};
 use crate::palette::PaletteMode;
 use crate::prompt::editor_modal::OpenSource as PromptEditorOpenSource;
 use crate::search;
@@ -15,7 +11,6 @@ use crate::settings_view::{SettingsAction as SettingsTabAction, SettingsSection}
 use crate::tab::NewSessionMenuItem;
 use crate::tab_configs::TabConfig;
 use crate::terminal::available_shells::AvailableShell;
-use crate::terminal::view::inline_banner::ZeroStatePromptSuggestionType;
 use crate::themes::theme::AnsiColorIdentifier;
 use crate::themes::theme_chooser::ThemeChooserMode;
 use crate::workflows::{WorkflowSelectionSource, WorkflowSource, WorkflowType};
@@ -30,7 +25,6 @@ use warpui::geometry::vector::Vector2F;
 use warpui::platform::Cursor;
 use warpui::{EntityId, WindowId};
 
-use super::global_actions::{ForkFromExchange, ForkedConversationDestination};
 use super::tab_settings::{
     VerticalTabsCompactSubtitle, VerticalTabsDisplayGranularity, VerticalTabsPrimaryInfo,
     VerticalTabsTabItemMode, VerticalTabsViewMode,
@@ -53,18 +47,6 @@ pub enum InitContent {
 pub struct CommandSearchOptions {
     pub filter: Option<search::QueryFilter>,
     pub init_content: InitContent,
-}
-
-/// Specifies how to restore a conversation when it's not already open in a pane.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, Default)]
-pub enum RestoreConversationLayout {
-    /// Restore the conversation into the currently active pane.
-    ActivePane,
-    /// Restore the conversation in a new split pane.
-    SplitPane,
-    /// Restore the conversation in a new tab.
-    #[default]
-    NewTab,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -135,10 +117,7 @@ pub enum WorkspaceAction {
         source: AddTabWithShellSource,
     },
     AddGetStartedTab,
-    /// Add a new tab that immediately enters agent view with a new conversation.
-    AddAgentTab,
-    /// Add a new tab running a local Docker sandbox via `sbx`.
-    AddDockerSandboxTab,
+
     OpenNewSessionMenu {
         position: Vector2F,
     },
@@ -202,7 +181,7 @@ pub enum WorkspaceAction {
     CreatePersonalWorkflow,
     CreatePersonalFolder,
     CreatePersonalEnvVarCollection,
-    CreatePersonalAIPrompt,
+
     ToggleMouseReporting,
     ToggleScrollReporting,
     ToggleFocusReporting,
@@ -264,7 +243,7 @@ pub enum WorkspaceAction {
     OpenPromptEditor {
         open_source: PromptEditorOpenSource,
     },
-    OpenAgentToolbarEditor,
+
     OpenCLIAgentToolbarEditor,
     OpenHeaderToolbarEditor,
     ShowHeaderToolbarContextMenu {
@@ -292,66 +271,29 @@ pub enum WorkspaceAction {
     CloseWindow,
     /// Help the user call the Warp executable with the [`crate::args::DEBUG_DUMP_FLAG`].
     DumpDebugInfo,
-    /// Log review comment send eligibility for panes in the active tab.
-    LogReviewCommentSendStatusForActiveTab,
+
     ToggleRecordingMode,
     ToggleInBandGenerators,
     ToggleDebugNetworkStatus,
     ToggleShowMemoryStats,
-    RunAISuggestedCommand(String),
+
     RunCommand(String),
     InsertInInput {
         content: String,
         replace_buffer: bool,
-        /// Whether to ensure agent mode is enabled when inserting content
-        ensure_agent_mode: bool,
     },
-    /// Open a new tab with its input in AI mode.
-    NewTabInAgentMode {
-        /// The entrypoint that triggered this action.
-        entrypoint: AgentModeEntrypoint,
-        /// The type of zero state prompt suggestion to start with (optional).
-        zero_state_prompt_suggestion_type: Option<ZeroStatePromptSuggestionType>,
-    },
-    /// Open a new pane with its input in AI mode.
-    NewPaneInAgentMode {
-        /// The entrypoint that triggered this action.
-        entrypoint: AgentModeEntrypoint,
-        /// The type of zero state prompt suggestion to start with (optional).
-        zero_state_prompt_suggestion_type: Option<ZeroStatePromptSuggestionType>,
-    },
+
     /// Dismisses the Wayland crash recovery banner and opens a link to our docs page with more
     /// information.
     #[cfg(target_os = "linux")]
     DismissWaylandCrashRecoveryBannerAndOpenLink,
-    /// Open a new pane with its input in AI mode
-    /// with query "Fix this" with error name and details from AI summary.
-    FixInAgentMode {
-        query: String,
-    },
-    OpenAIFactCollection,
-    OpenMCPServerCollection,
-    ToggleAIDocumentPane {
-        document_id: AIDocumentId,
-        document_version: AIDocumentVersion,
-    },
-    /// Closes all visible AI document panes in the active pane group.
-    HideAIDocumentPanes,
-    /// Closes any other ai document panes in the active pane group, and opens the specified document_id.
-    OpenAIDocumentPane {
-        document_id: AIDocumentId,
-        document_version: AIDocumentVersion,
-    },
+
     FocusTerminalViewInWorkspace {
         terminal_view_id: EntityId,
     },
     /// Focus a specific pane by its locator (pane_group_id and pane_id).
     FocusPane(PaneViewLocator),
-    /// Start a new AI conversation in a terminal view. This sets the pending query state
-    /// to default and focuses the terminal view.
-    StartNewConversation {
-        terminal_view_id: EntityId,
-    },
+
     /// Open a file in a new tab with a code pane
     OpenFileInNewTab {
         full_path: PathBuf,
@@ -370,51 +312,7 @@ pub enum WorkspaceAction {
         page: SettingsSection,
         widget_id: &'static str,
     },
-    /// Navigate to an existing AI conversation, focusing on its terminal view.
-    ///
-    /// If the conversation is not in an open pane, restore it based on the layout setting or override.
-    RestoreOrNavigateToConversation {
-        pane_view_locator: Option<PaneViewLocator>,
-        window_id: Option<WindowId>,
-        conversation_id: AIConversationId,
-        terminal_view_id: Option<EntityId>,
-        /// If provided, use this layout to restore the conversation.
-        /// Otherwise, fall back to the user's setting.
-        restore_layout: Option<RestoreConversationLayout>,
-    },
-    /// Fork an existing AI conversation.
-    /// Optionally summarizes the conversation after forking and/or sends an initial prompt.
-    ForkAIConversation {
-        conversation_id: AIConversationId,
-        /// When Some, fork from the given response (or exchange if `fork_from_exact_exchange`
-        /// is true). When None, fork from the last exchange.
-        fork_from_exchange: Option<ForkFromExchange>,
-        /// Whether to summarize the conversation after forking.
-        summarize_after_fork: bool,
-        /// Prompt to use for summarization when `summarize_after_fork` is true.
-        summarization_prompt: Option<String>,
-        /// Initial prompt to send in the forked conversation (sent after summarization if enabled).
-        initial_prompt: Option<String>,
-        /// Where to open the forked conversation.
-        destination: ForkedConversationDestination,
-    },
-    /// Fork an existing AI conversation into a new pane and prefill the input with a local
-    /// continuation command (selecting all text).
-    ContinueConversationLocally {
-        conversation_id: AIConversationId,
-    },
-    /// Insert the /fork slash command into the active terminal's input.
-    InsertForkSlashCommand,
-    /// Summarize the active AI conversation in the focused pane.
-    SummarizeAIConversation {
-        prompt: Option<String>,
-        /// Optional prompt to send after summarization completes successfully.
-        initial_prompt: Option<String>,
-    },
-    /// Queue a prompt to be sent after the current conversation finishes.
-    QueuePromptForConversation {
-        prompt: String,
-    },
+
     /// Install the Warp CLI command to /usr/local/bin
     #[cfg(target_os = "macos")]
     InstallCLI,
@@ -458,30 +356,14 @@ pub enum WorkspaceAction {
     OpenGlobalSearch,
     /// Reset the AWS Bedrock login banner dismissed state (for debugging).
     #[cfg(debug_assertions)]
-    DebugResetAwsBedrockLoginBannerDismissed,
+
     /// Install the opencode-warp plugin from GitHub into the global opencode config.
     #[cfg(debug_assertions)]
     InstallOpenCodeWarpPlugin,
     /// Use a local checkout of the opencode-warp plugin (for testing/development).
     #[cfg(debug_assertions)]
     UseLocalOpenCodeWarpPlugin,
-    /// Show the rewind confirmation dialog before rewinding an AI conversation
-    ShowRewindConfirmationDialog {
-        ai_block_view_id: EntityId,
-        exchange_id: AIAgentExchangeId,
-        conversation_id: AIConversationId,
-    },
-    /// Execute the actual rewind after confirmation
-    ExecuteRewindAIConversation {
-        ai_block_view_id: EntityId,
-        exchange_id: AIAgentExchangeId,
-        conversation_id: AIConversationId,
-    },
-    /// Execute the actual deletion of a conversation after confirmation
-    ExecuteDeleteConversation {
-        conversation_id: AIConversationId,
-        terminal_view_id: Option<EntityId>,
-    },
+
     /// Open a full-window lightbox displaying the given images.
     OpenLightbox {
         images: Vec<lightbox::LightboxImage>,
@@ -516,7 +398,7 @@ pub enum WorkspaceAction {
     },
     /// Sidecar action: set the hovered item as the Cmd+T default.
     TabConfigSidecarMakeDefault {
-        mode: crate::settings::ai::DefaultSessionMode,
+        mode: crate::settings::DefaultSessionMode,
         tab_config_path: Option<PathBuf>,
         shell: Option<AvailableShell>,
     },
@@ -531,10 +413,6 @@ pub enum WorkspaceAction {
     },
     /// Opens the settings.toml file in a code editor pane.
     OpenSettingsFile,
-    /// Opens a new agent session to fix settings.toml errors using the modify-settings skill.
-    FixSettingsWithAgent {
-        error_description: String,
-    },
 }
 
 impl WorkspaceAction {
@@ -544,7 +422,6 @@ impl WorkspaceAction {
     pub fn should_save_app_state_on_action(&self) -> bool {
         use WorkspaceAction::*;
         match self {
-            ContinueConversationLocally { .. } => true,
             ActivateTab(_)
             | ActivateTabByNumber(_)
             | ActivatePrevTab
@@ -574,22 +451,14 @@ impl WorkspaceAction {
             | AddTerminalTab { .. }
             | AddTabWithShell { .. }
             | AddGetStartedTab
-            | AddAgentTab
-            | AddDockerSandboxTab
             | AddWindow
             | AddWindowWithShell { .. }
             | CloseWindow
             | ScrollToSettingsWidget { .. }
-            | NewTabInAgentMode { .. }
-            | NewPaneInAgentMode { .. }
-            | FixInAgentMode { .. }
             | OpenNotebook { .. }
             | RunWorkflow { .. }
             | OpenFileInNewTab { .. }
-            | RestoreOrNavigateToConversation { .. }
             | NewCodeFile
-            | ForkAIConversation { .. }
-            | SummarizeAIConversation { .. }
             | OpenRepository { .. }
             | SelectTabConfig(_)
             | ToggleVerticalTabsPanel => true, // actions that actually change a state of the state of user's
@@ -639,7 +508,6 @@ impl WorkspaceAction {
             | CreatePersonalWorkflow
             | CreatePersonalFolder
             | CreatePersonalEnvVarCollection
-            | CreatePersonalAIPrompt
             | OpenInExplorer { .. }
             | DragTab { .. }
             | HandoffPendingTransfer { .. }
@@ -676,7 +544,6 @@ impl WorkspaceAction {
             | HandleConflictingWorkflow(_)
             | HandleConflictingEnvVarCollection(_)
             | OpenPromptEditor { .. }
-            | OpenAgentToolbarEditor
             | OpenCLIAgentToolbarEditor
             | OpenHeaderToolbarEditor
             | ShowHeaderToolbarContextMenu { .. }
@@ -685,37 +552,24 @@ impl WorkspaceAction {
             | FocusLeftPanel
             | FocusRightPanel
             | DumpDebugInfo
-            | LogReviewCommentSendStatusForActiveTab
             | ToggleRecordingMode
             | ToggleInBandGenerators
             | ToggleDebugNetworkStatus
             | ToggleShowMemoryStats
-            | RunAISuggestedCommand { .. }
             | RunCommand { .. }
             | InsertInInput { .. }
-            | InsertForkSlashCommand
-            | QueuePromptForConversation { .. }
             | OpenFilePath { .. }
             | TerminateApp
             | TabHoverWidthStart { .. }
             | TabHoverWidthEnd
-            | OpenAIFactCollection
-            | OpenMCPServerCollection
             | FocusTerminalViewInWorkspace { .. }
             | FocusPane(..)
-            | StartNewConversation { .. }
             | UndoRevertInCodeReviewPane { .. }
             | NavigatePrevPaneOrPanel
             | NavigateNextPaneOrPanel
             | ToggleProjectExplorer
             | ToggleGlobalSearch
             | OpenGlobalSearch
-            | ToggleAIDocumentPane { .. }
-            | HideAIDocumentPanes
-            | OpenAIDocumentPane { .. }
-            | ShowRewindConfirmationDialog { .. }
-            | ExecuteRewindAIConversation { .. }
-            | ExecuteDeleteConversation { .. }
             | OpenLightbox { .. }
             | UpdateLightboxImage { .. }
             | ShowSessionConfigModal
@@ -726,12 +580,9 @@ impl WorkspaceAction {
             | TabConfigSidecarMakeDefault { .. }
             | TabConfigSidecarEditConfig { .. }
             | TabConfigSidecarRemoveConfig { .. }
-            | OpenSettingsFile
-            | FixSettingsWithAgent { .. } => false,
+            | OpenSettingsFile => false,
             #[cfg(debug_assertions)]
-            DebugResetAwsBedrockLoginBannerDismissed
-            | InstallOpenCodeWarpPlugin
-            | UseLocalOpenCodeWarpPlugin => false,
+            InstallOpenCodeWarpPlugin | UseLocalOpenCodeWarpPlugin => false,
             ViewLogs => false,
             #[cfg(target_os = "macos")]
             InstallCLI | UninstallCLI => false,

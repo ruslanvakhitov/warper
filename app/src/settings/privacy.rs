@@ -1,26 +1,19 @@
 use std::fmt::Display;
 
 use regex::Regex;
-use warp_core::user_preferences::GetUserPreferences as _;
-use warpui::{AppContext, Entity, ModelContext, SingletonEntity, UpdateModel};
-
-use crate::terminal::safe_mode_settings::SafeModeSettings;
+use warpui::{AppContext, Entity, ModelContext, SingletonEntity};
 
 use settings::{
-    macros::{define_settings_group, maybe_define_setting, register_settings_events},
-    Setting, SupportedPlatforms, SyncToCloud,
+    macros::{maybe_define_setting, register_settings_events},
+    ChangeEventReason, Setting, SupportedPlatforms, SyncToCloud,
 };
 
 use serde::{Deserialize, Serialize};
-
-use crate::workspaces::workspace::EnterpriseSecretRegex;
 
 pub trait RegexDisplayInfo {
     fn pattern(&self) -> &str;
     fn name(&self) -> Option<&str>;
 }
-
-pub const CLOUD_CONVERSATION_STORAGE_ENABLED_DEFAULTS_KEY: &str = "CloudConversationStorageEnabled";
 
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[schemars(description = "A custom regex pattern for detecting and redacting secrets.")]
@@ -49,16 +42,6 @@ impl RegexDisplayInfo for CustomSecretRegex {
     }
 }
 
-impl RegexDisplayInfo for EnterpriseSecretRegex {
-    fn pattern(&self) -> &str {
-        &self.pattern
-    }
-
-    fn name(&self) -> Option<&str> {
-        self.name.as_deref()
-    }
-}
-
 impl Display for CustomSecretRegex {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.pattern.as_str())
@@ -75,19 +58,6 @@ impl PartialEq for CustomSecretRegex {
 }
 
 impl settings_value::SettingsValue for CustomSecretRegex {}
-
-define_settings_group!(LocalPrivacySettings, settings: [
-    is_cloud_conversation_storage_enabled: IsCloudConversationStorageEnabled {
-        type: bool,
-        default: false,
-        supported_platforms: SupportedPlatforms::ALL,
-        sync_to_cloud: SyncToCloud::Never,
-        private: false,
-        storage_key: "CloudConversationStorageEnabled",
-        toml_path: "agents.cloud_conversation_storage_enabled",
-        description: "Whether hosted conversation storage is enabled.",
-    },
-]);
 
 maybe_define_setting!(CustomSecretRegexList, group: PrivacySettings, {
     type: Vec<CustomSecretRegex>,
@@ -110,7 +80,6 @@ maybe_define_setting!(HasInitializedDefaultSecretRegexes, group: PrivacySettings
 /// Singleton model for local privacy settings. Warper keeps these settings local and does not
 /// upload diagnostics, sync privacy settings, or send crash diagnostics to hosted services.
 pub struct PrivacySettings {
-    pub is_cloud_conversation_storage_enabled: bool,
     pub has_initialized_default_secret_regexes: HasInitializedDefaultSecretRegexes,
     /// List of user defined secret regexes.
     /// Enterprise-level secret regexes will always take precedence over user-level secrets,
@@ -122,28 +91,6 @@ pub struct PrivacySettings {
     pub enterprise_secret_regex_list: Vec<CustomSecretRegex>,
     /// Enterprise hosted policy is amputated; user-defined local regexes still work.
     pub is_enterprise_secret_redaction_enabled: bool,
-}
-
-/// A snapshot of a user's [`PrivacySettings`] settings at some point in time.
-#[derive(Clone, Copy)]
-pub struct PrivacySettingsSnapshot {
-    // This is an option so that, if a user has not set this value (and it's set to its default value of true),
-    // the default value won't override a value that the user previously set on a different device.
-    // This is set to a non-option once the user manually changes this setting.
-    cloud_conversation_storage_enabled: Option<bool>,
-}
-
-impl PrivacySettingsSnapshot {
-    pub fn cloud_conversation_storage_enabled(&self) -> Option<bool> {
-        self.cloud_conversation_storage_enabled
-    }
-
-    #[cfg(test)]
-    pub fn mock() -> Self {
-        Self {
-            cloud_conversation_storage_enabled: None,
-        }
-    }
 }
 
 impl PrivacySettings {
@@ -166,43 +113,12 @@ impl PrivacySettings {
 
     /// Returns a new PrivacySettings object initialized from locally cached values.
     fn new(ctx: &mut ModelContext<Self>) -> Self {
-        let is_cloud_conversation_storage_enabled: bool = ctx
-            .private_user_preferences()
-            .read_value(CLOUD_CONVERSATION_STORAGE_ENABLED_DEFAULTS_KEY)
-            .unwrap_or_default()
-            .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or(false);
-
-        // Make sure the user-preferences stores match what's in memory.
-        // Needed for warp drive preferences to work and no harm in doing in general.
-        let _ = ctx.private_user_preferences().write_value(
-            CLOUD_CONVERSATION_STORAGE_ENABLED_DEFAULTS_KEY,
-            serde_json::to_string(&is_cloud_conversation_storage_enabled)
-                .expect("is_cloud_conversation_storage_enabled is a boolean."),
-        );
-
-        // Keep the generated settings model and this singleton in sync locally.
-        ctx.subscribe_to_model(&LocalPrivacySettings::handle(ctx), |me, event, ctx| {
-            let privacy_settings = LocalPrivacySettings::as_ref(ctx);
-            match event {
-                LocalPrivacySettingsChangedEvent::IsCloudConversationStorageEnabled { .. } => {
-                    me.set_is_cloud_conversation_storage_enabled(
-                        *privacy_settings
-                            .is_cloud_conversation_storage_enabled
-                            .value(),
-                        ctx,
-                    );
-                }
-            }
-        });
-
         let user_secret_regex_list: CustomSecretRegexList =
             CustomSecretRegexList::new_from_storage(ctx);
         let has_initialized_default_secret_regexes: HasInitializedDefaultSecretRegexes =
             HasInitializedDefaultSecretRegexes::new_from_storage(ctx);
 
         Self {
-            is_cloud_conversation_storage_enabled,
             user_secret_regex_list,
             has_initialized_default_secret_regexes,
             is_enterprise_secret_redaction_enabled: false,
@@ -212,57 +128,6 @@ impl PrivacySettings {
 
     pub fn is_enterprise_secret_redaction_enabled(&self) -> bool {
         self.is_enterprise_secret_redaction_enabled
-    }
-
-    pub fn set_enterprise_secret_redaction_settings(
-        &mut self,
-        enabled: bool,
-        enterprise_regexes: Vec<EnterpriseSecretRegex>,
-        change_event_reason: ChangeEventReason,
-        ctx: &mut ModelContext<Self>,
-    ) {
-        if enabled {
-            // First time: Force enable secret redaction setting (safe mode).
-            if !self.is_enterprise_secret_redaction_enabled {
-                let safe_mode_settings = SafeModeSettings::handle(ctx);
-                ctx.update_model(&safe_mode_settings, |safe_mode_settings, ctx| {
-                    let _ = safe_mode_settings.safe_mode_enabled.set_value(true, ctx);
-                });
-            }
-
-            // Convert EnterpriseSecretRegex to CustomSecretRegex for internal use
-            let mut enterprise_secrets = Vec::new();
-            for enterprise_regex in enterprise_regexes {
-                if let Ok(regex) = Regex::new(&enterprise_regex.pattern) {
-                    enterprise_secrets.push(CustomSecretRegex {
-                        pattern: regex,
-                        name: enterprise_regex.name,
-                    });
-                } else {
-                    log::error!(
-                        "Invalid enterprise secret regex pattern: {}",
-                        enterprise_regex.pattern
-                    );
-                }
-            }
-            self.enterprise_secret_regex_list = enterprise_secrets;
-        } else {
-            // Clear enterprise secrets when disabled
-            self.enterprise_secret_regex_list.clear();
-        }
-
-        self.is_enterprise_secret_redaction_enabled = enabled;
-
-        ctx.emit(PrivacySettingsChangedEvent::CustomSecretRegexList {
-            change_event_reason,
-        });
-        ctx.notify();
-    }
-
-    pub fn refresh_to_default(&mut self) {
-        // TODO(zach): this seems incorrect - should we also update the values on disk?
-        self.is_cloud_conversation_storage_enabled = false;
-        self.is_enterprise_secret_redaction_enabled = false;
     }
 
     /// Hosted privacy sync has been amputated. This method remains for retained callers and only
@@ -275,52 +140,11 @@ impl PrivacySettings {
     #[cfg(test)]
     pub fn mock(_ctx: &mut ModelContext<Self>) -> Self {
         Self {
-            is_cloud_conversation_storage_enabled: false,
             user_secret_regex_list: CustomSecretRegexList::new(None),
             has_initialized_default_secret_regexes: HasInitializedDefaultSecretRegexes::new(None),
             is_enterprise_secret_redaction_enabled: false,
             enterprise_secret_regex_list: Vec::new(),
         }
-    }
-
-    /// Returns a snapshot of the user's privacy settings.
-    ///
-    /// The returned snapshot is not stateful, thus its values should be used shortly after the
-    /// snapshot is returned.
-    pub fn get_snapshot(&self, app: &AppContext) -> PrivacySettingsSnapshot {
-        let _ = app;
-        PrivacySettingsSnapshot {
-            cloud_conversation_storage_enabled: (!self.is_cloud_conversation_storage_enabled)
-                .then_some(false),
-        }
-    }
-
-    pub fn set_is_cloud_conversation_storage_enabled(
-        &mut self,
-        new_value: bool,
-        ctx: &mut ModelContext<PrivacySettings>,
-    ) {
-        let old_value = self.is_cloud_conversation_storage_enabled;
-        if new_value == old_value {
-            return;
-        }
-
-        self.is_cloud_conversation_storage_enabled = new_value;
-
-        LocalPrivacySettings::handle(ctx).update(ctx, |settings, ctx| {
-            log::info!("Setting is_cloud_conversation_storage_enabled to {new_value}");
-            let _ = settings
-                .is_cloud_conversation_storage_enabled
-                .set_value(new_value, ctx);
-        });
-
-        ctx.emit(
-            PrivacySettingsChangedEvent::UpdateIsCloudConversationStorageEnabled {
-                old_value,
-                new_value,
-            },
-        );
-        ctx.notify();
     }
 
     pub fn remove_user_secret_regex(&mut self, idx: &usize, ctx: &mut ModelContext<Self>) {
@@ -409,10 +233,6 @@ impl PrivacySettings {
 /// Events emitted when PrivacySettings is updated.
 #[derive(Clone, Copy)]
 pub enum PrivacySettingsChangedEvent {
-    UpdateIsCloudConversationStorageEnabled {
-        old_value: bool,
-        new_value: bool,
-    },
     CustomSecretRegexList {
         change_event_reason: ChangeEventReason,
     },

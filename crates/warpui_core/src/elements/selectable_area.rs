@@ -48,7 +48,7 @@ pub struct SelectableArea {
 /// Stores the selection start and end points. We include the option to store
 /// bounds alongside raw selection points since we may need to clamp the selection
 /// points to the SelectableArea's bounds when it's not laid out (i.e. to support
-/// across-block selections with AI blocks).
+/// selections across terminal blocks and rich content).
 #[derive(Clone, Copy, Debug, Default)]
 pub struct InternalSelection {
     /// The point where the user first clicked before dragging.

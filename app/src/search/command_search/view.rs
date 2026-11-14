@@ -7,7 +7,7 @@ use pathfinder_geometry::vector::Vector2F;
 use crate::search::mixer::AddAsyncSourceOptions;
 use lazy_static::lazy_static;
 use std::{collections::HashSet, ops::Range, time::Duration};
-use warp_core::features::FeatureFlag;
+
 use warpui::{
     accessibility::{AccessibilityContent, WarpA11yRole},
     elements::{
@@ -32,7 +32,6 @@ use crate::{
         search_bar::{SearchBar, SearchBarEvent, SearchBarState, SearchResultOrdering},
         QueryFilter,
     },
-    settings::AISettings,
     terminal::{
         input::MenuPositioning,
         model::session::SessionId,
@@ -42,7 +41,6 @@ use crate::{
 };
 
 use super::{
-    ai_queries::AIQueriesDataSource,
     history::history_data_source_for_session,
     workflows::WorkflowsDataSource,
     zero_state::{CommandSearchZeroStateEvent, CommandSearchZeroStateView},
@@ -69,16 +67,9 @@ lazy_static! {
 /// The events that `CommandSearchView` emits to its parent view.
 pub enum CommandSearchEvent {
     ItemSelected {
-        query: String,
         payload: Box<CommandSearchItemAction>,
     },
-    Close {
-        /// The query when Command Search was closed.
-        query: String,
-
-        /// The filter when Command Search was closed, if any.
-        filter: Option<QueryFilter>,
-    },
+    Close,
     Blur,
     Resize,
 }
@@ -213,14 +204,6 @@ impl CommandSearchView {
                 HashSet::from([QueryFilter::Workflows]),
             );
 
-            if FeatureFlag::AgentMode.is_enabled() && AISettings::as_ref(ctx).is_any_ai_enabled(ctx)
-            {
-                mixer.add_sync_source(
-                    AIQueriesDataSource::new(),
-                    HashSet::from([QueryFilter::PromptHistory]),
-                );
-            }
-
             if History::as_ref(ctx).is_queryable(&session_id) {
                 let source = History::handle(ctx).read(ctx, |history_model, app| {
                     history_data_source_for_session(session_id, history_model, app)
@@ -319,12 +302,7 @@ impl CommandSearchView {
     }
 
     fn close(&self, ctx: &mut ViewContext<Self>) {
-        let query = self.search_bar.as_ref(ctx).query(ctx);
-        let filter = self
-            .search_bar_state
-            .as_ref(ctx)
-            .active_visible_query_filter();
-        ctx.emit(CommandSearchEvent::Close { query, filter });
+        ctx.emit(CommandSearchEvent::Close);
     }
 
     fn blur(&self, ctx: &mut ViewContext<Self>) {
@@ -383,9 +361,9 @@ impl CommandSearchView {
         {
             use CommandSearchItemAction::*;
             let was_immediately_executed = match &result_action {
-                ExecuteHistory(_) | RunAIQuery(_) => true,
+                ExecuteHistory(_) => true,
 
-                AcceptHistory(_) | AcceptWorkflow(_) | AcceptAIQuery(_) => false,
+                AcceptHistory(_) | AcceptWorkflow(_) => false,
             };
 
             let (a11y_content, a11y_help_content) = if was_immediately_executed {
@@ -406,10 +384,7 @@ impl CommandSearchView {
             ));
         }
 
-        let query = self.search_bar.as_ref(ctx).query(ctx);
-
         ctx.emit(CommandSearchEvent::ItemSelected {
-            query,
             payload: Box::new(result_action),
         });
         self.close(ctx);

@@ -8,8 +8,8 @@ use warpui::{
 };
 
 use crate::{
-    ai::persisted_workspace::{PersistedWorkspace, PersistedWorkspaceEvent},
     appearance::Appearance,
+    project_workspaces::{PersistedWorkspace, PersistedWorkspaceEvent},
     tab_configs::PickerStyle,
     view_components::{DropdownItem, FilterableDropdown},
 };

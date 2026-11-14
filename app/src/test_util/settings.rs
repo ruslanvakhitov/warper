@@ -2,74 +2,17 @@
 use warpui::App;
 
 #[cfg(test)]
-pub struct LocalAIEnabledTestGuard;
-
-#[cfg(test)]
-impl Drop for LocalAIEnabledTestGuard {
-    fn drop(&mut self) {
-        warp_core::channel::ChannelState::set(warp_core::channel::ChannelState::init());
-    }
-}
-
-#[cfg(test)]
-pub fn initialize_local_ai_enabled_for_tests(app: &mut App) -> LocalAIEnabledTestGuard {
-    use ai::api_keys::ApiKeyManager;
-    use warp_core::{
-        channel::{Channel, ChannelConfig, ChannelState},
-        AppId,
-    };
-    use warpui::SingletonEntity as _;
-
-    ChannelState::set(ChannelState::new(
-        Channel::Oss,
-        ChannelConfig {
-            app_id: AppId::new("dev", "warper", "Warper"),
-            logfile_name: "warper.log".into(),
-            mcp_static_config: None,
-        },
-    ));
-
-    app.update(|ctx| {
-        if !ctx.has_singleton_model::<warpui_extras::secure_storage::Model>() {
-            warpui_extras::secure_storage::register_noop("test", ctx);
-        }
-        if !ctx.has_singleton_model::<crate::settings::AISettings>() {
-            crate::settings::AISettings::register_and_subscribe_to_events(ctx);
-        }
-        if !ctx.has_singleton_model::<ApiKeyManager>() {
-            ctx.add_singleton_model(ApiKeyManager::new);
-        }
-        ApiKeyManager::handle(ctx).update(ctx, |manager, ctx| {
-            manager.set_open_router_key(Some("sk-or-v1-test".to_owned()), ctx);
-        });
-        assert!(crate::settings::AISettings::as_ref(ctx).is_any_ai_enabled(ctx));
-    });
-
-    LocalAIEnabledTestGuard
-}
-
-#[cfg(test)]
 pub fn initialize_settings_for_tests(app: &mut App) {
-    use warp_core::execution_mode::ExecutionMode;
-    initialize_settings_for_tests_with_mode(app, ExecutionMode::App, false);
-}
-
-#[cfg(test)]
-pub fn initialize_settings_for_tests_with_mode(
-    app: &mut App,
-    mode: warp_core::execution_mode::ExecutionMode,
-    is_sandboxed: bool,
-) {
     use crate::{
         search::command_search::settings::CommandSearchSettings,
         settings::{
             app_icon::AppIconSettings, init_and_register_user_preferences,
-            manager::SettingsManager, AISettings, AccessibilitySettings, AliasExpansionSettings,
-            AppEditorSettings, BlockVisibilitySettings, ChangelogSettings, CodeSettings,
-            DebugSettings, EmacsBindingsSettings, FontSettings, GPUSettings, InputModeSettings,
-            InputSettings, LocalPreferencesSettings, NativePreferenceSettings, PaneSettings,
-            SameLinePromptBlockSettings, ScrollSettings, SelectionSettings, SshSettings,
-            ThemeSettings, VimBannerSettings,
+            manager::SettingsManager, AccessibilitySettings, AliasExpansionSettings,
+            AppEditorSettings, BlockVisibilitySettings, CLIAgentSettings, ChangelogSettings,
+            CodeSettings, DebugSettings, EmacsBindingsSettings, FontSettings, GPUSettings,
+            InputModeSettings, InputSettings, LocalPreferencesSettings, NativePreferenceSettings,
+            PaneSettings, SameLinePromptBlockSettings, ScrollSettings, SelectionSettings,
+            SshSettings, ThemeSettings, VimBannerSettings,
         },
         terminal::{
             general_settings::GeneralSettings, keys_settings::KeysSettings,
@@ -82,15 +25,14 @@ pub fn initialize_settings_for_tests_with_mode(
         window_settings::WindowSettings,
         workspace::tab_settings::TabSettings,
     };
-    use warp_core::{execution_mode::AppExecutionMode, semantic_selection::SemanticSelection};
-    app.add_singleton_model(|ctx| AppExecutionMode::new(mode, is_sandboxed, ctx));
+    use warp_core::semantic_selection::SemanticSelection;
 
     app.update(init_and_register_user_preferences);
     app.add_singleton_model(|_ctx| SettingsManager::default());
     app.add_singleton_model(WarpConfig::mock);
 
     AccessibilitySettings::register(app);
-    app.update(AISettings::register_and_subscribe_to_events);
+    app.update(CLIAgentSettings::register_and_subscribe_to_events);
     AliasExpansionSettings::register(app);
     AppEditorSettings::register(app);
     BlockVisibilitySettings::register(app);
@@ -140,12 +82,4 @@ pub fn initialize_settings_for_tests_with_mode(
     WindowSettings::register(app);
     CodeSettings::register(app);
     SemanticSelection::register(app);
-
-    app.update(|ctx| {
-        // Register a no-op secure storage provider for testing.
-        warpui_extras::secure_storage::register_noop("test", ctx);
-
-        // Add settings models that are backed by secure storage, not user preferences.
-        ctx.add_singleton_model(ai::api_keys::ApiKeyManager::new);
-    });
 }

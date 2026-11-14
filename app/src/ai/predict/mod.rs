@@ -1,6 +1,0 @@
-//! This module contains all code relevant to Agent Predict within Warp.
-//!
-//! Agent Predict attempts to predict the next action the user will take in Warp.
-
-pub mod next_command_model;
-pub mod prompt_suggestions;

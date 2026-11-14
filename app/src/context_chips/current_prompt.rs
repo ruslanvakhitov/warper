@@ -1,5 +1,5 @@
 use crate::context_chips::git_branch_on_click;
-use crate::features::FeatureFlag;
+
 use crate::report_if_error;
 use crate::settings::{InputSettings, WarpPromptSeparator};
 use crate::terminal::event::{BlockType, UserBlockCompleted};
@@ -270,10 +270,10 @@ impl CurrentPrompt {
         ctx.subscribe_to_view(&editor, move |me, _, ctx| {
             // CurrentPrompt exists and this fn is called even if we're not using warp prompt.
             // We don't need to do anything if we're honoring PS1 unless universal developer input
-            // or AgentView is enabled (agent view needs chips regardless of PS1 setting).
+            // or the external CLI agent footer needs context chips.
             if *SessionSettings::as_ref(ctx).honor_ps1
                 && !InputSettings::as_ref(ctx).is_universal_developer_input_enabled(ctx)
-                && !FeatureFlag::AgentView.is_enabled()
+                && !*crate::settings::CLIAgentSettings::as_ref(ctx).should_render_cli_agent_footer
             {
                 return;
             }
@@ -1070,30 +1070,16 @@ impl CurrentPrompt {
 
     /// Chips whose values we should actively maintain in state.
     ///
-    /// When Agent View is enabled, the footer chips should not depend on prompt chip
-    /// customization/ordering/visibility, so we keep their backing values up to date even if they
-    /// are not present in the prompt configuration.
+    /// CLI footer chips maintain values independently of prompt customization.
     fn chips_to_run(&self, ctx: &AppContext) -> Vec<ContextChipKind> {
         let mut chips = self.configured_chips(ctx);
 
-        if FeatureFlag::AgentView.is_enabled() {
-            let footer_chips = SessionSettings::as_ref(ctx)
-                .agent_footer_chip_selection
-                .all_chips();
-            for chip_kind in footer_chips {
-                if !chips.contains(&chip_kind) {
-                    chips.push(chip_kind);
-                }
-            }
-
-            // Also include chips configured for the CLI agent footer.
-            let cli_footer_chips = SessionSettings::as_ref(ctx)
-                .cli_agent_footer_chip_selection
-                .all_chips();
-            for chip_kind in cli_footer_chips {
-                if !chips.contains(&chip_kind) {
-                    chips.push(chip_kind);
-                }
+        for chip_kind in SessionSettings::as_ref(ctx)
+            .cli_agent_footer_chip_selection
+            .all_chips()
+        {
+            if !chips.contains(&chip_kind) {
+                chips.push(chip_kind);
             }
         }
 
@@ -1168,11 +1154,6 @@ impl CurrentPrompt {
             self.same_line_prompt_enabled =
                 session_settings.saved_prompt.same_line_prompt_enabled();
             self.separator = session_settings.saved_prompt.separator();
-        }
-
-        if let SessionSettingsChangedEvent::AgentToolbarChipSelectionSetting { .. } = event {
-            // Recompute which chips to run when the agent footer config changes.
-            self.update_states_with_new_context(ctx);
         }
 
         if let SessionSettingsChangedEvent::CLIAgentToolbarChipSelectionSetting { .. } = event {
@@ -1575,10 +1556,10 @@ impl CurrentPrompt {
         // Context chips are active when:
         // 1. PS1 is not honored (normal case), OR
         // 2. Universal developer input is enabled (overrides PS1 behavior), OR
-        // 3. AgentView feature is enabled (agent view needs chips regardless of PS1)
+        // 3. External CLI agent footer context chips are enabled.
         !*SessionSettings::as_ref(ctx).honor_ps1
             || InputSettings::as_ref(ctx).is_universal_developer_input_enabled(ctx)
-            || FeatureFlag::AgentView.is_enabled()
+            || *crate::settings::CLIAgentSettings::as_ref(ctx).should_render_cli_agent_footer
     }
 }
 

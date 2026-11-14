@@ -15,6 +15,3 @@ log.workspace = true
 log-panics = { version = "2.1.0", features = ["with-backtrace"] }
 warp_core.workspace = true
 zip = "2.1"
-
-[features]
-agent_mode_evals = []

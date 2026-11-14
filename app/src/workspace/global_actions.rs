@@ -4,10 +4,7 @@ use crate::persistence::ModelEvent;
 use crate::terminal::alt_screen_reporting::AltScreenReporting;
 use crate::terminal::general_settings::GeneralSettings;
 use ::settings::ToggleableSetting;
-use warp_core::execution_mode::AppExecutionMode;
 
-use crate::ai::agent::conversation::AIConversationId;
-use crate::ai::agent::AIAgentExchangeId;
 use crate::root_view::OpenPath;
 use crate::undo_close::UndoCloseStack;
 use crate::workspace::{Workspace, WorkspaceAction};
@@ -16,52 +13,6 @@ use std::path::PathBuf;
 use warpui::windowing::WindowManager;
 use warpui::{AppContext, SingletonEntity, TypedActionView};
 
-/// Specifies where a forked conversation should be opened.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum ForkedConversationDestination {
-    /// Open the forked conversation in a new pane (split to the right).
-    #[default]
-    SplitPane,
-    /// Open the forked conversation in the current pane, replacing the current view.
-    CurrentPane,
-    /// Open the forked conversation in a new tab.
-    NewTab,
-}
-
-impl ForkedConversationDestination {
-    pub fn is_new_tab(&self) -> bool {
-        matches!(self, Self::NewTab)
-    }
-
-    pub fn is_split_pane(&self) -> bool {
-        matches!(self, Self::SplitPane)
-    }
-
-    pub fn is_current_pane(&self) -> bool {
-        matches!(self, Self::CurrentPane)
-    }
-}
-
-/// Specifies the exchange at which to fork an AI conversation.
-#[derive(Debug, Clone, Copy)]
-pub struct ForkFromExchange {
-    pub exchange_id: AIAgentExchangeId,
-    /// When true, the fork stops immediately after this exchange without extending
-    /// to the next user query boundary.
-    pub fork_from_exact_exchange: bool,
-}
-
-/// Parameters for forking an AI conversation.
-pub struct ForkAIConversationParams {
-    pub conversation_id: AIConversationId,
-    /// When Some, fork from the given response (or exchange if `fork_from_exact_exchange` is true).
-    pub fork_from_exchange: Option<ForkFromExchange>,
-    pub summarize_after_fork: bool,
-    pub summarization_prompt: Option<String>,
-    pub initial_prompt: Option<String>,
-    pub destination: ForkedConversationDestination,
-}
-
 /// DEPRECATED. Global actions are being phased out.
 /// Do not add any more global actions; use typed actions instead.
 pub fn init_global_actions(app: &mut AppContext) {
@@ -69,11 +20,6 @@ pub fn init_global_actions(app: &mut AppContext) {
     app.add_global_action("workspace:toggle_scroll_reporting", toggle_scroll_reporting);
     app.add_global_action("workspace:toggle_focus_reporting", toggle_focus_reporting);
     app.add_global_action("workspace:save_app", save_app);
-    app.add_global_action("workspace:fork_ai_conversation", fork_ai_conversation);
-    app.add_global_action(
-        "workspace:summarize_ai_conversation",
-        summarize_ai_conversation,
-    );
     app.add_global_action(
         "workspace:toggle_debug_network_status",
         toggle_debug_network_status,
@@ -110,10 +56,6 @@ fn toggle_focus_reporting(_: &(), ctx: &mut AppContext) {
 }
 
 fn save_app(_: &(), ctx: &mut AppContext) {
-    if !AppExecutionMode::as_ref(ctx).can_save_session() {
-        return;
-    }
-
     if !*GeneralSettings::as_ref(ctx).restore_session {
         return;
     }
@@ -182,28 +124,4 @@ fn open_repository(path: &String, ctx: &mut AppContext) {
         let path_buf = PathBuf::from(path);
         ctx.dispatch_global_action("root_view:open_new_from_path", &OpenPath { path: path_buf });
     }
-}
-
-fn fork_ai_conversation(params: &ForkAIConversationParams, ctx: &mut AppContext) {
-    dispatch_to_active_workspace(
-        ctx,
-        WorkspaceAction::ForkAIConversation {
-            conversation_id: params.conversation_id,
-            fork_from_exchange: params.fork_from_exchange,
-            summarize_after_fork: params.summarize_after_fork,
-            summarization_prompt: params.summarization_prompt.clone(),
-            initial_prompt: params.initial_prompt.clone(),
-            destination: params.destination,
-        },
-    );
-}
-
-fn summarize_ai_conversation(prompt: &Option<String>, ctx: &mut AppContext) {
-    dispatch_to_active_workspace(
-        ctx,
-        WorkspaceAction::SummarizeAIConversation {
-            prompt: prompt.clone(),
-            initial_prompt: None,
-        },
-    );
 }

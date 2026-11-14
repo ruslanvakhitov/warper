@@ -7,7 +7,7 @@ Priority: optional
 Architecture: @@ARCH@@
 Maintainer: Warper contributors <warper@localhost>
 Homepage: https://github.com/ruslanvakhitov/warper
-Description: Warper, the local-first agentic terminal
- Warper is a local-first, Rust-based terminal with OpenRouter-powered AI built in.
+Description: Warper, a local-first terminal
+ Warper is a local-first, Rust-based terminal with third-party CLI-agent integration.
  It is a forked desktop app that removes hosted Warp services from the runtime
- path while preserving local terminal and agent workflows.
+ path while preserving local terminal workflows.

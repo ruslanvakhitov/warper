@@ -1,12 +1,11 @@
 mod docker;
 
 use crate::launch_configs::launch_config::LaunchConfig;
-use crate::linear::{LinearAction, LinearIssueWork};
 use crate::root_view::{open_new_window_get_handles, OpenLaunchConfigArg};
 use crate::util::openable_file_type::{is_file_openable_in_warp, is_markdown_file};
 use crate::workspace::active_terminal_in_window;
 use crate::workspace::metadata::LaunchConfigUiLocation;
-use crate::workspace::{Workspace, WorkspaceAction, WorkspaceRegistry};
+use crate::workspace::{Workspace, WorkspaceAction};
 use crate::{view_components::DismissibleToast, workspace::ToastStack};
 
 use crate::settings_view::SettingsSection;
@@ -25,9 +24,6 @@ use self::docker::open_docker_container;
 
 const DESKTOP_REDIRECT_URI_PATH: &str = "/desktop_redirect";
 
-/// Args for opening the MCP settings page via deeplink.
-pub struct OpenMCPSettingsArgs;
-
 #[derive(Debug, PartialEq, Eq)]
 pub enum UriHost {
     /// A host prefix for all actions (e.g.: new tab, new window).
@@ -39,10 +35,6 @@ pub enum UriHost {
     /// A host prefix for a general-purpose home/landing page. Unlike other intent URIs, the home
     /// page behavior may change over time and vary from platform to platform.
     Home,
-    /// Actions related to MCP servers (e.g.: oauth callbacks).
-    Mcp,
-    /// Actions triggered from Linear integrations (e.g. work on issue).
-    Linear,
 }
 
 impl FromStr for UriHost {
@@ -54,8 +46,6 @@ impl FromStr for UriHost {
             "launch" => Ok(Self::Launch),
             "settings" => Ok(Self::Settings),
             "home" => Ok(Self::Home),
-            "mcp" => Ok(Self::Mcp),
-            "linear" => Ok(Self::Linear),
             _ => Err(anyhow!("Received url with unexpected host: {}", s)),
         }
     }
@@ -99,7 +89,6 @@ impl UriHost {
             }
             UriHost::Settings => {
                 // We support opening different settings pages through URI:
-                // - warp://settings/mcp - opens MCP servers settings page
                 // - warp://settings/appearance - opens appearance settings page (themes, fonts, etc.)
                 let settings_sub_page: Option<String> = url
                     .path_segments()
@@ -109,16 +98,6 @@ impl UriHost {
                     .map(|s| s.to_string());
                 if let Some(settings_sub_page) = settings_sub_page {
                     match settings_sub_page.as_str() {
-                        "mcp" => {
-                            let args = OpenMCPSettingsArgs;
-                            dispatch_action_in_new_or_existing_window(
-                                primary_window_id,
-                                "root_view:open_mcp_settings_in_existing_window",
-                                "root_view:open_mcp_settings_in_new_window",
-                                &args,
-                                ctx,
-                            );
-                        }
                         "appearance" => {
                             dispatch_action_in_new_or_existing_window(
                                 primary_window_id,
@@ -141,28 +120,6 @@ impl UriHost {
             UriHost::Home => {
                 ctx.dispatch_global_action("root_view::open_new", &());
             }
-            UriHost::Mcp => {
-                let result = crate::ai::mcp::TemplatableMCPServerManager::handle(ctx)
-                    .update(ctx, |manager, _ctx| manager.handle_oauth_callback(url));
-                if let Err(e) = result {
-                    log::error!("Failed to handle MCP OAuth callback: {e:?}");
-                }
-            }
-            UriHost::Linear => match LinearAction::parse(url) {
-                Ok(LinearAction::WorkOnIssue) => {
-                    let args = LinearIssueWork::from_url(url);
-                    dispatch_action_in_new_or_existing_window(
-                        primary_window_id,
-                        "root_view:open_linear_issue_work_in_existing_window",
-                        "root_view:open_linear_issue_work_in_new_window",
-                        &args,
-                        ctx,
-                    );
-                }
-                Err(err) => {
-                    log::warn!("{err}");
-                }
-            },
         }
     }
 
@@ -176,10 +133,6 @@ impl UriHost {
             Self::Launch | Self::Home => W::Nothing,
             // This will actually be handled by [`Action::window_behavior_hint`].
             Self::Action => W::Nothing,
-            // TODO(vorporeal): probably want to focus the window with the MCP pane open
-            Self::Mcp => W::Nothing,
-            // Linear deeplink opens a new tab with agent view
-            Self::Linear => W::default(),
         }
     }
 }
@@ -377,7 +330,6 @@ enum Action {
     NewWindow,
     Docker,
     OpenRepo,
-    NewAgentConversation,
 }
 
 impl Action {
@@ -387,7 +339,6 @@ impl Action {
             "/new_window" => Ok(Self::NewWindow),
             "/docker/open_subshell" => Ok(Self::Docker),
             "/open-repo" => Ok(Self::OpenRepo),
-            "/new_agent_conversation" => Ok(Self::NewAgentConversation),
             _ => Err(anyhow!(
                 "Received \"action\" intent with unexpected action: {}",
                 url.path()
@@ -447,26 +398,6 @@ impl Action {
                     log::warn!("no workspace views in window {window_id} for open repo action");
                 }
             }
-            Action::NewAgentConversation => {
-                let window_id =
-                    primary_window_id.or_else(|| Some(open_new_window_get_handles(None, ctx).0));
-
-                let Some(window_id) = window_id else {
-                    log::warn!("unable to determine window for new agent conversation action");
-                    return;
-                };
-
-                let Some(workspace) = WorkspaceRegistry::as_ref(ctx).get(window_id, ctx) else {
-                    log::warn!(
-                        "no workspace found in window {window_id} for new agent conversation action"
-                    );
-                    return;
-                };
-
-                workspace.update(ctx, |workspace, ctx| {
-                    workspace.handle_action(&WorkspaceAction::AddAgentTab, ctx);
-                });
-            }
         }
     }
 
@@ -475,7 +406,7 @@ impl Action {
     fn window_behavior_hint(&self) -> WindowBehaviorHint {
         use WindowBehaviorHint as W;
         match self {
-            Self::Docker | Self::OpenRepo | Self::NewAgentConversation => W::default(),
+            Self::Docker | Self::OpenRepo => W::default(),
             Self::NewTab => W::ShowPrimaryWindow(WindowActivationFallbackBehavior::Notify {
                 title: "New tab created".to_owned(),
                 description: "Go to Warper to see your new tab.".to_owned(),
@@ -722,9 +653,7 @@ fn validate_custom_uri(url: &Url) -> Result<UriHost> {
 
     // Check if this host is allowed to have arbitrary paths.
     let host_allows_arbitrary_path = match host {
-        UriHost::Action | UriHost::Launch | UriHost::Settings | UriHost::Mcp | UriHost::Linear => {
-            true
-        }
+        UriHost::Action | UriHost::Launch | UriHost::Settings => true,
         // Home only allows the desktop redirect path
         UriHost::Home => false,
     };
@@ -743,7 +672,7 @@ fn settings_uri_is_supported_local_page(url: &Url) -> bool {
         return false;
     };
 
-    matches!(settings_sub_page, "appearance" | "mcp")
+    settings_sub_page == "appearance"
 }
 
 /// Formats the non-sensitive components of an incoming URL for logging on

@@ -1,6 +1,5 @@
 use super::*;
 use crate::launch_configs::launch_config::make_mock_single_window_launch_config;
-use crate::linear::{LinearAction, LinearIssueWork};
 use crate::ChannelState;
 
 #[test]
@@ -145,37 +144,13 @@ fn test_remove_extension() {
 }
 
 #[test]
-fn test_action_new_agent_conversation_parse() {
-    let url = Url::parse(&format!(
-        "{}://action/new_agent_conversation",
-        ChannelState::url_scheme()
-    ))
-    .unwrap();
-
-    let action = Action::parse(&url).unwrap();
-    assert!(matches!(action, Action::NewAgentConversation));
-}
-
-#[test]
-fn test_validate_custom_uri_linear() {
-    let url = Url::parse(&format!(
-        "{}://linear/work?prompt=hello",
-        ChannelState::url_scheme()
-    ))
-    .unwrap();
-    let host = validate_custom_uri(&url).unwrap();
-    assert!(matches!(host, UriHost::Linear));
-}
-
-#[test]
 fn validate_custom_uri_allows_retained_local_settings_pages() {
-    for page in ["appearance", "mcp"] {
-        let url = Url::parse(&format!("{}://settings/{page}", ChannelState::url_scheme())).unwrap();
-        assert!(
-            validate_custom_uri(&url).is_ok(),
-            "settings/{page} should remain locally openable"
-        );
-    }
+    let url = Url::parse(&format!(
+        "{}://settings/appearance",
+        ChannelState::url_scheme()
+    ))
+    .unwrap();
+    assert!(validate_custom_uri(&url).is_ok());
 }
 
 #[test]
@@ -186,7 +161,6 @@ fn validate_custom_uri_allows_local_actions_without_server_config() {
         format!("{}://action/open-repo", ChannelState::url_scheme()),
         format!("{}://action/new_tab?path=/tmp", ChannelState::url_scheme()),
         format!("{}://settings/appearance", ChannelState::url_scheme()),
-        format!("{}://mcp/oauth2callback", ChannelState::url_scheme()),
     ] {
         let url = Url::parse(&url).unwrap();
         assert!(
@@ -194,52 +168,6 @@ fn validate_custom_uri_allows_local_actions_without_server_config() {
             "expected local URI to be valid: {url}"
         );
     }
-}
-
-#[test]
-fn test_linear_action_parse_work() {
-    let url = Url::parse(&format!(
-        "{}://linear/work?prompt=hello",
-        ChannelState::url_scheme()
-    ))
-    .unwrap();
-    let action = LinearAction::parse(&url).unwrap();
-    assert_eq!(action, LinearAction::WorkOnIssue);
-}
-
-#[test]
-fn test_linear_action_parse_unknown_path() {
-    let url = Url::parse(&format!("{}://linear/unknown", ChannelState::url_scheme())).unwrap();
-    assert!(LinearAction::parse(&url).is_err());
-}
-
-#[test]
-fn test_linear_issue_work_with_prompt() {
-    let url = Url::parse(&format!(
-        "{}://linear/work?prompt=fix+the+bug",
-        ChannelState::url_scheme()
-    ))
-    .unwrap();
-    let args = LinearIssueWork::from_url(&url);
-    assert_eq!(args.prompt.as_deref(), Some("fix the bug"));
-}
-
-#[test]
-fn test_linear_issue_work_without_prompt() {
-    let url = Url::parse(&format!("{}://linear/work", ChannelState::url_scheme())).unwrap();
-    let args = LinearIssueWork::from_url(&url);
-    assert!(args.prompt.is_none());
-}
-
-#[test]
-fn test_linear_issue_work_empty_prompt() {
-    let url = Url::parse(&format!(
-        "{}://linear/work?prompt=",
-        ChannelState::url_scheme()
-    ))
-    .unwrap();
-    let args = LinearIssueWork::from_url(&url);
-    assert!(args.prompt.is_none());
 }
 
 // -- handle_incoming_uri redaction -------------------------------------------
@@ -468,4 +396,21 @@ fn test_parse_tab_path_bare_tilde() {
     let url = Url::parse("warp://action/new_tab?path=~").unwrap();
     let home = dirs::home_dir().expect("HOME must be set for this test");
     assert_eq!(parse_tab_path(&url), Some(home));
+}
+
+#[test]
+fn removed_agent_deeplinks_are_rejected() {
+    let url = Url::parse(&format!(
+        "{}://action/new_agent_conversation",
+        ChannelState::url_scheme()
+    ))
+    .unwrap();
+    assert!(Action::parse(&url).is_err());
+    let settings_url =
+        Url::parse(&format!("{}://settings/mcp", ChannelState::url_scheme())).unwrap();
+    assert!(validate_custom_uri(&settings_url).is_err());
+    for host in ["mcp", "linear"] {
+        let url = Url::parse(&format!("{}://{host}/", ChannelState::url_scheme())).unwrap();
+        assert!(validate_custom_uri(&url).is_err());
+    }
 }

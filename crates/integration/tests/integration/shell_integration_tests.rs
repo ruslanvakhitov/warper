@@ -85,9 +85,7 @@ integration_tests! {
     test_copy_rprompt_from_input_honor_ps1_enabled,
 
     // Tests of subshell logic from bootstrap script.
-    #[ignore = "Affected by agent_view feature flag UI changes"]
     test_can_bootstrap_local_bash_subshell,
-    #[ignore = "Affected by agent_view feature flag UI changes"]
     test_can_bootstrap_local_zsh_subshell,
     // Disabled due to flakiness on CI.
     #[ignore]
@@ -106,6 +104,5 @@ integration_tests! {
     test_ctrl_d_handled_by_read_during_bootstrapping,
     test_ctrl_d_during_bootstrapping_exits_shell_upon_completion,
 
-    #[ignore = "Affected by agent_view feature flag UI changes"]
     test_git_prompt_chips,
 }
